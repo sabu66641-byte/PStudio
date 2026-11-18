@@ -651,6 +651,7 @@ GAME_FUNCTIONS = {
     "rotate_x": 1, "rotate_y": 1, "rotate_z": 1,
     "is_key_down": 1, "is_touched": 0, "get_touch_x": 0, "get_touch_y": 0,
     "draw_sprite": 3, "draw_rect": 4, "draw_circle": 3,
+    "draw_cube": 4, "draw_sphere": 4, "draw_grid": 2, "set_camera": 6,
     "get_delta_time": 0, "get_width": 0, "get_height": 0,
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
