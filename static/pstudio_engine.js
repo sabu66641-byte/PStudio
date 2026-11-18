@@ -298,7 +298,7 @@
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
       runtime.contexts=commands;updateCollisions();update3DCollisions(commands);renderFrame();
-      const status=$('game-status');if(status)status.textContent=`RUNNING · ${(raw>0?1/raw:0).toFixed(0)} FPS · ${(sceneObjects||[]).length} objects`;
+      // renderFrame() owns the detailed status, including VIEW mode and draw-call count.
       raf=requestAnimationFrame(tick);
     } catch(err) { stopGame();setOutput?.(`Game runtime error: ${err.message}`,'error'); }
   }
