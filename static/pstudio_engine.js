@@ -200,6 +200,22 @@
       if (button) { button.classList.toggle('active', renderMode === mode); button.setAttribute('aria-pressed', renderMode === mode ? 'true' : 'false'); }
     }
   }
+  function buildScenePreview3D() {
+    const commands = [];
+    commands.push({type:'grid',size:12,divisions:12});
+    commands.push({type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0});
+    for (const o of sceneObjects || []) {
+      const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
+      const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
+      const z = (Number(o.z)||0) / 100;
+      const w = Math.max(0.05,(Number(o.w)||64)/100);
+      const h = Math.max(0.05,(Number(o.h)||64)/100);
+      const color = o.color || '#d1d5db';
+      if (o.shape === 'circle') commands.push({type:'sphere',x,y,z,radius:Math.max(w,h)/2,color});
+      else commands.push({type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180});
+    }
+    return new Map([['scene-preview',commands]]);
+  }
   function setViewMode(mode) {
     if (!['auto','2d','3d'].includes(mode)) return;
     renderMode = mode; updateViewModeButtons();
@@ -208,7 +224,7 @@
     if (mode === '3d') {
       if(c2)c2.style.display='none'; if(c3)c3.style.display='block';
       if(!window.PStudio3D){setOutput?.('3D renderer is unavailable. Check the Three.js connection.','error');return;}
-      try{window.PStudio3D.render(new Map());}catch(err){setOutput?.('3D view error: '+err.message,'error');}
+      try{window.PStudio3D.render(buildScenePreview3D());}catch(err){setOutput?.('3D view error: '+err.message,'error');}
     } else { if(c3)c3.style.display='none'; if(c2)c2.style.display='block'; if(typeof renderGamePreview==='function')renderGamePreview(); }
   }
   function renderFrame() {
