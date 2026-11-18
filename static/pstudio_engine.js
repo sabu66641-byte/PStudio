@@ -1,4 +1,4 @@
-/* PStudio Game Runtime 1.1.0
+/* PStudio Game Runtime 1.2.0
  * Browser-side, frame-driven interpreter for validated ps ASTs.
  * Normal ps -> C++17 execution remains on /run and is not changed.
  */
@@ -100,8 +100,13 @@
       case 'range': if (a.length===1) return Array.from({length:Math.max(0,Math.min(100000,Number(a[0])|0))},(_,i)=>i); if (a.length===2||a.length===3) { const step=a.length===3?Number(a[2]):1; if (!step) return []; const out=[]; for(let i=Number(a[0]); step>0?i<Number(a[1]):i>Number(a[1]); i+=step){out.push(i);if(out.length>100000)throw new PsRuntimeError('range() の要素数が上限を超えました。')} return out; } break;
       case 'get_x': if (!a.length) return Number(o.x)||0; break;
       case 'get_y': if (!a.length) return Number(o.y)||0; break;
+      case 'get_z': if (!a.length) return Number(o.z)||0; break;
       case 'set_x': if (a.length===1) { o.x=finite(a[0]); return o.x; } break;
       case 'set_y': if (a.length===1) { o.y=finite(a[0]); return o.y; } break;
+      case 'set_z': if (a.length===1) { o.z=finite(a[0]); return o.z; } break;
+      case 'rotate_x': if (a.length===1) { o.rotationX=(Number(o.rotationX)||0)+finite(a[0]); return o.rotationX; } break;
+      case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
+      case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
       case 'is_key_down': if (a.length===1) { const k=String(a[0]).toLowerCase(); const aliases={left:'arrowleft',right:'arrowright',up:'arrowup',down:'arrowdown',space:' '}; return keys.has(aliases[k]||k); } break;
       case 'is_touched': if (!a.length) return touchActive; break;
       case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
@@ -227,6 +232,6 @@
     if(typeof renderGamePreview==='function')renderGamePreview();
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540';
   }
-  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,version:'1.0.0'};
+  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,version:'1.2.0'};
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
 })();
