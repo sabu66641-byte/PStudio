@@ -117,6 +117,10 @@
       case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_circle': if (a.length===3) { c.draw.push({type:'circle',x:finite(a[0]),y:finite(a[1]),r:Math.max(0,finite(a[2])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_sprite': if (a.length===3) { c.draw.push({type:'sprite',name:String(a[0]),x:finite(a[1]),y:finite(a[2])}); return null; } break;
+      case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
+      case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:o.color||'#a1a1aa'}); return null; } break;
+      case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
+      case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5])}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
     }
     throw new PsRuntimeError(`未対応の関数、または引数の数が不正です: ${name}()`);
@@ -190,7 +194,19 @@
     collisionPairs=now;
   }
   function renderFrame() {
-    const commands=new Map();for(const [id,c] of runtime?.contexts||[])commands.set(id,c.draw||[]);drawScene(commands);
+    const commands=new Map();for(const [id,c] of runtime?.contexts||[])commands.set(id,c.draw||[]);
+    const has3D=[...commands.values()].some(list=>list.some(d=>['cube','sphere','grid','camera'].includes(d.type)));
+    const canvas2D=$('game-canvas'),canvas3D=$('game-3d-canvas');
+    if(has3D){
+      if(canvas2D)canvas2D.style.display='none';
+      if(canvas3D)canvas3D.style.display='block';
+      if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');
+      window.PStudio3D.render(commands);
+    }else{
+      if(canvas3D)canvas3D.style.display='none';
+      if(canvas2D)canvas2D.style.display='block';
+      drawScene(commands);
+    }
   }
   function tick(time) {
     if(!runtime?.running)return;
@@ -221,7 +237,7 @@
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
-      $('game-status').textContent='STARTING · PStudio Runtime 1.0.0';
+      $('game-status').textContent='STARTING · PStudio Runtime 1.3.0';
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestAnimationFrame(tick);
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
@@ -229,9 +245,10 @@
   function stopGame() {
     if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();keys.clear();touchActive=false;activePointerId=null;
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
+    if($('game-3d-canvas'))$('game-3d-canvas').style.display='none';if($('game-canvas'))$('game-canvas').style.display='block';if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540';
   }
-  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,version:'1.2.0'};
+  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,version:'1.3.0'};
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
 })();
