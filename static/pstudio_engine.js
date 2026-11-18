@@ -1,4 +1,4 @@
-/* PStudio Game Runtime 1.0.0
+/* PStudio Game Runtime 1.1.0
  * Browser-side, frame-driven interpreter for validated ps ASTs.
  * Normal ps -> C++17 execution remains on /run and is not changed.
  */
@@ -14,6 +14,7 @@
   let raf = 0;
   let lastTime = 0;
   let touchActive = false;
+  let activePointerId = null;
   let pointerPosition = { x: 0, y: 0 };
   let collisionPairs = new Set();
 
@@ -30,10 +31,25 @@
   window.addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); const target=e.target; const editing=target && (target.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)); if(runtime?.running && !editing && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
   window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
   window.addEventListener('blur', () => keys.clear());
-  canvas.addEventListener('pointerdown', e => { touchActive = true; pointerPosition = pointFromEvent(e); });
-  window.addEventListener('pointerup', () => { touchActive = false; });
-  window.addEventListener('pointercancel', () => { touchActive = false; });
-  canvas.addEventListener('pointermove', e => { pointerPosition = pointFromEvent(e); });
+  canvas.style.touchAction = 'none';
+  canvas.style.userSelect = 'none';
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    activePointerId = e.pointerId;
+    touchActive = true;
+    pointerPosition = pointFromEvent(e);
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  window.addEventListener('pointerup', e => {
+    if (activePointerId === e.pointerId) { touchActive = false; activePointerId = null; }
+  });
+  window.addEventListener('pointercancel', e => {
+    if (activePointerId === e.pointerId) { touchActive = false; activePointerId = null; }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (activePointerId === null || activePointerId === e.pointerId) pointerPosition = pointFromEvent(e);
+  });
 
   function astForScript(scriptName) {
     return runtime?.asts?.[scriptName] || null;
@@ -88,6 +104,8 @@
       case 'set_y': if (a.length===1) { o.y=finite(a[0]); return o.y; } break;
       case 'is_key_down': if (a.length===1) { const k=String(a[0]).toLowerCase(); const aliases={left:'arrowleft',right:'arrowright',up:'arrowup',down:'arrowdown',space:' '}; return keys.has(aliases[k]||k); } break;
       case 'is_touched': if (!a.length) return touchActive; break;
+      case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
+      case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
       case 'get_delta_time': if (!a.length) return c.dt; break;
       case 'get_width': if (!a.length) return Number(o.w)||0; break;
       case 'get_height': if (!a.length) return Number(o.h)||0; break;
@@ -204,7 +222,7 @@
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();keys.clear();touchActive=false;
+    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();keys.clear();touchActive=false;activePointerId=null;
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof renderGamePreview==='function')renderGamePreview();
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540';
