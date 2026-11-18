@@ -1,0 +1,18 @@
+# Player controller
+speed = 220
+
+func start()
+    set_x(120)
+    set_y(220)
+
+func update(dt)
+    if is_key_down("right")
+        set_x(get_x() + speed * dt)
+    if is_key_down("left")
+        set_x(get_x() - speed * dt)
+    if is_key_down("down")
+        set_y(get_y() + speed * dt)
+    if is_key_down("up")
+        set_y(get_y() - speed * dt)
+
+    draw_rect(get_x(), get_y(), 48, 48)

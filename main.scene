@@ -1,0 +1,32 @@
+{
+  "width": 960,
+  "height": 540,
+  "objects": [
+    {
+      "id": "player",
+      "name": "Player",
+      "x": 120,
+      "y": 220,
+      "w": 48,
+      "h": 48,
+      "sprite": "",
+      "script": "player.ps",
+      "color": "#d1d5db",
+      "shape": "rect",
+      "collider": true
+    },
+    {
+      "id": "enemy",
+      "name": "Enemy",
+      "x": 520,
+      "y": 220,
+      "w": 48,
+      "h": 48,
+      "sprite": "",
+      "script": "enemy.ps",
+      "color": "#a1a1aa",
+      "shape": "circle",
+      "collider": true
+    }
+  ]
+}

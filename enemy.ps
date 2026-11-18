@@ -1,0 +1,10 @@
+# Enemy example with a collision callback
+func start()
+    set_x(520)
+    set_y(220)
+
+func update(dt)
+    draw_circle(get_x() + 24, get_y() + 24, 24)
+
+func on_collision(other)
+    ps "Collision detected"
