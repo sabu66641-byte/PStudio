@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17191e">
+<meta name="description" content="PStudio - ps programming language integrated development environment">
+<title>PStudio — ps IDE</title>
+<style>
+:root{color-scheme:dark;--bg:#101319;--panel:#191e27;--panel-2:#202733;--panel-3:#252e3b;--line:#343f4e;--text:#edf2f8;--muted:#aab6c5;--subtle:#7f8da0;--accent:#d1d5db;--accent-strong:#a1a1aa;--green:#42c98b;--red:#ff727e;--yellow:#e9bd65;--radius:10px;--header-h:58px;--font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:var(--font)}body{font-size:14px;line-height:1.5}button,input,textarea{font:inherit}button{color:inherit}button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #f4f4f5;outline-offset:2px}button{cursor:pointer}.app-header{height:var(--header-h);display:flex;align-items:center;gap:16px;padding:0 18px;background:#171c24;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30}.brand{display:flex;align-items:center;gap:10px;min-width:180px}.brand-mark{width:36px;height:36px;display:grid;place-items:center;border-radius:9px;background:linear-gradient(145deg,#343941,#20242b);border:1px solid #555b65;box-shadow:inset 0 1px 0 #ffffff18,0 2px 8px #0005;color:#f4f4f5}
+.brand-mark svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:3.1;stroke-linecap:round;stroke-linejoin:round}.brand-name{font-size:16px;font-weight:800;letter-spacing:.025em;color:#f4f4f5}.brand-caption{font-size:9px;color:#9299a4;letter-spacing:.15em;font-weight:650}.top-nav{display:flex;align-items:center;gap:4px;height:100%}.top-nav button,.header-action{height:34px;padding:0 11px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);font-size:13px}.top-nav button:hover,.header-action:hover{background:var(--panel-3);color:var(--text)}.top-nav button.active{background:#30343b;color:#ffffff;border-color:#59616d}.header-spacer{flex:1}.project-label{color:var(--muted);font-size:12px;white-space:nowrap}.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px}.header-action.primary{background:#e4e4e7;border-color:#f4f4f5;color:#17191e;font-weight:800}.header-action.primary:hover{background:#ffffff}.header-action:disabled{opacity:.5;cursor:wait}.mobile-menu{display:none}
+.ide-shell{height:calc(100dvh - var(--header-h));min-height:520px;display:grid;grid-template-columns: minmax(190px,230px) minmax(320px,1fr) minmax(220px,270px);grid-template-rows:minmax(0,1fr) 220px;gap:1px;background:var(--line)}.panel{min-width:0;min-height:0;background:var(--panel);display:flex;flex-direction:column}.panel-heading{height:39px;flex:0 0 39px;padding:0 13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);font-size:11px;font-weight:800;letter-spacing:.08em;color:#c1ccda}.panel-heading .muted{font-weight:500;letter-spacing:0;color:var(--subtle)}.explorer{grid-column:1;grid-row:1}.explorer-content{padding:12px 9px;overflow:auto}.tree-group{font-size:11px;color:var(--subtle);font-weight:800;letter-spacing:.08em;padding:5px 8px 9px}.tree-file{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;color:#d8e0ea;padding:8px 10px;border-radius:6px;text-align:left;font-size:13px}.tree-file:hover,.tree-file.active{background:#2a3542}.file-icon{color:#c4c8cf;font-family:var(--mono);font-size:11px}.explorer-hint{margin:16px 8px;padding:10px;border:1px solid var(--line);border-radius:7px;color:var(--subtle);font-size:11px;line-height:1.6}.editor-panel{grid-column:2;grid-row:1;min-width:0}.editor-toolbar{height:42px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--line);background:#1b222c}.tab{height:100%;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:2px solid var(--accent);font-size:12px;color:#e2eaf2}.tab-dot{width:6px;height:6px;border-radius:50%;background:var(--yellow);display:none}.tab-dot.dirty{display:inline-block}.toolbar-spacer{flex:1}.tool-btn{height:29px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:#252e39;color:#d4deea;font-size:11px}.tool-btn:hover{background:#303d4c}.tool-btn.run{background:#e4e4e7;border-color:#f4f4f5;color:#17191e;font-weight:800}.editor-meta{font-size:10px;color:var(--subtle);white-space:nowrap}.editor-wrap{position:relative;flex:1;min-height:0;display:flex;background:#11161d;overflow:hidden}.line-numbers{width:48px;flex:0 0 48px;padding:15px 10px 30px 0;text-align:right;overflow:hidden;background:#151b23;color:#718096;font:13px/1.75 var(--mono);user-select:none;white-space:pre}.code-editor{display:block;flex:1;min-width:0;width:100%;height:100%;resize:none;border:0;border-radius:0;outline:0!important;padding:15px 16px 30px 12px;background:transparent;color:#e7edf5;caret-color:#f4f4f5;font:13px/1.75 var(--mono);tab-size:4;white-space:pre;overflow:auto;spellcheck:false}.code-editor::placeholder{color:#647386}.code-editor:focus{box-shadow:none}.editor-footer{height:27px;flex:0 0 27px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:#1b222c;border-top:1px solid var(--line);color:var(--subtle);font-size:10px}.inspector{grid-column:3;grid-row:1}.inspector-content{padding:13px;overflow:auto}.inspector-section{padding-bottom:15px;margin-bottom:14px;border-bottom:1px solid var(--line)}.inspector-title{font-size:11px;font-weight:800;color:#c7d2df;margin-bottom:9px}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0;color:var(--muted);font-size:12px}.setting-row select,.setting-row input{max-width:110px;background:#111820;border:1px solid var(--line);border-radius:5px;color:var(--text);padding:5px 7px}.check-row{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin:8px 0}.check-row input{accent-color:var(--accent)}.info-card{padding:10px;border:1px solid var(--line);border-radius:7px;background:#151c25;color:var(--muted);font-size:11px;line-height:1.65}.bottom-panel{grid-column:1/4;grid-row:2;display:flex;flex-direction:column;min-height:0}.bottom-tabs{height:38px;flex:0 0 38px;display:flex;align-items:center;gap:4px;padding:0 12px;background:#1b222c;border-bottom:1px solid var(--line)}.bottom-tab{height:100%;padding:0 11px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--subtle);font-size:11px;font-weight:700}.bottom-tab.active{color:#e5edf6;border-bottom-color:var(--accent)}.bottom-actions{margin-left:auto;display:flex;gap:6px}.small-action{border:0;background:transparent;color:var(--muted);font-size:11px;padding:5px 8px;border-radius:5px}.small-action:hover{background:var(--panel-3)}.console-body{flex:1;min-height:0;overflow:auto;padding:12px 15px;background:#10151c;font:12px/1.7 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:#cbd6e2}.console-placeholder{color:#738196}.console-success{color:#8ee0b7}.console-error{color:#ff929a}.console-info{color:#d1d5db}.input-body{display:none;flex:1;min-height:0;padding:12px}.stdin-input{width:100%;height:100%;resize:none;background:#10151c;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:10px;font:12px/1.6 var(--mono)}.page{display:none}.page.active{display:block}.docs-container{max-width:1100px;margin:0 auto;padding:28px 24px}.page-title{font-size:24px;font-weight:750;margin-bottom:6px}.page-description{color:var(--muted);margin-bottom:22px;line-height:1.7}.sample-box,.about-box,.syntax-box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}.sample-name,.syntax-name{font-weight:700;color:#d1d5db;margin-bottom:8px}.sample-description,.syntax-description{color:var(--muted);font-size:13px;margin-bottom:12px}.sample-box pre,.syntax-box pre{padding:13px;border-radius:7px;background:#10151c;border:1px solid #303b49;color:#e2eaf2;overflow:auto;font:12px/1.7 var(--mono);white-space:pre}.sample-actions{display:flex;gap:8px;margin-top:11px}.sample-button{padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#252e39;font-size:12px}.sample-button.primary{background:#e4e4e7;border-color:#f4f4f5;color:#17191e;font-weight:750}.about-box h2{font-size:16px;margin:0 0 10px}.about-box p,.feature-list{color:#c5cfdb;line-height:1.8}.feature-list{padding-left:20px}.symbol-reference{margin-top:22px;padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.symbol-reference-header{display:flex;justify-content:space-between;gap:14px;margin-bottom:16px}.symbol-reference-title{font-size:18px;font-weight:800}.symbol-reference-subtitle,.symbol-note{color:var(--muted);font-size:12px}.symbol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.symbol-panel{padding:14px;border:1px solid var(--line);border-radius:8px;background:#151b23}.symbol-panel-title{font-weight:700;margin-bottom:10px}.symbol-status{font-size:10px;padding:3px 7px;border-radius:99px}.symbol-status.supported{color:#91e2b6;background:#173426}.symbol-status.unsupported{color:#ff9da4;background:#3a2027}.symbol-list{display:flex;flex-wrap:wrap;gap:7px;list-style:none;margin:0;padding:0}.symbol-chip{padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:#10151c;font:12px var(--mono)}.overlay{display:none}.side-menu{display:none}.language-options{display:none}.language-options.open{display:block}.language-option{width:100%;padding:9px;background:transparent;border:0;text-align:left;color:var(--muted)}.language-option.active{color:#f4f4f5;background:#30343b}.language-toggle{width:100%;text-align:left;padding:10px;background:#202733;border:1px solid var(--line);border-radius:6px}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.toast{position:fixed;right:18px;bottom:18px;z-index:90;padding:10px 14px;border:1px solid #555d69;border-radius:8px;background:#242830;color:#f4f4f5;box-shadow:0 8px 30px #0008;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:translateY(0)}
+@media(max-width:1050px){.ide-shell{grid-template-columns:190px minmax(280px,1fr);grid-template-rows:minmax(0,1fr) 210px}.inspector{display:none}.bottom-panel{grid-column:1/3}.project-label{display:none}}
+@media(max-width:700px){:root{--header-h:54px}.app-header{padding:0 10px;gap:8px}.brand{min-width:0;gap:7px}.brand-caption,.top-nav{display:none}.brand-mark{width:30px;height:30px}.brand-name{font-size:14px}.mobile-menu{display:inline-flex}.header-action{height:32px;padding:0 9px;font-size:11px}.ide-shell{height:calc(100dvh - var(--header-h));min-height:0;display:flex;flex-direction:column;gap:1px}.explorer{display:none}.editor-panel{flex:1;min-height:260px}.editor-toolbar{height:39px;flex-basis:39px;padding:0 8px}.editor-meta{display:none}.tool-btn{padding:0 8px}.bottom-panel{height:34vh;min-height:155px;flex:0 0 34vh}.panel-heading{height:34px;flex-basis:34px}.bottom-tabs{height:34px;flex-basis:34px;padding:0 7px}.bottom-tab{padding:0 8px;font-size:10px}.console-body{font-size:11px;padding:9px}.docs-container{padding:20px 14px}.page-title{font-size:21px}.symbol-grid{grid-template-columns:1fr}.symbol-reference-header{display:block}.sample-actions .sample-button{flex:1}.line-numbers{width:37px;flex-basis:37px;padding-right:7px;font-size:12px}.code-editor{font-size:12px;padding-left:9px}.mobile-menu{height:32px;padding:0 9px;border:1px solid var(--line);border-radius:6px;background:#202733;font-size:11px}}
+@media(max-width:380px){.header-action:not(.primary){display:none}.brand-name{font-size:13px}.tool-btn{font-size:10px;padding:0 6px}.bottom-tab{padding:0 6px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* PStudio project + scene workspace */
+.project-tools{display:flex;gap:5px;padding:0 7px 10px}.project-tools button,.asset-add{flex:1;min-width:0;padding:6px 5px;border:1px solid var(--line);border-radius:5px;background:#252e39;color:var(--muted);font-size:10px}.tree-folder{padding:7px 8px 4px;color:#aeb8c6;font-size:10px;font-weight:800;letter-spacing:.08em}.tree-file{padding:6px 9px;font-size:12px}.tree-file .file-icon{width:23px;display:inline-block}.tree-file .file-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tree-file .file-kind{margin-left:auto;color:var(--subtle);font-size:9px}.tree-file.active{outline:1px solid #59616d;background:#30343b}.asset-drop{margin:10px 5px;padding:12px 8px;border:1px dashed #566170;border-radius:7px;text-align:center;color:var(--muted);font-size:10px;line-height:1.6}.asset-drop.dragover{background:#30343b;border-color:#d4d4d8;color:#fff}.asset-list{padding:0 6px}.asset-row{display:flex;align-items:center;gap:7px;padding:5px 6px;color:#cbd5e1;font-size:11px;overflow:hidden}.asset-row img{width:24px;height:24px;object-fit:contain;background:#10151c;border-radius:4px}.asset-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.workspace-tabs{height:34px;display:flex;align-items:center;gap:4px;padding:0 10px;background:#171d26;border-bottom:1px solid var(--line)}.workspace-tab{height:28px;padding:0 11px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted);font-size:11px}.workspace-tab.active{background:#30343b;border-color:#59616d;color:#fff}.editor-surface,.game-surface{flex:1;min-height:0;display:flex;flex-direction:column}.game-surface{display:none;background:#0d1117}.game-toolbar{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted)}.game-stage{flex:1;min-height:0;display:grid;place-items:center;padding:12px;overflow:hidden;background:radial-gradient(#252b34 1px,transparent 1px);background-size:16px 16px}.game-canvas{display:block;max-width:100%;max-height:100%;width:min(100%,800px);aspect-ratio:16/9;background:#171d26;border:1px solid #59616d;box-shadow:0 12px 40px #0008;image-rendering:auto}.game-status{height:24px;flex:0 0 24px;padding:3px 10px;color:var(--subtle);font-size:10px;border-top:1px solid var(--line)}.object-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.object-field label{display:block;margin-bottom:3px;color:var(--subtle);font-size:10px}.object-field input,.object-field select{width:100%;min-width:0;padding:6px 7px;border:1px solid var(--line);border-radius:5px;background:#111820;color:var(--text);font:11px var(--mono)}.object-field.full{grid-column:1/-1}.object-empty{padding:12px;border:1px dashed var(--line);border-radius:6px;color:var(--subtle);font-size:11px;line-height:1.6}.inspector-section[hidden]{display:none!important}.asset-hidden{display:none!important}
+@media(max-width:1050px){.inspector{display:flex;grid-column:1/3;grid-row:3;max-height:220px}.ide-shell{grid-template-rows:minmax(0,1fr) 190px 220px}.bottom-panel{grid-column:1/3;grid-row:2}.inspector-content{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.inspector-section{margin:0;padding:0 8px 8px;border-bottom:0;border-right:1px solid var(--line)}}
+@media(max-width:700px){.ide-shell{display:flex;flex-direction:column}.explorer{display:flex;max-height:145px;flex:0 0 145px}.explorer-content{padding:6px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;overflow:auto}.explorer .panel-heading{height:30px;flex-basis:30px}.tree-group{grid-column:1/-1;padding:2px 5px}.project-tools{grid-column:1/-1;padding:0 2px 4px}.asset-drop{display:none}.asset-list{display:none}.editor-panel{flex:1;min-height:260px}.inspector{display:flex;max-height:180px;flex:0 0 180px}.inspector-content{display:flex;overflow-x:auto;gap:12px;padding:9px}.inspector-section{min-width:175px;flex:0 0 175px;border-right:1px solid var(--line)}.bottom-panel{height:24vh;min-height:125px;flex:0 0 24vh}.game-stage{padding:5px}.game-canvas{width:100%;max-height:100%}.workspace-tab{padding:0 8px;font-size:10px}}
+
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand"><div class="brand-mark" aria-hidden="true">
+    <svg viewBox="0 0 48 48" role="img" focusable="false">
+      <path d="M24 5.5 40 14.7v18.6L24 42.5 8 33.3V14.7L24 5.5Z" />
+      <path d="M8.5 15 24 24l15.5-9M24 24v18" />
+    </svg>
+  </div><div><div class="brand-name">PStudio</div><div class="brand-caption">PS DEVELOPMENT ENVIRONMENT</div></div></div>
+  <nav class="top-nav" aria-label="Main navigation">
+    <button class="active" id="menu-execute" onclick="showPage('execute')">Editor</button>
+    <button id="menu-samples" onclick="showPage('samples')">Examples</button>
+    <button id="menu-syntax" onclick="showPage('syntax')">Language Guide</button>
+    <button id="menu-about" onclick="showPage('about')">About ps</button>
+  </nav>
+  <span class="project-label"><span class="status-dot"></span>Workspace / main.ps</span><span class="header-spacer"></span><label class="visually-hidden" for="global-language">Interface language</label><select id="global-language" aria-label="Interface language" onchange="setLanguage(this.value)" style="height:32px;max-width:92px;background:#202733;color:#e8e9ec;border:1px solid #3b4655;border-radius:6px;padding:0 5px;font-size:11px"><option value="ja">日本語</option><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option><option value="fr">Français</option></select>
+  <button class="header-action" onclick="saveCode(true)" title="Save locally">Save</button>
+  <button class="header-action primary" id="header-run" onclick="runCode()">▶ Run</button>
+  <button class="mobile-menu" onclick="toggleMobileNav()" aria-expanded="false" aria-controls="mobile-nav">Menu</button>
+</header>
+<div id="mobile-nav" class="visually-hidden" aria-label="Mobile navigation">
+ <button class="header-action" onclick="showPage('execute')">Editor</button><button class="header-action" onclick="showPage('samples')">Examples</button><button class="header-action" onclick="showPage('syntax')">Language Guide</button><button class="header-action" onclick="showPage('about')">About ps</button>
+</div>
+<main>
+<section class="page active" id="page-execute" aria-label="PStudio editor">
+ <div class="ide-shell">
+  <aside class="panel explorer" aria-label="Project explorer"><div class="panel-heading"><span>PROJECT</span><span class="muted" id="project-name">GAME PROJECT</span></div><div class="explorer-content"><div class="tree-group">WORKSPACE</div><div class="project-tools"><button onclick="createProjectFile('ps')">＋ Script</button><button onclick="createProjectFile('scene')">＋ Scene</button><button onclick="document.getElementById('asset-input').click()">＋ Asset</button></div><div id="project-tree"></div><div class="tree-folder">ASSETS</div><div class="asset-drop" id="asset-drop">Drop images / audio here<br>or tap ＋ Asset</div><input id="asset-input" class="asset-hidden" type="file" accept="image/*,audio/*" multiple onchange="importAssets(this.files)"><div class="asset-list" id="asset-list"></div></div></aside>
+  <section class="panel editor-panel" aria-label="Code and game workspace"><div class="workspace-tabs"><button class="workspace-tab active" id="view-editor" onclick="switchWorkspaceView('editor')">EDITOR</button><button class="workspace-tab" id="view-game" onclick="switchWorkspaceView('game')">GAME / SCENE</button><span class="toolbar-spacer"></span><span class="editor-meta" id="active-file-label">main.ps</span></div><div class="editor-surface" id="editor-surface"><div class="editor-toolbar"><div class="tab"><span class="file-icon">PS</span>main.ps<span class="tab-dot" id="dirty-dot"></span></div><span class="toolbar-spacer"></span><span class="editor-meta" id="save-state">Saved locally</span><button class="tool-btn" onclick="clearEditor()" title="Clear editor">Clear</button><button class="tool-btn" onclick="compileCode()" id="compile-button">Compile</button><button class="tool-btn run" onclick="runCode()" id="editor-run">▶ Run</button></div>
+   <div class="editor-wrap"><pre class="line-numbers" id="line-numbers" aria-hidden="true">1</pre><label class="visually-hidden" for="code">ps source code editor</label><textarea class="code-editor" id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" placeholder='ps "Hello, PStudio"' aria-describedby="editor-help"></textarea></div>
+   <div class="editor-footer"><span id="editor-help">ps source · UTF-8 · Spaces: 4</span><span id="cursor-position">Ln 1, Col 1</span></div></div>
+   <div class="game-surface" id="game-surface"><div class="game-toolbar"><span>SCENE VIEW</span><span id="scene-name-label">main.scene</span><span class="toolbar-spacer"></span><button class="tool-btn" onclick="addSceneObject()">＋ Object</button><button class="tool-btn" onclick="renderGamePreview()">Refresh</button><button class="tool-btn run" onclick="runCode()">▶ Run</button></div><div class="game-stage"><canvas class="game-canvas" id="game-canvas" width="960" height="540" aria-label="Game preview canvas"></canvas></div><div class="game-status" id="game-status">Ready · 960 × 540</div></div>
+  </section>
+  <aside class="panel inspector" aria-label="Editor settings"><div class="panel-heading"><span>INSPECTOR</span><span class="muted">SETTINGS</span></div><div class="inspector-content"><div class="inspector-section" id="object-inspector"><div class="inspector-title">GAME OBJECT</div><div class="object-empty" id="object-empty">Select an object in the Scene view or Project tree to edit its properties.</div><div id="object-fields" hidden><div class="object-grid"><div class="object-field full"><label for="obj-name">Name</label><input id="obj-name" type="text" value="Player" oninput="updateSelectedObject('name',this.value)"></div><div class="object-field"><label for="obj-x">Position X</label><input id="obj-x" type="number" step="1" oninput="updateSelectedObject('x',this.value)"></div><div class="object-field"><label for="obj-y">Position Y</label><input id="obj-y" type="number" step="1" oninput="updateSelectedObject('y',this.value)"></div><div class="object-field"><label for="obj-w">Width</label><input id="obj-w" type="number" min="1" oninput="updateSelectedObject('w',this.value)"></div><div class="object-field"><label for="obj-h">Height</label><input id="obj-h" type="number" min="1" oninput="updateSelectedObject('h',this.value)"></div><div class="object-field full"><label for="obj-sprite">Sprite asset</label><select id="obj-sprite" onchange="updateSelectedObject('sprite',this.value)"><option value="">None</option></select></div><div class="object-field full"><label for="obj-script">Attached ps script</label><select id="obj-script" onchange="updateSelectedObject('script',this.value)"></select></div></div></div></div><div class="inspector-section"><div class="inspector-title">EDITOR</div><label class="setting-row">Font size <select id="font-size"><option value="12">12 px</option><option value="13" selected>13 px</option><option value="14">14 px</option><option value="16">16 px</option><option value="18">18 px</option></select></label><label class="setting-row">Tab size <select id="tab-size"><option value="2">2 spaces</option><option value="4" selected>4 spaces</option></select></label><label class="check-row"><input type="checkbox" id="soft-wrap"> Soft wrap</label><label class="check-row"><input type="checkbox" id="line-wrap" checked> Show line numbers</label></div><div class="inspector-section"><div class="inspector-title">EXECUTION</div><label class="setting-row">Input mode <select id="input-mode"><option value="none">No stdin</option><option value="stdin">Use stdin</option></select></label><div class="info-card">Run sends your source to the PStudio server. Compile returns generated C++ without executing it.</div></div><div class="inspector-section"><div class="inspector-title">LANGUAGE</div><div class="info-card">ps → C++17<br>Indentation-based syntax<br>Compiler: g++</div></div><div class="inspector-section"><div class="inspector-title">LANGUAGE / 言語</div><button class="language-toggle" id="language-toggle" onclick="toggleLanguageMenu()"><span data-i18n="言語">Language</span>　⌄</button><div class="language-options" id="language-options"><button class="language-option active" id="lang-ja" onclick="setLanguage('ja')">日本語</button><button class="language-option" id="lang-en" onclick="setLanguage('en')">English</button><button class="language-option" id="lang-zh" onclick="setLanguage('zh')">中文</button><button class="language-option" id="lang-es" onclick="setLanguage('es')">Español</button><button class="language-option" id="lang-fr" onclick="setLanguage('fr')">Français</button></div></div></div></aside>
+  <section class="panel bottom-panel" aria-label="Output panel"><div class="bottom-tabs"><button class="bottom-tab active" id="tab-output" onclick="showBottomTab('output')">OUTPUT</button><button class="bottom-tab" id="tab-input" onclick="showBottomTab('input')">STDIN</button><div class="bottom-actions"><button class="small-action" onclick="copyOutput()">Copy</button><button class="small-action" onclick="clearOutput()">Clear</button></div></div><div class="console-body" id="output" role="log" aria-live="polite" aria-relevant="additions text"><span class="console-placeholder">PStudio is ready. Press Run to execute your ps program.</span></div><div class="input-body" id="stdin-panel"><label class="visually-hidden" for="stdin-input">Program standard input</label><textarea class="stdin-input" id="stdin-input" placeholder="Optional standard input, one line at a time..."></textarea></div></section>
+ </div>
+</section>
+
+
+        <section
+            class="page docs-container"
+            id="page-samples"
+        >
+
+            <div class="page-title">
+                サンプルコード
+            </div>
+
+
+            <div class="page-description">
+                コピーして、そのまま実行環境で試すことができます。
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    Hello, World
+                </div>
+
+                <div class="sample-description">
+                    基本的な文字の出力です。
+                </div>
+
+                <pre id="sample-hello">ps "Hello, World"</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-hello', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-hello')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    変数と計算
+                </div>
+
+                <div class="sample-description">
+                    変数を使って計算した結果を出力します。
+                </div>
+
+                <pre id="sample-calc">x = 10
+y = 20
+
+ps x + y</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-calc', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-calc')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    条件分岐
+                </div>
+
+                <div class="sample-description">
+                    if / elseで条件によって処理を分けます。
+                </div>
+
+                <pre id="sample-if">x = 10
+
+if x > 5
+    ps "large"
+else
+    ps "small"</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-if', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-if')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    while
+                </div>
+
+                <div class="sample-description">
+                    条件が成立している間、処理を繰り返します。
+                </div>
+
+                <pre id="sample-while">x = 0
+
+while x < 3
+    ps x
+    x = x + 1</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-while', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-while')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    for / range
+                </div>
+
+                <div class="sample-description">
+                    指定した範囲の値を順番に取り出します。
+                </div>
+
+                <pre id="sample-range">for i in range(5)
+    ps i</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-range', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-range')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+
+            <div class="sample-box">
+
+                <div class="sample-name">
+                    関数
+                </div>
+
+                <div class="sample-description">
+                    処理を関数としてまとめて呼び出します。
+                </div>
+
+                <pre id="sample-function">func hello()
+    ps "hello"
+
+hello()</pre>
+
+                <div class="sample-actions">
+                    <button class="sample-button" onclick="copySample('sample-function', this)">
+                        コピー
+                    </button>
+                    <button class="sample-button primary" onclick="trySample('sample-function')">
+                        試す
+                    </button>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <section
+            class="page docs-container"
+            id="page-about"
+        >
+
+            <div class="page-title">
+                psについて
+            </div>
+
+
+            <div class="page-description">
+                ps Programming Language
+            </div>
+
+
+            <div class="about-box">
+
+                <h2>
+                    psとは
+                </h2>
+
+
+                <p id="about-intro">
+                    psは、シンプルで書きやすい文法を目指して作られた
+                    プログラミング言語です。
+
+                    psで書かれたコードはC++へ変換され、
+                    コンパイル・実行されます。
+                </p>
+
+            </div>
+
+
+            <div class="about-box">
+
+                <h2>
+                    特徴
+                </h2>
+
+
+                <ul class="feature-list">
+
+                    <li>
+                        シンプルな文法
+                    </li>
+
+                    <li>
+                        インデントによるコード構造
+                    </li>
+
+                    <li>
+                        C++バックエンド
+                    </li>
+
+                    <li>
+                        Web上でコードを実行可能
+                    </li>
+
+                    <li>
+                        変数・条件分岐・ループ・関数などに対応
+                    </li>
+
+                </ul>
+
+            </div>
+
+
+            <div class="about-box">
+
+                <h2>
+                    目的
+                </h2>
+
+
+                <p id="about-goal">
+                    psは、プログラムを書く際の分かりやすさと
+                    シンプルな記述を重視しています。
+
+                    複雑な記号をできるだけ減らして尚且つC++並の処理速度を実現させ、
+                    コードの構造を直感的に分かりやすくすることを
+                    目指しています。
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <section
+            class="page docs-container"
+            id="page-syntax"
+        >
+
+            <div class="page-title">
+                文法・使い方
+            </div>
+
+
+            <div class="page-description">
+                psの基本的な文法
+            </div>
+
+
+            <!-- OUTPUT -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    出力
+                </div>
+
+
+                <div class="syntax-description">
+                    psを使用して文字や値を出力します。
+                </div>
+
+
+                <pre>ps "Hello, World"</pre>
+
+            </div>
+
+
+
+            <!-- VARIABLE -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    変数
+                </div>
+
+
+                <div class="syntax-description">
+                    変数に値を代入します。
+                </div>
+
+
+                <pre>x = 10
+
+ps x</pre>
+
+            </div>
+
+
+
+            <!-- IF -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    条件分岐
+                </div>
+
+
+                <div class="syntax-description">
+                    条件によって処理を変更できます。
+                </div>
+
+
+                <pre>if x > 5
+    ps "large"
+
+else
+    ps "small"</pre>
+
+            </div>
+
+
+
+            <!-- WHILE -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    while
+                </div>
+
+
+                <div class="syntax-description">
+                    条件が成立している間、処理を繰り返します。
+                </div>
+
+
+                <pre>x = 0
+
+while x < 3
+    ps x
+    x = x + 1</pre>
+
+            </div>
+
+
+
+            <!-- FOR -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    for / range
+                </div>
+
+
+                <div class="syntax-description">
+                    指定した範囲で処理を繰り返します。
+                </div>
+
+
+                <pre>for i in range(5)
+    ps i</pre>
+
+            </div>
+
+
+
+            <!-- RANGE -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    range
+                </div>
+
+
+                <div class="syntax-description">
+                    rangeは複数の形式に対応しています。
+                </div>
+
+
+                <pre>range(5)
+
+range(2, 6)
+
+range(5, 0, -2)</pre>
+
+            </div>
+
+
+
+            <!-- ARRAY -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    配列
+                </div>
+
+
+                <div class="syntax-description">
+                    複数の値をまとめて扱えます。
+                </div>
+
+
+                <pre>numbers = [10, 20, 30]</pre>
+
+            </div>
+
+
+
+            <!-- FUNCTION -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    関数
+                </div>
+
+
+                <div class="syntax-description">
+                    処理を関数としてまとめることができます。
+                </div>
+
+
+                <pre>func hello()
+    ps "hello"
+
+hello()</pre>
+
+            </div>
+
+
+
+            <!-- COMMENT -->
+
+            <div class="syntax-box">
+
+                <div class="syntax-name">
+                    コメント
+                </div>
+
+
+                <div class="syntax-description">
+                    コード内にメモを書くことができます。
+                </div>
+
+
+                <pre># comment</pre>
+
+            </div>
+
+
+
+        <!-- SYMBOL REFERENCE ADDITION -->
+
+        <section class="symbol-reference" id="symbol-reference">
+
+            <div class="symbol-reference-header">
+                <div>
+                    <div class="symbol-reference-title">対応・未対応の記号</div>
+                    <div class="symbol-reference-subtitle">現在のpsで使用できる主な演算子と、現在未対応の主な記号をまとめています。</div>
+                </div>
+            </div>
+
+            <div class="symbol-grid">
+
+                <div class="symbol-panel">
+                    <div class="symbol-panel-title">
+                        対応
+                        <span class="symbol-status supported">SUPPORTED</span>
+                    </div>
+                    <ul class="symbol-list">
+                        <li class="symbol-chip">=</li>
+                        <li class="symbol-chip">+</li>
+                        <li class="symbol-chip">-</li>
+                        <li class="symbol-chip">*</li>
+                        <li class="symbol-chip">/</li>
+                        <li class="symbol-chip">%</li>
+                        <li class="symbol-chip">==</li>
+                        <li class="symbol-chip">!=</li>
+                        <li class="symbol-chip">&lt;</li>
+                        <li class="symbol-chip">&gt;</li>
+                        <li class="symbol-chip">&lt;=</li>
+                        <li class="symbol-chip">&gt;=</li>
+                        <li class="symbol-chip">!</li>
+                        <li class="symbol-chip">++</li>
+                        <li class="symbol-chip">--</li>
+                        <li class="symbol-chip">**</li>
+                        <li class="symbol-chip">&amp;</li>
+                        <li class="symbol-chip">|</li>
+                        <li class="symbol-chip">^</li>
+                        <li class="symbol-chip">~</li>
+                        <li class="symbol-chip">&lt;&lt;</li>
+                        <li class="symbol-chip">&gt;&gt;</li>
+                        <li class="symbol-chip">+=</li>
+                        <li class="symbol-chip">-=</li>
+                        <li class="symbol-chip">*=</li>
+                        <li class="symbol-chip">/=</li>
+                        <li class="symbol-chip">%=</li>
+                        <li class="symbol-chip">&amp;=</li>
+                        <li class="symbol-chip">|=</li>
+                        <li class="symbol-chip">^=</li>
+                        <li class="symbol-chip">&lt;&lt;=</li>
+                        <li class="symbol-chip">&gt;&gt;=</li>
+                    </ul>
+                    <div class="symbol-note">論理演算には <code>and</code> / <code>or</code> / <code>not</code> も使用できます。</div>
+                </div>
+
+                <div class="symbol-panel">
+                    <div class="symbol-panel-title">
+                        現在未対応
+                        <span class="symbol-status unsupported">NOT SUPPORTED</span>
+                    </div>
+                    <ul class="symbol-list">
+                        <li class="symbol-chip">:</li>
+                        <li class="symbol-chip">;</li>
+                        <li class="symbol-chip">{ }</li>
+                        <li class="symbol-chip">?</li>
+                        <li class="symbol-chip">//</li>
+                        <li class="symbol-chip">&amp;&amp;</li>
+                        <li class="symbol-chip">||</li>
+                        <li class="symbol-chip">&gt;&gt;&gt;</li>
+                        <li class="symbol-chip">**=</li>
+                    </ul>
+                    <div class="symbol-note">これは「主な未対応記号」の一覧です。言語仕様の追加に合わせて更新していきます。</div>
+                </div>
+
+            </div>
+
+        </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+
+const DEFAULT_CODE = 'ps "Hello, PStudio"';
+const codeEditor = document.getElementById("code");
+const outputBox = document.getElementById("output");
+let isDirty = false;
+let activeBottomTab = "output";
+let toastTimer = null;
+let currentLanguage = "ja";
+function toast(message){const el=document.getElementById("toast");el.textContent=message;el.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("show"),1800)}
+function updateLineNumbers(){const lines=codeEditor.value.split("\n").length;document.getElementById("line-numbers").textContent=Array.from({length:lines},(_,i)=>i+1).join("\n");document.getElementById("line-numbers").scrollTop=codeEditor.scrollTop}
+function updateCursor(){const before=codeEditor.value.slice(0,codeEditor.selectionStart);const lines=before.split("\n");document.getElementById("cursor-position").textContent=`Ln ${lines.length}, Col ${lines[lines.length-1].length+1}`}
+function markDirty(){isDirty=true;if(typeof projectFiles!=="undefined"&&projectFiles[activeProjectFile]?.type==="ps")projectFiles[activeProjectFile].content=codeEditor.value;document.getElementById("dirty-dot").classList.add("dirty");document.getElementById("save-state").textContent="Unsaved changes";updateLineNumbers();updateCursor();try{localStorage.setItem("pstudio-draft",codeEditor.value)}catch(_){} }
+function saveCode(showMessage=false){try{localStorage.setItem("pstudio-draft",codeEditor.value);if(typeof projectFiles!=="undefined"&&projectFiles[activeProjectFile]){projectFiles[activeProjectFile].content=codeEditor.value;persistProject();}isDirty=false;document.getElementById("dirty-dot").classList.remove("dirty");document.getElementById("save-state").textContent="Saved locally";if(showMessage)toast("Saved on this device")}catch(_){if(showMessage)toast("Local storage is unavailable")}}
+function clearEditor(){if(!codeEditor.value.trim())return;if(!confirm("Clear the editor contents?"))return;codeEditor.value="";markDirty();codeEditor.focus()}
+function clearOutput(){outputBox.textContent="";}
+async function copyOutput(){try{await navigator.clipboard.writeText(outputBox.innerText);toast("Output copied")}catch(_){toast("Could not copy output")}}
+function showBottomTab(tab){activeBottomTab=tab;document.getElementById("output").style.display=tab==="output"?"block":"none";document.getElementById("stdin-panel").style.display=tab==="input"?"block":"none";document.getElementById("tab-output").classList.toggle("active",tab==="output");document.getElementById("tab-input").classList.toggle("active",tab==="input")}
+function toggleMobileNav(){const el=document.getElementById("mobile-nav");const open=el.classList.toggle("mobile-nav-open");el.classList.toggle("visually-hidden",!open);el.style.cssText=open?"position:absolute;z-index:40;right:8px;top:54px;display:flex;flex-direction:column;gap:4px;padding:10px;background:#202733;border:1px solid #455365;border-radius:8px":"";document.querySelector(".mobile-menu").setAttribute("aria-expanded",String(open))}
+function showPage(name){document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));const page=document.getElementById("page-"+name);if(page)page.classList.add("active");document.querySelectorAll(".top-nav button").forEach(b=>b.classList.toggle("active",b.id==="menu-"+name));document.getElementById("mobile-nav").classList.add("visually-hidden");document.getElementById("mobile-nav").style.cssText="";if(name==="execute")setTimeout(()=>codeEditor.focus({preventScroll:true}),30);window.scrollTo(0,0)}
+function closeMenu(){}
+function toggleLanguageMenu(){const el=document.getElementById("language-options");el.classList.toggle("open");document.getElementById("language-toggle").setAttribute("aria-expanded",String(el.classList.contains("open")))}
+function setOutput(text,kind="normal"){outputBox.textContent=text;outputBox.className="console-body"+(kind==="success"?" console-success":kind==="error"?" console-error":kind==="info"?" console-info":"")}
+async function runServerCode(sourceOverride){const code=sourceOverride??codeEditor.value;if(!code.trim()){setOutput("Error: source code is empty.","error");return}const btns=[document.getElementById("header-run"),document.getElementById("editor-run")];btns.forEach(b=>b.disabled=true);setOutput("Translating ps to C++17, compiling and executing...","info");try{const payload={code};if(document.getElementById("input-mode").value==="stdin")payload.stdin=document.getElementById("stdin-input").value;const response=await fetch("/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});let data;try{data=await response.json()}catch(_){throw new Error(`Server returned an invalid response (${response.status})`)}if(data.success){const cpp=data.cpp||"";const result=data.output??"";setOutput(`[Execution result]\n${result}\n\n[Compiler: C++17]\nExecution completed successfully.`,"success");if(cpp){const details=document.createElement("details");details.style.marginTop="12px";const summary=document.createElement("summary");summary.textContent="View generated C++";summary.style.cursor="pointer";const pre=document.createElement("pre");pre.textContent=cpp;pre.style.cssText="white-space:pre;overflow:auto;margin-top:8px;padding:10px;background:#171e27;border:1px solid #34404f;border-radius:6px;color:#e5e7eb";details.append(summary,pre);outputBox.appendChild(details)}}else{setOutput(data.error||`Execution failed (HTTP ${response.status})`,"error")}}catch(err){setOutput(err.message||"Network error: could not reach the PStudio server.","error")}finally{btns.forEach(b=>b.disabled=false)}}
+async function compileCode(){const code=codeEditor.value;if(!code.trim()){setOutput("Error: source code is empty.","error");return}const btn=document.getElementById("compile-button");btn.disabled=true;setOutput("Translating ps to C++17...","info");try{const response=await fetch("/compile",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});const data=await response.json();if(data.success){setOutput(data.cpp||"Compilation completed.","success")}else{setOutput(data.error||`Compile failed (HTTP ${response.status})`,"error")}}catch(err){setOutput(err.message||"Network error during compilation.","error")}finally{btn.disabled=false}}
+async function copySample(id,button){const code=document.getElementById(id).innerText;try{await navigator.clipboard.writeText(code);const old=button.textContent;button.textContent="Copied";setTimeout(()=>button.textContent=old,1200)}catch(_){toast("Could not copy sample")}}
+function trySample(id){codeEditor.value=document.getElementById(id).innerText;markDirty();showPage("execute");toast("Sample loaded into editor")}
+codeEditor.addEventListener("input",markDirty);codeEditor.addEventListener("scroll",()=>{document.getElementById("line-numbers").scrollTop=codeEditor.scrollTop});codeEditor.addEventListener("click",updateCursor);codeEditor.addEventListener("keyup",updateCursor);
+codeEditor.addEventListener("keydown",e=>{if(e.key==="Tab"){e.preventDefault();const start=codeEditor.selectionStart,end=codeEditor.selectionEnd,value=codeEditor.value;const tab=" ".repeat(Number(document.getElementById("tab-size").value));if(start===end){codeEditor.setRangeText(tab,start,end,"end")}else{const lineStart=value.lastIndexOf("\n",start-1)+1;const selected=value.slice(lineStart,end).split("\n").map(line=>tab+line).join("\n");codeEditor.setRangeText(selected,lineStart,end,"select");codeEditor.selectionStart=lineStart;codeEditor.selectionEnd=lineStart+selected.length}markDirty()}else if(e.key==="Enter"){const pos=codeEditor.selectionStart;const line=codeEditor.value.slice(0,pos).split("\n").pop();const indent=(line.match(/^\s*/)||[""])[0];if(indent){e.preventDefault();codeEditor.setRangeText("\n"+indent,pos,codeEditor.selectionEnd,"end");markDirty()}}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();saveCode(true)}else if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();runCode()}});
+document.getElementById("font-size").addEventListener("change",e=>codeEditor.style.fontSize=e.target.value+"px");document.getElementById("tab-size").addEventListener("change",e=>codeEditor.style.tabSize=e.target.value);document.getElementById("soft-wrap").addEventListener("change",e=>codeEditor.wrap=e.target.checked?"soft":"off");document.getElementById("line-wrap").addEventListener("change",e=>document.getElementById("line-numbers").style.display=e.target.checked?"block":"none");
+window.addEventListener("beforeunload",e=>{if(isDirty){e.preventDefault();e.returnValue=""}});
+window.addEventListener("DOMContentLoaded",()=>{let draft=null;try{draft=localStorage.getItem("pstudio-draft")}catch(_){}codeEditor.value=draft!==null?draft:DEFAULT_CODE;isDirty=false;updateLineNumbers();updateCursor();document.getElementById("save-state").textContent=draft!==null?"Restored local draft":"Ready";});
+window.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&document.getElementById("page-execute").classList.contains("active")){e.preventDefault();runCode()}});
+
+
+/* PROJECT MODEL: local workspace files + assets */
+const PROJECT_KEY='pstudio-project-v2';
+let projectFiles={
+ 'main.ps':{type:'ps',content:'ps "Hello, PStudio"\n'},
+ 'player.ps':{type:'ps',content:'x = 160\ny = 210\ndraw_rect(x, y, 64, 64)\n'},
+ 'enemy.ps':{type:'ps',content:'x = 620\ny = 210\ndraw_circle(x, y, 28)\n'},
+ 'main.scene':{type:'scene',content:''}
+};
+let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='player';let sceneObjects=[
+ {id:'player',name:'Player',x:160,y:210,w:64,h:64,sprite:'',script:'player.ps',color:'#d1d5db',shape:'rect'},
+ {id:'enemy',name:'Enemy',x:620,y:210,w:56,h:56,sprite:'',script:'enemy.ps',color:'#a1a1aa',shape:'circle'}
+];
+let workspaceView='editor';
+function persistProject(){try{if(projectFiles['main.scene'])projectFiles['main.scene'].content=serializeScene();localStorage.setItem(PROJECT_KEY,JSON.stringify({files:projectFiles,assets:projectAssets,objects:sceneObjects,active:activeProjectFile}))}catch(e){toast('Project storage is full. Remove large assets and retry.')}}
+function loadProject(){try{const saved=JSON.parse(localStorage.getItem(PROJECT_KEY)||'null');if(saved&&saved.files){projectFiles=saved.files;projectAssets=saved.assets||[];sceneObjects=saved.objects||sceneObjects;activeProjectFile=saved.active in projectFiles?saved.active:'main.ps'}}catch(e){console.warn('Project restore skipped',e)}}
+function renderProjectTree(){const host=document.getElementById('project-tree');if(!host)return;host.innerHTML='';const scripts=Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps'||projectFiles[k].type==='scene');const groups=[['SCENES',scripts.filter(k=>projectFiles[k].type==='scene')],['SCRIPTS',scripts.filter(k=>projectFiles[k].type==='ps')]];for(const [label,files] of groups){const heading=document.createElement('div');heading.className='tree-folder';heading.textContent=label;host.appendChild(heading);for(const name of files){const b=document.createElement('button');b.className='tree-file'+(name===activeProjectFile?' active':'');b.setAttribute('aria-current',name===activeProjectFile?'page':'false');const icon=document.createElement('span');icon.className='file-icon';icon.textContent=projectFiles[name].type==='scene'?'SCN':'PS';const title=document.createElement('span');title.className='file-label';title.textContent=name;b.append(icon,title);b.onclick=()=>openProjectFile(name);host.appendChild(b)}}renderAssetList()}
+function renderAssetList(){const host=document.getElementById('asset-list');if(!host)return;host.innerHTML='';for(const asset of projectAssets){const row=document.createElement('div');row.className='asset-row';if(asset.kind==='image'){const img=document.createElement('img');img.src=asset.data;img.alt='';row.appendChild(img)}else{const icon=document.createElement('span');icon.textContent='♪';row.appendChild(icon)}const name=document.createElement('span');name.textContent=asset.name;row.appendChild(name);host.appendChild(row)}refreshInspectorAssetOptions()}
+function openProjectFile(name){if(!projectFiles[name])return;if(isDirty)projectFiles[activeProjectFile].content=codeEditor.value;activeProjectFile=name;const file=projectFiles[name];document.getElementById('active-file-label').textContent=name;document.querySelector('.tab').innerHTML='<span class="file-icon">'+(file.type==='scene'?'SCN':'PS')+'</span>'+escapeHTML(name)+'<span class="tab-dot" id="dirty-dot"></span>';if(file.type==='scene'){switchWorkspaceView('game');document.getElementById('scene-name-label').textContent=name;loadSceneText(file.content)}else{codeEditor.value=file.content;switchWorkspaceView('editor');isDirty=false;updateLineNumbers();updateCursor();document.getElementById('save-state').textContent='Project file';}renderProjectTree();persistProject()}
+function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function createProjectFile(type){let base=type==='scene'?'scene':'script',ext=type==='scene'?'.scene':'.ps',i=1,name;do{name=(type==='scene'&&i===1?'new':base+(i===1?'':i))+ext;i++}while(projectFiles[name]);projectFiles[name]={type,content:type==='scene'?'':`# ${name}\n`};persistProject();openProjectFile(name);toast('Created '+name)}
+function saveActiveProjectFile(show=false){if(projectFiles[activeProjectFile])projectFiles[activeProjectFile].content=projectFiles[activeProjectFile].type==='ps'?codeEditor.value:serializeScene();persistProject();saveCode(false);if(show)toast('Project saved on this device')}
+function importAssets(files){const list=Array.from(files||[]);if(!list.length)return;let pending=list.length;for(const file of list){if(!file.type.startsWith('image/')&&!file.type.startsWith('audio/')){if(--pending===0)persistProject();continue}if(file.size>2*1024*1024){toast(file.name+' is over the 2 MB local asset limit');if(--pending===0)persistProject();continue}const reader=new FileReader();reader.onload=()=>{projectAssets=projectAssets.filter(a=>a.name!==file.name);projectAssets.push({name:file.name,kind:file.type.startsWith('image/')?'image':'audio',mime:file.type,data:reader.result});if(--pending===0){persistProject();renderProjectTree();toast('Assets added to project')}};reader.onerror=()=>{if(--pending===0)persistProject();toast('Could not read '+file.name)};reader.readAsDataURL(file)}}
+function setupAssetDrop(){const zone=document.getElementById('asset-drop');if(!zone)return;zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');importAssets(e.dataTransfer.files)})}
+function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const current=selectedObject()?.sprite||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=selectedObject()?.script||''}}
+function selectedObject(){return sceneObjects.find(o=>o.id===selectedObjectId)}
+function selectSceneObject(id){selectedObjectId=id;const o=selectedObject();document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-w','w'],['obj-h','h']])document.getElementById(field).value=o[key];refreshInspectorAssetOptions()}renderGamePreview()}
+function updateSelectedObject(key,value){const o=selectedObject();if(!o)return;o[key]=['x','y','w','h'].includes(key)?Number(value):value;if(['w','h'].includes(key)&&o[key]<1)o[key]=1;persistProject();renderGamePreview()}
+function serializeScene(){return JSON.stringify({width:960,height:540,objects:sceneObjects},null,2)}
+function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}selectSceneObject(selectedObjectId)}
+function renderGamePreview(){const canvas=document.getElementById('game-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}for(const o of sceneObjects){const asset=projectAssets.find(a=>a.name===o.sprite&&a.kind==='image');if(asset){let img=imageCache.get(asset.name);if(!img){img=new Image();img.onload=()=>renderGamePreview();img.src=asset.data;imageCache.set(asset.name,img)}if(img.complete&&img.naturalWidth)ctx.drawImage(img,o.x,o.y,o.w,o.h)}else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x,o.y,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h)}if(o.id===selectedObjectId){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.strokeRect(o.x-4,o.y-4,o.w+8,o.h+8);ctx.setLineDash([])}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name,o.x,o.y-10)}document.getElementById('game-status').textContent=`${sceneObjects.length} objects · 960 × 540 · Local preview`}
+const imageCache=new Map();
+
+function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect'});selectedObjectId=id;selectSceneObject(id);persistProject()}
+function canvasPoint(e){const canvas=document.getElementById('game-canvas');const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+function hitTestObject(point){for(let i=sceneObjects.length-1;i>=0;i--){const o=sceneObjects[i];if(point.x>=o.x&&point.x<=o.x+o.w&&point.y>=o.y&&point.y<=o.y+o.h)return o}return null}
+function setupCanvasInteraction(){const canvas=document.getElementById('game-canvas');if(!canvas)return;let drag=null;canvas.addEventListener('pointerdown',e=>{const p=canvasPoint(e);const o=hitTestObject(p);if(o){selectSceneObject(o.id);drag={id:o.id,dx:p.x-o.x,dy:p.y-o.y};canvas.setPointerCapture(e.pointerId)}});canvas.addEventListener('pointermove',e=>{if(!drag)return;const p=canvasPoint(e);const o=sceneObjects.find(x=>x.id===drag.id);if(!o)return;o.x=Math.round(p.x-drag.dx);o.y=Math.round(p.y-drag.dy);document.getElementById('obj-x').value=o.x;document.getElementById('obj-y').value=o.y;renderGamePreview()});const stop=()=>{if(drag){drag=null;persistProject()}};canvas.addEventListener('pointerup',stop);canvas.addEventListener('pointercancel',stop)}
+
+function switchWorkspaceView(view){workspaceView=view;document.getElementById('editor-surface').style.display=view==='editor'?'flex':'none';document.getElementById('game-surface').style.display=view==='game'?'flex':'none';document.getElementById('view-editor').classList.toggle('active',view==='editor');document.getElementById('view-game').classList.toggle('active',view==='game');if(view==='game')renderGamePreview()}
+function parsePreviewCommands(source){const vars={};const draws=[];for(const raw of source.split(/\r?\n/)){const line=raw.trim();let m=line.match(/^([A-Za-z_]\w*)\s*=\s*(-?\d+(?:\.\d+)?)/);if(m){vars[m[1]]=Number(m[2]);continue}m=line.match(/^draw_(rect|circle|sprite)\((.*)\)\s*$/);if(!m)continue;const args=m[2].match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,]+/g)||[];const values=args.map(v=>{v=v.trim();if((v[0]==='"'&&v.at(-1)==='"')||(v[0]==="'"&&v.at(-1)==="'"))return v.slice(1,-1);if(Object.prototype.hasOwnProperty.call(vars,v))return vars[v];const n=Number(v);return Number.isFinite(n)?n:null});if(m[1]==='rect'&&values.length>=4&&values.slice(0,4).every(v=>typeof v==='number'))draws.push({type:'rect',x:values[0],y:values[1],w:values[2],h:values[3]});if(m[1]==='circle'&&values.length>=3&&values.slice(0,3).every(v=>typeof v==='number'))draws.push({type:'circle',x:values[0],y:values[1],r:values[2]});if(m[1]==='sprite'&&values.length>=3&&typeof values[0]==='string'&&values.slice(1,3).every(v=>typeof v==='number'))draws.push({type:'sprite',name:values[0],x:values[1],y:values[2]})}return draws}
+function applyPreviewCommands(source){const commands=parsePreviewCommands(source);for(const c of commands){let o=sceneObjects.find(x=>x.name.toLowerCase()=== (c.type==='sprite'?c.name.replace(/\.[^.]+$/,''):c.type));if(c.type==='rect'&&!o)o=sceneObjects.find(x=>x.id==='player')||sceneObjects[0];if(c.type==='circle'&&!o)o=sceneObjects.find(x=>x.id==='enemy')||sceneObjects[0];if(c.type==='sprite'){o=sceneObjects.find(x=>x.sprite===c.name||x.name.toLowerCase()===c.name.toLowerCase())||sceneObjects[0];if(o){o.x=c.x;o.y=c.y;o.sprite=c.name}}else if(o){o.x=c.x;o.y=c.y;if(c.type==='rect'){o.w=c.w;o.h=c.h}else{o.shape='circle';o.w=o.h=c.r*2}}}if(commands.length){persistProject();renderGamePreview()}return commands.length}
+function stripPreviewCommands(source){return source.split(/\r?\n/).filter(line=>!/^\s*draw_(?:rect|circle|sprite)\s*\(/.test(line)).join('\n')}
+async function runCode(){const active=projectFiles[activeProjectFile];if(active&&active.type==='ps'){active.content=codeEditor.value;const n=applyPreviewCommands(codeEditor.value);if(n){switchWorkspaceView('game');setOutput('Scene preview updated ('+n+' draw commands).\nPreview drawing commands are handled by the PStudio browser preview.','success')}}const serverSource=stripPreviewCommands(codeEditor.value);if(!serverSource.trim()){persistProject();return}await runServerCode(serverSource);persistProject()}
+
+
+window.addEventListener('DOMContentLoaded',()=>{loadProject();if(projectFiles[activeProjectFile]?.type==='ps')codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;updateLineNumbers();updateCursor();renderProjectTree();setupAssetDrop();setupCanvasInteraction();selectSceneObject(selectedObjectId);const scene=projectFiles['main.scene'];if(scene&&!scene.content.trim())scene.content=serializeScene();renderGamePreview();});
+window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;persistProject()});
+
+        /* LANGUAGE */
+
+
+
+        const languageNames = {
+            ja: "日本語",
+            en: "English",
+            zh: "中文",
+            es: "Español",
+            fr: "Français"
+        };
+
+        const translations = {
+            en: {
+                "▶ 実行": "▶ Run",
+                "言語": "Language",
+                "実行環境": "Playground",
+                "psについて": "About ps",
+                "文法・使い方": "Syntax & Usage",
+                "サンプルコード": "Sample Code",
+                "psコードを入力して実行します。": "Write and run ps code.",
+                "【実行結果がここに表示されます】": "[Execution results will appear here]",
+                "コピーして、そのまま実行環境で試すことができます。": "Copy a sample and try it directly in the playground.",
+                "基本的な文字の出力です。": "A basic example of printing text.",
+                "変数と計算": "Variables & Calculation",
+                "変数を使って計算した結果を出力します。": "Use variables to calculate and print a result.",
+                "条件分岐": "Conditional Branching",
+                "if / elseで条件によって処理を分けます。": "Use if / else to choose behavior based on a condition.",
+                "while": "while",
+                "条件が成立している間、処理を繰り返します。": "Repeat processing while a condition is true.",
+                "for / range": "for / range",
+                "指定した範囲の値を順番に取り出します。": "Iterate through values in a specified range.",
+                "関数": "Functions",
+                "処理を関数としてまとめて呼び出します。": "Group processing into a function and call it.",
+                "コピー": "Copy",
+                "試す": "Try",
+                "psとは": "What is ps?",
+                "特徴": "Features",
+                "シンプルな文法": "Simple syntax",
+                "インデントによるコード構造": "Indentation-based code structure",
+                "C++バックエンド": "C++ backend",
+                "Web上でコードを実行可能": "Run code on the web",
+                "変数・条件分岐・ループ・関数などに対応": "Supports variables, conditionals, loops, functions, and more",
+                "目的": "Goal",
+                "psの基本的な文法": "Basic ps syntax",
+                "出力": "Output",
+                "psを使用して文字や値を出力します。": "Use ps to print text or values.",
+                "変数": "Variables",
+                "変数に値を代入します。": "Assign a value to a variable.",
+                "条件によって処理を変更できます。": "Change behavior depending on a condition.",
+                "指定した範囲で処理を繰り返します。": "Repeat processing over a specified range.",
+                "range": "range",
+                "rangeは複数の形式に対応しています。": "range supports multiple forms.",
+                "配列": "Arrays",
+                "複数の値をまとめて扱えます。": "Work with multiple values together.",
+                "処理を関数としてまとめることができます。": "Group processing into a function.",
+                "コメント": "Comments",
+                "コード内にメモを書くことができます。": "Add notes to your code.",
+                "対応・未対応の記号": "Supported and unsupported symbols",
+                "現在のpsで使用できる主な演算子と、現在未対応の主な記号をまとめています。": "A reference of the main operators supported by ps and the main symbols that are not currently supported.",
+                "対応": "Supported",
+                "現在未対応": "Not currently supported",
+                "論理演算には": "Logical operations can also use",
+                "も使用できます。": ".",
+                "これは「主な未対応記号」の一覧です。言語仕様の追加に合わせて更新していきます。": "This is a list of the main unsupported symbols. It will be updated as the language specification expands."
+            },
+            zh: {
+                "▶ 実行": "▶ 运行",
+                "言語": "语言",
+                "実行環境": "运行环境",
+                "psについて": "关于 ps",
+                "文法・使い方": "语法与用法",
+                "サンプルコード": "示例代码",
+                "psコードを入力して実行します。": "输入并运行 ps 代码。",
+                "【実行結果がここに表示されます】": "【执行结果将显示在这里】",
+                "コピーして、そのまま実行環境で試すことができます。": "复制后即可直接在运行环境中尝试。",
+                "基本的な文字の出力です。": "这是一个基本的文本输出示例。",
+                "変数と計算": "变量与计算",
+                "変数を使って計算した結果を出力します。": "使用变量进行计算并输出结果。",
+                "条件分岐": "条件分支",
+                "if / elseで条件によって処理を分けます。": "使用 if / else 根据条件选择处理方式。",
+                "while": "while",
+                "条件が成立している間、処理を繰り返します。": "条件成立时重复执行处理。",
+                "for / range": "for / range",
+                "指定した範囲の値を順番に取り出します。": "依次遍历指定范围内的值。",
+                "関数": "函数",
+                "処理を関数としてまとめて呼び出します。": "将处理封装为函数并调用。",
+                "コピー": "复制",
+                "試す": "尝试",
+                "psとは": "什么是 ps？",
+                "特徴": "特点",
+                "シンプルな文法": "简洁语法",
+                "インデントによるコード構造": "基于缩进的代码结构",
+                "C++バックエンド": "C++ 后端",
+                "Web上でコードを実行可能": "可在 Web 上运行代码",
+                "変数・条件分岐・ループ・関数などに対応": "支持变量、条件分支、循环、函数等",
+                "目的": "目标",
+                "psの基本的な文法": "ps 基本语法",
+                "出力": "输出",
+                "psを使用して文字や値を出力します。": "使用 ps 输出文本或数值。",
+                "変数": "变量",
+                "変数に値を代入します。": "为变量赋值。",
+                "条件によって処理を変更できます。": "可以根据条件改变处理方式。",
+                "指定した範囲で処理を繰り返します。": "在指定范围内重复执行处理。",
+                "range": "range",
+                "rangeは複数の形式に対応しています。": "range 支持多种形式。",
+                "配列": "数组",
+                "複数の値をまとめて扱えます。": "可以集中处理多个值。",
+                "処理を関数としてまとめることができます。": "可以将处理封装为函数。",
+                "コメント": "注释",
+                "コード内にメモを書くことができます。": "可以在代码中添加备注。",
+                "対応・未対応の記号": "支持与未支持的符号",
+                "現在のpsで使用できる主な演算子と、現在未対応の主な記号をまとめています。": "这里汇总了当前 ps 支持的主要运算符，以及目前尚未支持的主要符号。",
+                "対応": "支持",
+                "現在未対応": "目前未支持",
+                "論理演算には": "逻辑运算还可以使用",
+                "も使用できます。": "。",
+                "これは「主な未対応記号」の一覧です。言語仕様の追加に合わせて更新していきます。": "这是主要未支持符号的列表。随着语言规范扩展，我们会继续更新。"
+            },
+            es: {
+                "▶ 実行": "▶ Ejecutar",
+                "言語": "Idioma",
+                "実行環境": "Entorno de ejecución",
+                "psについて": "Acerca de ps",
+                "文法・使い方": "Sintaxis y uso",
+                "サンプルコード": "Código de ejemplo",
+                "psコードを入力して実行します。": "Escribe y ejecuta código ps.",
+                "【実行結果がここに表示されます】": "[Los resultados de la ejecución aparecerán aquí]",
+                "コピーして、そのまま実行環境で試すことができます。": "Copia un ejemplo y pruébalo directamente en el entorno de ejecución.",
+                "基本的な文字の出力です。": "Un ejemplo básico de salida de texto.",
+                "変数と計算": "Variables y cálculos",
+                "変数を使って計算した結果を出力します。": "Usa variables para calcular y mostrar un resultado.",
+                "条件分岐": "Condicionales",
+                "if / elseで条件によって処理を分けます。": "Usa if / else para elegir qué hacer según una condición.",
+                "while": "while",
+                "条件が成立している間、処理を繰り返します。": "Repite el procesamiento mientras se cumpla una condición.",
+                "for / range": "for / range",
+                "指定した範囲の値を順番に取り出します。": "Recorre los valores de un rango especificado.",
+                "関数": "Funciones",
+                "処理を関数としてまとめて呼び出します。": "Agrupa el procesamiento en una función y llámala.",
+                "コピー": "Copiar",
+                "試す": "Probar",
+                "psとは": "¿Qué es ps?",
+                "特徴": "Características",
+                "シンプルな文法": "Sintaxis sencilla",
+                "インデントによるコード構造": "Estructura del código basada en indentación",
+                "C++バックエンド": "Backend de C++",
+                "Web上でコードを実行可能": "Ejecuta código en la web",
+                "変数・条件分岐・ループ・関数などに対応": "Admite variables, condicionales, bucles, funciones y más",
+                "目的": "Objetivo",
+                "psの基本的な文法": "Sintaxis básica de ps",
+                "出力": "Salida",
+                "psを使用して文字や値を出力します。": "Usa ps para mostrar texto o valores.",
+                "変数": "Variables",
+                "変数に値を代入します。": "Asigna un valor a una variable.",
+                "条件によって処理を変更できます。": "Puedes cambiar el comportamiento según una condición.",
+                "指定した範囲で処理を繰り返します。": "Repite el procesamiento dentro de un rango especificado.",
+                "range": "range",
+                "rangeは複数の形式に対応しています。": "range admite varias formas.",
+                "配列": "Arrays",
+                "複数の値をまとめて扱えます。": "Permite trabajar con varios valores juntos.",
+                "処理を関数としてまとめることができます。": "Puedes agrupar el procesamiento en una función.",
+                "コメント": "Comentarios",
+                "コード内にメモを書くことができます。": "Puedes añadir notas en el código.",
+                "対応・未対応の記号": "Símbolos compatibles y no compatibles",
+                "現在のpsで使用できる主な演算子と、現在未対応の主な記号をまとめています。": "Referencia de los principales operadores compatibles con ps y de los principales símbolos que aún no son compatibles.",
+                "対応": "Compatible",
+                "現在未対応": "No compatible actualmente",
+                "論理演算には": "Para las operaciones lógicas también puedes usar",
+                "も使用できます。": ".",
+                "これは「主な未対応記号」の一覧です。言語仕様の追加に合わせて更新していきます。": "Esta es una lista de los principales símbolos no compatibles. Se actualizará a medida que se amplíe la especificación del lenguaje."
+            },
+            fr: {
+                "▶ 実行": "▶ Exécuter",
+                "言語": "Langue",
+                "実行環境": "Environnement d'exécution",
+                "psについて": "À propos de ps",
+                "文法・使い方": "Syntaxe et utilisation",
+                "サンプルコード": "Exemples de code",
+                "psコードを入力して実行します。": "Écrivez et exécutez du code ps.",
+                "【実行結果がここに表示されます】": "[Les résultats de l'exécution s'afficheront ici]",
+                "コピーして、そのまま実行環境で試すことができます。": "Copiez un exemple et testez-le directement dans l'environnement d'exécution.",
+                "基本的な文字の出力です。": "Un exemple simple d'affichage de texte.",
+                "変数と計算": "Variables et calculs",
+                "変数を使って計算した結果を出力します。": "Utilisez des variables pour effectuer un calcul et afficher le résultat.",
+                "条件分岐": "Conditions",
+                "if / elseで条件によって処理を分けます。": "Utilisez if / else pour choisir le traitement selon une condition.",
+                "while": "while",
+                "条件が成立している間、処理を繰り返します。": "Répétez le traitement tant qu'une condition est vraie.",
+                "for / range": "for / range",
+                "指定した範囲の値を順番に取り出します。": "Parcourez les valeurs d'une plage donnée.",
+                "関数": "Fonctions",
+                "処理を関数としてまとめて呼び出します。": "Regroupez le traitement dans une fonction et appelez-la.",
+                "コピー": "Copier",
+                "試す": "Essayer",
+                "psとは": "Qu'est-ce que ps ?",
+                "特徴": "Fonctionnalités",
+                "シンプルな文法": "Syntaxe simple",
+                "インデントによるコード構造": "Structure du code basée sur l'indentation",
+                "C++バックエンド": "Backend C++",
+                "Web上でコードを実行可能": "Exécutez du code sur le Web",
+                "変数・条件分岐・ループ・関数などに対応": "Prend en charge les variables, conditions, boucles, fonctions et plus encore",
+                "目的": "Objectif",
+                "psの基本的な文法": "Syntaxe de base de ps",
+                "出力": "Sortie",
+                "psを使用して文字や値を出力します。": "Utilisez ps pour afficher du texte ou des valeurs.",
+                "変数": "Variables",
+                "変数に値を代入します。": "Attribuez une valeur à une variable.",
+                "条件によって処理を変更できます。": "Modifiez le comportement selon une condition.",
+                "指定した範囲で処理を繰り返します。": "Répétez le traitement sur une plage donnée.",
+                "range": "range",
+                "rangeは複数の形式に対応しています。": "range prend en charge plusieurs formes.",
+                "配列": "Tableaux",
+                "複数の値をまとめて扱えます。": "Travaillez avec plusieurs valeurs à la fois.",
+                "処理を関数としてまとめることができます。": "Vous pouvez regrouper le traitement dans une fonction.",
+                "コメント": "Commentaires",
+                "コード内にメモを書くことができます。": "Ajoutez des notes dans votre code.",
+                "対応・未対応の記号": "Symboles pris en charge et non pris en charge",
+                "現在のpsで使用できる主な演算子と、現在未対応の主な記号をまとめています。": "Référence des principaux opérateurs pris en charge par ps et des principaux symboles qui ne le sont pas encore.",
+                "対応": "Pris en charge",
+                "現在未対応": "Pas encore pris en charge",
+                "論理演算には": "Pour les opérations logiques, vous pouvez également utiliser",
+                "も使用できます。": ".",
+                "これは「主な未対応記号」の一覧です。言語仕様の追加に合わせて更新していきます。": "Voici la liste des principaux symboles non pris en charge. Elle sera mise à jour au fur et à mesure de l'évolution de la spécification du langage."
+            }
+        };
+
+        const aboutTranslations = {
+            en: {
+                intro: "ps is a programming language designed with simple, easy-to-write syntax.\n\nCode written in ps is translated into C++ and then compiled and executed.",
+                goal: "ps focuses on clarity and simple notation when writing programs.\n\nIt aims to reduce complex symbols while achieving processing speed comparable to C++, and to make code structure intuitive and easy to understand."
+            },
+            zh: {
+                intro: "ps 是一种以简洁、易写的语法为目标设计的编程语言。\n\n使用 ps 编写的代码会转换为 C++，然后进行编译和执行。",
+                goal: "ps 注重编程时的清晰性和简洁的代码表达。\n\n它旨在尽量减少复杂符号，同时实现接近 C++ 的处理速度，并让代码结构更加直观、易于理解。"
+            },
+            es: {
+                intro: "ps es un lenguaje de programación diseñado para ofrecer una sintaxis sencilla y fácil de escribir.\n\nEl código escrito en ps se traduce a C++ y después se compila y ejecuta.",
+                goal: "ps prioriza la claridad y una escritura sencilla al programar.\n\nSu objetivo es reducir los símbolos complejos, manteniendo una velocidad de procesamiento comparable a C++, y hacer que la estructura del código sea intuitiva y fácil de entender."
+            },
+            fr: {
+                intro: "ps est un langage de programmation conçu avec une syntaxe simple et facile à écrire.\n\nLe code écrit en ps est traduit en C++, puis compilé et exécuté.",
+                goal: "ps privilégie la clarté et une écriture simple lors de la programmation.\n\nSon objectif est de réduire les symboles complexes tout en offrant une vitesse de traitement comparable à celle du C++, et de rendre la structure du code intuitive et facile à comprendre."
+            }
+        };
+
+        const runtimeMessages = {
+            ja: {
+                empty: "エラー:\nコードが空です。",
+                compiling: "psコードをC++へ変換・コンパイル中...",
+                cpp: "[C++コード]",
+                result: "[実行結果]",
+                error: "エラー:\n",
+                unknown: "不明なエラー",
+                network: "通信エラーが発生しました。",
+                copied: "コピーしました",
+                copyFailed: "コピー失敗"
+            },
+            en: {
+                empty: "Error:\nCode is empty.",
+                compiling: "Translating ps to C++ and compiling...",
+                cpp: "[C++ Code]",
+                result: "[Execution Result]",
+                error: "Error:\n",
+                unknown: "Unknown error",
+                network: "A network error occurred.",
+                copied: "Copied",
+                copyFailed: "Copy failed"
+            },
+            zh: {
+                empty: "错误：\n代码为空。",
+                compiling: "正在将 ps 转换为 C++ 并编译……",
+                cpp: "[C++ 代码]",
+                result: "[执行结果]",
+                error: "错误：\n",
+                unknown: "未知错误",
+                network: "发生网络错误。",
+                copied: "已复制",
+                copyFailed: "复制失败"
+            },
+            es: {
+                empty: "Error:\nEl código está vacío.",
+                compiling: "Traduciendo ps a C++ y compilando...",
+                cpp: "[Código C++]",
+                result: "[Resultado de la ejecución]",
+                error: "Error:\n",
+                unknown: "Error desconocido",
+                network: "Se produjo un error de red.",
+                copied: "Copiado",
+                copyFailed: "Error al copiar"
+            },
+            fr: {
+                empty: "Erreur :\nLe code est vide.",
+                compiling: "Traduction de ps en C++ et compilation en cours...",
+                cpp: "[Code C++]",
+                result: "[Résultat de l'exécution]",
+                error: "Erreur :\n",
+                unknown: "Erreur inconnue",
+                network: "Une erreur réseau s'est produite.",
+                copied: "Copié",
+                copyFailed: "Échec de la copie"
+            }
+        };
+
+        const originalTextNodes = new WeakMap();
+        let translatableTextNodes = null;
+
+        function getTranslatableTextNodes() {
+            if (translatableTextNodes) return translatableTextNodes;
+
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode(node) {
+                        const parent = node.parentElement;
+                        if (!parent) return NodeFilter.FILTER_REJECT;
+                        if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) || parent.closest(".ide-shell, .side-menu, .language-options")) {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                }
+            );
+
+            translatableTextNodes = [];
+            while (walker.nextNode()) translatableTextNodes.push(walker.currentNode);
+            return translatableTextNodes;
+        }
+
+        function toggleLanguageMenu() {
+            document.getElementById("language-options").classList.toggle("open");
+            document.getElementById("language-toggle").classList.toggle("open");
+        }
+
+        function setLanguage(language) {
+            if (!translations[language] && language !== "ja") return;
+
+            const dictionary = translations[language] || {};
+
+            getTranslatableTextNodes().forEach(node => {
+                if (!originalTextNodes.has(node)) {
+                    originalTextNodes.set(node, node.nodeValue);
+                }
+
+                const original = originalTextNodes.get(node);
+                const trimmed = original.trim();
+                const prefix = original.match(/^\s*/)[0];
+                const suffix = original.match(/\s*$/)[0];
+                const translated = language === "ja" ? trimmed : dictionary[trimmed];
+
+                if (translated !== undefined) {
+                    node.nodeValue = prefix + translated + suffix;
+                } else if (language === "ja") {
+                    node.nodeValue = original;
+                }
+            });
+
+            const aboutIntro = document.getElementById("about-intro");
+            const aboutGoal = document.getElementById("about-goal");
+            if (aboutIntro) {
+                aboutIntro.textContent = language === "ja"
+                    ? "psは、シンプルで書きやすい文法を目指して作られた\nプログラミング言語です。\n\npsで書かれたコードはC++へ変換され、\nコンパイル・実行されます。"
+                    : aboutTranslations[language].intro;
+            }
+            if (aboutGoal) {
+                aboutGoal.textContent = language === "ja"
+                    ? "psは、プログラムを書く際の分かりやすさと\nシンプルな記述を重視しています。\n\n複雑な記号をできるだけ減らして尚且つC++並の処理速度を実現させ、\nコードの構造を直感的に分かりやすくすることを\n目指しています。"
+                    : aboutTranslations[language].goal;
+            }
+
+            ["ja", "en", "zh", "es", "fr"].forEach(code => {
+                document.getElementById("lang-" + code).classList.toggle("active", language === code);
+            });
+
+            currentLanguage = language;
+            const globalLanguage = document.getElementById("global-language");
+            if (globalLanguage) globalLanguage.value = language;
+            document.documentElement.lang = language === "zh" ? "zh-Hans" : language;
+            document.title = language === "ja"
+                ? "ps - プログラミング言語"
+                : language === "en"
+                ? "ps - Programming Language"
+                : language === "zh"
+                ? "ps - 编程语言"
+                : language === "es"
+                ? "ps - Lenguaje de programación"
+                : "ps - Langage de programmation";
+
+            try { localStorage.setItem("pstudio-language", language); } catch (_) {}
+            closeMenu();
+        }
+
+        function getRuntimeMessages() {
+            return runtimeMessages[currentLanguage] || runtimeMessages.ja;
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            let savedLanguage = null;
+            try { savedLanguage = localStorage.getItem("pstudio-language"); } catch (_) {}
+            if (["ja", "en", "zh", "es", "fr"].includes(savedLanguage)) {
+                setLanguage(savedLanguage);
+            }
+        });
+
+
+</script>
+</body>
+</html>
