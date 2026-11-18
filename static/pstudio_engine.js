@@ -17,6 +17,7 @@
   let activePointerId = null;
   let pointerPosition = { x: 0, y: 0 };
   let collisionPairs = new Set();
+  let collision3DPairs = new Set();
 
   class PsRuntimeError extends Error {}
   const truthy = (v) => Array.isArray(v) ? v.length > 0 : !!v;
@@ -193,6 +194,54 @@
     for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
     collisionPairs=now;
   }
+
+  // 3D AABB collision is isolated from the existing 2D collider system.
+  function bounds3D(command) {
+    let hx, hy, hz;
+    if (command.type === 'sphere') {
+      hx = hy = hz = Math.max(0, Number(command.radius) || 0);
+    } else if (command.type === 'cube') {
+      const h = Math.max(0, Number(command.size) || 0) / 2;
+      const x = Number(command.rotationX) || 0;
+      const y = Number(command.rotationY) || 0;
+      const z = Number(command.rotationZ) || 0;
+      const c1=Math.cos(x),s1=Math.sin(x),c2=Math.cos(y),s2=Math.sin(y),c3=Math.cos(z),s3=Math.sin(z);
+      hx=h*(Math.abs(c2*c3)+Math.abs(c2*s3)+Math.abs(s2));
+      hy=h*(Math.abs(s1*s2*c3+c1*s3)+Math.abs(s1*s2*s3-c1*c3)+Math.abs(s1*c2));
+      hz=h*(Math.abs(c1*s2*c3-s1*s3)+Math.abs(c1*s2*s3+s1*c3)+Math.abs(c1*c2));
+    } else return null;
+    const x=Number(command.x)||0, y=Number(command.y)||0, z=Number(command.z)||0;
+    return {minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz};
+  }
+  function overlaps3D(a,b) {
+    return a.minX<=b.maxX&&a.maxX>=b.minX&&
+      a.minY<=b.maxY&&a.maxY>=b.minY&&
+      a.minZ<=b.maxZ&&a.maxZ>=b.minZ;
+  }
+  function update3DCollisions(commandsByObject) {
+    const colliders=[];
+    for (const [id,draws] of commandsByObject) {
+      const owner=(sceneObjects||[]).find(o=>o.id===id);
+      if (!owner) continue;
+      for (const draw of draws) {
+        const bounds=bounds3D(draw);
+        if (bounds) colliders.push({owner,bounds});
+      }
+    }
+    const now=new Set();
+    for(let i=0;i<colliders.length;i++) for(let j=i+1;j<colliders.length;j++) {
+      const a=colliders[i],b=colliders[j];
+      if(a.owner.id===b.owner.id||!overlaps3D(a.bounds,b.bounds)) continue;
+      const key=[a.owner.id,b.owner.id].sort().join('|');
+      if(now.has(key)) continue;
+      now.add(key);
+      if(!collision3DPairs.has(key)) {
+        dispatchCollision(a.owner,b.owner);
+        dispatchCollision(b.owner,a.owner);
+      }
+    }
+    collision3DPairs=now;
+  }
   let renderMode = 'auto';
   function updateViewModeButtons() {
     for (const mode of ['auto','2d','3d']) {
@@ -248,7 +297,7 @@
         c.dt=dt;if(c.funcs.update)callFunction(c,'update',[dt]);runtime.states.set(o.id,c.env);commands.set(o.id,c.draw);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
-      runtime.contexts=commands;updateCollisions();renderFrame();
+      runtime.contexts=commands;updateCollisions();update3DCollisions(commands);renderFrame();
       const status=$('game-status');if(status)status.textContent=`RUNNING · ${(raw>0?1/raw:0).toFixed(0)} FPS · ${(sceneObjects||[]).length} objects`;
       raf=requestAnimationFrame(tick);
     } catch(err) { stopGame();setOutput?.(`Game runtime error: ${err.message}`,'error'); }
@@ -263,7 +312,7 @@
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 1.3.0';
@@ -272,7 +321,7 @@
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();keys.clear();touchActive=false;activePointerId=null;
+    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if($('game-3d-canvas'))$('game-3d-canvas').style.display='none';if($('game-canvas'))$('game-canvas').style.display='block';if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
