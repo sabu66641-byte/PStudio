@@ -76,12 +76,13 @@
         }
         let geometry;
         if (d.type === 'cube') geometry = new T.BoxGeometry(d.size, d.size, d.size);
+        else if (d.type === 'box') geometry = new T.BoxGeometry(d.width, d.height, d.depth);
         else if (d.type === 'sphere') geometry = new T.SphereGeometry(d.radius, 24, 16);
         else continue;
         const material = new T.MeshStandardMaterial({ color: d.color || '#d1d5db', roughness: 0.72, metalness: 0.04 });
         const mesh = new T.Mesh(geometry, material);
         mesh.position.set(d.x, d.y, d.z);
-        if (d.type === 'cube') mesh.rotation.set(d.rotationX || 0, d.rotationY || 0, d.rotationZ || 0);
+        if (d.type === 'cube' || d.type === 'box') mesh.rotation.set(d.rotationX || 0, d.rotationY || 0, d.rotationZ || 0);
         primitiveGroup.add(mesh);
       }
     }
