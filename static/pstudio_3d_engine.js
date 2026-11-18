@@ -36,7 +36,7 @@
 
   function disposeGroup(group) {
     while (group.children.length) {
-      const child = group.children.pop();
+      const child = group.children[group.children.length - 1];
       group.remove(child);
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
