@@ -219,6 +219,85 @@
 
   function drawFrame(){if(!renderer||!scene||!camera)return;if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;if(ssrPass)ssrPass.enabled=ssrEnabled;composer.render();}else{if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;renderer.render(scene,camera);}}
 
+  function configureWaterMaterial(material) {
+    const uniforms={uPStudioTime:{value:0},uPStudioWaveAmplitude:{value:0.075}};
+    material.onBeforeCompile=shader=>{
+      shader.uniforms.uPStudioTime=uniforms.uPStudioTime;
+      shader.uniforms.uPStudioWaveAmplitude=uniforms.uPStudioWaveAmplitude;
+      shader.vertexShader=shader.vertexShader.replace('#include <common>',`#include <common>
+uniform float uPStudioTime;
+uniform float uPStudioWaveAmplitude;
+`);
+      shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>',`#include <beginnormal_vertex>
+float pstudioPhaseA=position.x*0.42+position.z*0.27+uPStudioTime*0.82;
+float pstudioPhaseB=position.x*0.78-position.z*0.51-uPStudioTime*0.57;
+float pstudioDx=uPStudioWaveAmplitude*0.42*cos(pstudioPhaseA)+uPStudioWaveAmplitude*0.34*0.78*cos(pstudioPhaseB);
+float pstudioDz=uPStudioWaveAmplitude*0.27*cos(pstudioPhaseA)-uPStudioWaveAmplitude*0.34*0.51*cos(pstudioPhaseB);
+objectNormal=normalize(vec3(-pstudioDx,1.0,-pstudioDz));
+`);
+      shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+float pstudioWaveA=sin(position.x*0.42+position.z*0.27+uPStudioTime*0.82);
+float pstudioWaveB=sin(position.x*0.78-position.z*0.51-uPStudioTime*0.57);
+transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pstudioWaveB;
+`);
+    };
+    material.customProgramCacheKey=()=>'pstudio-water-waves-v1';
+    material.userData.pstudioWaterUniforms=uniforms;
+    waterMaterials.add(material);
+    return material;
+  }
+
+  async function loadEnvironmentHDR(url,options={}) {
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    if(!window.PStudioHDRLoader)throw new Error('RGBE/HDR loader is unavailable.');
+    const address=String(url||'').trim();
+    if(!address)throw new TypeError('An HDR environment URL is required.');
+    const T=window.THREE,loader=new window.PStudioHDRLoader();
+    if(loader.setDataType&&T.HalfFloatType!==undefined)loader.setDataType(T.HalfFloatType);
+    const texture=await loader.loadAsync(address);
+    texture.mapping=T.EquirectangularReflectionMapping;
+    texture.colorSpace=T.LinearSRGBColorSpace||T.NoColorSpace;
+    if(!pmremGenerator)pmremGenerator=new T.PMREMGenerator(renderer);
+    const nextTarget=pmremGenerator.fromEquirectangular(texture);
+    const previousTarget=hdrEnvironmentTarget||environmentTarget,previousTexture=hdrTexture;
+    hdrEnvironmentTarget=nextTarget;environmentTarget=nextTarget;hdrTexture=texture;
+    scene.environment=nextTarget.texture;
+    if(options.background!==false)scene.background=texture;
+    scene.environmentIntensity=Math.max(0,Math.min(5,Number(options.intensity)||1));
+    if(previousTarget&&previousTarget!==nextTarget)previousTarget.dispose?.();
+    if(previousTexture&&previousTexture!==texture)previousTexture.dispose?.();
+    if(renderer&&scene&&camera)drawFrame();
+    return{loaded:true,width:texture.image?.width||0,height:texture.image?.height||0};
+  }
+
+  function bakeLightProbe(options={}) {
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    const generator=window.PStudioPostFX?.LightProbeGenerator;
+    if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
+    const T=window.THREE,size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
+    const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+    const cubeCamera=new T.CubeCamera(0.1,Math.max(50,Number(options.far)||300),target);
+    cubeCamera.position.set(Number(options.x)||0,Number(options.y)||1.5,Number(options.z)||0);
+    if(bakedLightProbe)scene.remove(bakedLightProbe);
+    const oldAutoUpdate=renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate=true;
+    try{
+      scene.add(cubeCamera);
+      cubeCamera.update(renderer,scene);
+      scene.remove(cubeCamera);
+      bakedLightProbe=generator.fromCubeRenderTarget(renderer,target);
+      bakedLightProbe.intensity=Math.max(0,Math.min(3,Number(options.intensity)||1));
+      scene.add(bakedLightProbe);
+      renderer.setRenderTarget(null);
+      drawFrame();
+      return{baked:true,resolution:size,kind:'global-diffuse-light-probe',note:'単一のグローバル照明プローブです。面ごとのライトマップではありません。'};
+    }finally{
+      scene.remove(cubeCamera);
+      renderer.shadowMap.autoUpdate=oldAutoUpdate;
+      target.dispose();
+    }
+  }
+
   function panCamera(dx, dy) {
     if (!camera || !window.THREE) return;
     const T = window.THREE;
@@ -403,7 +482,7 @@
       case 'box': return new T.BoxGeometry(d.width,d.height,d.depth);
       case 'sphere': return new T.SphereGeometry(d.radius,24,16);
       case 'plane': return new T.PlaneGeometry(d.width,d.depth);
-      case 'water': {const g=new T.PlaneGeometry(d.width,d.depth,32,32);g.rotateX(-Math.PI/2);return g;}
+      case 'water': {const q=resolveQualityPreset(qualityPreset),segments=q==='ultra'?96:q==='high'?72:48;const g=new T.PlaneGeometry(d.width,d.depth,segments,segments);g.rotateX(-Math.PI/2);return g;}
       case 'terrain': {
         const g=new T.BufferGeometry(),vertices=[],indices=[],segments=Math.max(2,Math.min(96,Math.floor(d.segments)||2));
         for(let iz=0;iz<=segments;iz++)for(let ix=0;ix<=segments;ix++){const x=(ix/segments-.5)*d.width,z=(iz/segments-.5)*d.depth;const y=d.height*(Math.sin(x*.18)*Math.cos(z*.16)*.5+Math.sin((x+z)*.07)*.15);vertices.push(x,y,z);}
@@ -662,7 +741,10 @@
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
     lastCommands=commandsByObject;
-    bloomEnabled=false;ssaoEnabled=false;bloomStrength=0.45;
+    bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
+    const frameDelta=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(item=>Number.isFinite(item.dt))?.dt)||1/60));
+    particleClock+=frameDelta;
+    for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
@@ -786,7 +868,7 @@
           continue;
         }
         const signature=geometrySignature(d);
-        if(!signature) continue;
+        if(!signature)continue;
         let mesh=meshCache.get(key);
         const shaderMode=ownerMaterial?.shader||'standard';
         const fragmentShader=ownerMaterial?.fragmentShader||'';
@@ -794,23 +876,36 @@
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
-          const vertexShader='varying vec2 vUv;\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
-          let mesh;
-          if(d.type==='water'&&window.PStudioReflector){mesh=new window.PStudioReflector(createGeometry(d),{clipBias:0.003,textureWidth:Math.max(256,Math.min(1024,Math.floor(canvas.clientWidth))),textureHeight:Math.max(256,Math.min(1024,Math.floor(canvas.clientHeight))),color:0x8799ad});mesh.userData.planarReflection=true;}
-          else {const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='custom'?new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});mesh=new T.Mesh(geometry,material);}
+          const vertexShader='varying vec2 vUv;\\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
+          let material;
+          if(d.type==='water'){
+            material=configureWaterMaterial(new T.MeshPhysicalMaterial({
+              color:d.color||'#4f9fc2',roughness:0.075,metalness:0,
+              transmission:0.82,ior:1.333,thickness:1.35,
+              attenuationColor:new T.Color('#a5d9eb'),attenuationDistance:7.5,
+              clearcoat:1,clearcoatRoughness:0.035,side:T.DoubleSide,
+              transparent:false,depthWrite:true
+            }));
+          }else if(shaderMode==='custom'){
+            material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
+          }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
+          else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
+          else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
+          else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
           mesh=new T.Mesh(geometry,material);
-          mesh.castShadow = d.type !== 'plane';
-          mesh.receiveShadow = true;
-          mesh.userData.signature=signature;
-          mesh.userData.shader=shaderMode;
-          mesh.userData.fragmentShader=fragmentShader;
-          meshCache.set(key,mesh);
-          primitiveGroup.add(mesh);
+          mesh.castShadow=d.type!=='plane'&&d.type!=='water';
+          mesh.receiveShadow=true;
+          mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
+          meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
-        if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
-        if(d.type!=='water'){mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;}else{mesh.material.opacity=Number(d.opacity)||0.65;}
+        if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
+        if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
+        if(d.type!=='water'){
+          if('roughness' in mesh.material)mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);
+          if('metalness' in mesh.material)mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
+        }else mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
         mesh.userData.ownerId=ownerId;
-        mesh.position.set(Number(d.x)||0,(Number(d.y)||0)+(d.type==='water'?Math.sin((performance.now?.()||0)*0.0015)*0.025:0),Number(d.z)||0);
+        mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
         const baseRotationX=d.type==='plane'?-Math.PI/2:0;
         mesh.rotation.set(baseRotationX+(Number(d.rotationX)||0),Number(d.rotationY)||0,Number(d.rotationZ)||0);
         usedMeshes.add(key);
@@ -858,8 +953,10 @@
     if (!renderer) return;
     activeCameraOwnerId=null;
     for(const key of [...modelInstances.keys()])removeModelInstance(key);
+    for(const batch of instancedBatches.values()){if(batch.parent)batch.parent.remove(batch);batch.geometry?.dispose?.();batch.material?.dispose?.();}instancedBatches.clear();
     for(const mesh of meshCache.values())disposeMesh(mesh);
     meshCache.clear();
+    waterMaterials.clear();
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
     gridCache.clear();
     disposeGroup(selectionGroup);
@@ -900,7 +997,12 @@
     setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) drawFrame(); },
     getCameraBasis,
     getModelCollisionTriangles,
-    setPostProcessing:(bloom,ssao,strength)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(renderer&&scene&&camera)drawFrame();},
+    setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
+    setQualityPreset:applyQualityPreset,
+    getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset)}),
+    loadEnvironmentHDR,
+    bakeLightProbe,
+    clearLightProbe:()=>{if(!bakedLightProbe)return false;scene?.remove(bakedLightProbe);bakedLightProbe=null;drawFrame();return true;},
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset
