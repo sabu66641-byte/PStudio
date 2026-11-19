@@ -329,6 +329,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const cubeCamera=new T.CubeCamera(0.1,Math.max(50,Number(options.far)||300),target);
     cubeCamera.position.set(Number(options.x)||0,Number(options.y)||1.5,Number(options.z)||0);
     if(bakedLightProbe)scene.remove(bakedLightProbe);
+    if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume)scene.remove(item.light);bakedLightProbeVolume=null;}
     const oldAutoUpdate=renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate=true;
     try{
@@ -349,7 +350,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
 
 
-  function registerWorldChunk(id,o={}){const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2);worldChunks.set(key,{id:key,x:Number(o.x)||0,y:Number(o.y)||0,z:Number(o.z)||0,loadDistance,unloadDistance,active:worldChunks.get(key)?.active??true});return{id:key,loadDistance,unloadDistance};}
+  function registerWorldChunk(id,o={}){const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0;worldChunks.set(key,{id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:worldChunks.get(key)?.active??true});return{id:key,loadDistance,unloadDistance};}
   function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
   function unregisterWorldChunk(id){const key=String(id);if(!worldChunks.delete(key))return false;for(const [owner,chunk] of objectChunkAssignments)if(chunk===key)objectChunkAssignments.delete(owner);return true;}
   function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
@@ -359,7 +360,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   async function bakeLightProbeVolume(o={}) {
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
-    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12},dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];
+    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};
+    for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
+    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];
     for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)));
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
     const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64))),previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,newVolume=[];
