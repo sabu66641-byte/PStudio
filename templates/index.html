@@ -68,7 +68,7 @@
 <main>
 <section class="page active" id="page-execute" aria-label="PStudio editor">
  <div class="ide-shell">
-  <aside class="panel explorer" aria-label="Project explorer"><div class="panel-heading"><span>PROJECT</span><span class="muted" id="project-name">GAME PROJECT</span></div><div class="explorer-content"><div class="tree-group">WORKSPACE</div><div class="project-tools"><button onclick="createProjectFile('ps')">＋ Script</button><button onclick="createProjectFile('scene')">＋ Scene</button><button onclick="document.getElementById('asset-input').click()">＋ Asset</button></div><div id="project-tree"></div><div class="tree-folder">ASSETS</div><div class="asset-drop" id="asset-drop">Drop images / audio / GLB models here<br>or tap ＋ Asset</div><input id="asset-input" class="asset-hidden" type="file" accept="image/*,audio/*,.glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2" multiple onchange="importAssets(this.files)"><div class="asset-list" id="asset-list"></div></div></aside>
+  <aside class="panel explorer" aria-label="Project explorer"><div class="panel-heading"><span>PROJECT</span><span class="muted" id="project-name">GAME PROJECT</span></div><div class="explorer-content"><div class="tree-group">WORKSPACE</div><div class="project-tools"><button onclick="createProjectFile('ps')">＋ Script</button><button onclick="createProjectFile('scene')">＋ Scene</button><button onclick="document.getElementById('asset-input').click()">＋ Asset</button></div><div id="project-tree"></div><div class="tree-folder">ASSETS</div><div class="asset-drop" id="asset-drop">Drop images / audio / GLB / GLTF models here<br>Select GLTF textures and BIN files together</div><input id="asset-input" class="asset-hidden" type="file" accept="image/*,audio/*,.glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2" multiple onchange="importAssets(this.files);this.value=''"><div class="asset-list" id="asset-list"></div></div></aside>
   <section class="panel editor-panel" aria-label="Code and game workspace"><div class="workspace-tabs"><button class="workspace-tab active" id="view-editor" onclick="switchWorkspaceView('editor')">EDITOR</button><button class="workspace-tab" id="view-game" onclick="switchWorkspaceView('game')">GAME / SCENE</button><span class="toolbar-spacer"></span><span class="editor-meta" id="active-file-label">main.ps</span></div><div class="editor-surface" id="editor-surface"><div class="editor-toolbar"><div class="tab"><span class="file-icon">PS</span>main.ps<span class="tab-dot" id="dirty-dot"></span></div><span class="toolbar-spacer"></span><span class="editor-meta" id="save-state">Saved locally</span><button class="tool-btn" onclick="clearEditor()" title="Clear editor">Clear</button><button class="tool-btn" onclick="compileCode()" id="compile-button">Compile</button><button class="tool-btn run" onclick="runCode()" id="editor-run">▶ Run</button></div>
    <div class="editor-wrap"><pre class="line-numbers" id="line-numbers" aria-hidden="true">1</pre><label class="visually-hidden" for="code">ps source code editor</label><textarea class="code-editor" id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" placeholder='ps "Hello, PStudio"' aria-describedby="editor-help"></textarea></div>
    <div class="editor-footer"><span id="editor-help">ps source · UTF-8 · Spaces: 4</span><span id="cursor-position">Ln 1, Col 1</span></div></div>
@@ -779,6 +779,7 @@ function deleteProjectFile(name){
 }
 async function renameProjectAsset(oldName){
  const asset=projectAssets.find(a=>a.name===oldName);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
+ if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const ext=oldName.slice(oldName.lastIndexOf('.')).toLowerCase();
  const next=validEntryName(prompt('新しいアセット名を入力してください',oldName),ext);
  if(!next||next===oldName)return;if(projectAssets.some(a=>a.name===next)){toast('同じ名前のアセットが既にあります');return;}
@@ -793,7 +794,7 @@ async function renameProjectAsset(oldName){
   for(const key of Object.keys(projectFiles)){
    if(projectFiles[key].type==='ps')projectFiles[key].content=String(projectFiles[key].content||'').split(oldName).join(next);
   }
-  if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');}
+  if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');document.getElementById('save-state').textContent='Saved locally';}
   persistProject();renderProjectTree();toast('Renamed asset: '+next);
  }catch(error){toast('Rename failed: '+error.message);}
 }
