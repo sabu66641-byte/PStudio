@@ -147,6 +147,12 @@ Imported model assets can be added directly to the current Scene from the asset 
 
 The 3D renderer enables directional shadow mapping with soft PCF filtering, shadow casting for model and primitive meshes, shadow receiving for scene surfaces, ACES filmic tone mapping and sRGB output. These settings improve depth and material readability, but are not physically based global illumination and do not make the renderer equivalent to a high-end AAA production pipeline. Shadow quality and frame rate depend on the device GPU and browser.
 
+## Per-model ps Controller Scripts
+
+Each imported `.glb` / `.gltf` asset has its own companion `.ps` controller script. PStudio creates the script during import (or on first asset selection for models already in an existing project). Selecting the model asset opens that controller in the code editor. Adding the model to the Scene automatically attaches its companion script to the new Game Object. The model file remains binary asset data; its behavior is kept in the separate editable `.ps` file. Script names use `<model>_controller.ps`, with a numeric suffix if that name already exists.
+
+During Play, a scene model with an attached controller remains automatically rendered even if the script does not call `load_model()`. The controller can use the existing model animation APIs such as `play_animation("Idle")`; explicit `load_model()` calls remain available for additional model instances.
+
 ## Project File Management
 
 Each script, scene and imported asset has a `⋯` menu in the Project explorer. It supports rename, lock/unlock and delete. Locked entries cannot be renamed or deleted from the menu. The final remaining ps script is protected so the project always retains an editable script. Renaming a script updates scene-object script assignments; renaming a model updates exact filename references in ps scripts. Deleting a model warns when scripts still refer to it.
