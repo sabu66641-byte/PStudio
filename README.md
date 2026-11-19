@@ -149,6 +149,9 @@ func update(dt)
 | `get_velocity_x/y/z()` | Read velocity components |
 | `set_velocity_x/y/z(value)` | Set velocity components |
 | `character_controller(max_speed, acceleration, air_control)` | Configure ground speed, acceleration and 0–1 air-control ratio |
+| `set_step_height(height)` | Configure the controller's maximum step-up height |
+| `set_max_slope(degrees)` | Configure the maximum walkable triangle slope |
+| `add_triangle_collider(ax, ay, az, bx, by, bz, cx, cy, cz)` | Add a static triangle collision surface to the current object |
 | `move_character(x, z)` | Set normalized horizontal movement input, transformed relative to the current 3D camera's horizontal forward/right directions |
 | `character_animation(idle, walk, run, jump, fall, land)` | Select GLB locomotion clips from grounded state, horizontal speed, vertical velocity and landing transitions; use an empty string to disable an unused clip |
 | `jump(speed)` | Buffer a jump using the requested initial upward speed |
@@ -239,6 +242,10 @@ Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
 
 
+## Rendering and Shader Controls
+
+The 3D runtime supports the existing directional light plus `set_point_light(x, y, z, intensity, color, range)` and `set_spot_light(x, y, z, target_x, target_y, target_z, intensity, color, angle)`. `set_environment(sky_color, ground_color, intensity)` creates a procedural equirectangular environment texture for material reflections and ambient image-based lighting. This is not an HDR environment capture or a global-illumination solution. `draw_terrain(x, y, z, width, depth, segments, height)` creates a procedural heightfield with matching triangle collision; `draw_water(x, y, z, width, depth, color, opacity)` creates a translucent clearcoat water surface but does not perform planar reflections. `set_shader("standard"|"toon"|"unlit"|"normal"|"wireframe")` selects a built-in material preset.
+
 ## Custom GLSL Shader Editor
 
-Select a Scene object and use the **Shader Editor · GLSL** section in the Inspector to edit its fragment shader. PStudio supplies a fixed vertex shader and exposes `uniform vec3 uColor` plus `varying vec2 vUv` to the fragment source. The editor stores the shader with the scene object and applies it to the 3D preview/runtime. This is a text-based fragment editor with a small fixed interface, not a node-based shader graph or a full material authoring pipeline. Shader compilation still depends on the browser's WebGL implementation.
+Select a Scene object and use the **Shader Editor · GLSL** section in the Inspector to edit its fragment shader. PStudio supplies a fixed vertex shader and exposes `uniform vec3 uColor` plus `varying vec2 vUv` to the fragment source. The editor stores the shader with the scene object and applies it to the 3D preview/runtime. This is a text-based fragment editor with a small fixed interface for primitive 3D geometry; imported GLB material replacement is not supported yet. It is not a node-based shader graph or a full material authoring pipeline. Shader compilation still depends on the browser's WebGL implementation.
