@@ -186,7 +186,7 @@
   function dispatchCollision(object, other) {
     const state=runtime.states.get(object.id);if(!state)return;
     const c=setupContext(object,0);c.steps=0;
-    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);}
+    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
     const objs=(sceneObjects||[]).filter(o=>o.collider);
