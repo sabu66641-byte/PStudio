@@ -345,6 +345,7 @@
     const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
     try {
       const commands=new Map();
+      window.PStudioPhysics?.beginFrame?.();
       for(const o of sceneObjects||[]){const script=astForScript(o.script);if(!script)continue;const c=setupContext(o,dt);c.steps=0;
         if(!runtime.initialized.has(o.id)){runtime.initialized.add(o.id);const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');if(topLevel.length)execBlock(c,topLevel,c.env);}
         if(!runtime.started.has(o.id)){runtime.started.add(o.id);if(c.funcs.start)callFunction(c,'start',[]);}
