@@ -1,4 +1,4 @@
-/* PStudio Game Runtime 1.2.0
+/* PStudio Game Runtime 2.0.0
  * Browser-side, frame-driven interpreter for validated ps ASTs.
  * Normal ps -> C++17 execution remains on /run and is not changed.
  */
@@ -120,6 +120,14 @@
       case 'draw_sprite': if (a.length===3) { c.draw.push({type:'sprite',name:String(a[0]),x:finite(a[1]),y:finite(a[2])}); return null; } break;
       case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
       case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:o.color||'#a1a1aa'}); return null; } break;
+      case 'draw_box': if (a.length===6) { c.draw.push({type:'box',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),depth:Math.max(0.001,finite(a[5])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
+      case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:o.color||'#64748b'}); return null; } break;
+      case 'draw_cylinder': if (a.length===5) { c.draw.push({type:'cylinder',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
+      case 'draw_cone': if (a.length===5) { c.draw.push({type:'cone',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
+      case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:o.color||'#93c5fd'}); return null; } break;
+      case 'set_background': if (a.length===1) { c.draw.push({type:'environment',background:String(a[0])}); return null; } break;
+      case 'set_fog': if (a.length===3) { c.draw.push({type:'environment',fogColor:String(a[0]),fogNear:Math.max(0,finite(a[1])),fogFar:Math.max(0.001,finite(a[2]))}); return null; } break;
+      case 'set_light': if (a.length===4) { c.draw.push({type:'environment',lightX:finite(a[0]),lightY:finite(a[1]),lightZ:finite(a[2]),lightIntensity:Math.max(0,finite(a[3]))}); return null; } break;
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5])}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -316,7 +324,7 @@
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
-      $('game-status').textContent='STARTING · PStudio Runtime 1.3.0';
+      $('game-status').textContent='STARTING · PStudio Runtime 2.0.0';
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestAnimationFrame(tick);
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
@@ -329,7 +337,7 @@
     setViewMode(renderMode);
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
   }
-  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'1.4.0'};
+  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'2.0.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
   updateViewModeButtons();
