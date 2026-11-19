@@ -222,12 +222,13 @@
     const roots=[primitiveGroup,modelGroup];
     for(const origin of origins){
       cameraCollisionRaycaster.set(origin,direction);
-      cameraCollisionRaycaster.near=0.04;
+      // Ignore geometry immediately around the focus point (usually the player capsule).
+      cameraCollisionRaycaster.near=0.5;
       cameraCollisionRaycaster.far=safeDistance;
       const hits=cameraCollisionRaycaster.intersectObjects(roots,true);
       const hit=hits.find(item=>{
         const ownerId=item.object?.userData?.ownerId;
-        return ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId;
+        return item.distance>=0.5&&(ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId);
       });
       if(hit){
         safeDistance=Math.min(safeDistance,Math.max(CAMERA_MIN_DISTANCE,hit.distance-CAMERA_CLEARANCE));
