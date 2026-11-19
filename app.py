@@ -651,7 +651,10 @@ GAME_FUNCTIONS = {
     "rotate_x": 1, "rotate_y": 1, "rotate_z": 1,
     "is_key_down": 1, "is_touched": 0, "get_touch_x": 0, "get_touch_y": 0,
     "draw_sprite": 3, "draw_rect": 4, "draw_circle": 3,
-    "draw_cube": 4, "draw_sphere": 4, "draw_grid": 2, "set_camera": 6,
+    "draw_cube": 4, "draw_box": 6, "draw_sphere": 4,
+    "draw_plane": 5, "draw_cylinder": 5, "draw_cone": 5, "draw_capsule": 5,
+    "draw_grid": 2, "set_camera": 6,
+    "set_background": 1, "set_fog": 3, "set_light": 4,
     "get_delta_time": 0, "get_width": 0, "get_height": 0,
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
@@ -2282,7 +2285,7 @@ def game_prepare():
             tree = parse(tokenize(source))
             validate_ast(tree, allow_game=True)
             parsed[filename] = tree
-        return jsonify({"success": True, "scripts": parsed, "engine": "PStudio Runtime", "engine_version": "1.0.0"})
+        return jsonify({"success": True, "scripts": parsed, "engine": "PStudio Runtime", "engine_version": "2.0.0"})
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 
