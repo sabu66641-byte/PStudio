@@ -376,9 +376,11 @@
       const w = Math.max(0.05,(Number(o.w)||64)/100);
       const h = Math.max(0.05,(Number(o.h)||64)/100);
       const color = o.color || '#d1d5db';
-      const draw = o.shape === 'circle'
-        ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
-        : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
+      const draw = o.model
+        ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0}
+        : o.shape === 'circle'
+          ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
+          : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
       commands.set(o.id,[draw]);
     }
     return commands;
