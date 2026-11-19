@@ -158,13 +158,13 @@
           continue;
         }
         if (d.type === 'triangle_collider' && Array.isArray(d.points) && d.points.length===9) {
-          colliders.push({type:'triangle',id:String(ownerId)+':'+colliders.length,points:d.points.map(v=>finite(v)),deltaX:0,deltaY:0,deltaZ:0});
+          {const points=d.points.map(v=>finite(v)),xs=[points[0],points[3],points[6]],ys=[points[1],points[4],points[7]],zs=[points[2],points[5],points[8]];colliders.push({type:'triangle',id:String(ownerId)+':'+colliders.length,points,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs),deltaX:0,deltaY:0,deltaZ:0});}
           continue;
         }
         if(d.type==='terrain'){
           const segments=Math.max(2,Math.min(96,Math.floor(finite(d.segments,2)))),width=Math.max(1,finite(d.width)),depth=Math.max(1,finite(d.depth)),height=Math.max(0,finite(d.height));
           const at=(ix,iz)=>{const lx=(ix/segments-.5)*width,lz=(iz/segments-.5)*depth;return [x+lx,y+height*(Math.sin(lx*.18)*Math.cos(lz*.16)*.5+Math.sin((lx+lz)*.07)*.15),z+lz];};
-          for(let iz=0;iz<segments;iz++)for(let ix=0;ix<segments;ix++){const a=at(ix,iz),b=at(ix+1,iz),c=at(ix,iz+1),e=at(ix+1,iz+1);colliders.push({type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':0',points:[...a,...c,...b]},{type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':1',points:[...b,...c,...e]});}
+          for(let iz=0;iz<segments;iz++)for(let ix=0;ix<segments;ix++){const a=at(ix,iz),b=at(ix+1,iz),c=at(ix,iz+1),e=at(ix+1,iz+1);for(const pts of [[...a,...c,...b],[...b,...c,...e]]){const xs=[pts[0],pts[3],pts[6]],ys=[pts[1],pts[4],pts[7]],zs=[pts[2],pts[5],pts[8]];colliders.push({type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':'+colliders.length,points:pts,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs)});}}
           continue;
         }
         let hx, hy, hz;
@@ -314,7 +314,10 @@
       for (const collider of colliders) {
         if (collider.type === 'plane') {
           if (solvePlane(body, collider, oldPosition)) touched = true;
-        } else if (collider.type === 'triangle') { if(solveTriangle(body,collider,oldPosition)) touched=true; }
+        } else if (collider.type === 'triangle') {
+          const p=body.position,r=body.radius+SKIN,half=body.height/2;
+          if(p[0]+r>=collider.minX&&p[0]-r<=collider.maxX&&p[1]+half>=collider.minY-SKIN&&p[1]-half<=collider.maxY+SKIN&&p[2]+r>=collider.minZ&&p[2]-r<=collider.maxZ){if(solveTriangle(body,collider,oldPosition))touched=true;}
+        }
         else if (solveBox(body, collider)) touched = true;
       }
       if (!touched) break;
