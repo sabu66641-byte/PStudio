@@ -655,6 +655,12 @@ GAME_FUNCTIONS = {
     "draw_plane": 5, "draw_cylinder": 5, "draw_cone": 5, "draw_capsule": 5,
     "draw_grid": 2, "set_camera": 6,
     "set_background": 1, "set_fog": 3, "set_light": 4,
+    "physics_body": 6, "set_gravity": 3, "apply_force": 3, "apply_impulse": 3,
+    "get_velocity_x": 0, "get_velocity_y": 0, "get_velocity_z": 0,
+    "set_velocity_x": 1, "set_velocity_y": 1, "set_velocity_z": 1,
+    "character_controller": 3, "move_character": 2, "jump": 1, "is_grounded": 0,
+    "get_axis": 1, "was_key_pressed": 1,
+    "load_model": 5, "play_animation": 1, "stop_animation": 0, "set_animation_speed": 1,
     "get_delta_time": 0, "get_width": 0, "get_height": 0,
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
