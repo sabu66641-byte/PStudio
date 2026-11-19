@@ -9,7 +9,9 @@
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
-  let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null;
+  let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null;
+  const worldChunks=new Map(),objectChunkAssignments=new Map();
+  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:180,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
   const waterMaterials=new Set();
   const instancedBatches=new Map();
@@ -194,7 +196,7 @@
     hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
     keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;
     keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;
-    scene.add(keyLight);applyQualityPreset(qualityPreset);setupControls();return true;
+    scene.add(keyLight,keyLight.target);applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
   function disposeGroup(group) {
@@ -311,7 +313,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     scene.environment=nextTarget.texture;
     hdrShowBackground=options.background!==false;
     if(hdrShowBackground)scene.background=texture;
-    scene.environmentIntensity=Math.max(0,Math.min(5,Number(options.intensity)||1));
+    scene.environmentIntensity=Math.max(0,Math.min(5,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
     if(previousTarget&&previousTarget!==nextTarget)previousTarget.dispose?.();
     if(previousTexture&&previousTexture!==texture)previousTexture.dispose?.();
     if(renderer&&scene&&camera)drawFrame();
@@ -334,7 +336,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       cubeCamera.update(renderer,scene);
       scene.remove(cubeCamera);
       bakedLightProbe=generator.fromCubeRenderTarget(renderer,target);
-      bakedLightProbe.intensity=Math.max(0,Math.min(3,Number(options.intensity)||1));
+      bakedLightProbe.intensity=Math.max(0,Math.min(3,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
       scene.add(bakedLightProbe);
       renderer.setRenderTarget(null);
       drawFrame();
@@ -344,6 +346,41 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       renderer.shadowMap.autoUpdate=oldAutoUpdate;
       target.dispose();
     }
+  }
+
+
+  function registerWorldChunk(id,o={}){const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2);worldChunks.set(key,{id:key,x:Number(o.x)||0,y:Number(o.y)||0,z:Number(o.z)||0,loadDistance,unloadDistance,active:worldChunks.get(key)?.active??true});return{id:key,loadDistance,unloadDistance};}
+  function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
+  function unregisterWorldChunk(id){const key=String(id);if(!worldChunks.delete(key))return false;for(const [owner,chunk] of objectChunkAssignments)if(chunk===key)objectChunkAssignments.delete(owner);return true;}
+  function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
+  function updateWorldChunkStates(){if(!camera)return;for(const c of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(c.x,c.y,c.z));if(c.active&&d>c.unloadDistance)c.active=false;else if(!c.active&&d<c.loadDistance)c.active=true;}}
+  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance)))worldRenderConfig.shadowDistance=Math.max(32,Math.min(1000,Number(o.shadowDistance)));if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
+  function updateProbeVolumeBlend(){if(!bakedLightProbeVolume||!camera)return;const n=Math.min(worldRenderConfig.probeBlendCount,bakedLightProbeVolume.length),near=bakedLightProbeVolume.map(item=>({item,d:item.position.distanceToSquared(camera.position)})).sort((a,b)=>a.d-b.d).slice(0,n);let sum=0;for(const e of near){e.w=1/Math.max(1,e.d);sum+=e.w;}const active=new Set(near.map(e=>e.item));for(const e of near)e.item.light.intensity=e.item.baseIntensity*e.w/Math.max(1e-8,sum);for(const item of bakedLightProbeVolume)if(!active.has(item))item.light.intensity=0;}
+  async function bakeLightProbeVolume(o={}) {
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    const generator=window.PStudioPostFX?.LightProbeGenerator;if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
+    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12},dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];
+    for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)));
+    if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
+    const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64))),previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,newVolume=[];
+    for(const item of previous||[])scene.remove(item.light);if(previousSingle)scene.remove(previousSingle);
+    const oldAuto=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=true;
+    try{
+      for(const position of positions){const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter}),cube=new T.CubeCamera(.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
+        try{scene.add(cube);cube.update(renderer,scene);scene.remove(cube);const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);newVolume.push({position,light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))});}
+        finally{scene.remove(cube);target.dispose();}
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+      }
+      bakedLightProbe=null;bakedLightProbeVolume=newVolume;for(const item of newVolume)scene.add(item.light);updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
+      return{baked:true,probes:newVolume.length,kind:'camera-local-spatial-irradiance-volume',resolution:size,note:'カメラ位置に応じて近傍プローブをブレンドする近似方式です。オブジェクト単位の完全なマルチバウンスGIではありません。'};
+    }catch(error){for(const item of newVolume){scene.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;for(const item of previous||[])scene.add(item.light);if(previousSingle)scene.add(previousSingle);throw error;}
+    finally{renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);}
+  }
+  function updateDirectionalShadowAnchor(target){if(!keyLight?.shadow||!camera)return;const sh=keyLight.shadow,extent=worldRenderConfig.shadowDistance,texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
+  function updateWorldVisibility(){if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;for(const mesh of meshCache.values())mesh.visible=isOwnerChunkActive(mesh.userData.ownerId)&&camera.position.distanceTo(mesh.position)<=max;
+    for(const instance of modelInstances.values()){const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&d<=max;instance.root.visible=active;if(!active||!instance.lodLevels||instance.lodLevels.length<2)continue;const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
+    for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){const d=camera.position.distanceTo(source.mesh.position);if(d>max||!isOwnerChunkActive(source.mesh.userData.ownerId))continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
+    updateProbeVolumeBlend();updateDirectionalShadowAnchor(new window.THREE.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]));
   }
 
   function panCamera(dx, dy) {
@@ -454,8 +491,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values()){
       if(!instance.lodLevels||instance.lodLevels.length<2)continue;
       const distance=camera.position.distanceTo(instance.root.position);
-      const targetIndex=distance<25?0:distance<70?1:distance<150?2:3;
-      const selected=instance.lodLevels[Math.min(targetIndex,instance.lodLevels.length-1)];
+      const targetIndex=worldRenderConfig.lodDistances.findIndex(v=>distance<v);
+      const selected=instance.lodLevels[Math.min(targetIndex<0?worldRenderConfig.lodDistances.length:targetIndex,instance.lodLevels.length-1)];
       if(instance.activeLOD===selected.level)continue;
       for(const level of instance.lodLevels){
         const visible=level.level===selected.level;
@@ -463,6 +500,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
       instance.activeLOD=selected.level;
     }
+    updateWorldVisibility();
     resize();
     drawFrame();
   }
@@ -568,6 +606,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
       batch.userData.instanceOwnerIds=ownerIds;
       batch.userData.instanceSourceKeys=sourceKeys;
+      batch.userData.instanceSources=items;
       batch.instanceMatrix.needsUpdate=true;
       batch.computeBoundingSphere();
     }
@@ -852,7 +891,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
     particleClock+=frameDelta;
     for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}
-    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
+    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
     if(hdrTexture&&hdrShowBackground)scene.background=hdrTexture;
@@ -862,6 +901,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(hemisphereLight) hemisphereLight.intensity=1.15;
     if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
+      if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
       const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
@@ -1047,7 +1087,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         usedMeshes.add(key);
       }
     }
-    for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)&&!preservedOwners.has(mesh.userData.ownerId)){disposeMesh(mesh);meshCache.delete(key);}else if(preservedOwners.has(mesh.userData.ownerId))mesh.visible=false;}
     updateInstancedBatches();
     for(const [key,emitter] of particleEmitters){
       if(stoppedEmitters.has(key)||!usedEmitters.has(key)){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
@@ -1057,7 +1097,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     updateGpuParticleSystems();
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
-    for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
+    for(const [key,instance] of modelInstances){if(!usedModels.has(key)&&!preservedOwners.has(instance.ownerId))removeModelInstance(key);else if(preservedOwners.has(instance.ownerId))instance.root.visible=false;}
     if(environment){
       if(environment.background){scene.background=new T.Color(environment.background);hdrShowBackground=false;}
       if(environment.environmentSky&&environment.environmentGround){
@@ -1156,7 +1196,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
-    clearLightProbe:()=>{if(!bakedLightProbe)return false;scene?.remove(bakedLightProbe);bakedLightProbe=null;drawFrame();return true;},
+    clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;changed=true;}if(changed)drawFrame();return changed;},
+    bakeLightProbeVolume,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset
