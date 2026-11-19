@@ -15,6 +15,8 @@
   let raycaster = null, pointerNdc = null, controlsReady = false;
   const activePointers = new Map();
   let pinchDistance = 0;
+  let cameraTarget = [0, 0, 0];
+  let cameraBase = [6, 5, 8];
 
   function setupControls() {
     if (controlsReady) return;
@@ -52,11 +54,12 @@
         const point=new window.THREE.Vector3();
         if(raycaster.ray.intersectPlane(dragInfo.plane,point)){const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));dragInfo.mesh.position.copy(pos);window.PStudioSceneInteraction?.moveWorld?.(dragInfo.ownerId,pos.x,pos.y,pos.z);}
       }
+      if(pointerMode==='orbit' || pointerMode==='pinch') updateCamera();
       e.preventDefault();
     });
     const end=e=>{activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;}};
     canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
-    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.001)));e.preventDefault();},{passive:false});
+    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.001)));updateCamera();e.preventDefault();},{passive:false});
   }
   function ensureRenderer() {
     if (renderer) return true;
@@ -106,6 +109,20 @@
     }
   }
 
+  function updateCamera() {
+    if (!renderer || !camera || !window.THREE) return;
+    const T = window.THREE;
+    const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]);
+    const offset = new T.Vector3(cameraBase[0], cameraBase[1], cameraBase[2]).sub(target).multiplyScalar(zoom);
+    offset.applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
+    const right = new T.Vector3(1, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
+    offset.applyAxisAngle(right, orbitPitch);
+    camera.position.copy(target).add(offset);
+    camera.lookAt(target);
+    resize();
+    renderer.render(scene, camera);
+  }
+
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
@@ -134,16 +151,13 @@
         primitiveGroup.add(mesh);
       }
     }
-    const target = cameraCommand ? new T.Vector3(cameraCommand.targetX,cameraCommand.targetY,cameraCommand.targetZ) : new T.Vector3(0,0,0);
-    const base = cameraCommand ? new T.Vector3(cameraCommand.x,cameraCommand.y,cameraCommand.z) : new T.Vector3(6,5,8);
-    const offset = base.sub(target).multiplyScalar(zoom);
-    offset.applyAxisAngle(new T.Vector3(0,1,0),orbitYaw);
-    const right = new T.Vector3(1,0,0).applyAxisAngle(new T.Vector3(0,1,0),orbitYaw);
-    offset.applyAxisAngle(right,orbitPitch);
-    camera.position.copy(target).add(offset);
-    camera.lookAt(target);
-    resize();
-    renderer.render(scene, camera);
+    cameraTarget = cameraCommand
+      ? [cameraCommand.targetX, cameraCommand.targetY, cameraCommand.targetZ]
+      : [0, 0, 0];
+    cameraBase = cameraCommand
+      ? [cameraCommand.x, cameraCommand.y, cameraCommand.z]
+      : [6, 5, 8];
+    updateCamera();
   }
 
   function clear() {
