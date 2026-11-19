@@ -287,8 +287,9 @@
       case 'nav_next_node': if(a.length===2)return window.PStudioGameplay?.navNext(a[0],a[1])??''; break;
       case 'nav_clear': if(!a.length)return window.PStudioGameplay?.navClear(); break;
       case 'nav_build_from_triangles': if(a.length===2)return window.PStudioGameplay?.navBuildFromTriangles(a[0],a[1])??0; break;
-      case 'nav_build_from_terrain': if(a.length===7)return window.PStudioGameplay?.navBuildFromTerrain(a[0],a[1],a[2],a[3],a[4],a[5],a[6])??0; break;
+      case 'nav_build_from_terrain': if(a.length===8)return window.PStudioGameplay?.navBuildFromTerrain(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7])??0; break;
       case 'nav_build_from_model': if(a.length===6){const triangles=window.PStudio3D?.getModelCollisionTriangles?.({name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:finite(a[4])});return triangles?window.PStudioGameplay?.navBuildFromTriangles(triangles,finite(a[5]))??0:0;} break;
+      case 'weapon_define': if(a.length===4)return window.PStudioGameplay?.defineWeapon(a[0],a[1],a[2],a[3])??false; break;
       case 'weapon_attack': if(a.length===5)return window.PStudioGameplay?.weaponAttack(o.id,a[0],a[1],a[2],a[3],a[4],sceneObjects,physics)??0; break;
       case 'combo_count': if(!a.length)return window.PStudioGameplay?.comboCount(o.id)??0; break;
       case 'enemy_ai': if(a.length===4)return window.PStudioGameplay?.enemyAI(o.id,a[0],a[1],a[2],a[3],sceneObjects,physics)??'idle'; break;
