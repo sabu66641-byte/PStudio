@@ -32,6 +32,7 @@
       try { callback(event); } catch (error) { console.error('[PStudio Resources] listener failed:', error); }
     }
     try { window.dispatchEvent(new CustomEvent('pstudio-resource-' + type, { detail: event })); } catch (_) {}
+    try { globalThis.PStudioEvents?.emit('resource.' + type, event); } catch (_) {}
   }
 
   function disposeRecord(record, reason) {
