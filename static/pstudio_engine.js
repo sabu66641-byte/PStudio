@@ -11,6 +11,9 @@
   const imageCache = window.imageCache || new Map();
   const keys = new Set();
   const justPressed = new Set();
+  const virtualKeys = new Set();
+  const virtualAxis = { x: 0, z: 0 };
+  let joystickPointer = null;
   let runtime = null;
   let raf = 0;
   let lastTime = 0;
@@ -32,7 +35,63 @@
   }
   window.addEventListener('keydown', e => { const key=e.key.toLowerCase(); if(!keys.has(key))justPressed.add(key); keys.add(key); const target=e.target; const editing=target && (target.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)); if(runtime?.running && !editing && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
   window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
-  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); });
+  function resetVirtualControls() {
+    virtualKeys.clear();
+    virtualAxis.x=0;
+    virtualAxis.z=0;
+    const knob=$('touch-joystick-knob');
+    if(knob)knob.style.transform='translate(0px, 0px)';
+  }
+  function setTouchControlsEnabled(enabled) {
+    const root=$('touch-controls');
+    if(!root)return;
+    const touchDevice=!!(window.matchMedia?.('(pointer: coarse)')?.matches || navigator.maxTouchPoints>0);
+    const active=!!enabled&&touchDevice;
+    root.classList.toggle('active',active);
+    root.setAttribute('aria-hidden',active?'false':'true');
+    if(!active)resetVirtualControls();
+  }
+  function updateJoystick(e) {
+    const base=$('touch-joystick'),knob=$('touch-joystick-knob');
+    if(!base||!knob)return;
+    const rect=base.getBoundingClientRect();
+    const radius=Math.max(1,rect.width*0.5-24);
+    let dx=(e.clientX-(rect.left+rect.width/2))/radius;
+    let dy=(e.clientY-(rect.top+rect.height/2))/radius;
+    const length=Math.hypot(dx,dy);
+    if(length>1){dx/=length;dy/=length;}
+    virtualAxis.x=dx;
+    virtualAxis.z=dy;
+    knob.style.transform='translate('+Math.round(dx*radius)+'px, '+Math.round(dy*radius)+'px)';
+  }
+  (() => {
+    const joystick=$('touch-joystick'),jumpButton=$('touch-jump');
+    if(joystick){
+      joystick.addEventListener('pointerdown',e=>{
+        joystickPointer=e.pointerId;
+        try{joystick.setPointerCapture(e.pointerId)}catch(_){}
+        updateJoystick(e);
+        e.preventDefault();
+      });
+      joystick.addEventListener('pointermove',e=>{if(joystickPointer===e.pointerId){updateJoystick(e);e.preventDefault();}});
+      const release=e=>{if(joystickPointer===e.pointerId){joystickPointer=null;virtualAxis.x=0;virtualAxis.z=0;const knob=$('touch-joystick-knob');if(knob)knob.style.transform='translate(0px, 0px)';}};
+      joystick.addEventListener('pointerup',release);
+      joystick.addEventListener('pointercancel',release);
+    }
+    if(jumpButton){
+      jumpButton.addEventListener('pointerdown',e=>{
+        virtualKeys.add(' ');
+        justPressed.add(' ');
+        try{jumpButton.setPointerCapture(e.pointerId)}catch(_){}
+        e.preventDefault();
+      });
+      const releaseJump=()=>virtualKeys.delete(' ');
+      jumpButton.addEventListener('pointerup',releaseJump);
+      jumpButton.addEventListener('pointercancel',releaseJump);
+      jumpButton.addEventListener('lostpointercapture',releaseJump);
+    }
+  })();
+  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); resetVirtualControls(); });
   window.addEventListener('pstudio-model-error', e => {
     const detail=e.detail||{};
     setOutput?.('3D model load failed: '+(detail.name||'unknown')+' — '+(detail.error||'unknown error'),'error');
@@ -122,12 +181,12 @@
       case 'rotate_x': if (a.length===1) { o.rotationX=(Number(o.rotationX)||0)+finite(a[0]); return o.rotationX; } break;
       case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
       case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
-      case 'is_key_down': if (a.length===1) return keys.has(normalizeKey(a[0])); break;
+      case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]);return keys.has(k)||virtualKeys.has(k);} break;
       case 'was_key_pressed': if (a.length===1) return justPressed.has(normalizeKey(a[0])); break;
       case 'get_axis': if (a.length===1) {
         const axis=String(a[0]).toLowerCase();
-        if(axis==='horizontal'||axis==='x')return (keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0);
-        if(axis==='vertical'||axis==='z')return (keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
+        if(axis==='horizontal'||axis==='x')return clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x);
+        if(axis==='vertical'||axis==='z')return clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z);
         break;
       }
       case 'is_touched': if (!a.length) return touchActive; break;
@@ -180,6 +239,7 @@
     const aliases={left:'arrowleft',right:'arrowright',up:'arrowup',down:'arrowdown',space:' '};
     return aliases[k]||k;
   }
+  function clampAxis(value) { return Math.max(-1,Math.min(1,value)); }
   function evalExpr(c, env, n) {
     if (!n) return null;
     switch(n.type) {
@@ -393,12 +453,13 @@
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
+      setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestAnimationFrame(tick);
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;
+    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
