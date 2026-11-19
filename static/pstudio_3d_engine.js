@@ -23,6 +23,7 @@
   let hemisphereLight = null;
   let keyLight = null;
   const dynamicLights = new Map();
+  const particleBursts = new Map();
   let environmentTexture = null;
   let environmentSignature = '';
   const meshCache = new Map();
@@ -603,6 +604,13 @@
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+        if(d.type==='particles'){
+          const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
+            const count=Math.max(1,Math.min(400,Number(d.count)||1)),positions=new Float32Array(count*3),velocities=[];
+            for(let i=0;i<count;i++){const theta=Math.random()*Math.PI*2,u=Math.random()*2-1,speed=(0.25+Math.random()*0.75)*(Number(d.speed)||1);positions[i*3]=Number(d.x)||0;positions[i*3+1]=Number(d.y)||0;positions[i*3+2]=Number(d.z)||0;velocities.push([Math.cos(theta)*Math.sqrt(1-u*u)*speed,(u*0.8+0.35)*speed,Math.sin(theta)*Math.sqrt(1-u*u)*speed]);}
+            const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.09,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);particleBursts.set(burstKey,{points,velocities,age:0,lifetime:Number(d.lifetime)||1});
+          }continue;
+        }
         if(d.type==='light'){
           let light=dynamicLights.get(key);
           if(!light||light.userData.kind!==d.kind){if(light){scene.remove(light);if(light.target)scene.remove(light.target);}light=d.kind==='spot'?new T.SpotLight(d.color||0xffffff,Number(d.intensity)||0,Number(d.distance)||0,Number(d.angle)||Math.PI/5,0.35,1):new T.PointLight(d.color||0xffffff,Number(d.intensity)||0,Number(d.distance)||0,2);light.userData.kind=d.kind;light.castShadow=false;dynamicLights.set(key,light);scene.add(light);if(light.target)scene.add(light.target);}
@@ -710,6 +718,7 @@
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    for(const [key,effect] of particleBursts){effect.age+=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));const positions=effect.points.geometry.attributes.position;for(let i=0;i<effect.velocities.length;i++){const ageStep=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));effect.velocities[i][1]-=2.2*ageStep;positions.array[i*3]+=effect.velocities[i][0]*ageStep;positions.array[i*3+1]+=effect.velocities[i][1]*ageStep;positions.array[i*3+2]+=effect.velocities[i][2]*ageStep;}positions.needsUpdate=true;effect.points.material.opacity=Math.max(0,1-effect.age/effect.lifetime);if(effect.age>=effect.lifetime){primitiveGroup.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();particleBursts.delete(key);}}
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
@@ -753,6 +762,7 @@
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
     gridCache.clear();
     disposeGroup(selectionGroup);
+    for(const effect of particleBursts.values()){primitiveGroup?.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();}particleBursts.clear();
     selectionSignature='';
     if(renderer)renderer.render(scene,camera);
   }
