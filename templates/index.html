@@ -722,7 +722,11 @@ function renderAssetList(){
 function openProjectFile(name){if(!projectFiles[name])return;if(isDirty&&projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;activeProjectFile=name;const file=projectFiles[name];document.getElementById('active-file-label').textContent=name;document.querySelector('.tab').innerHTML='<span class="file-icon">'+(file.type==='scene'?'SCN':'PS')+'</span>'+escapeHTML(name)+'<span class="tab-dot" id="dirty-dot"></span>';if(file.type==='scene'){switchWorkspaceView('game');document.getElementById('scene-name-label').textContent=name;loadSceneText(file.content)}else{codeEditor.value=file.content;switchWorkspaceView('editor');isDirty=false;updateLineNumbers();updateCursor();document.getElementById('save-state').textContent='Project file';}renderProjectTree();persistProject()}
 function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 let activeFileContextMenu=null;
-function closeFileContextMenu(){if(activeFileContextMenu){activeFileContextMenu.remove();activeFileContextMenu=null;}}
+let activeFileContextOutsideHandler=null;
+function closeFileContextMenu(){
+ if(activeFileContextOutsideHandler){document.removeEventListener('pointerdown',activeFileContextOutsideHandler);activeFileContextOutsideHandler=null;}
+ if(activeFileContextMenu){activeFileContextMenu.remove();activeFileContextMenu=null;}
+}
 function showEntryMenu(event,kind,name){
  event.preventDefault();event.stopPropagation();closeFileContextMenu();
  const entry=kind==='file'?projectFiles[name]:projectAssets.find(a=>a.name===name);if(!entry)return;
@@ -737,10 +741,10 @@ function showEntryMenu(event,kind,name){
  add(locked?'ロック解除':'ロック',()=>toggleEntryLock(kind,name));
  add('削除',()=>kind==='file'?deleteProjectFile(name):deleteProjectAsset(name),{danger:true,disabled:locked||running});
  document.getElementById('file-context-menu-root').appendChild(menu);activeFileContextMenu=menu;
- const rect=event.currentTarget.getBoundingClientRect();const left=Math.min(rect.right-8,window.innerWidth-178);const top=Math.min(rect.bottom,window.innerHeight-150);
+ const trigger=event.currentTarget,rect=trigger.getBoundingClientRect();const left=Math.min(rect.right-8,window.innerWidth-178);const top=Math.min(rect.bottom,window.innerHeight-150);
  menu.style.left=Math.max(8,left)+'px';menu.style.top=Math.max(8,top)+'px';
- const outside=e=>{if(menu.contains(e.target)){document.addEventListener('pointerdown',outside,{once:true});return;}closeFileContextMenu();};
- setTimeout(()=>document.addEventListener('pointerdown',outside,{once:true}),0);
+ activeFileContextOutsideHandler=e=>{if(!menu.contains(e.target)&&!trigger.contains(e.target))closeFileContextMenu();};
+ setTimeout(()=>{if(activeFileContextMenu===menu)document.addEventListener('pointerdown',activeFileContextOutsideHandler);},0);
 }
 function toggleEntryLock(kind,name){
  const entry=kind==='file'?projectFiles[name]:projectAssets.find(a=>a.name===name);if(!entry)return;
