@@ -22,6 +22,9 @@
   let gridGroup = null;
   let hemisphereLight = null;
   let keyLight = null;
+  const dynamicLights = new Map();
+  let environmentTexture = null;
+  let environmentSignature = '';
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -361,6 +364,8 @@
       case 'cylinder': return ['cylinder',n(d.radius),n(d.height)].join(':');
       case 'cone': return ['cone',n(d.radius),n(d.height)].join(':');
       case 'capsule': return ['capsule',n(d.radius),Math.max(n(d.radius)*2,n(d.height))].join(':');
+      case 'terrain': return ['terrain',n(d.width),n(d.depth),Math.max(2,Number(d.segments)||2),n(d.height)].join(':');
+      case 'water': return ['water',n(d.width),n(d.depth)].join(':');
       default: return null;
     }
   }
@@ -372,6 +377,13 @@
       case 'box': return new T.BoxGeometry(d.width,d.height,d.depth);
       case 'sphere': return new T.SphereGeometry(d.radius,24,16);
       case 'plane': return new T.PlaneGeometry(d.width,d.depth);
+      case 'water': {const g=new T.PlaneGeometry(d.width,d.depth,32,32);g.rotateX(-Math.PI/2);return g;}
+      case 'terrain': {
+        const g=new T.BufferGeometry(),vertices=[],indices=[],segments=Math.max(2,Math.min(96,Math.floor(d.segments)||2));
+        for(let iz=0;iz<=segments;iz++)for(let ix=0;ix<=segments;ix++){const x=(ix/segments-.5)*d.width,z=(iz/segments-.5)*d.depth;const y=d.height*(Math.sin(x*.18)*Math.cos(z*.16)*.5+Math.sin((x+z)*.07)*.15);vertices.push(x,y,z);}
+        for(let iz=0;iz<segments;iz++)for(let ix=0;ix<segments;ix++){const a=iz*(segments+1)+ix,b=a+1,c=a+segments+1,e=c+1;indices.push(a,c,b,b,c,e);}
+        g.setAttribute('position',new T.Float32BufferAttribute(vertices,3));g.setIndex(indices);g.computeVertexNormals();return g;
+      }
       case 'cylinder': return new T.CylinderGeometry(d.radius,d.radius,d.height,24);
       case 'cone': return new T.ConeGeometry(d.radius,d.height,24);
       case 'capsule': {
@@ -577,7 +589,7 @@
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
     lastCommands=commandsByObject;
-    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set();
+    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
     if(scene.background) scene.background.set(defaultBackground);
@@ -591,6 +603,13 @@
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+        if(d.type==='light'){
+          let light=dynamicLights.get(key);
+          if(!light||light.userData.kind!==d.kind){if(light){scene.remove(light);if(light.target)scene.remove(light.target);}light=d.kind==='spot'?new T.SpotLight(d.color||0xffffff,Number(d.intensity)||0,Number(d.distance)||0,Number(d.angle)||Math.PI/5,0.35,1):new T.PointLight(d.color||0xffffff,Number(d.intensity)||0,Number(d.distance)||0,2);light.userData.kind=d.kind;light.castShadow=false;dynamicLights.set(key,light);scene.add(light);if(light.target)scene.add(light.target);}
+          light.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);light.color.set(d.color||0xffffff);light.intensity=Math.max(0,Number(d.intensity)||0);if(d.distance!==undefined)light.distance=Math.max(0,Number(d.distance)||0);if(d.angle!==undefined&&light.angle!==undefined)light.angle=Number(d.angle);
+          if(light.target){light.target.position.set(Number(d.targetX)||0,Number(d.targetY)||0,Number(d.targetZ)||0);light.target.updateMatrixWorld();}
+          usedLights.add(key);continue;
+        }
         if (d.type==='material') { ownerMaterial={roughness:Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:Math.max(0,Math.min(1,Number(d.metalness)||0))}; continue; }
         if (d.type==='animation') continue;
         if (d.type==='model') {
@@ -673,7 +692,7 @@
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
-          const material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:0.72,metalness:0.04});
+          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
           mesh=new T.Mesh(geometry,material);
           mesh.castShadow = d.type !== 'plane';
           mesh.receiveShadow = true;
@@ -682,20 +701,25 @@
           primitiveGroup.add(mesh);
         }
         if(d.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
-        mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:0.72;
-        mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
+        if(d.type!=='water'){mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;}else{mesh.material.opacity=Number(d.opacity)||0.65;}
         mesh.userData.ownerId=ownerId;
-        mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+        mesh.position.set(Number(d.x)||0,(Number(d.y)||0)+(d.type==='water'?Math.sin((performance.now?.()||0)*0.0015)*0.025:0),Number(d.z)||0);
         const baseRotationX=d.type==='plane'?-Math.PI/2:0;
         mesh.rotation.set(baseRotationX+(Number(d.rotationX)||0),Number(d.rotationY)||0,Number(d.rotationZ)||0);
         usedMeshes.add(key);
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
     if(environment){
       if(environment.background&&scene.background)scene.background.set(environment.background);
+      if(environment.environmentSky&&environment.environmentGround){
+        const signature=environment.environmentSky+'|'+environment.environmentGround;
+        if(signature!==environmentSignature){const c=document.createElement('canvas');c.width=512;c.height=256;const cx=c.getContext('2d'),g=cx.createLinearGradient(0,0,0,256);g.addColorStop(0,environment.environmentSky);g.addColorStop(1,environment.environmentGround);cx.fillStyle=g;cx.fillRect(0,0,512,256);environmentTexture?.dispose?.();environmentTexture=new T.CanvasTexture(c);environmentTexture.mapping=T.EquirectangularReflectionMapping;environmentTexture.colorSpace=T.SRGBColorSpace;environmentTexture.needsUpdate=true;scene.environment=environmentTexture;environmentSignature=signature;}
+        if('environmentIntensity' in scene)scene.environmentIntensity=Number(environment.environmentIntensity)||1;
+      }
       if(environment.fogColor){
         const near=Math.max(0,Number(environment.fogNear)||0);
         const far=Math.max(near+0.01,Number(environment.fogFar)||100);
