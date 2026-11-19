@@ -149,7 +149,7 @@
   function applyQualityPreset(name='auto'){
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
     const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];
-    qualityAOEnabled=profile.ao;ssrEnabled=profile.ssr&&!!ssrPass;
+    qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
     if(renderer){
       renderer.setPixelRatio(Math.min(Math.max(1,Number(window.devicePixelRatio)||1),profile.pixelRatio));
       renderer.shadowMap.enabled=true;
