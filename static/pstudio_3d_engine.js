@@ -9,7 +9,13 @@
   let scene = null;
   let camera = null;
   let primitiveGroup = null;
+  let modelGroup = null;
   let selectionGroup = null;
+  const modelCache = new Map();
+  const modelPromises = new Map();
+  const modelInstances = new Map();
+  const modelLoadErrors = new Map();
+  let lastCommands = null;
   let selectedOwnerId = null;
   let gridGroup = null;
   let hemisphereLight = null;
@@ -41,7 +47,7 @@
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
-      const hit=raycaster.intersectObjects(primitiveGroup.children,false).find(h=>h.object.userData.ownerId);
+      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId);
       pointerStart={x:e.clientX,y:e.clientY};
       if(hit){
         const mesh=hit.object,ownerId=mesh.userData.ownerId;
@@ -96,9 +102,10 @@
     camera.position.set(6, 5, 8);
     camera.lookAt(0, 0, 0);
     primitiveGroup = new T.Group();
+    modelGroup = new T.Group();
     gridGroup = new T.Group();
     selectionGroup = new T.Group();
-    scene.add(primitiveGroup, gridGroup, selectionGroup);
+    scene.add(primitiveGroup, modelGroup, gridGroup, selectionGroup);
     cameraPan = new T.Vector3();
     hemisphereLight = new T.HemisphereLight(0xffffff, 0x394150, 2.0);
     scene.add(hemisphereLight);
@@ -165,8 +172,11 @@
     disposeGroup(selectionGroup);
     if (!selectedOwnerId || !primitiveGroup) return;
     const T = window.THREE;
-    for (const mesh of primitiveGroup.children) {
-      if (mesh.userData.ownerId !== selectedOwnerId) continue;
+    const meshes = [];
+    primitiveGroup.traverse(object => { if (object.isMesh) meshes.push(object); });
+    if (modelGroup) modelGroup.traverse(object => { if (object.isMesh) meshes.push(object); });
+    for (const mesh of meshes) {
+      if (mesh.userData.ownerId !== selectedOwnerId || !mesh.geometry) continue;
       const edges = mesh.geometry.type === 'SphereGeometry' ? new T.WireframeGeometry(mesh.geometry) : new T.EdgesGeometry(mesh.geometry, 1);
       const material = new T.LineDashedMaterial({
         color: 0xffffff, dashSize: 0.12, gapSize: 0.08,
@@ -174,9 +184,10 @@
       });
       const outline = new T.LineSegments(edges, material);
       outline.computeLineDistances();
-      outline.position.copy(mesh.position);
-      outline.rotation.copy(mesh.rotation);
-      outline.scale.copy(mesh.scale).multiplyScalar(1.025);
+      mesh.updateWorldMatrix(true, false);
+      outline.matrix.copy(mesh.matrixWorld);
+      outline.matrixAutoUpdate = false;
+      outline.scale.multiplyScalar(1.015);
       outline.renderOrder = 10;
       outline.userData.isSelectionOutline = true;
       selectionGroup.add(outline);
@@ -232,10 +243,97 @@
     if (mesh.material) mesh.material.dispose();
   }
 
+  function requestModelAsset(name) {
+    if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
+    if (modelPromises.has(name)) return modelPromises.get(name);
+    const promise=(async()=>{
+      if (!window.PStudioGLTFLoader) throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
+      if (!window.PStudioAssetStore) throw new Error('3D asset storage is unavailable.');
+      const blob=await window.PStudioAssetStore.get(name);
+      if (!blob) throw new Error('Model asset not found: '+name+' (import the .glb file first)');
+      const buffer=await blob.arrayBuffer();
+      const loader=new window.PStudioGLTFLoader();
+      const gltf=await new Promise((resolve,reject)=>loader.parse(buffer,'',resolve,reject));
+      if (!gltf || !gltf.scene) throw new Error('The GLB file contains no scene: '+name);
+      const asset={scene:gltf.scene,animations:gltf.animations||[]};
+      modelCache.set(name,asset);
+      return asset;
+    })().catch(error=>{
+      modelLoadErrors.set(name,String(error?.message||error));
+      console.error('[PStudio] Model load failed:',name,error);
+      return null;
+    }).then(asset=>{
+      if(asset && renderer && lastCommands) {
+        try { render(lastCommands); } catch(error) { console.error('[PStudio] Model render failed:',error); }
+      }
+      return asset;
+    });
+    modelPromises.set(name,promise);
+    return promise;
+  }
+
+  function createModelInstance(key, ownerId, name, asset) {
+    const T=window.THREE;
+    const clone=window.PStudioSkeletonUtils?.clone
+      ? window.PStudioSkeletonUtils.clone(asset.scene)
+      : asset.scene.clone(true);
+    clone.userData.ownerId=ownerId;
+    clone.traverse(object=>{
+      object.userData.ownerId=ownerId;
+      if(object.isMesh && object.material){
+        object.castShadow=true;
+        object.receiveShadow=true;
+      }
+    });
+    const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
+    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,activeClip:null,activeLoop:true,speed:1};
+    modelInstances.set(key,instance);
+    modelGroup.add(clone);
+    return instance;
+  }
+
+  function updateModelAnimation(instance, state, dt) {
+    if(!instance.mixer) return;
+    if(state.speed !== undefined) instance.speed=state.speed;
+    if(state.stop){
+      instance.mixer.stopAllAction();
+      instance.activeClip=null;
+    }
+    if(state.clipName){
+      const requested=state.clipName.toLowerCase();
+      const clip=instance.animations.find(item=>item.name.toLowerCase()===requested)
+        || instance.animations.find(item=>item.name.toLowerCase().includes(requested));
+      if(clip && (instance.activeClip!==clip.name || instance.activeLoop!==state.loop)){
+        instance.mixer.stopAllAction();
+        const action=instance.mixer.clipAction(clip);
+        action.reset();
+        action.setLoop(state.loop===false ? window.THREE.LoopOnce : window.THREE.LoopRepeat, state.loop===false ? 1 : Infinity);
+        action.clampWhenFinished=state.loop===false;
+        action.timeScale=instance.speed;
+        action.play();
+        instance.activeClip=clip.name;
+        instance.activeLoop=state.loop!==false;
+      } else if(!clip && !modelLoadErrors.has(instance.name)) {
+        console.warn('[PStudio] Animation clip not found:',state.clipName,'in',instance.name);
+      }
+    }
+    instance.mixer.timeScale=instance.speed;
+    instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));
+  }
+
+  function removeModelInstance(key) {
+    const instance=modelInstances.get(key);
+    if(!instance) return;
+    if(instance.mixer) instance.mixer.stopAllAction();
+    if(instance.root.parent) instance.root.parent.remove(instance.root);
+    modelInstances.delete(key);
+  }
+
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
-    const usedMeshes=new Set(),usedGrids=new Set();
+    lastCommands=commandsByObject;
+    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set();
     let cameraCommand=null,environment=null;
     let defaultBackground=0x171d26;
     if(scene.background) scene.background.set(defaultBackground);
@@ -248,6 +346,29 @@
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+        if (d.type==='animation') continue;
+        if (d.type==='model') {
+          let instance=modelInstances.get(key);
+          let asset=modelCache.get(d.name);
+          if(!asset) { requestModelAsset(d.name); continue; }
+          if(!instance || instance.name!==d.name) {
+            if(instance)removeModelInstance(key);
+            instance=createModelInstance(key,ownerId,d.name,asset);
+          }
+          instance.ownerId=ownerId;
+          instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+          instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
+          const animState={loop:true};
+          for(const item of list){
+            if(item.type!=='animation')continue;
+            if(item.stop)animState.stop=true;
+            if(item.clipName!==undefined){animState.clipName=item.clipName;animState.loop=item.loop!==false;}
+            if(item.speed!==undefined)animState.speed=Number(item.speed);
+          }
+          updateModelAnimation(instance,animState,d.dt);
+          usedModels.add(key);
+          continue;
+        }
         if (d.type==='grid') {
           let grid=gridCache.get(key);
           const signature=String(d.size)+':'+String(d.divisions);
@@ -285,6 +406,7 @@
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
+    for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
     if(environment){
       if(environment.background&&scene.background)scene.background.set(environment.background);
       if(environment.fogColor){
@@ -310,6 +432,7 @@
   }
   function clear() {
     if (!renderer) return;
+    for(const key of [...modelInstances.keys()])removeModelInstance(key);
     for(const mesh of meshCache.values())disposeMesh(mesh);
     meshCache.clear();
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
@@ -318,6 +441,6 @@
     if(renderer)renderer.render(scene,camera);
   }
 
-  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE };
+  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE, getModelError: name => modelLoadErrors.get(name) || null };
   window.addEventListener('resize', resize);
 })();
