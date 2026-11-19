@@ -1,3 +1,5 @@
+attack_timer = 0
+
 func start()
     physics_body(0, 2.4, 0, 0.38, 1.8, 1)
     set_gravity(0, -18, 0)
@@ -9,10 +11,18 @@ func update(dt)
     if was_key_pressed("space")
         jump(7.5)
 
-    if not is_grounded()
+    if was_key_pressed("f")
+        play_animation_once("Attack")
+        attack_timer = 0.65
+
+    if attack_timer > 0
+        attack_timer -= dt
+    elif not is_grounded()
         play_animation("Jump")
-    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 1
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 16
         play_animation("Run")
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 0.25
+        play_animation("Walk")
     else
         play_animation("Idle")
 
