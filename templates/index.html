@@ -706,13 +706,31 @@ function renderProjectTree(){
  }
  renderAssetList();
 }
+function ensureModelScript(asset){
+ if(!asset||!(asset.kind==='model'||/\.(?:glb|gltf)$/i.test(asset.name)))return '';
+ if(asset.scriptName&&projectFiles[asset.scriptName]?.type==='ps')return asset.scriptName;
+ const stem=asset.name.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}_-]+/gu,'_')||'model';
+ let scriptName=stem+'_controller.ps',index=2;
+ while(projectFiles[scriptName])scriptName=stem+'_controller'+index+++'.ps';
+ projectFiles[scriptName]={type:'ps',content:'# '+scriptName+'\n# '+asset.name+' 専用のモデル制御スクリプト\n\nfunc start()\n    ps "Model controller ready"\n\nfunc update(dt)\n    # ここにモデルの動きやアニメーションを記述します\n    # 例: play_animation("Idle")\n'};
+ asset.scriptName=scriptName;
+ return scriptName;
+}
+function openModelScript(assetName){
+ const asset=projectAssets.find(a=>a.name===assetName);if(!asset)return;
+ const scriptName=ensureModelScript(asset);if(!scriptName)return;
+ persistProject();renderProjectTree();openProjectFile(scriptName);
+}
 function renderAssetList(){
  const host=document.getElementById('asset-list');if(!host)return;host.innerHTML='';
  for(const asset of projectAssets){
   const row=document.createElement('div');row.className='asset-row';
   if(asset.kind==='image'){const img=document.createElement('img');img.src=asset.data;img.alt='';row.appendChild(img);}
   else{const icon=document.createElement('span');icon.textContent=asset.kind==='model'?'3D':'♪';row.appendChild(icon);}
-  const name=document.createElement('span');name.className='asset-name';name.textContent=asset.name;row.appendChild(name);
+  const open=document.createElement('button');open.type='button';open.className='file-open asset-open';open.title=asset.kind==='model'?'モデル制御スクリプトを開く':'アセットを開く';
+  const name=document.createElement('span');name.className='asset-name';name.textContent=asset.name;open.appendChild(name);
+  if(asset.kind==='model'||/\.(?:glb|gltf)$/i.test(asset.name))open.onclick=()=>openModelScript(asset.name);else open.disabled=true;
+  row.appendChild(open);
   if(asset.locked){const lock=document.createElement('span');lock.className='file-lock';lock.textContent='LOCK';row.appendChild(lock);}
   const menu=document.createElement('button');menu.type='button';menu.className='file-menu-trigger';menu.textContent='⋯';menu.title='Asset actions';menu.setAttribute('aria-label',asset.name+' actions');menu.onclick=e=>showEntryMenu(e,'asset',asset.name);row.appendChild(menu);
   host.appendChild(row);
@@ -882,7 +900,7 @@ async function importAssets(files){
    await validateGLBFile(file);
    await window.PStudioAssetStore.put(file.name,file);
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
-   projectAssets.push({name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});
+   projectAssets.push({name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});ensureModelScript(projectAssets[projectAssets.length-1]);
    window.PStudio3D?.invalidateAsset?.(file.name);added++;
   }catch(error){toast(file.name+': '+error.message);}
  }
@@ -893,7 +911,7 @@ async function importAssets(files){
    const result=await importGLTFFile(file,list);
    result.dependencies.forEach(f=>importedDependencies.add(f));
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
-   projectAssets.push({name:file.name,kind:'model',format:'gltf',mime:'model/gltf+json',size:result.size,storage:'indexeddb'});
+   projectAssets.push({name:file.name,kind:'model',format:'gltf',mime:'model/gltf+json',size:result.size,storage:'indexeddb'});ensureModelScript(projectAssets[projectAssets.length-1]);
    window.PStudio3D?.invalidateAsset?.(file.name);added++;
   }catch(error){toast(file.name+': '+error.message);}
  }
@@ -929,7 +947,7 @@ function renderGamePreview(){const canvas=document.getElementById('game-canvas')
 const imageCache=new Map();
 
 function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;selectSceneObject(id);persistProject()}
-function addModelToScene(assetName){const asset=projectAssets.find(a=>a.name===assetName&&(a.kind==='model'||/\.(?:glb|gltf)$/i.test(a.name)));if(!asset)return;if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してから追加してください');return;}const id='model-'+Date.now();const base=assetName.replace(/\.[^.]+$/,'');sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;switchWorkspaceView('game');selectSceneObject(id);persistProject();window.setPStudioViewMode?.('3d');toast('3Dモデルをシーンに追加しました');}
+function addModelToScene(assetName){const asset=projectAssets.find(a=>a.name===assetName&&(a.kind==='model'||/\.(?:glb|gltf)$/i.test(a.name)));if(!asset)return;if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してから追加してください');return;}const scriptName=ensureModelScript(asset);const id='model-'+Date.now();const base=assetName.replace(/\.[^.]+$/,'');sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:scriptName,color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;switchWorkspaceView('game');selectSceneObject(id);persistProject();window.setPStudioViewMode?.('3d');toast('3Dモデルをシーンに追加しました');}
 function canvasPoint(e){const canvas=document.getElementById('game-canvas');const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
 function hitTestObject(point){for(let i=sceneObjects.length-1;i>=0;i--){const o=sceneObjects[i];if(o.shape==='circle'){if(Math.hypot(point.x-(o.x+o.w/2),point.y-(o.y+o.h/2))<=Math.max(o.w,o.h)/2)return o}else if(point.x>=o.x&&point.x<=o.x+o.w&&point.y>=o.y&&point.y<=o.y+o.h)return o}return null}
 function setupCanvasInteraction(){const canvas=document.getElementById('game-canvas');if(!canvas)return;let drag=null;canvas.addEventListener('pointerdown',e=>{const p=canvasPoint(e);const o=hitTestObject(p);if(o){selectSceneObject(o.id);if(window.PStudioEngine?.isRunning())return;drag={id:o.id,dx:p.x-o.x,dy:p.y-o.y};try{canvas.setPointerCapture(e.pointerId)}catch(_){}}else if(!window.PStudioEngine?.isRunning()){selectSceneObject(null)}});canvas.addEventListener('pointermove',e=>{if(window.PStudioEngine?.isRunning()||!drag)return;const p=canvasPoint(e);const o=sceneObjects.find(x=>x.id===drag.id);if(!o)return;o.x=Math.round(p.x-drag.dx);o.y=Math.round(p.y-drag.dy);document.getElementById('obj-x').value=o.x;document.getElementById('obj-y').value=o.y;renderGamePreview()});const stop=()=>{if(drag){drag=null;persistProject()}};canvas.addEventListener('pointerup',stop);canvas.addEventListener('pointercancel',stop)}
