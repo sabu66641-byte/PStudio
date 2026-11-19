@@ -620,6 +620,7 @@
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
         if(d.type==='particles'){
           const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
+            if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value,oldest=particleBursts.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleBursts.delete(oldestKey);}
             const count=Math.max(1,Math.min(400,Number(d.count)||1)),positions=new Float32Array(count*3),velocities=[];
             for(let i=0;i<count;i++){const theta=Math.random()*Math.PI*2,u=Math.random()*2-1,speed=(0.25+Math.random()*0.75)*(Number(d.speed)||1);positions[i*3]=Number(d.x)||0;positions[i*3+1]=Number(d.y)||0;positions[i*3+2]=Number(d.z)||0;velocities.push([Math.cos(theta)*Math.sqrt(1-u*u)*speed,(u*0.8+0.35)*speed,Math.sin(theta)*Math.sqrt(1-u*u)*speed]);}
             const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.09,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);particleBursts.set(burstKey,{points,velocities,age:0,lifetime:Number(d.lifetime)||1});
