@@ -207,6 +207,8 @@
       case 'get_width': if (!a.length) return Number(o.w)||0; break;
       case 'get_height': if (!a.length) return Number(o.h)||0; break;
       case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:o.color||'#d1d5db'}); return null; } break;
+      case 'draw_hud_text': if(a.length===5){c.draw.push({type:'hud_text',text:String(a[0]),x:finite(a[1]),y:finite(a[2]),size:Math.max(8,Math.min(96,finite(a[3]))),color:String(a[4])});return null;} break;
+      case 'draw_hud_bar': if(a.length===7){c.draw.push({type:'hud_bar',value:finite(a[0]),max:Math.max(0.001,finite(a[1])),x:finite(a[2]),y:finite(a[3]),w:Math.max(1,finite(a[4])),h:Math.max(1,finite(a[5])),color:String(a[6])});return null;} break;
       case 'draw_circle': if (a.length===3) { c.draw.push({type:'circle',x:finite(a[0]),y:finite(a[1]),r:Math.max(0,finite(a[2])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_sprite': if (a.length===3) { c.draw.push({type:'sprite',name:String(a[0]),x:finite(a[1]),y:finite(a[2])}); return null; } break;
       case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
@@ -246,6 +248,26 @@
       } break;
       case 'jump': if (a.length===1) return physics?.jump(o.id,finite(a[0])) ?? false; break;
       case 'is_grounded': if (!a.length) return physics?.isGrounded(o.id) ?? false; break;
+      case 'set_max_hp': if(a.length===1)return window.PStudioGameplay?.setMaxHP(o.id,a[0]); break;
+      case 'set_hp': if(a.length===1)return window.PStudioGameplay?.setHP(o.id,a[0]); break;
+      case 'get_hp': if(!a.length)return window.PStudioGameplay?.getHP(o.id)??100; break;
+      case 'get_max_hp': if(!a.length)return window.PStudioGameplay?.getMaxHP(o.id)??100; break;
+      case 'damage': if(a.length===1)return window.PStudioGameplay?.damage(o.id,a[0]); break;
+      case 'heal': if(a.length===1)return window.PStudioGameplay?.heal(o.id,a[0]); break;
+      case 'is_alive': if(!a.length)return window.PStudioGameplay?.isAlive(o.id)??true; break;
+      case 'apply_damage': if(a.length===2){const target=(sceneObjects||[]).find(x=>x.id===String(a[0])||x.name===String(a[0]));return target?window.PStudioGameplay?.damage(target.id,a[1]):false;} break;
+      case 'attack_hitbox': if(a.length===2)return window.PStudioGameplay?.attack(o.id,a[0],a[1],sceneObjects,physics)??0; break;
+      case 'enemy_follow': if(a.length===3)return window.PStudioGameplay?.follow(o.id,a[0],a[1],a[2],sceneObjects,physics)??false; break;
+      case 'inventory_add': if(a.length===2)return window.PStudioGameplay?.inventoryAdd(o.id,a[0],a[1]); break;
+      case 'inventory_remove': if(a.length===2)return window.PStudioGameplay?.inventoryRemove(o.id,a[0],a[1]); break;
+      case 'inventory_count': if(a.length===1)return window.PStudioGameplay?.inventoryCount(o.id,a[0])??0; break;
+      case 'quest_start': if(a.length===1)return window.PStudioGameplay?.questStart(a[0])??false; break;
+      case 'quest_complete': if(a.length===1)return window.PStudioGameplay?.questComplete(a[0])??false; break;
+      case 'quest_is_complete': if(a.length===1)return window.PStudioGameplay?.questIsComplete(a[0])??false; break;
+      case 'nav_add_node': if(a.length===4)return window.PStudioGameplay?.navAddNode(a[0],a[1],a[2],a[3])??false; break;
+      case 'nav_connect': if(a.length===2)return window.PStudioGameplay?.navConnect(a[0],a[1])??false; break;
+      case 'nav_next_node': if(a.length===2)return window.PStudioGameplay?.navNext(a[0],a[1])??''; break;
+      case 'nav_clear': if(!a.length)return window.PStudioGameplay?.navClear(); break;
       case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:c.dt}); return null; } break;
       case 'character_animation': if (a.length===6) {
         c.draw.push({type:'locomotion',idle:String(a[0]),walk:String(a[1]),run:String(a[2]),jump:String(a[3]),fall:String(a[4]),land:String(a[5])});
