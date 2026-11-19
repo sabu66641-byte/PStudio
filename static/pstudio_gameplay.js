@@ -29,6 +29,7 @@
   function follow(sourceId,targetName,speed,stopDistance,objects,physics){
     const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);
     if(!source||!target||!physics?.getBody?.(sourceId))return false;
+    if(number(speed)>0)physics.configureController(sourceId,Math.max(0.1,number(speed)),24,0.25);
     const a=position(source,physics),b=position(target,physics),dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz),stop=Math.max(0,number(stopDistance,1));
     if(dist<=stop){physics.moveCharacter(sourceId,0,0);return true;}
     physics.moveCharacter(sourceId,dx/dist,dz/dist);return true;
