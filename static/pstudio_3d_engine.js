@@ -727,7 +727,7 @@
           meshCache.set(key,mesh);
           primitiveGroup.add(mesh);
         }
-        if(d.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
+        if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(d.type!=='water'){mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;}else{mesh.material.opacity=Number(d.opacity)||0.65;}
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,(Number(d.y)||0)+(d.type==='water'?Math.sin((performance.now?.()||0)*0.0015)*0.025:0),Number(d.z)||0);
