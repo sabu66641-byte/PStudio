@@ -16,15 +16,20 @@
   function isAlive(id){return getHP(id)>0;}
   function resolveObject(name,objects){return (objects||[]).find(o=>String(o.id)===String(name)||String(o.name)===String(name))||null;}
   function position(o,physics){const p=physics?.getPosition?.(o.id);if(p)return p;return{x:((number(o.x)+number(o.w,64)/2)-480)/100,y:(270-(number(o.y)+number(o.h,64)/2))/100,z:number(o.z)/100};}
-  function attack(sourceId,radius,amount,objects,physics){
+  function attack(sourceId,radius,amount,objects,physics,cooldown=220){
     const source=resolveObject(sourceId,objects);if(!source||!isAlive(sourceId))return 0;
     const origin=position(source,physics),r=Math.max(0,number(radius)),now=Date.now();let hits=0;
     for(const target of objects||[]){if(target.id===sourceId||!physics?.getBody?.(target.id)||!isAlive(target.id))continue;
       const p=position(target,physics),distance=Math.hypot(p.x-origin.x,p.y-origin.y,p.z-origin.z);
       if(distance>r)continue;const key=String(sourceId)+'>'+String(target.id),last=attackTimes.get(key)||0;
-      if(now-last<220)continue;attackTimes.set(key,now);damage(target.id,amount);hits++;
+      if(now-last<Math.max(0,number(cooldown,220)))continue;attackTimes.set(key,now);damage(target.id,amount);hits++;
     }
     return hits;
+  }
+  function strike(sourceId,targetName,range,amount,cooldown,objects,physics){
+    const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);if(!source||!target||!isAlive(sourceId)||!isAlive(target.id))return false;
+    const a=position(source,physics),b=position(target,physics);if(Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z)>Math.max(0,number(range)))return false;
+    const key=String(sourceId)+'>'+String(target.id),now=Date.now(),last=attackTimes.get(key)||0;if(now-last<Math.max(0,number(cooldown,500)))return false;attackTimes.set(key,now);damage(target.id,amount);return true;
   }
   function follow(sourceId,targetName,speed,stopDistance,objects,physics){
     const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);
@@ -38,9 +43,11 @@
   function inventoryAdd(id,item,count=1){const bag=inventory(id),key=String(item),next=(bag.get(key)||0)+Math.max(1,Math.floor(number(count,1)));bag.set(key,next);return next;}
   function inventoryRemove(id,item,count=1){const bag=inventory(id),key=String(item),old=bag.get(key)||0,n=Math.max(1,Math.floor(number(count,1)));if(old<n)return false;if(old===n)bag.delete(key);else bag.set(key,old-n);return true;}
   function inventoryCount(id,item){return inventory(id).get(String(item))||0;}
-  function questStart(id){const key=String(id);if(!quests.has(key))quests.set(key,{started:true,complete:false});else quests.get(key).started=true;return true;}
-  function questComplete(id){const key=String(id),q=quests.get(key)||{started:true,complete:false};q.started=true;q.complete=true;quests.set(key,q);return true;}
+  function questStart(id){const key=String(id);if(!quests.has(key))quests.set(key,{started:true,complete:false,progress:0,target:1});else quests.get(key).started=true;return true;}
+  function questComplete(id){const key=String(id),q=quests.get(key)||{started:true,complete:false,progress:0,target:1};q.started=true;q.complete=true;q.progress=q.target;quests.set(key,q);return true;}
   function questIsComplete(id){return !!quests.get(String(id))?.complete;}
+  function questSetProgress(id,value,target=1){const key=String(id),q=quests.get(key)||{started:true,complete:false,progress:0,target:Math.max(1,number(target,1))};q.started=true;q.target=Math.max(1,number(target,q.target));q.progress=clamp(number(value),0,q.target);if(q.progress>=q.target)q.complete=true;quests.set(key,q);return q.progress;}
+  function questGetProgress(id){const q=quests.get(String(id));return q?q.progress:0;}
   function navAddNode(id,x,y,z){navNodes.set(String(id),{id:String(id),x:number(x),y:number(y),z:number(z),links:new Set()});return true;}
   function navConnect(a,b){a=navNodes.get(String(a));b=navNodes.get(String(b));if(!a||!b)return false;a.links.add(b.id);b.links.add(a.id);return true;}
   function navNext(start,goal){
@@ -51,5 +58,5 @@
   }
   function navClear(){navNodes.clear();}
   function resetTransient(){attackTimes.clear();}
-  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,follow,inventoryAdd,inventoryRemove,inventoryCount,questStart,questComplete,questIsComplete,navAddNode,navConnect,navNext,navClear,resetTransient,version:'1.0.0'};
+  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,navAddNode,navConnect,navNext,navClear,resetTransient,version:'1.1.0'};
 })();
