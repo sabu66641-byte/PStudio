@@ -172,8 +172,8 @@
     const id = requireEntity(entity);
     const key = requireComponentType(type);
     const store = componentStores.get(key);
+    if (!store.has(id)) return addComponent(id, key, value);
     const data = normalizeComponent(key, value, id);
-    if (!store.has(id)) return addComponent(id, key, data);
     store.set(id, data);
     emit('component-updated', { entity: id, type: key });
     return data;
@@ -380,8 +380,10 @@
         if (!system.enabled || !systems.has(system.id)) continue;
         try { system.update(dt, api, context || null); }
         catch (error) {
-          error.message = '[ECS system "' + system.id + '"] ' + error.message;
-          throw error;
+          const detail = error && error.message ? error.message : String(error);
+          const wrapped = new Error('[ECS system "' + system.id + '"] ' + detail);
+          wrapped.cause = error;
+          throw wrapped;
         }
       }
     } finally {
