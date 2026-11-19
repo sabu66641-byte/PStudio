@@ -815,7 +815,11 @@ function createProjectFile(type){let base=type==='scene'?'scene':'script',ext=ty
 function saveActiveProjectFile(show=false){if(projectFiles[activeProjectFile])projectFiles[activeProjectFile].content=projectFiles[activeProjectFile].type==='ps'?codeEditor.value:serializeScene();persistProject();saveCode(false);if(show)toast('Project saved on this device')}
 async function fileAsDataURL(file){
  return await new Promise((resolve,reject)=>{
-  const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
+  const reader=new FileReader();reader.onload=()=>{
+   let result=String(reader.result||'');
+   if(!file.type){const ext=file.name.split('.').pop().toLowerCase();const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',bin:'application/octet-stream'}[ext]||'application/octet-stream';result=result.replace(/^data:[^;,]*/, 'data:'+mime);}
+   resolve(result);
+  };reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
  });
 }
 async function importGLTFFile(file,allFiles){
