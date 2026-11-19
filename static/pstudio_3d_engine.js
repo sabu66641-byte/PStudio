@@ -126,6 +126,7 @@
     keyLight.shadow.camera.bottom = -24;
     keyLight.shadow.camera.near = 0.5;
     keyLight.shadow.camera.far = 70;
+    keyLight.shadow.camera.updateProjectionMatrix();
     keyLight.shadow.bias = -0.00015;
     keyLight.shadow.normalBias = 0.025;
     scene.add(keyLight);
