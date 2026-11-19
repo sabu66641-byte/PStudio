@@ -19,6 +19,8 @@
   let pinchDistance = 0;
   let cameraTarget = [0, 0, 0];
   let cameraBase = [6, 5, 8];
+  let cameraPan = null;
+  let pinchMidpoint = null;
 
   function setupControls() {
     if (controlsReady) return;
@@ -28,7 +30,8 @@
     canvas.addEventListener('pointerdown', e => {
       if (!renderer || !camera) return;
       activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pointerMode='pinch';dragInfo=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pointerMode='pinch';dragInfo=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
@@ -51,11 +54,11 @@
     canvas.addEventListener('pointermove',e=>{
       if(!pointerMode||!renderer)return;
       if(activePointers.has(e.pointerId))activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);if(pinchDistance>0)zoom=Math.max(0.25,Math.min(4,zoom*(pinchDistance/Math.max(1,distance))));pinchDistance=distance;}
+      if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);const midpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};if(pinchDistance>0)zoom=Math.max(0.25,Math.min(4,zoom*(pinchDistance/Math.max(1,distance))));if(pinchMidpoint)panCamera(midpoint.x-pinchMidpoint.x,midpoint.y-pinchMidpoint.y);pinchDistance=distance;pinchMidpoint=midpoint;}
       else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
         orbitYaw+=dx*0.008;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.008));pointerStart={x:e.clientX,y:e.clientY};
-      }else if(pointerMode==='object'&&dragInfo){
+      }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
         const point=new window.THREE.Vector3();
         if(raycaster.ray.intersectPlane(dragInfo.plane,point)){
@@ -65,12 +68,13 @@
           renderer.render(scene,camera);
         }
       }
-      if(pointerMode==='orbit' || pointerMode==='pinch') updateCamera();
+      if(pointerMode==='orbit' || pointerMode==='pinch' || pointerMode==='pan') updateCamera();
       e.preventDefault();
     });
-    const end=e=>{activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;}};
+    const end=e=>{activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;}};
     canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
     canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.001)));updateCamera();e.preventDefault();},{passive:false});
+    canvas.addEventListener('contextmenu',e=>e.preventDefault());
   }
   function ensureRenderer() {
     if (renderer) return true;
@@ -88,6 +92,7 @@
     gridGroup = new T.Group();
     selectionGroup = new T.Group();
     scene.add(primitiveGroup, gridGroup, selectionGroup);
+    cameraPan = new T.Vector3();
     scene.add(new T.HemisphereLight(0xffffff, 0x394150, 2.0));
     const key = new T.DirectionalLight(0xffffff, 2.2);
     key.position.set(5, 8, 6);
@@ -121,10 +126,22 @@
     }
   }
 
+  function panCamera(dx, dy) {
+    if (!camera || !window.THREE) return;
+    const T = window.THREE;
+    const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
+    const distance = camera.position.distanceTo(target);
+    const scale = Math.max(0.001, distance * 0.0018);
+    const right = new T.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = new T.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    cameraPan.addScaledVector(right, -dx * scale);
+    cameraPan.addScaledVector(up, dy * scale);
+  }
+
   function updateCamera() {
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
-    const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]);
+    const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
     const offset = new T.Vector3(cameraBase[0], cameraBase[1], cameraBase[2]).sub(target).multiplyScalar(zoom);
     offset.applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
     const right = new T.Vector3(1, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
@@ -142,7 +159,7 @@
     const T = window.THREE;
     for (const mesh of primitiveGroup.children) {
       if (mesh.userData.ownerId !== selectedOwnerId) continue;
-      const edges = new T.EdgesGeometry(mesh.geometry, 1);
+      const edges = mesh.geometry.type === 'SphereGeometry' ? new T.WireframeGeometry(mesh.geometry) : new T.EdgesGeometry(mesh.geometry, 1);
       const material = new T.LineDashedMaterial({
         color: 0xffffff, dashSize: 0.12, gapSize: 0.08,
         transparent: true, opacity: 0.98, depthTest: false
