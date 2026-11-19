@@ -12,7 +12,12 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - `app.py` — Flask app, original ps lexer/parser/validator/C++ generator/Discord endpoints, plus game AST and compile endpoints.
 - `templates/index.html` — PStudio IDE, project explorer, editor, scene, inspector, asset handling and existing language UI.
 - `static/pstudio_engine.js` — browser-side game runtime.
+- `static/pstudio_events.js` — shared namespaced event bus.
+- `static/pstudio_platform.js` — browser capability and scheduling abstraction.
+- `static/pstudio_jobs.js` — cooperative asynchronous job queue.
 - `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
+- `static/pstudio_modules.js` — dependency-aware module registry.
+- `static/pstudio_ecs.js` — entity-component-system storage and scheduler.
 - `discord_runtime.py` — original Discord runtime dependency.
 - `network.py` — existing network runtime module, included unchanged.
 - `examples/` — a small player/enemy scene example.
@@ -217,6 +222,8 @@ Use the **Backup** menu in the application header to export or restore a portabl
 - JavaScript syntax checks for the IDE inline script and game runtime.
 - ECS harness checks for sparse component removal, system priority, deferred structural changes, bidirectional Scene Object synchronization and stale-entity cleanup.
 - Resource manager harness checks for LRU budget trimming, CPU/GPU accounting, concurrent-load deduplication, reference protection and disposal.
+- Core infrastructure V8 harness checks for event priority/once/async dispatch, job execution, module/ECS/resource event bridges, script load order and inline-script/import-map syntax.
+- Node test-runner files were added for the event, platform, job and core regression suites; the Node test runner itself still needs to be run in a Node-enabled checkout.
 - Runtime harness tests for `start()`, `update(dt)`, persistent per-object state, drawing commands, Stop, and collision-enter de-duplication/re-entry.
 - Existing generated C++17 sample compiled with `g++` and printed the expected output.
 
