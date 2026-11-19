@@ -47,8 +47,8 @@
     canvas.addEventListener('pointerdown', e => {
       if (!renderer || !camera) return;
       activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pinchGestureStart={distance:pinchDistance,midpoint:{...pinchMidpoint}};pinchGestureMode=null;pointerMode='pinch';dragInfo=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
-      if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pinchGestureStart={distance:pinchDistance,midpoint:{...pinchMidpoint}};pinchGestureMode=null;pointerMode='pinch';dragInfo=null;lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
@@ -61,21 +61,18 @@
         const isDoubleTap=!!(tap&&tap.ownerId===ownerId&&now-tap.time<=DOUBLE_TAP_MS&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<=DOUBLE_TAP_DISTANCE);
         if(isDoubleTap){
           lastObjectTap=null;
-          const enabled=window.PStudioSceneInteraction?.toggleManipulation?.(ownerId);
-          pointerMode='locked-object';dragInfo=null;
+          window.PStudioSceneInteraction?.toggleManipulation?.(ownerId);
+          pointerMode='double-tap';dragInfo=null;
         }else{
-          lastObjectTap={ownerId,time:now,x:e.clientX,y:e.clientY};
           const enabled=window.PStudioSceneInteraction?.isManipulationEnabled?.(ownerId)!==false;
-          if(!enabled){pointerMode='locked-object';dragInfo=null;}
+          if(!enabled){pointerMode='locked-object';dragInfo={ownerId};}
           else{
-            // Drag on a camera-facing plane so horizontal and vertical finger movement
-            // both translate the object naturally in the editor view.
             const normal=new window.THREE.Vector3();
             camera.getWorldDirection(normal);
             const plane=new window.THREE.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position);
             const point=new window.THREE.Vector3();
-            if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
-            else pointerMode='orbit';
+            if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object-pending';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
+            else {pointerMode='orbit';dragInfo=null;}
           }
         }
       }else{pointerMode='orbit';dragInfo=null;lastObjectTap=null;}
@@ -89,7 +86,7 @@
       else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
         orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));pointerStart={x:e.clientX,y:e.clientY};
-      }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}else if(pointerMode==='object'&&dragInfo){
+      }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}else if(pointerMode==='object-pending'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){pointerMode='object';}else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
         const point=new window.THREE.Vector3();
         if(raycaster.ray.intersectPlane(dragInfo.plane,point)){
@@ -103,7 +100,7 @@
       if(pointerMode==='orbit' || pointerMode==='pinch' || pointerMode==='pan') updateCamera();
       e.preventDefault();
     });
-    const end=e=>{activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;pinchGestureStart=null;pinchGestureMode=null;}};
+    const end=e=>{if(activePointers.has(e.pointerId)){if(pointerMode==='object-pending'||pointerMode==='locked-object'){lastObjectTap={ownerId:dragInfo?.ownerId||selectedOwnerId,time:Date.now(),x:e.clientX,y:e.clientY};}else if(pointerMode!=='double-tap')lastObjectTap=null;}activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;pinchGestureStart=null;pinchGestureMode=null;}};
     canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
     canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));updateCamera();e.preventDefault();},{passive:false});
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
