@@ -672,7 +672,7 @@ function updateLineNumbers(){const lines=codeEditor.value.split("\n").length;doc
 function updateCursor(){const before=codeEditor.value.slice(0,codeEditor.selectionStart);const lines=before.split("\n");document.getElementById("cursor-position").textContent=`Ln ${lines.length}, Col ${lines[lines.length-1].length+1}`}
 function markDirty(){isDirty=true;if(typeof projectFiles!=="undefined"&&projectFiles[activeProjectFile]?.type==="ps")projectFiles[activeProjectFile].content=codeEditor.value;document.getElementById("dirty-dot").classList.add("dirty");document.getElementById("save-state").textContent="Unsaved changes";updateLineNumbers();updateCursor();try{localStorage.setItem("pstudio-draft",codeEditor.value)}catch(_){} }
 function saveCode(showMessage=false){try{localStorage.setItem("pstudio-draft",codeEditor.value);if(typeof projectFiles!=="undefined"&&projectFiles[activeProjectFile]){projectFiles[activeProjectFile].content=codeEditor.value;persistProject();}isDirty=false;document.getElementById("dirty-dot").classList.remove("dirty");document.getElementById("save-state").textContent="Saved locally";if(showMessage)toast("Saved on this device")}catch(_){if(showMessage)toast("Local storage is unavailable")}}
-function clearEditor(){if(!codeEditor.value.trim())return;if(!confirm("Clear the editor contents?"))return;codeEditor.value="";markDirty();codeEditor.focus()}
+async function clearEditor(){if(!codeEditor.value.trim())return;if(!await showPStudioConfirm("エディターの内容を削除しますか？","入力中のコードがすべて削除されます。この操作は元に戻せません。","削除"))return;codeEditor.value="";markDirty();codeEditor.focus()}
 function clearOutput(){outputBox.textContent="";}
 async function copyOutput(){try{await navigator.clipboard.writeText(outputBox.innerText);toast("Output copied")}catch(_){toast("Could not copy output")}}
 function showBottomTab(tab){activeBottomTab=tab;document.getElementById("output").style.display=tab==="output"?"block":"none";document.getElementById("stdin-panel").style.display=tab==="input"?"block":"none";document.getElementById("tab-output").classList.toggle("active",tab==="output");document.getElementById("tab-input").classList.toggle("active",tab==="input")}
@@ -798,11 +798,12 @@ function validEntryName(value,extension){
  if(extension&&!name.toLowerCase().endsWith(extension))name+=extension;
  return name;
 }
-function renameProjectFile(oldName){
+async function renameProjectFile(oldName){
  const file=projectFiles[oldName];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
  if(activeProjectFile===oldName&&file.type==='ps')file.content=codeEditor.value;
  const ext=file.type==='scene'?'.scene':'.ps';
- const next=validEntryName(prompt('新しいファイル名を入力してください',oldName),ext);
+ const entered=await showPStudioInput("ファイル名を変更","新しいファイル名を入力してください。",oldName,"変更");
+ const next=validEntryName(entered,ext);
  if(!next||next===oldName)return;if(projectFiles[next]){toast('同じ名前のファイルが既にあります');return;}
  projectFiles[next]=file;delete projectFiles[oldName];
  sceneObjects.forEach(o=>{if(o.script===oldName)o.script=next;});
@@ -812,7 +813,7 @@ function renameProjectFile(oldName){
 function deleteProjectFile(name){
  const file=projectFiles[name];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
  if(file.type==='ps'&&Object.values(projectFiles).filter(f=>f.type==='ps').length<=1){toast('最後のScriptファイルは削除できません');return;}
- if(!confirm('「'+name+'」を削除しますか？'))return;
+ if(!await showPStudioConfirm("「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。","削除"))return;
  if(activeProjectFile===name&&file.type==='ps'){file.content=codeEditor.value;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');}
  delete projectFiles[name];sceneObjects.forEach(o=>{if(o.script===name)o.script='';});
  if(activeProjectFile===name){
@@ -832,7 +833,8 @@ async function renameProjectAsset(oldName){
  const asset=projectAssets.find(a=>a.name===oldName);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const ext=oldName.slice(oldName.lastIndexOf('.')).toLowerCase();
- const next=validEntryName(prompt('新しいアセット名を入力してください',oldName),ext);
+ const entered=await showPStudioInput("アセット名を変更","新しいアセット名を入力してください。",oldName,"変更");
+  const next=validEntryName(entered,ext);
  if(!next||next===oldName)return;if(projectAssets.some(a=>a.name===next)){toast('同じ名前のアセットが既にあります');return;}
  try{
   if(asset.kind==='model'){
@@ -856,7 +858,7 @@ async function deleteProjectAsset(name){
  const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
  const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>o.model===name).length:0;
  const warning=(refs||sceneRefs)?'\\n\\n'+refs+'個のScriptと'+sceneRefs+'個のScene Objectがこのモデルを参照しています。Scene Object側の参照は削除後に解除されます。':'';
- if(!confirm('アセット「'+name+'」を削除しますか？'+warning))return;
+ if(!await showPStudioConfirm("アセット「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。"+((refs||sceneRefs)?"\n\n"+refs+"個のScriptと"+sceneRefs+"個のScene Objectがこのモデルを参照しています。削除後、Scene Object側の参照は解除されます。":""),"削除"))return;
  try{
   if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
   projectAssets=projectAssets.filter(a=>a.name!==name);
@@ -957,7 +959,7 @@ async function importAssets(files){
 function setupAssetDrop(){const zone=document.getElementById('asset-drop');if(!zone)return;zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');importAssets(e.dataTransfer.files)})}
 function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const current=selectedObject()?.sprite||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=selectedObject()?.script||''}}
 function selectedObject(){return sceneObjects.find(o=>o.id===selectedObjectId)}
-function deleteSelectedObject(){const o=selectedObject();if(!o)return;if(window.PStudioEngine?.isRunning()){toast('Stop the game before deleting an object');return}if(!confirm('Delete "'+o.name+'"?'))return;sceneObjects=sceneObjects.filter(item=>item.id!==o.id);selectedObjectId=null;selectSceneObject(null);persistProject();renderGamePreview();toast('Object deleted')}
+async function deleteSelectedObject(){const o=selectedObject();if(!o)return;if(window.PStudioEngine?.isRunning()){toast('Stop the game before deleting an object');return}if(!await showPStudioConfirm("「"+o.name+"」を削除しますか？","これを削除すると、シーン内のオブジェクト設定や関連データが失われます。","削除"))return;sceneObjects=sceneObjects.filter(item=>item.id!==o.id);selectedObjectId=null;selectSceneObject(null);persistProject();renderGamePreview();toast('Object deleted')}
 function selectSceneObject(id){selectedObjectId=id;window.PStudio3D?.setSelected?.(id);const o=selectedObject();document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-z','z'],['obj-rotation-x','rotationX'],['obj-rotation-y','rotationY'],['obj-rotation-z','rotationZ'],['obj-w','w'],['obj-h','h']])document.getElementById(field).value=o[key]??0;const modelSettings=document.getElementById('obj-model-settings');if(modelSettings){modelSettings.hidden=!o.model;if(o.model){document.getElementById('obj-model-name').value=o.model;document.getElementById('obj-model-scale').value=o.modelScale||1;}}document.getElementById('obj-collider').checked=!!o.collider;refreshInspectorAssetOptions()}renderGamePreview()}
 window.PStudioSceneInteraction={select:(id)=>selectSceneObject(id),isManipulationEnabled:(id)=>sceneObjects.find(item=>item.id===id)?.manipulationEnabled!==false,toggleManipulation:(id)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return false;o.manipulationEnabled=o.manipulationEnabled===false;persistProject();toast(o.manipulationEnabled?'オブジェクト操作: ON':'オブジェクト操作: OFF');return o.manipulationEnabled;},move:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=Number(x)||0;o.y=Number(y)||0;o.z=Number(z)||0;persistProject();},moveWorld:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=(Number(x)||0)*100+480-(Number(o.w)||64)/2;o.y=270-(Number(y)||0)*100-(Number(o.h)||64)/2;o.z=(Number(z)||0)*100;persistProject();}};
 function updateSelectedObject(key,value){const o=selectedObject();if(!o)return;o[key]=['x','y','z','rotationX','rotationY','rotationZ','w','h','modelScale'].includes(key)?Number(value):value;if(['w','h'].includes(key)&&o[key]<1)o[key]=1;if(key==='modelScale'&&o[key]<0.001)o[key]=0.001;persistProject();renderGamePreview();if(o.model&&workspaceView==='game')window.setPStudioViewMode?.('3d')}
@@ -1360,6 +1362,9 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             currentLanguage = language;
             const globalLanguage = document.getElementById("global-language");
             if (globalLanguage) globalLanguage.value = language;
+            const languageLabel=document.getElementById("language-picker-label");
+            if(languageLabel)languageLabel.textContent=({ja:"日本語",en:"English",zh:"中文",es:"Español",fr:"Français"})[language]||"日本語";
+            document.querySelectorAll("#language-picker-menu [data-language]").forEach(button=>button.classList.toggle("active",button.dataset.language===language));
             document.documentElement.lang = language === "zh" ? "zh-Hans" : language;
             document.title = language === "ja"
                 ? "ps - プログラミング言語"
