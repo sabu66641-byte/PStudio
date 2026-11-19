@@ -287,6 +287,7 @@
       } break;
       case 'play_animation': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:true}); return null; } break;
       case 'play_animation_once': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:false}); return null; } break;
+      case 'blend_animations': if(a.length===3){c.draw.push({type:'animation_blend',first:String(a[0]),second:String(a[1]),weight:clampAxis(finite(a[2]))});return null;} break;
       case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
       case 'set_animation_speed': if (a.length===1) { c.draw.push({type:'animation',speed:finite(a[0])}); return null; } break;
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
