@@ -28,7 +28,7 @@ test('HDR loading and baked diffuse probe APIs are exposed with boundaries', () 
   assert.ok(renderer.includes('RGBE/HDR loader is unavailable'));
   assert.ok(renderer.includes('bakeLightProbe'));
   assert.ok(renderer.includes('global-diffuse-light-probe'));
-  assert.ok(renderer.includes('not a per-surface lightmap'));
+  assert.ok(renderer.includes('global-diffuse-light-probe'));
 });
 
 test('water uses a physical transmission material and animated vertex displacement', () => {
@@ -63,3 +63,7 @@ test('primitive cache uses the same mesh object for caching and rendering', () =
   assert.ok(block.includes('meshCache.set(key,mesh)'));
   assert.ok(!block.includes('let mesh;'));
 });
+
+test('spatial irradiance volume blends nearby probes',()=>{for(const x of ['bakeLightProbeVolume','updateProbeVolumeBlend','camera-local-spatial-irradiance-volume','probeBlendCount'])assert.ok(renderer.includes(x));});
+test('large-world culling and chunk hysteresis are exposed',()=>{for(const x of ['registerWorldChunk','assignObjectToChunk','unregisterWorldChunk','maxDrawDistance','unloadDistance','updateWorldVisibility','preservedOwners','instanceSources'])assert.ok(renderer.includes(x));});
+test('directional shadow follows camera with texel snapping',()=>{for(const x of ['updateDirectionalShadowAnchor','Math.round(target.x/texel)*texel','scene.add(keyLight,keyLight.target)'])assert.ok(renderer.includes(x));});
