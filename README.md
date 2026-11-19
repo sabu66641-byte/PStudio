@@ -149,13 +149,14 @@ func update(dt)
 | `get_velocity_x/y/z()` | Read velocity components |
 | `set_velocity_x/y/z(value)` | Set velocity components |
 | `character_controller(max_speed, acceleration, air_control)` | Configure ground speed, acceleration and 0–1 air-control ratio |
-| `move_character(x, z)` | Set normalized horizontal movement input |
+| `move_character(x, z)` | Set normalized horizontal movement input, transformed relative to the current 3D camera's horizontal forward/right directions |
+| `character_animation(idle, walk, run, jump, fall, land)` | Select GLB locomotion clips from grounded state, horizontal speed, vertical velocity and landing transitions; use an empty string to disable an unused clip |
 | `jump(speed)` | Buffer a jump using the requested initial upward speed |
 | `is_grounded()` | Check current ground contact |
 | `get_axis("horizontal" or "vertical")` | Read A/D + arrow-key movement axes; W/Up is negative Z |
 | `was_key_pressed("space")` | Detect a key press edge for one game frame |
 
-The character body is a vertical capsule. The physics step is fixed at 60 Hz and capped at eight substeps per rendered frame. The controller uses semi-implicit Euler integration, ground/air acceleration, a 0.12-second jump buffer and 0.12-second coyote time. It currently collides against horizontal planes and primitive AABB approximations. It is intentionally not described as production-grade general-purpose physics.
+The character body is a vertical capsule. The physics step is fixed at 60 Hz and capped at eight substeps per rendered frame. The controller uses semi-implicit Euler integration, ground/air acceleration, a 0.12-second jump buffer and 0.12-second coyote time. The runtime emits per-frame jump and landing transition flags. Controlled characters smoothly turn toward their actual horizontal velocity; their model's local forward direction is assumed to be +Z. Camera-relative movement reads the active 3D camera view direction, so keyboard and touch-axis input continue to mean forward/back/left/right after orbiting the camera. `set_camera_follow` applies five offset ray tests against rendered scene meshes to pull the camera forward before it clips into walls or models, excluding the Game Object that owns the camera command. This camera collision is a practical ray-based approximation, not a full swept-sphere solver. Character collision still uses horizontal planes and primitive AABB approximations; sloped terrain, stairs, triangle-mesh player collision, dynamic body-to-body response and continuous collision detection are not implemented. It is intentionally not described as production-grade general-purpose physics.
 
 ## Scene model placement and rendering quality
 
@@ -167,7 +168,7 @@ The 3D renderer enables directional shadow mapping with soft PCF filtering, shad
 
 Each imported `.glb` / `.gltf` asset has its own companion `.ps` controller script. PStudio creates the script during import (or on first asset selection for models already in an existing project). Selecting the model asset opens that controller in the code editor. Adding the model to the Scene automatically attaches its companion script to the new Game Object. The model file remains binary asset data; its behavior is kept in the separate editable `.ps` file. Script names use `<model>_controller.ps`, with a numeric suffix if that name already exists.
 
-During Play, a scene model with an attached controller remains automatically rendered even if the script does not call `load_model()`. The controller can use the existing model animation APIs such as `play_animation("Idle")`; explicit `load_model()` calls remain available for additional model instances.
+During Play, a scene model with an attached controller remains automatically rendered even if the script does not call `load_model()`. The controller can use the existing model animation APIs such as `play_animation("Idle")`; explicit `load_model()` calls remain available for additional model instances. For locomotion blending, call `character_animation("Idle", "Walk", "Run", "Jump", "Fall", "Land")` once per update. The renderer chooses the clip from grounded state and horizontal/vertical velocity, cross-fades between states, plays a landing clip once per landing event, and lets an active `play_animation_once()` action finish before returning to locomotion. Animation names must match clips embedded in the GLB (partial, case-insensitive matching is supported).
 
 ## Project File Management
 
