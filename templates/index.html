@@ -737,13 +737,16 @@ function showEntryMenu(event,kind,name){
   if(options.danger)button.classList.add('danger');if(options.disabled)button.disabled=true;
   button.onclick=e=>{e.stopPropagation();closeFileContextMenu();action();};menu.appendChild(button);
  };
- if(kind==='asset'&&entry.kind==='model')add('シーンに追加',()=>addModelToScene(name),{disabled:locked||running});
+ const isModelAsset=kind==='asset'&&(entry.kind==='model'||/\\.(?:glb|gltf)$/i.test(name));
+ if(isModelAsset)add('シーンに追加',()=>addModelToScene(name),{disabled:locked||running});
  add('名前を変更',()=>kind==='file'?renameProjectFile(name):renameProjectAsset(name),{disabled:locked||running});
  add(locked?'ロック解除':'ロック',()=>toggleEntryLock(kind,name));
  add('削除',()=>kind==='file'?deleteProjectFile(name):deleteProjectAsset(name),{danger:true,disabled:locked||running});
  document.getElementById('file-context-menu-root').appendChild(menu);activeFileContextMenu=menu;
- const trigger=event.currentTarget,rect=trigger.getBoundingClientRect();const menuWidth=window.matchMedia('(max-width:700px)').matches?198:178;const left=Math.min(rect.right-8,window.innerWidth-menuWidth);const top=Math.min(rect.bottom,window.innerHeight-150);
- menu.style.left=Math.max(8,left)+'px';menu.style.top=Math.max(8,top)+'px';
+ const trigger=event.currentTarget,rect=trigger.getBoundingClientRect();const menuWidth=window.matchMedia('(max-width:700px)').matches?198:178;const left=Math.max(8,Math.min(rect.right-8,window.innerWidth-menuWidth));
+ menu.style.left=left+'px';menu.style.top='0px';
+ const menuHeight=menu.getBoundingClientRect().height;const below=rect.bottom+4;const top=below+menuHeight<=window.innerHeight-8?below:Math.max(8,rect.top-menuHeight-4);
+ menu.style.top=top+'px';
  activeFileContextOutsideHandler=e=>{if(!menu.contains(e.target)&&!trigger.contains(e.target))closeFileContextMenu();};
  setTimeout(()=>{if(activeFileContextMenu===menu)document.addEventListener('pointerdown',activeFileContextOutsideHandler);},0);
 }
@@ -926,7 +929,7 @@ function renderGamePreview(){const canvas=document.getElementById('game-canvas')
 const imageCache=new Map();
 
 function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;selectSceneObject(id);persistProject()}
-function addModelToScene(assetName){const asset=projectAssets.find(a=>a.name===assetName&&a.kind==='model');if(!asset)return;if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してから追加してください');return;}const id='model-'+Date.now();const base=assetName.replace(/\.[^.]+$/,'');sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;switchWorkspaceView('game');selectSceneObject(id);persistProject();window.setPStudioViewMode?.('3d');toast('3Dモデルをシーンに追加しました');}
+function addModelToScene(assetName){const asset=projectAssets.find(a=>a.name===assetName&&(a.kind==='model'||/\\.(?:glb|gltf)$/i.test(a.name)));if(!asset)return;if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してから追加してください');return;}const id='model-'+Date.now();const base=assetName.replace(/\.[^.]+$/,'');sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;switchWorkspaceView('game');selectSceneObject(id);persistProject();window.setPStudioViewMode?.('3d');toast('3Dモデルをシーンに追加しました');}
 function canvasPoint(e){const canvas=document.getElementById('game-canvas');const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
 function hitTestObject(point){for(let i=sceneObjects.length-1;i>=0;i--){const o=sceneObjects[i];if(o.shape==='circle'){if(Math.hypot(point.x-(o.x+o.w/2),point.y-(o.y+o.h/2))<=Math.max(o.w,o.h)/2)return o}else if(point.x>=o.x&&point.x<=o.x+o.w&&point.y>=o.y&&point.y<=o.y+o.h)return o}return null}
 function setupCanvasInteraction(){const canvas=document.getElementById('game-canvas');if(!canvas)return;let drag=null;canvas.addEventListener('pointerdown',e=>{const p=canvasPoint(e);const o=hitTestObject(p);if(o){selectSceneObject(o.id);if(window.PStudioEngine?.isRunning())return;drag={id:o.id,dx:p.x-o.x,dy:p.y-o.y};try{canvas.setPointerCapture(e.pointerId)}catch(_){}}else if(!window.PStudioEngine?.isRunning()){selectSceneObject(null)}});canvas.addEventListener('pointermove',e=>{if(window.PStudioEngine?.isRunning()||!drag)return;const p=canvasPoint(e);const o=sceneObjects.find(x=>x.id===drag.id);if(!o)return;o.x=Math.round(p.x-drag.dx);o.y=Math.round(p.y-drag.dy);document.getElementById('obj-x').value=o.x;document.getElementById('obj-y').value=o.y;renderGamePreview()});const stop=()=>{if(drag){drag=null;persistProject()}};canvas.addEventListener('pointerup',stop);canvas.addEventListener('pointercancel',stop)}
