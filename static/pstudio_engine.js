@@ -222,7 +222,7 @@
       case 'move_character': if (a.length===2) { physics?.moveCharacter(o.id,finite(a[0]),finite(a[1])); return null; } break;
       case 'jump': if (a.length===1) return physics?.jump(o.id,finite(a[0])) ?? false; break;
       case 'is_grounded': if (!a.length) return physics?.isGrounded(o.id) ?? false; break;
-      case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),dt:c.dt}); return null; } break;
+      case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:c.dt}); return null; } break;
       case 'play_animation': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:true}); return null; } break;
       case 'play_animation_once': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:false}); return null; } break;
       case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
