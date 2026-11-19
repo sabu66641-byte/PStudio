@@ -214,6 +214,18 @@
     }
     camera.position.copy(smoothedPosition);
     camera.lookAt(smoothedTarget);
+    for(const instance of modelInstances.values()){
+      if(!instance.lodLevels||instance.lodLevels.length<2)continue;
+      const distance=camera.position.distanceTo(instance.root.position);
+      const targetIndex=distance<25?0:distance<70?1:distance<150?2:3;
+      const selected=instance.lodLevels[Math.min(targetIndex,instance.lodLevels.length-1)];
+      if(instance.activeLOD===selected.level)continue;
+      for(const level of instance.lodLevels){
+        const visible=level.level===selected.level;
+        for(const entry of level.entries)entry.object.visible=visible&&entry.visible;
+      }
+      instance.activeLOD=selected.level;
+    }
     resize();
     renderer.render(scene, camera);
   }
@@ -387,8 +399,19 @@
           : cloneMaterial(object.material);
       }
     });
+    const lodMap=new Map();
+    clone.traverse(object=>{
+      const match=String(object.name||'').match(/(?:^|[ _-])LOD([0-9]+)(?:$|[ _-])/i);
+      if(!match)return;
+      const level=Number(match[1]);
+      if(!lodMap.has(level))lodMap.set(level,[]);
+      lodMap.get(level).push({object,visible:object.visible});
+    });
+    const lodLevels=[...lodMap.entries()]
+      .sort((a,b)=>a[0]-b[0])
+      .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
-    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,activeClip:null,activeLoop:true,speed:1};
+    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,activeLOD:null,activeClip:null,activeLoop:true,speed:1};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
