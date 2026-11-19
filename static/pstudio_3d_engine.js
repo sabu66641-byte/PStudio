@@ -422,11 +422,19 @@
       const existingAction=clip ? instance.mixer.existingAction(clip) : null;
       const completedOneShot=!!(clip && state.loop===false && existingAction && !existingAction.isRunning());
       if(clip && (instance.activeClip!==clip.name || instance.activeLoop!==state.loop || completedOneShot)){
-        instance.mixer.stopAllAction();
+        const previousClip=instance.animations.find(item=>item.name===instance.activeClip);
+        const previousAction=previousClip ? instance.mixer.existingAction(previousClip) : null;
         const action=instance.mixer.clipAction(clip);
         action.reset();
+        action.enabled=true;
+        action.setEffectiveWeight(1);
         action.setLoop(state.loop===false ? window.THREE.LoopOnce : window.THREE.LoopRepeat, state.loop===false ? 1 : Infinity);
         action.clampWhenFinished=state.loop===false;
+        if(previousAction && previousAction!==action && previousAction.isRunning()){
+          previousAction.crossFadeTo(action,0.18,false);
+        }else{
+          action.fadeIn(0.12);
+        }
         action.play();
         instance.activeClip=clip.name;
         instance.activeLoop=state.loop!==false;
