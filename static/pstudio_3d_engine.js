@@ -9,6 +9,8 @@
   let scene = null;
   let camera = null;
   let primitiveGroup = null;
+  let selectionGroup = null;
+  let selectedOwnerId = null;
   let gridGroup = null;
   let lastSize = { width: 0, height: 0 };
   let orbitYaw = 0, orbitPitch = 0, zoom = 1, pointerMode = null, pointerStart = null, dragInfo = null;
@@ -84,7 +86,8 @@
     camera.lookAt(0, 0, 0);
     primitiveGroup = new T.Group();
     gridGroup = new T.Group();
-    scene.add(primitiveGroup, gridGroup);
+    selectionGroup = new T.Group();
+    scene.add(primitiveGroup, gridGroup, selectionGroup);
     scene.add(new T.HemisphereLight(0xffffff, 0x394150, 2.0));
     const key = new T.DirectionalLight(0xffffff, 2.2);
     key.position.set(5, 8, 6);
@@ -132,6 +135,29 @@
     renderer.render(scene, camera);
   }
 
+  function refreshSelectionOutline() {
+    if (!selectionGroup || !window.THREE) return;
+    disposeGroup(selectionGroup);
+    if (!selectedOwnerId || !primitiveGroup) return;
+    const T = window.THREE;
+    for (const mesh of primitiveGroup.children) {
+      if (mesh.userData.ownerId !== selectedOwnerId) continue;
+      const edges = new T.EdgesGeometry(mesh.geometry, 1);
+      const material = new T.LineDashedMaterial({
+        color: 0xffffff, dashSize: 0.12, gapSize: 0.08,
+        transparent: true, opacity: 0.98, depthTest: false
+      });
+      const outline = new T.LineSegments(edges, material);
+      outline.computeLineDistances();
+      outline.position.copy(mesh.position);
+      outline.rotation.copy(mesh.rotation);
+      outline.scale.copy(mesh.scale).multiplyScalar(1.025);
+      outline.renderOrder = 10;
+      outline.userData.isSelectionOutline = true;
+      selectionGroup.add(outline);
+    }
+  }
+
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
@@ -166,6 +192,7 @@
     cameraBase = cameraCommand
       ? [cameraCommand.x, cameraCommand.y, cameraCommand.z]
       : [6, 5, 8];
+    refreshSelectionOutline();
     updateCamera();
   }
 
@@ -176,6 +203,6 @@
     renderer.render(scene, camera);
   }
 
-  window.PStudio3D = { render, clear, isAvailable: () => !!window.THREE };
+  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE };
   window.addEventListener('resize', resize);
 })();
