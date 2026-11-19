@@ -44,7 +44,7 @@
     });
   }
 
-  async function get(name) {
+  async function readBlob(name) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -54,12 +54,26 @@
     });
   }
 
+  async function get(name) {
+    const key = String(name);
+    if (window.PStudioResources?.getOrLoad) {
+      return window.PStudioResources.getOrLoad('binary-asset', key, () => readBlob(key), {
+        category: 'cpu',
+        metadata: { persistent: true, store: STORE_NAME }
+      });
+    }
+    return readBlob(key);
+  }
+
   async function remove(name) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).delete(String(name));
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        try { window.PStudioResources?.remove?.('binary-asset', String(name), { reason: 'asset-removed' }); } catch (_) {}
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error || new Error('モデルを削除できませんでした。'));
     });
   }
