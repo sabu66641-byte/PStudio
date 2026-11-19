@@ -13,6 +13,7 @@
   let selectionGroup = null;
   const modelCache = new Map();
   const modelPromises = new Map();
+  const modelRevisions = new Map();
   const modelInstances = new Map();
   const modelLoadErrors = new Map();
   let lastCommands = null;
@@ -258,6 +259,7 @@
   function requestModelAsset(name) {
     if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
     if (modelPromises.has(name)) return modelPromises.get(name);
+    const revision=modelRevisions.get(name)||0;
     const promise=(async()=>{
       if (!window.PStudioGLTFLoader) throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
       if (!window.PStudioAssetStore) throw new Error('3D asset storage is unavailable.');
@@ -266,15 +268,18 @@
       const loader=new window.PStudioGLTFLoader();
       const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer();
       const gltf=await new Promise((resolve,reject)=>loader.parse(source,'',resolve,reject));
-      if (!gltf || !gltf.scene) throw new Error('The GLB file contains no scene: '+name);
+      if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
+      if((modelRevisions.get(name)||0)!==revision)return null;
       const asset={scene:gltf.scene,animations:gltf.animations||[]};
       modelCache.set(name,asset);
       return asset;
     })().catch(error=>{
       const message=String(error?.message||error);
-      modelLoadErrors.set(name,message);
-      console.error('[PStudio] Model load failed:',name,error);
-      window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
+      if((modelRevisions.get(name)||0)===revision){
+        modelLoadErrors.set(name,message);
+        console.error('[PStudio] Model load failed:',name,error);
+        window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
+      }
       return null;
     }).then(asset=>{
       if(asset)modelLoadErrors.delete(name);
@@ -283,7 +288,7 @@
       }
       return asset;
     }).finally(()=>{
-      modelPromises.delete(name);
+      if(modelPromises.get(name)===promise&&modelCache.has(name))modelPromises.delete(name);
     });
     modelPromises.set(name,promise);
     return promise;
@@ -468,6 +473,7 @@
 
   function invalidateAsset(name) {
     const key=String(name);
+    modelRevisions.set(key,(modelRevisions.get(key)||0)+1);
     modelCache.delete(key);
     modelPromises.delete(key);
     modelLoadErrors.delete(key);
