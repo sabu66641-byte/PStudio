@@ -660,7 +660,7 @@ GAME_FUNCTIONS = {
     "set_velocity_x": 1, "set_velocity_y": 1, "set_velocity_z": 1,
     "character_controller": 3, "move_character": 2, "jump": 1, "is_grounded": 0,
     "get_axis": 1, "was_key_pressed": 1,
-    "load_model": 5, "play_animation": 1, "stop_animation": 0, "set_animation_speed": 1,
+    "load_model": 5, "play_animation": 1, "play_animation_once": 1, "stop_animation": 0, "set_animation_speed": 1,
     "get_delta_time": 0, "get_width": 0, "get_height": 0,
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
@@ -2291,7 +2291,7 @@ def game_prepare():
             tree = parse(tokenize(source))
             validate_ast(tree, allow_game=True)
             parsed[filename] = tree
-        return jsonify({"success": True, "scripts": parsed, "engine": "PStudio Runtime", "engine_version": "2.0.0"})
+        return jsonify({"success": True, "scripts": parsed, "engine": "PStudio Runtime", "engine_version": "3.0.0"})
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 
