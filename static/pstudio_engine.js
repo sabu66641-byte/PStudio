@@ -324,9 +324,10 @@
   function stopGame() {
     if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
-    if($('game-3d-canvas'))$('game-3d-canvas').style.display='none';if($('game-canvas'))$('game-canvas').style.display='block';if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
+    if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
-    const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540';
+    setViewMode(renderMode);
+    const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
   }
   window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'1.4.0'};
   window.setPStudioViewMode=setViewMode;
