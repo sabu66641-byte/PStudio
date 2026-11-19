@@ -12,6 +12,7 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - `app.py` — Flask app, original ps lexer/parser/validator/C++ generator/Discord endpoints, plus game AST and compile endpoints.
 - `templates/index.html` — PStudio IDE, project explorer, editor, scene, inspector, asset handling and existing language UI.
 - `static/pstudio_engine.js` — browser-side game runtime.
+- `static/pstudio_3d_engine.js` — Three.js 3D renderer, HDR/IBL, shadows, screen-space effects, GPU particles and instancing.
 - `static/pstudio_events.js` — shared namespaced event bus.
 - `static/pstudio_platform.js` — browser capability and scheduling abstraction.
 - `static/pstudio_jobs.js` — cooperative asynchronous job queue.
@@ -222,6 +223,8 @@ Use the **Backup** menu in the application header to export or restore a portabl
 - JavaScript syntax checks for the IDE inline script and game runtime.
 - ECS harness checks for sparse component removal, system priority, deferred structural changes, bidirectional Scene Object synchronization and stale-entity cleanup.
 - Resource manager harness checks for LRU budget trimming, CPU/GPU accounting, concurrent-load deduplication, reference protection and disposal.
+- Rendering source/V8 checks: renderer syntax, addon import-map/module syntax, water/HDR/probe APIs, GPU-particle shader attributes, instancing/selection mapping and primitive mesh-cache consistency.
+- A Node rendering regression suite was added at `tests/rendering_pipeline.test.js`; the Node test runner still needs to be run in a Node-enabled checkout.
 - Core infrastructure V8 harness checks for event priority/once/async dispatch, job execution, module/ECS/resource event bridges, script load order and inline-script/import-map syntax.
 - Node test-runner files were added for the event, platform, job and core regression suites; the Node test runner itself still needs to be run in a Node-enabled checkout.
 - Runtime harness tests for `start()`, `update(dt)`, persistent per-object state, drawing commands, Stop, and collision-enter de-duplication/re-entry.
@@ -370,9 +373,45 @@ Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
 
 
-## Rendering and Shader Controls
+## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 
-The 3D runtime supports directional, point and spot lights. `set_environment(sky_color, ground_color, intensity)` creates a procedural environment map that is PMREM-filtered for image-based lighting; it is not multi-bounce global illumination. `draw_terrain(...)` creates matching render and collision triangles. `draw_water(...)` uses a planar reflection when the Reflector addon loads; this is an approximate planar mirror, not refraction or animated wave optics. `set_shader(...)` selects built-in material presets. `set_model_material(name, roughness, metalness, color)` applies named or `*` overrides to cloned GLB materials. The Inspector includes a compact fixed three-node shader graph (solid, stripe, checker, radial and glow patterns) and direct GLSL text editing for primitive geometry.
+The 3D renderer uses Three.js r160 with ACES filmic tone mapping, sRGB output, PMREM-filtered image-based lighting and directional shadow mapping. Quality presets are available through the renderer API:
+
+| Preset | Pixel ratio cap | Directional shadow map | Screen-space effects |
+|---|---:|---:|---|
+| `mobile` | 1.0 | 1024² PCF | off |
+| `balanced` | 1.5 | 2048² PCF | off |
+| `high` | 2.0 | 3072² VSM | GTAO + SSR |
+| `ultra` | 2.0 | 4096² VSM | GTAO + SSR |
+
+`auto` selects balanced settings on touch/narrow screens and high settings otherwise. VSM provides soft filtered directional shadows; balanced/mobile use PCF soft shadows. GTAO is preferred when its addon loads, with SSAO as a fallback. Screen-space reflections are optional and enabled by high/ultra presets. Bloom remains opt-in through `set_postprocessing(...)`; it is not forced onto every scene.
+
+### HDR environments and diffuse light baking
+
+`PStudio3D.loadEnvironmentHDR(url, { intensity, background })` loads an equirectangular RGBE/HDR environment and converts it through PMREM for physically based reflections and ambient image-based lighting. The image host must permit browser CORS access. Example:
+
+```js
+await PStudio3D.loadEnvironmentHDR("https://your-host.example/studio.hdr", {
+  intensity: 1.25,
+  background: true
+});
+```
+
+After the scene, environment and lighting are in place, `PStudio3D.bakeLightProbe({ x, y, z, resolution, intensity })` captures the scene with a cube camera and converts the radiance to spherical-harmonic diffuse illumination. This is a **single global irradiance probe**, not a UV lightmap or spatially blended probe volume. Re-bake it after major static-scene or environment changes. It is a practical baked-indirect-light foundation, not full multi-bounce real-time path-traced GI.
+
+### Water and reflections
+
+`draw_water(x, y, z, width, depth, color, opacity)` now creates a tessellated physically based water surface. A vertex shader animates multiple wave components and perturbs the normals; the physical material uses water-like refraction (IOR 1.333), transmission and clearcoat. SSR can add screen-space reflections on high/ultra presets. Refraction and reflections are limited by what is visible to the camera and by the browser's transmission-buffer support. Caustics, volumetric underwater scattering, shore foam and fully simulated fluid dynamics are not included.
+
+### GPU particles and instancing
+
+`emit_particles(...)` and `particle_emitter(...)` now use custom GPU particle materials. Per-particle origin, velocity, birth time and lifetime are uploaded when particles spawn; the vertex shader calculates ballistic movement, gravity and fade on the GPU. CPU work remains for emission scheduling and writing newly spawned particle attributes. This is GPU-driven rendering/simulation, not a compute-shader particle solver.
+
+Repeated simple primitives are automatically grouped into `THREE.InstancedMesh` batches when at least three instances share geometry, dimensions and material state. The batch retains an instance-to-Scene-Object mapping, so selection and editor manipulation continue to address the original object. Terrain, water, custom shaders and imported animated models are not merged into these primitive batches.
+
+`PStudio3D.setQualityPreset("auto" | "mobile" | "balanced" | "high" | "ultra")` switches quality settings. `PStudio3D.getStats()` reports renderer calls, triangles, geometry/texture counts, active instances, GPU particle systems and measured render time. Existing model LOD selection and geometry/material caches remain active.
+
+These features improve image-based indirect lighting, contact shading, reflections and draw-call efficiency. They do **not** yet constitute a full dynamic GI solution such as real-time multi-bounce voxel/ray-traced illumination.
 
 ## Custom GLSL Shader Editor
 
