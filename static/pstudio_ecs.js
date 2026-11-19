@@ -540,6 +540,7 @@
     clearEntities,
     setEnabled(value) { enabled = !!value; emit('enabled-changed', { enabled }); return enabled; },
     isEnabled() { return enabled; },
+    hasActiveSystems() { return enabled && orderedSystems.some(system => system.enabled); },
     on(type, callback) {
       if (typeof callback !== 'function') throw new TypeError('ECS listener must be a function.');
       const key = String(type);
