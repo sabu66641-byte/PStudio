@@ -116,7 +116,9 @@ The ECS core is exposed as `window.PStudioECS`. It separates entity identity, co
 - **Deferred structure changes:** creating/destroying entities or adding/removing components during `forEach` is rejected to avoid corrupting an active iteration. Queue these changes with `ecs.defer(() => { ... })`; deferred actions run after the current system update.
 - **Lifecycle and diagnostics:** `on(event, callback)`, `stats()`, `setEnabled(boolean)`, `clearEntities()`.
 
-The built-in `Transform` component contains position (`x/y/z`), rotation (`rotationX/Y/Z`) and scale (`scaleX/Y/Z). `SceneObjectRef` identifies a linked editor object. During Play, the runtime mirrors existing Scene Objects into ECS entities, runs enabled ECS systems before the legacy per-object ps update callbacks, then applies ECS Transform changes back to Scene Objects. Changes made by existing ps scripts are synchronized back into ECS on the following frame. Stop removes only the Scene Object mirror entities; separately-created ECS entities and registered systems remain available.
+The built-in `Transform` component contains position (`x/y/z`), rotation (`rotationX/Y/Z`) and scale (`scaleX/Y/Z). `SceneObjectRef` identifies a linked editor object. During Play, the runtime mirrors existing Scene Objects into ECS entities, runs enabled ECS systems before the legacy per-object ps update callbacks, then applies ECS Transform changes back to Scene Objects. Changes made by existing ps scripts are synchronized back into ECS on the following frame. When no ECS system is enabled, the per-frame mirror and apply passes are skipped to avoid unnecessary runtime work. Stop removes only the Scene Object mirror entities; separately-created ECS entities and registered systems remain available.
+
+**Physics boundary:** ECS Transform currently mirrors the editor-side Scene Object fields. Physics body state and simulation remain owned by the existing `PStudioPhysics` subsystem; a dedicated physics component and full ECS ownership migration are not part of this stage. This separation avoids silently changing the physics engine's world-space state or the existing ps APIs.
 
 Example: a generic movement system that does not depend on any specific game:
 
@@ -155,6 +157,7 @@ Use the **Backup** menu in the application header to export or restore a portabl
 - AST validation tests for lifecycle callbacks, game-only API gating and script-level state.
 - `/game/prepare` payload/AST response test with a Flask test double.
 - JavaScript syntax checks for the IDE inline script and game runtime.
+- ECS harness checks for sparse component removal, system priority, deferred structural changes, bidirectional Scene Object synchronization and stale-entity cleanup.
 - Runtime harness tests for `start()`, `update(dt)`, persistent per-object state, drawing commands, Stop, and collision-enter de-duplication/re-entry.
 - Existing generated C++17 sample compiled with `g++` and printed the expected output.
 
