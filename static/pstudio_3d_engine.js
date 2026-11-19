@@ -29,7 +29,7 @@
   const particleBursts = new Map();
   const particleEmitters = new Map();
   const modelCollisionCache = new Map();
-  let transformedCollisionCache = null;
+  const transformedCollisionCache = new Map();
   let environmentTexture = null;
   let environmentSignature = '';
   const meshCache = new Map();
@@ -847,6 +847,7 @@
 
   function invalidateAsset(name) {
     const key=String(name);
+    modelCollisionCache.delete(key);for(const cacheKey of transformedCollisionCache.keys())if(cacheKey.startsWith(key+'|'))transformedCollisionCache.delete(cacheKey);
     modelRevisions.set(key,(modelRevisions.get(key)||0)+1);
     const cachedAsset=modelCache.get(key);
     modelCache.delete(key);
@@ -862,10 +863,12 @@
   }
   function getModelCollisionTriangles(command){
     const asset=modelCache.get(command.name);if(!asset)return null;let local=modelCollisionCache.get(command.name);
-    if(!local){const T=window.THREE;asset.scene.updateMatrixWorld(true);const vertices=[];let total=0;asset.scene.traverse(mesh=>{if(!mesh.isMesh||!mesh.geometry?.attributes?.position)return;const pos=mesh.geometry.attributes.position,index=mesh.geometry.index,count=index?index.count:pos.count,world=mesh.matrixWorld;const stride=Math.max(1,Math.ceil((count/3)/4000));for(let tri=0;tri+2<count;tri+=3*stride){for(let k=0;k<3;k++){const vi=index?index.getX(tri+k):tri+k;const v=new T.Vector3().fromBufferAttribute(pos,vi).applyMatrix4(world);vertices.push(v.x,v.y,v.z);}if(++total>=4000)break;}});local=vertices;modelCollisionCache.set(command.name,local);}
-    const T=window.THREE,pos=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0),rot=new T.Euler(Number(command.rotationX)||0,Number(command.rotationY)||0,Number(command.rotationZ)||0),sc=new T.Vector3().setScalar(Math.max(0.001,Number(command.scale)||1)),matrix=new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(rot),sc),signature=[command.name,pos.x,pos.y,pos.z,rot.x,rot.y,rot.z,sc.x].join('|');if(transformedCollisionCache?.signature===signature)return transformedCollisionCache.triangles;const result=[];for(let i=0;i+8<local.length;i+=9)for(let j=0;j<9;j+=3){const v=new T.Vector3(local[i+j],local[i+j+1],local[i+j+2]).applyMatrix4(matrix);result.push(v.x,v.y,v.z);}transformedCollisionCache={signature,triangles:result};return result;
+    if(!local){const T=window.THREE;asset.scene.updateMatrixWorld(true);const vertices=[];let total=0;asset.scene.traverse(mesh=>{if(total>=4000||!mesh.isMesh||!mesh.geometry?.attributes?.position)return;const pos=mesh.geometry.attributes.position,index=mesh.geometry.index,count=index?index.count:pos.count,world=mesh.matrixWorld;const stride=Math.max(1,Math.ceil((count/3)/4000));for(let tri=0;tri+2<count&&total<4000;tri+=3*stride){for(let k=0;k<3;k++){const vi=index?index.getX(tri+k):tri+k;const v=new T.Vector3().fromBufferAttribute(pos,vi).applyMatrix4(world);vertices.push(v.x,v.y,v.z);}total++;}});local=vertices;modelCollisionCache.set(command.name,local);}
+    const T=window.THREE,pos=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0),rot=new T.Euler(Number(command.rotationX)||0,Number(command.rotationY)||0,Number(command.rotationZ)||0),sc=new T.Vector3().setScalar(Math.max(0.001,Number(command.scale)||1)),matrix=new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(rot),sc),signature=[command.name,pos.x,pos.y,pos.z,rot.x,rot.y,rot.z,sc.x].join('|');
+    if(transformedCollisionCache.has(signature))return transformedCollisionCache.get(signature);
+    const result=[];for(let i=0;i+8<local.length;i+=9)for(let j=0;j<9;j+=3){const v=new T.Vector3(local[i+j],local[i+j+1],local[i+j+2]).applyMatrix4(matrix);result.push(v.x,v.y,v.z);}
+    transformedCollisionCache.set(signature,result);if(transformedCollisionCache.size>24)transformedCollisionCache.delete(transformedCollisionCache.keys().next().value);return result;
   }
-
   window.PStudio3D = {
     render,
     clear,
