@@ -28,7 +28,7 @@ test('HDR loading and baked diffuse probe APIs are exposed with boundaries', () 
   assert.ok(renderer.includes('RGBE/HDR loader is unavailable'));
   assert.ok(renderer.includes('bakeLightProbe'));
   assert.ok(renderer.includes('global-diffuse-light-probe'));
-  assert.ok(renderer.includes('global-diffuse-light-probe'));
+  assert.ok(renderer.includes('not a per-surface lightmap') || renderer.includes('global-diffuse-light-probe'));
 });
 
 test('water uses a physical transmission material and animated vertex displacement', () => {
