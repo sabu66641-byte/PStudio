@@ -12,6 +12,10 @@
   let selectionGroup = null;
   let selectedOwnerId = null;
   let gridGroup = null;
+  let hemisphereLight = null;
+  let keyLight = null;
+  const meshCache = new Map();
+  const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
   let orbitYaw = 0, orbitPitch = 0, zoom = 1, pointerMode = null, pointerStart = null, dragInfo = null;
   let raycaster = null, pointerNdc = null, controlsReady = false;
@@ -96,10 +100,11 @@
     selectionGroup = new T.Group();
     scene.add(primitiveGroup, gridGroup, selectionGroup);
     cameraPan = new T.Vector3();
-    scene.add(new T.HemisphereLight(0xffffff, 0x394150, 2.0));
-    const key = new T.DirectionalLight(0xffffff, 2.2);
-    key.position.set(5, 8, 6);
-    scene.add(key);
+    hemisphereLight = new T.HemisphereLight(0xffffff, 0x394150, 2.0);
+    scene.add(hemisphereLight);
+    keyLight = new T.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(5, 8, 6);
+    scene.add(keyLight);
     setupControls();
     return true;
   }
@@ -178,32 +183,120 @@
     }
   }
 
+  function geometrySignature(d) {
+    const n = v => Math.max(0.001, Number(v) || 0.001);
+    switch (d.type) {
+      case 'cube': return ['cube',n(d.size)].join(':');
+      case 'box': return ['box',n(d.width),n(d.height),n(d.depth)].join(':');
+      case 'sphere': return ['sphere',n(d.radius)].join(':');
+      case 'plane': return ['plane',n(d.width),n(d.depth)].join(':');
+      case 'cylinder': return ['cylinder',n(d.radius),n(d.height)].join(':');
+      case 'cone': return ['cone',n(d.radius),n(d.height)].join(':');
+      case 'capsule': return ['capsule',n(d.radius),Math.max(n(d.radius)*2,n(d.height))].join(':');
+      default: return null;
+    }
+  }
+
+  function createGeometry(d) {
+    const T=window.THREE;
+    switch (d.type) {
+      case 'cube': return new T.BoxGeometry(d.size,d.size,d.size);
+      case 'box': return new T.BoxGeometry(d.width,d.height,d.depth);
+      case 'sphere': return new T.SphereGeometry(d.radius,24,16);
+      case 'plane': return new T.PlaneGeometry(d.width,d.depth);
+      case 'cylinder': return new T.CylinderGeometry(d.radius,d.radius,d.height,24);
+      case 'cone': return new T.ConeGeometry(d.radius,d.height,24);
+      case 'capsule': {
+        const radius=Math.min(d.radius,d.height/2);
+        const cylinderLength=Math.max(0.001,d.height-radius*2);
+        const points=[];
+        for(let i=0;i<=8;i++){
+          const angle=(Math.PI/2)*(i/8);
+          points.push(new T.Vector2(radius*Math.sin(angle),-cylinderLength/2-radius*Math.cos(angle)));
+        }
+        points.push(new T.Vector2(radius,cylinderLength/2));
+        for(let i=1;i<=8;i++){
+          const angle=Math.PI/2+(Math.PI/2)*(i/8);
+          points.push(new T.Vector2(radius*Math.sin(angle),cylinderLength/2-radius*Math.cos(angle)));
+        }
+        return new T.LatheGeometry(points,24);
+      }
+      default: return null;
+    }
+  }
+
+  function disposeMesh(mesh) {
+    if (!mesh) return;
+    if (mesh.parent) mesh.parent.remove(mesh);
+    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.material) mesh.material.dispose();
+  }
+
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
-    disposeGroup(primitiveGroup);
-    disposeGroup(gridGroup);
-    let cameraCommand = null;
+    const usedMeshes=new Set(),usedGrids=new Set();
+    let cameraCommand=null,environment=null;
+    let defaultBackground=0x171d26;
+    if(scene.background) scene.background.set(defaultBackground);
+    scene.fog=null;
+    if(hemisphereLight) hemisphereLight.intensity=2.0;
+    if(keyLight){keyLight.position.set(5,8,6);keyLight.intensity=2.2;}
     for (const [ownerId,list] of commandsByObject.entries()) {
-      for (const d of list) {
-        if (d.type === 'camera') { cameraCommand = d; continue; }
-        if (d.type === 'grid') {
-          const grid = new T.GridHelper(d.size, d.divisions, 0x7b8797, 0x394352);
-          grid.position.y = 0;
-          gridGroup.add(grid);
+      for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
+        const d=list[commandIndex];
+        const key=String(ownerId)+':'+commandIndex;
+        if (d.type==='camera') { cameraCommand=d; continue; }
+        if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+        if (d.type==='grid') {
+          let grid=gridCache.get(key);
+          const signature=String(d.size)+':'+String(d.divisions);
+          if(!grid||grid.userData.signature!==signature){
+            if(grid){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
+            grid=new T.GridHelper(d.size,d.divisions,0x7b8797,0x394352);
+            grid.userData.signature=signature;
+            gridCache.set(key,grid);
+            gridGroup.add(grid);
+          }
+          grid.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+          usedGrids.add(key);
           continue;
         }
-        let geometry;
-        if (d.type === 'cube') geometry = new T.BoxGeometry(d.size, d.size, d.size);
-        else if (d.type === 'box') geometry = new T.BoxGeometry(d.width, d.height, d.depth);
-        else if (d.type === 'sphere') geometry = new T.SphereGeometry(d.radius, 24, 16);
-        else continue;
-        const material = new T.MeshStandardMaterial({ color: d.color || '#d1d5db', roughness: 0.72, metalness: 0.04 });
-        const mesh = new T.Mesh(geometry, material);
-        mesh.userData.ownerId = ownerId;
-        mesh.position.set(d.x, d.y, d.z);
-        if (d.type === 'cube' || d.type === 'box') mesh.rotation.set(d.rotationX || 0, d.rotationY || 0, d.rotationZ || 0);
-        primitiveGroup.add(mesh);
+        const signature=geometrySignature(d);
+        if(!signature) continue;
+        let mesh=meshCache.get(key);
+        if(!mesh||mesh.userData.signature!==signature){
+          if(mesh)disposeMesh(mesh);
+          const geometry=createGeometry(d);
+          if(!geometry)continue;
+          const material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:0.72,metalness:0.04});
+          mesh=new T.Mesh(geometry,material);
+          mesh.userData.signature=signature;
+          meshCache.set(key,mesh);
+          primitiveGroup.add(mesh);
+        }
+        if(d.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
+        mesh.userData.ownerId=ownerId;
+        mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+        const baseRotationX=d.type==='plane'?-Math.PI/2:0;
+        mesh.rotation.set(baseRotationX+(Number(d.rotationX)||0),Number(d.rotationY)||0,Number(d.rotationZ)||0);
+        usedMeshes.add(key);
+      }
+    }
+    for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
+    if(environment){
+      if(environment.background&&scene.background)scene.background.set(environment.background);
+      if(environment.fogColor){
+        const near=Math.max(0,Number(environment.fogNear)||0);
+        const far=Math.max(near+0.01,Number(environment.fogFar)||100);
+        scene.fog=new T.Fog(environment.fogColor,near,far);
+      }
+      if(keyLight){
+        if(Number.isFinite(environment.lightX))keyLight.position.x=environment.lightX;
+        if(Number.isFinite(environment.lightY))keyLight.position.y=environment.lightY;
+        if(Number.isFinite(environment.lightZ))keyLight.position.z=environment.lightZ;
+        if(Number.isFinite(environment.lightIntensity))keyLight.intensity=environment.lightIntensity;
       }
     }
     cameraTarget = cameraCommand
@@ -215,12 +308,13 @@
     refreshSelectionOutline();
     updateCamera();
   }
-
   function clear() {
-    if (!renderer) return;
-    disposeGroup(primitiveGroup);
-    disposeGroup(gridGroup);
-    renderer.render(scene, camera);
+    for(const mesh of meshCache.values())disposeMesh(mesh);
+    meshCache.clear();
+    for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
+    gridCache.clear();
+    disposeGroup(selectionGroup);
+    if(renderer)renderer.render(scene,camera);
   }
 
   window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE };
