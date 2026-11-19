@@ -82,10 +82,12 @@
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
-      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId);
+      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId||h.object.userData.instanceOwnerIds?.[h.instanceId]);
       pointerStart={x:e.clientX,y:e.clientY};
       if(hit){
-        const mesh=hit.object.userData.modelRoot || hit.object,ownerId=mesh.userData.ownerId;
+        const sourceKey=hit.object.userData.instanceSourceKeys?.[hit.instanceId];
+        const mesh=(sourceKey&&meshCache.get(sourceKey))||hit.object.userData.modelRoot||hit.object;
+        const ownerId=mesh.userData.ownerId??hit.object.userData.instanceOwnerIds?.[hit.instanceId];
         window.PStudioSceneInteraction?.select?.(ownerId);
         const now=Date.now(),tap=lastObjectTap;
         const isDoubleTap=!!(tap&&tap.ownerId===ownerId&&now-tap.time<=DOUBLE_TAP_MS&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<=DOUBLE_TAP_DISTANCE);
@@ -457,7 +459,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     const T = window.THREE;
     const meshes = [];
-    primitiveGroup.traverse(object => { if (object.isMesh && object.userData.ownerId === selectedOwnerId) meshes.push(object); });
+    for(const mesh of meshCache.values()){if(mesh.isMesh&&mesh.userData.ownerId===selectedOwnerId)meshes.push(mesh);}
     if (modelGroup) modelGroup.traverse(object => { if (object.isMesh && object.userData.ownerId === selectedOwnerId) meshes.push(object); });
     const signature=selectedOwnerId+':'+meshes.map(mesh=>mesh.uuid+':'+mesh.geometry?.uuid).join('|');
     if(signature!==selectionSignature){
@@ -499,6 +501,63 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       case 'terrain': return ['terrain',n(d.width),n(d.depth),Math.max(2,Number(d.segments)||2),n(d.height)].join(':');
       case 'water': return ['water',n(d.width),n(d.depth)].join(':');
       default: return null;
+    }
+  }
+
+  function getInstanceBatchKey(mesh){
+    const type=mesh.userData?.primitiveType;
+    if(!['cube','box','sphere','cylinder','cone','capsule'].includes(type))return null;
+    const material=mesh.material;
+    if(!material?.color||(!material.isMeshStandardMaterial&&!material.isMeshBasicMaterial&&!material.isMeshToonMaterial))return null;
+    if(material.transparent||material.wireframe||material.transmission>0)return null;
+    return [mesh.userData.signature,material.type,material.color.getHexString(),Number(material.roughness??0).toFixed(3),Number(material.metalness??0).toFixed(3)].join('|');
+  }
+
+  function updateInstancedBatches(){
+    if(!window.THREE||!primitiveGroup)return;
+    const T=window.THREE,groups=new Map(),desired=new Set(),batchedSources=new Set();
+    for(const [sourceKey,mesh] of meshCache){
+      if(!mesh?.userData?.ownerId)continue;
+      const key=getInstanceBatchKey(mesh);
+      if(!key)continue;
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push({sourceKey,mesh});
+    }
+    const dummy=new T.Object3D();
+    for(const [batchKey,items] of groups){
+      if(items.length<3)continue;
+      desired.add(batchKey);
+      let batch=instancedBatches.get(batchKey);
+      if(!batch||batch.userData.capacity<items.length){
+        if(batch){primitiveGroup.remove(batch);batch.geometry.dispose();batch.material.dispose();}
+        batch=new T.InstancedMesh(items[0].mesh.geometry.clone(),items[0].mesh.material.clone(),items.length);
+        batch.userData.isPStudioInstanceBatch=true;
+        batch.userData.capacity=items.length;
+        batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
+        batch.castShadow=true;batch.receiveShadow=true;
+        instancedBatches.set(batchKey,batch);primitiveGroup.add(batch);
+      }
+      batch.count=items.length;
+      const ownerIds=new Array(items.length),sourceKeys=new Array(items.length);
+      for(let i=0;i<items.length;i++){
+        const source=items[i].mesh;
+        dummy.position.copy(source.position);dummy.quaternion.copy(source.quaternion);dummy.scale.copy(source.scale);dummy.updateMatrix();
+        batch.setMatrixAt(i,dummy.matrix);
+        ownerIds[i]=source.userData.ownerId;sourceKeys[i]=items[i].sourceKey;
+        batchedSources.add(items[i].sourceKey);
+        if(source.parent===primitiveGroup)primitiveGroup.remove(source);
+      }
+      batch.userData.instanceOwnerIds=ownerIds;
+      batch.userData.instanceSourceKeys=sourceKeys;
+      batch.instanceMatrix.needsUpdate=true;
+      batch.computeBoundingSphere();
+    }
+    for(const [key,batch] of instancedBatches){
+      if(desired.has(key))continue;
+      primitiveGroup.remove(batch);batch.geometry.dispose();batch.material.dispose();instancedBatches.delete(key);
+    }
+    for(const [sourceKey,mesh] of meshCache){
+      if(!batchedSources.has(sourceKey)&&mesh.parent!==primitiveGroup)primitiveGroup.add(mesh);
     }
   }
 
@@ -968,6 +1027,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    updateInstancedBatches();
     for(const [key,emitter] of particleEmitters){
       if(stoppedEmitters.has(key)||!usedEmitters.has(key)){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
     }
