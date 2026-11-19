@@ -200,7 +200,7 @@
     const v0x=c[0]-a[0],v0z=c[2]-a[2],v1x=b[0]-a[0],v1z=b[2]-a[2],v2x=px-a[0],v2z=pz-a[2];
     const den=v0x*v1z-v1x*v0z;if(Math.abs(den)<1e-9)return null;
     const u=(v2x*v1z-v1x*v2z)/den,v=(v0x*v2z-v2x*v0z)/den,w=1-u-v;
-    return u>=-1e-5&&v>=-1e-5&&w>=-1e-5?[w,u,v]:null;
+    return u>=-1e-5&&v>=-1e-5&&w>=-1e-5?[w,v,u]:null;
   }
   function solveTriangle(body,tri,oldPosition) {
     const p=tri.points,a=p.slice(0,3),b=p.slice(3,6),c=p.slice(6,9);
@@ -208,7 +208,7 @@
     let nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0];
     const len=Math.hypot(nx,ny,nz);if(len<1e-9)return false;nx/=len;ny/=len;nz/=len;if(ny<0){nx=-nx;ny=-ny;nz=-nz;}
     if(ny<body.maxSlope)return false;
-    const weights=barycentricXZ(p[0],p[2],a,b,c);if(!weights)return false;
+    const weights=barycentricXZ(body.position[0],body.position[2],a,b,c);if(!weights)return false;
     const surfaceY=weights[0]*a[1]+weights[1]*b[1]+weights[2]*c[1];
     const bottom=body.position[1]-body.height/2,oldBottom=oldPosition[1]-body.height/2;
     if(body.velocity[1]>0||bottom>surfaceY+SKIN||oldBottom<surfaceY-SKIN)return false;
