@@ -812,33 +812,76 @@ async function deleteProjectAsset(name){
 
 function createProjectFile(type){let base=type==='scene'?'scene':'script',ext=type==='scene'?'.scene':'.ps',i=1,name;do{name=(type==='scene'&&i===1?'new':base+(i===1?'':i))+ext;i++}while(projectFiles[name]);projectFiles[name]={type,content:type==='scene'?'':`# ${name}\n`};persistProject();openProjectFile(name);toast('Created '+name)}
 function saveActiveProjectFile(show=false){if(projectFiles[activeProjectFile])projectFiles[activeProjectFile].content=projectFiles[activeProjectFile].type==='ps'?codeEditor.value:serializeScene();persistProject();saveCode(false);if(show)toast('Project saved on this device')}
+async function fileAsDataURL(file){
+ return await new Promise((resolve,reject)=>{
+  const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
+ });
+}
+async function importGLTFFile(file,allFiles){
+ const json=JSON.parse(await file.text());
+ const byName=new Map(allFiles.map(f=>[f.name.toLowerCase(),f]));
+ const dependencies=new Set();
+ const embed=async entry=>{
+  if(!entry||!entry.uri||entry.uri.startsWith('data:'))return;
+  if(/^(?:[a-z]+:|\/)/i.test(entry.uri))throw new Error('外部URLのリソースには対応していません: '+entry.uri);
+  const decoded=decodeURIComponent(entry.uri.split(/[?#]/)[0]);
+  const basename=decoded.split(/[\\/]/).pop().toLowerCase();
+  const dependency=byName.get(basename);
+  if(!dependency)throw new Error('依存ファイル「'+basename+'」も一緒に選択してください');
+  dependencies.add(dependency);
+  entry.uri=await fileAsDataURL(dependency);
+ };
+ for(const buffer of json.buffers||[])await embed(buffer);
+ for(const image of json.images||[])await embed(image);
+ const totalSize=file.size+[...dependencies].reduce((sum,f)=>sum+f.size,0);
+ if(totalSize>30*1024*1024)throw new Error('モデルと依存ファイルの合計は30 MB以下にしてください');
+ const bundled=new Blob([JSON.stringify(json)],{type:'model/gltf+json'});
+ await window.PStudioAssetStore.put(file.name,bundled);
+ return {dependencies:[...dependencies],size:totalSize};
+}
 async function importAssets(files){
  const list=Array.from(files||[]);if(!list.length)return;
- let added=0;
+ if(window.PStudioEngine?.isRunning()){toast('インポートする前にゲームを停止してください');return;}
+ let added=0;const importedDependencies=new Set();
+ for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.glb'))){
+  const existing=projectAssets.find(a=>a.name===file.name);
+  if(existing?.locked){toast(file.name+' はロックされています');continue;}
+  if(file.size>30*1024*1024){toast(file.name+' は30 MBを超えています');continue;}
+  try{
+   await window.PStudioAssetStore.put(file.name,file);
+   projectAssets=projectAssets.filter(a=>a.name!==file.name);
+   projectAssets.push({name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});
+   window.PStudio3D?.invalidateAsset?.(file.name);added++;
+  }catch(error){toast(file.name+': '+error.message);}
+ }
+ for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.gltf'))){
+  const existing=projectAssets.find(a=>a.name===file.name);
+  if(existing?.locked){toast(file.name+' はロックされています');continue;}
+  try{
+   const result=await importGLTFFile(file,list);
+   result.dependencies.forEach(f=>importedDependencies.add(f));
+   projectAssets=projectAssets.filter(a=>a.name!==file.name);
+   projectAssets.push({name:file.name,kind:'model',format:'gltf',mime:'model/gltf+json',size:result.size,storage:'indexeddb'});
+   window.PStudio3D?.invalidateAsset?.(file.name);added++;
+  }catch(error){toast(file.name+': '+error.message);}
+ }
  for(const file of list){
   const lower=file.name.toLowerCase();
-  if(lower.endsWith('.glb')){
-   if(file.size>30*1024*1024){toast(file.name+' is over the 30 MB model limit');continue}
-   try{
-    if(!window.PStudioAssetStore)throw new Error('3D asset storage is not ready');
-    await window.PStudioAssetStore.put(file.name,file);
-    projectAssets=projectAssets.filter(a=>a.name!==file.name);
-    projectAssets.push({name:file.name,kind:'model',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});
-    added++;
-   }catch(error){toast(file.name+': '+error.message)}
-   continue;
-  }
+  if(lower.endsWith('.glb')||lower.endsWith('.gltf')||lower.endsWith('.bin')||importedDependencies.has(file))continue;
   if(!file.type.startsWith('image/')&&!file.type.startsWith('audio/'))continue;
-  if(file.size>2*1024*1024){toast(file.name+' is over the 2 MB image/audio limit');continue}
+  if(file.size>2*1024*1024){toast(file.name+' は2 MBを超えています');continue;}
+  const existing=projectAssets.find(a=>a.name===file.name);
+  if(existing?.locked){toast(file.name+' はロックされています');continue;}
   try{
-   const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error||new Error('Could not read file'));reader.readAsDataURL(file)});
+   const data=await fileAsDataURL(file);
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
    projectAssets.push({name:file.name,kind:file.type.startsWith('image/')?'image':'audio',mime:file.type,data});
    added++;
-  }catch(error){toast(file.name+': '+error.message)}
+  }catch(error){toast(file.name+': '+error.message);}
  }
  persistProject();renderProjectTree();
- if(added)toast(added+' asset(s) added to project');
+ if(added)toast(added+' 個のアセットをインポートしました');
+ else toast('インポートできるアセットはありませんでした');
 }
 function setupAssetDrop(){const zone=document.getElementById('asset-drop');if(!zone)return;zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');importAssets(e.dataTransfer.files)})}
 function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const current=selectedObject()?.sprite||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=selectedObject()?.script||''}}
