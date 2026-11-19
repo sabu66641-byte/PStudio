@@ -16,9 +16,9 @@ test('creates entities and keeps sparse component stores consistent after remova
   const b = ecs.createEntity({ Transform: { x: 3, y: 4 } });
   const c = ecs.createEntity({ Transform: { x: 5, y: 6 } });
 
-  assert.deepEqual(ecs.query(['Transform']), [a, b, c]);
+  assert.deepEqual(Array.from(ecs.query(['Transform'])), [a, b, c]);
   assert.equal(ecs.removeComponent(b, 'Transform'), true);
-  assert.deepEqual(ecs.query(['Transform']), [a, c]);
+  assert.deepEqual(Array.from(ecs.query(['Transform'])), [a, c]);
   assert.equal(ecs.getComponent(c, 'Transform').x, 5);
   assert.equal(ecs.hasComponent(b, 'Transform'), false);
 });
