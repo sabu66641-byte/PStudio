@@ -139,7 +139,7 @@
     if (pending.has(id)) return pending.get(id);
     const promise = (async () => {
       const value = await loader();
-      if (value === undefined || value === null) throw new Error('Resource loader returned no value: ' + type + '/' + key);
+      if (value === undefined || value === null) return null;
       const raced = records.get(id);
       if (raced && !raced.disposed) return raced.value;
       register(type, key, value, options);
