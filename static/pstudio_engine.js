@@ -205,20 +205,24 @@
 
   // 3D AABB collision is isolated from the existing 2D collider system.
   function bounds3D(command) {
-    let hx, hy, hz;
-    if (command.type === 'sphere') {
-      hx = hy = hz = Math.max(0, Number(command.radius) || 0);
-    } else if (command.type === 'cube') {
-      const h = Math.max(0, Number(command.size) || 0) / 2;
-      const x = Number(command.rotationX) || 0;
-      const y = Number(command.rotationY) || 0;
-      const z = Number(command.rotationZ) || 0;
-      const c1=Math.cos(x),s1=Math.sin(x),c2=Math.cos(y),s2=Math.sin(y),c3=Math.cos(z),s3=Math.sin(z);
-      hx=h*(Math.abs(c2*c3)+Math.abs(c2*s3)+Math.abs(s2));
-      hy=h*(Math.abs(s1*s2*c3+c1*s3)+Math.abs(s1*s2*s3-c1*c3)+Math.abs(s1*c2));
-      hz=h*(Math.abs(c1*s2*c3-s1*s3)+Math.abs(c1*s2*s3+s1*c3)+Math.abs(c1*c2));
-    } else return null;
     const x=Number(command.x)||0, y=Number(command.y)||0, z=Number(command.z)||0;
+    let hx=0,hy=0,hz=0;
+    if (command.type === 'sphere') {
+      hx=hy=hz=Math.max(0,Number(command.radius)||0);
+    } else if (command.type === 'cube' || command.type === 'box') {
+      const a=command.type==='cube' ? Math.max(0,Number(command.size)||0)/2 : Math.max(0,Number(command.width)||0)/2;
+      const b=command.type==='cube' ? a : Math.max(0,Number(command.height)||0)/2;
+      const c=command.type==='cube' ? a : Math.max(0,Number(command.depth)||0)/2;
+      const rx=Number(command.rotationX)||0, ry=Number(command.rotationY)||0, rz=Number(command.rotationZ)||0;
+      const c1=Math.cos(rx),s1=Math.sin(rx),c2=Math.cos(ry),s2=Math.sin(ry),c3=Math.cos(rz),s3=Math.sin(rz);
+      hx=Math.abs(c2*c3)*a+Math.abs(c2*s3)*b+Math.abs(s2)*c;
+      hy=Math.abs(s1*s2*c3+c1*s3)*a+Math.abs(s1*s2*s3-c1*c3)*b+Math.abs(s1*c2)*c;
+      hz=Math.abs(c1*s2*c3-s1*s3)*a+Math.abs(c1*s2*s3+s1*c3)*b+Math.abs(c1*c2)*c;
+    } else if (command.type==='cylinder' || command.type==='cone') {
+      hx=hz=Math.max(0,Number(command.radius)||0); hy=Math.max(0,Number(command.height)||0)/2;
+    } else if (command.type==='capsule') {
+      hx=hz=Math.max(0,Number(command.radius)||0); hy=Math.max(0,Number(command.height)||0)/2;
+    } else return null;
     return {minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz};
   }
   function overlaps3D(a,b) {
