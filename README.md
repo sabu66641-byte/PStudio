@@ -187,6 +187,7 @@ Import a binary glTF `.glb` or JSON glTF `.gltf` model in the ASSETS area, then 
 | `play_animation_once(name)` | Play a clip once and hold its final pose |
 | `stop_animation()` | Stop the current model animation |
 | `set_animation_speed(speed)` | Change animation playback speed |
+| `blend_animations(clip_a, clip_b, weight)` | Blend two looping clips; weight 0 selects the first and 1 selects the second |
 
 The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Switching between clips uses a short cross-fade instead of abruptly stopping the previous action. Compressed texture formats requiring separately configured decoders are not included in this build.
 
@@ -233,3 +234,6 @@ func update(dt)
 The browser game runtime provides opt-in per-object gameplay state. Attach a script to an object and use `set_max_hp(value)`, `set_hp(value)`, `get_hp()`, `get_max_hp()`, `damage(amount)`, `heal(amount)` and `is_alive()`. `apply_damage(target_name, amount)` applies damage to a scene object resolved by its name or ID. `attack_hitbox(radius, damage)` performs a simple radial attack query against other scene objects with physics bodies; it applies a short per-target repeat interval and is not a directional weapon hitbox. `enemy_follow(target_name, speed, stop_distance)` steers a configured character controller toward a named target. Configure the follower with `physics_body()` and `character_controller()` first.
 
 Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory_remove(item, count)` and `inventory_count(item)`. Quest flags are shared by quest ID: `quest_start(id)`, `quest_complete(id)` and `quest_is_complete(id)`. A graph-based navigation helper is available through `nav_add_node(id, x, y, z)`, `nav_connect(a, b)`, `nav_next_node(start, goal)` and `nav_clear()`. Navigation is an explicit node graph; automatic NavMesh generation and obstacle-aware path smoothing are not included. HUD drawing supports `draw_hud_text(text, x, y, size, color)` and `draw_hud_bar(value, max, x, y, width, height, color)`.
+
+
+`emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
