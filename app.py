@@ -660,7 +660,7 @@ GAME_FUNCTIONS = {
     "draw_terrain": 7, "draw_water": 7, "emit_particles": 7,
     "set_model_material": 4, "set_postprocessing": 3,
     "particle_emitter": 6, "stop_particle_emitter": 1, "solve_ik": 7, "animation_layer": 3,
-    "weapon_define": 4, "weapon_attack": 5, "combo_count": 0, "enemy_ai": 4, "ai_state": 0,
+    "weapon_define": 4, "weapon_attack": 4, "combo_count": 0, "enemy_ai": 4, "ai_state": 0,
     "define_item": 4, "equip_item": 1, "use_item": 1, "open_inventory": 0, "open_quest_log": 0, "close_game_ui": 0,
     "show_dialogue": 5, "dialogue_choice": 0, "quest_define": 4, "nav_build_from_triangles": 2,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3,
