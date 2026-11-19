@@ -19,6 +19,8 @@ test('quality presets configure render resolution and shadow filtering', () => {
   assert.ok(renderer.includes('PCFSoftShadowMap'));
   assert.ok(renderer.includes('setQualityPreset:applyQualityPreset'));
   assert.ok(renderer.includes('getStats:'));
+  assert.ok(renderer.includes('composer?.setPixelRatio?.(renderer.getPixelRatio())'));
+  assert.ok(renderer.includes('composer.setPixelRatio?.(renderer.getPixelRatio())'));
 });
 
 test('HDR loading and baked diffuse probe APIs are exposed with boundaries', () => {
