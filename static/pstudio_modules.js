@@ -19,6 +19,7 @@
       try { callback(event); } catch (error) { console.error('[PStudio Modules] listener failed:', error); }
     }
     try { window.dispatchEvent(new CustomEvent('pstudio-module-' + type, { detail: event })); } catch (_) {}
+    try { globalThis.PStudioEvents?.emit('module.' + type, event); } catch (_) {}
   }
 
   function serialize(record) {
