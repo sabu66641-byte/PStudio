@@ -309,6 +309,7 @@
     updateCamera();
   }
   function clear() {
+    if (!renderer) return;
     for(const mesh of meshCache.values())disposeMesh(mesh);
     meshCache.clear();
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
