@@ -83,6 +83,7 @@
         window.dispatchEvent(new window.CustomEvent('pstudio-ecs-' + type, { detail: event }));
       }
     } catch (_) {}
+    try { globalThis.PStudioEvents?.emit('ecs.' + type, event); } catch (_) {}
   }
 
   function requireComponentType(type) {
