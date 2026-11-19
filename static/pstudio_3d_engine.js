@@ -219,6 +219,33 @@
 
   function drawFrame(){if(!renderer||!scene||!camera)return;if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;if(ssrPass)ssrPass.enabled=ssrEnabled;composer.render();}else{if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;renderer.render(scene,camera);}}
 
+  function createGpuParticleSystem(capacity,color,size=0.085){
+    const T=window.THREE,count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
+    const origins=new Float32Array(count*3),velocities=new Float32Array(count*3),births=new Float32Array(count),lifetimes=new Float32Array(count);
+    geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+    geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
+    geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
+    geometry.setAttribute('aBirth',new T.BufferAttribute(births,1));
+    geometry.setAttribute('aLife',new T.BufferAttribute(lifetimes,1));
+    const uniforms={uTime:{value:particleClock},uColor:{value:new T.Color(color||'#ffffff')},uSize:{value:size},uPixelRatio:{value:renderer?.getPixelRatio?.()||1},uGravity:{value:2.4}};
+    const material=new T.ShaderMaterial({uniforms,transparent:true,depthWrite:false,blending:T.AdditiveBlending,
+      vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
+uniform float uTime;uniform float uSize;uniform float uPixelRatio;uniform float uGravity;varying float vAlpha;
+void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3 p=aOrigin+aVelocity*age+vec3(0.0,-0.5*uGravity*age*age,0.0);vec4 mvPosition=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mvPosition;gl_PointSize=clamp(uSize*uPixelRatio*(280.0/max(0.1,-mvPosition.z)),1.0,40.0);vAlpha=alive*(1.0-smoothstep(aLife*0.68,aLife,age));}`,
+      fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);#include <tonemapping_fragment>
+#include <colorspace_fragment>}`
+    });
+    const points=new T.Points(geometry,material);points.frustumCulled=false;points.renderOrder=3;geometry.setDrawRange(0,count);
+    return{points,geometry,material,uniforms,capacity:count,cursor:0};
+  }
+  function spawnGpuParticle(system,origin,velocity,lifetime){
+    const i=system.cursor%system.capacity;system.cursor=(system.cursor+1)%system.capacity;const a=system.geometry.attributes;
+    a.aOrigin.setXYZ(i,origin[0],origin[1],origin[2]);a.aVelocity.setXYZ(i,velocity[0],velocity[1],velocity[2]);a.aBirth.setX(i,particleClock);a.aLife.setX(i,Math.max(0.05,Number(lifetime)||1));
+    a.aOrigin.needsUpdate=true;a.aVelocity.needsUpdate=true;a.aBirth.needsUpdate=true;a.aLife.needsUpdate=true;
+  }
+  function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
+  function updateGpuParticleSystems(){const ratio=renderer?.getPixelRatio?.()||1;for(const emitter of particleEmitters.values()){emitter.system.uniforms.uTime.value=particleClock;emitter.system.uniforms.uPixelRatio.value=ratio;}for(const effect of particleBursts.values()){effect.system.uniforms.uTime.value=particleClock;effect.system.uniforms.uPixelRatio.value=ratio;}}
+
   function configureWaterMaterial(material) {
     const uniforms={uPStudioTime:{value:0},uPStudioWaveAmplitude:{value:0.075}};
     material.onBeforeCompile=shader=>{
@@ -513,6 +540,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function disposeMesh(mesh) {
     if (!mesh) return;
     if (mesh.parent) mesh.parent.remove(mesh);
+    if (mesh.material) waterMaterials.delete(mesh.material);
     if (mesh.geometry) mesh.geometry.dispose();
     if (mesh.material) mesh.material.dispose();
     mesh.getRenderTarget?.()?.dispose?.();
