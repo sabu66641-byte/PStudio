@@ -117,6 +117,11 @@ A full graphical browser session and deployment-specific Flask/Discord integrati
 | `set_background(color)` | Set the 3D scene background color |
 | `set_fog(color, near, far)` | Configure distance fog |
 | `set_light(x, y, z, intensity)` | Set the directional light position and intensity |
+| `set_camera(x, y, z, targetX, targetY, targetZ)` | Set an immediate 3D camera pose |
+| `set_camera_follow(x, y, z, targetX, targetY, targetZ, smoothing)` | Smoothly follow a target; 0 is immediate and larger values catch up faster |
+| `set_material(roughness, metalness)` | Set the current Game Object's PBR roughness and metalness (0–1) for following geometry and models |
+
+Each Game Object can issue `set_material(roughness, metalness)` before its draw calls. The values are clamped to 0–1; low roughness gives a sharper reflection response, while higher metalness makes the surface more metallic. Imported model materials are cloned per instance before overrides, so one instance does not mutate another instance's shared source material. `set_camera_follow(..., smoothing)` applies exponential camera damping each frame; `0` disables smoothing and larger values track the target more quickly.
 
 3D geometry is cached between frames when its owner and draw-call order remain stable. Geometry is rebuilt only when its shape or dimensions change. This reduces recurring allocation and disposal compared with rebuilding every mesh on every frame. It does not guarantee a particular frame rate; performance still depends on device GPU, geometry count, resolution and browser support.
 
