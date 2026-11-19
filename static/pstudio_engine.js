@@ -299,6 +299,8 @@
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
       case 'set_shader': if(a.length===1){const mode=String(a[0]).toLowerCase();if(!['standard','toon','unlit','normal','wireframe'].includes(mode))throw new PsRuntimeError('Shader preset must be standard, toon, unlit, normal or wireframe.');c.draw.push({type:'material',shader:mode});return null;} break;
+      case 'set_model_material': if(a.length===4){c.draw.push({type:'model_material',name:String(a[0]),roughness:Math.max(0,Math.min(1,finite(a[1]))),metalness:Math.max(0,Math.min(1,finite(a[2]))),color:String(a[3])});return null;} break;
+      case 'set_postprocessing': if(a.length===3){c.draw.push({type:'postfx',bloom:truthy(a[0]),ssao:truthy(a[1]),strength:finite(a[2])});return null;} break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
