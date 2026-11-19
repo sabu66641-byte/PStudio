@@ -35,7 +35,11 @@
       if(hit){
         const mesh=hit.object,ownerId=mesh.userData.ownerId;
         window.PStudioSceneInteraction?.select?.(ownerId);
-        const plane=new window.THREE.Plane(new window.THREE.Vector3(0,1,0),-mesh.position.y);
+        // Drag on a camera-facing plane so horizontal and vertical finger movement
+        // both translate the object naturally in the editor view.
+        const normal=new window.THREE.Vector3();
+        camera.getWorldDirection(normal);
+        const plane=new window.THREE.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position);
         const point=new window.THREE.Vector3();
         if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
         else pointerMode='orbit';
@@ -52,7 +56,12 @@
       }else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
         const point=new window.THREE.Vector3();
-        if(raycaster.ray.intersectPlane(dragInfo.plane,point)){const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));dragInfo.mesh.position.copy(pos);window.PStudioSceneInteraction?.moveWorld?.(dragInfo.ownerId,pos.x,pos.y,pos.z);}
+        if(raycaster.ray.intersectPlane(dragInfo.plane,point)){
+          const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));
+          dragInfo.mesh.position.copy(pos);
+          window.PStudioSceneInteraction?.moveWorld?.(dragInfo.ownerId,pos.x,pos.y,pos.z);
+          renderer.render(scene,camera);
+        }
       }
       if(pointerMode==='orbit' || pointerMode==='pinch') updateCamera();
       e.preventDefault();
