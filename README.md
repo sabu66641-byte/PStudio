@@ -105,6 +105,39 @@ Use `enable(id)` to activate a module and its required dependencies. `disable(id
 
 Module manager regression tests can be run with `node --test tests/module_system.test.js` (Node.js built-in test runner; no third-party package is required).
 
+## Entity Component System (ECS) 1.0
+
+The ECS core is exposed as `window.PStudioECS`. It separates entity identity, component data and update systems. Component storage uses dense arrays with sparse entity-index maps, so systems can iterate only the entities that contain the components they need instead of scanning every Scene Object for every behavior.
+
+- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`.
+- **Components:** `registerComponent(type, options?)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
+- **Systems:** `registerSystem({ id, components, priority, update })`, `setSystemEnabled`, `unregisterSystem`. Lower priority values run first; equal priorities preserve registration order.
+- **Iteration:** `forEach(componentTypes, callback)` iterates matching entities without allocating a query result array. `query(componentTypes)` returns matching entity IDs in ascending order.
+- **Deferred structure changes:** creating/destroying entities or adding/removing components during `forEach` is rejected to avoid corrupting an active iteration. Queue these changes with `ecs.defer(() => { ... })`; deferred actions run after the current system update.
+- **Lifecycle and diagnostics:** `on(event, callback)`, `stats()`, `setEnabled(boolean)`, `clearEntities()`.
+
+The built-in `Transform` component contains position (`x/y/z`), rotation (`rotationX/Y/Z`) and scale (`scaleX/Y/Z). `SceneObjectRef` identifies a linked editor object. During Play, the runtime mirrors existing Scene Objects into ECS entities, runs enabled ECS systems before the legacy per-object ps update callbacks, then applies ECS Transform changes back to Scene Objects. Changes made by existing ps scripts are synchronized back into ECS on the following frame. Stop removes only the Scene Object mirror entities; separately-created ECS entities and registered systems remain available.
+
+Example: a generic movement system that does not depend on any specific game:
+
+```js
+PStudioECS.registerSystem({
+  id: 'game.motion',
+  components: ['Transform'],
+  priority: 0,
+  update(dt, ecs) {
+    ecs.forEach(['Transform'], (entity, transform) => {
+      transform.x += 2 * dt;
+    });
+  }
+});
+```
+
+**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
+
+Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
+
+
 ## Project Backup and Restore
 
 Use the **Backup** menu in the application header to export or restore a portable `.pstudio` project archive. The archive includes project scripts, scene files, scene-object settings, image/audio data URLs, and the binary GLB/GLTF model files stored in IndexedDB. This allows a project to be moved to another browser or device instead of relying only on the current browser's local storage.
