@@ -523,6 +523,12 @@
     try {
       const commands=new Map();
       window.PStudioPhysics?.beginFrame?.();
+      const ecs = window.PStudioECS;
+      if (ecs?.isEnabled?.()) {
+        ecs.syncSceneObjects(sceneObjects || []);
+        ecs.update(dt, { sceneObjects: sceneObjects || [], runtime });
+        ecs.applySceneObjectTransforms(sceneObjects || []);
+      }
       for(const o of sceneObjects||[]){
         const script=astForScript(o.script);if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
@@ -641,6 +647,8 @@
       }
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
       window.PStudioPhysics?.clear?.();
+      window.PStudioECS?.clearSceneObjects?.();
+      window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
@@ -648,13 +656,14 @@
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestAnimationFrame(tick);
-    } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
+    } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
     if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
+    window.PStudioECS?.clearSceneObjects?.();
     justPressed.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
