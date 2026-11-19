@@ -1,0 +1,20 @@
+func start()
+    physics_body(0, 2.4, 0, 0.38, 1.8, 1)
+    set_gravity(0, -18, 0)
+    character_controller(5.5, 28, 0.28)
+
+func update(dt)
+    move_character(get_axis("horizontal"), get_axis("vertical"))
+
+    if was_key_pressed("space")
+        jump(7.5)
+
+    if not is_grounded()
+        play_animation("Jump")
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 1
+        play_animation("Run")
+    else
+        play_animation("Idle")
+
+    load_model("Traveler.glb", get_x(), get_y() - 0.9, get_z(), 1)
+    set_camera(get_x() + 4, get_y() + 3, get_z() + 6, get_x(), get_y(), get_z())
