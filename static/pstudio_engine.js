@@ -292,7 +292,7 @@
   function renderFrame() {
     const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
     const draws=[...commands.values()].flat();
-    const has3D=draws.some(d=>['cube','sphere','grid','camera'].includes(d.type));
+    const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
