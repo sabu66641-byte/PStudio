@@ -282,6 +282,8 @@
       case 'quest_get_progress': if(a.length===1)return window.PStudioGameplay?.questGetProgress(a[0])??0; break;
       case 'nav_add_node': if(a.length===4)return window.PStudioGameplay?.navAddNode(a[0],a[1],a[2],a[3])??false; break;
       case 'nav_connect': if(a.length===2)return window.PStudioGameplay?.navConnect(a[0],a[1])??false; break;
+      case 'nav_build_grid': if(a.length===5)return window.PStudioGameplay?.navBuildGrid(a[0],a[1],a[2],a[3],a[4])??0; break;
+      case 'nav_block_node': if(a.length===2)return window.PStudioGameplay?.navBlock(a[0],truthy(a[1]))??false; break;
       case 'nav_next_node': if(a.length===2)return window.PStudioGameplay?.navNext(a[0],a[1])??''; break;
       case 'nav_clear': if(!a.length)return window.PStudioGameplay?.navClear(); break;
       case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:c.dt}); return null; } break;
