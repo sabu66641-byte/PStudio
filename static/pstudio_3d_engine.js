@@ -33,6 +33,7 @@
   let pinchGestureMode = null;
   let cameraTarget = [0, 0, 0];
   let cameraBase = [6, 5, 8];
+  let activeCameraOwnerId = null;
   let cameraPan = null;
   let cameraSmoothing = 0;
   let smoothedTarget = null;
@@ -260,7 +261,7 @@
     };
   }
 
-  function updateCamera(deltaTime = 1 / 60, excludedOwnerId = null) {
+  function updateCamera(deltaTime = 1 / 60, excludedOwnerId = activeCameraOwnerId) {
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
@@ -702,12 +703,14 @@
       ? [cameraCommand.x, cameraCommand.y, cameraCommand.z]
       : [6, 5, 8];
     cameraSmoothing = cameraCommand ? Math.max(0, Math.min(30, Number(cameraCommand.smoothing) || 0)) : 0;
+    activeCameraOwnerId=cameraOwnerId;
     if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
     refreshSelectionOutline();
     updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
   }
   function clear() {
     if (!renderer) return;
+    activeCameraOwnerId=null;
     for(const key of [...modelInstances.keys()])removeModelInstance(key);
     for(const mesh of meshCache.values())disposeMesh(mesh);
     meshCache.clear();
