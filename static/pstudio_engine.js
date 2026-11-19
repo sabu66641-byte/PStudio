@@ -448,14 +448,24 @@
       try{window.PStudio3D.render(buildScenePreview3D());}catch(err){setOutput?.('3D view error: '+err.message,'error');}
     } else { if(c3)c3.style.display='none'; if(c2)c2.style.display='block'; if(typeof renderGamePreview==='function')renderGamePreview(); }
   }
+  function renderHud(commands) {
+    const canvas=$('game-hud-canvas');if(!canvas)return;const context=canvas.getContext('2d');if(!context)return;
+    context.clearRect(0,0,canvas.width,canvas.height);
+    for(const draw of commands){
+      if(draw.type==='hud_text'){context.save();context.font='600 '+draw.size+'px system-ui,sans-serif';context.fillStyle=draw.color||'#ffffff';context.textBaseline='top';context.shadowColor='#000000';context.shadowBlur=3;context.fillText(String(draw.text),draw.x,draw.y);context.restore();}
+      else if(draw.type==='hud_bar'){const ratio=clampAxis(Number(draw.value)/Math.max(0.001,Number(draw.max)));context.save();context.fillStyle='#111827cc';context.fillRect(draw.x,draw.y,draw.w,draw.h);context.fillStyle=draw.color||'#22c55e';context.fillRect(draw.x,draw.y,draw.w*ratio,draw.h);context.strokeStyle='#ffffffaa';context.lineWidth=1;context.strokeRect(draw.x,draw.y,draw.w,draw.h);context.restore();}
+    }
+  }
   function renderFrame() {
     const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
     const draws=[...commands.values()].flat();
+    const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
     else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(commands);}
+    renderHud(hudDraws);
     const status=$('game-status'); if(status&&runtime?.running){const m=status.textContent.match(/([0-9.]+) FPS/);status.textContent='RUNNING · '+(m?m[1]:'0')+' FPS · '+(sceneObjects||[]).length+' objects · VIEW '+(use3D?'3D':'2D')+' · '+draws.length+' draw calls';}
   }
   function tick(time) {
