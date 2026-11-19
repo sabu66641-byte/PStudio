@@ -524,7 +524,7 @@
       const commands=new Map();
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
-      if (ecs?.isEnabled?.()) {
+      if (ecs?.hasActiveSystems?.()) {
         ecs.syncSceneObjects(sceneObjects || []);
         ecs.update(dt, { sceneObjects: sceneObjects || [], runtime });
         ecs.applySceneObjectTransforms(sceneObjects || []);
