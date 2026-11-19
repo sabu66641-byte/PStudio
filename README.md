@@ -81,6 +81,17 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - This is a game-development foundation, not a finished large-world action-RPG engine. Terrain streaming, robust mesh physics, navigation, advanced animation blending, particles, audio mixing, combat systems and save data are future work.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
 
+## Project Backup and Restore
+
+Use the **Backup** menu in the application header to export or restore a portable `.pstudio` project archive. The archive includes project scripts, scene files, scene-object settings, image/audio data URLs, and the binary GLB/GLTF model files stored in IndexedDB. This allows a project to be moved to another browser or device instead of relying only on the current browser's local storage.
+
+- Export saves the currently open file and active scene before creating the archive.
+- Restore validates the archive version, file names, asset references, object IDs and declared sizes before replacing the active project.
+- Existing model blobs are snapshotted before replacement. If an IndexedDB write or local project-storage write fails, the importer attempts to restore the previous model blobs.
+- The archive is limited to 64 MB. Individual image/audio assets retain the existing 2 MB import limit.
+- This is a project source/asset backup, not a standalone compiled game build. A portable runtime build/export pipeline remains future work.
+- Browser storage is still local to each device; export backups regularly before clearing browser data.
+
 ## Validation performed for this build
 
 - Python syntax compilation (`py_compile`).
