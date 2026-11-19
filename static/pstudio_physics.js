@@ -220,6 +220,7 @@
     if(body.wasGrounded){
       const bottom=body.position[1]-body.height/2,rise=box.maxY-bottom;
       const horizontal=body.position[0]+body.radius>box.minX&&body.position[0]-body.radius<box.maxX&&body.position[2]+body.radius>box.minZ&&body.position[2]-body.radius<box.maxZ;
+      if(horizontal&&Math.abs(rise)<=SKIN*3&&body.velocity[1]<=0.05){body.position[1]=box.maxY+body.height/2;body.velocity[1]=0;body.grounded=true;body.groundPlatformId=box.id||null;return true;}
       if(horizontal&&rise>SKIN&&rise<=body.stepHeight+SKIN){body.position[1]=box.maxY+body.height/2;body.velocity[1]=Math.max(0,body.velocity[1]);body.grounded=true;body.groundPlatformId=box.id||null;return true;}
     }
     const p = body.position;
