@@ -144,10 +144,11 @@
 
   function getStaticColliders(commandsByObject) {
     const colliders = [];
-    const trackPlatform = (collider, x, y, z) => {
-      const previous=platformPositions.get(collider.id);
+    const trackPlatform = (collider, x, y, z, rotation=[0,0,0]) => {
+      const previous=platformPositions.get(collider.id),rot=rotation.map(v=>finite(v));
       collider.deltaX=previous?x-previous.x:0;collider.deltaY=previous?y-previous.y:0;collider.deltaZ=previous?z-previous.z:0;
-      platformPositions.set(collider.id,{x,y,z});return collider;
+      collider.previousPosition=previous?[previous.x,previous.y,previous.z]:[x,y,z];collider.deltaRotation=previous?rot.map((v,i)=>{let d=v-previous.rotation[i];while(d>Math.PI)d-=Math.PI*2;while(d< -Math.PI)d+=Math.PI*2;return d;}):[0,0,0];
+      platformPositions.set(collider.id,{x,y,z,rotation:rot});return collider;
     };
     for (const [ownerId, draws] of commandsByObject) {
       if (bodies.has(ownerId)) continue;
@@ -182,7 +183,7 @@
           hx = hz = Math.max(0.001, finite(d.radius));
           hy = Math.max(0.001, finite(d.height)) / 2;
         } else continue;
-        colliders.push(trackPlatform({type:'box',id:String(ownerId)+':'+colliders.length,minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz},x,y,z));
+        colliders.push(trackPlatform({type:'box',id:String(ownerId)+':'+colliders.length,minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz},x,y,z,[finite(d.rotationX),finite(d.rotationY),finite(d.rotationZ)]));
       }
     }
     return colliders;
@@ -354,10 +355,10 @@
 
     const oldPosition = body.position.slice();
     body.wasGrounded = wasGrounded;
-    if(wasGrounded&&body.groundPlatformId){const platform=colliders.find(c=>c.id===body.groundPlatformId);if(platform){body.position[0]+=platform.deltaX||0;body.position[1]+=platform.deltaY||0;body.position[2]+=platform.deltaZ||0;}}
+    if(wasGrounded&&body.groundPlatformId){const platform=colliders.find(c=>c.id===body.groundPlatformId);if(platform){const old=body.position.slice(),center=platform.previousPosition||[platform.x||0,platform.y||0,platform.z||0],rx=platform.deltaRotation?.[0]||0,ry=platform.deltaRotation?.[1]||0,rz=platform.deltaRotation?.[2]||0;let x=old[0]-center[0],y=old[1]-center[1],z=old[2]-center[2];const cY=Math.cos(ry),sY=Math.sin(ry),nx=x*cY+z*sY,nz=-x*sY+z*cY;x=nx;z=nz;const cX=Math.cos(rx),sX=Math.sin(rx),ny=y*cX-z*sX,nz2=y*sX+z*cX;y=ny;z=nz2;const cZ=Math.cos(rz),sZ=Math.sin(rz),nx2=x*cZ-y*sZ,ny2=x*sZ+y*cZ;x=nx2;y=ny2;body.position[0]=center[0]+(platform.deltaX||0)+x;body.position[1]=center[1]+(platform.deltaY||0)+y;body.position[2]=center[2]+(platform.deltaZ||0)+z;}}
     for(let axis=0;axis<3;axis++)body.velocity[axis]+=(body.gravity[axis]+body.force[axis]*body.invMass)*dt;
     const travel=Math.hypot(body.velocity[0]*dt,body.velocity[1]*dt,body.velocity[2]*dt);
-    const slices=clamp(Math.ceil(travel/Math.max(0.08,body.radius*0.45)),1,64);
+    const slices=clamp(Math.ceil(travel/Math.max(0.035,body.radius*0.25)),1,256);
     for(let slice=0;slice<slices;slice++){const previous=body.position.slice();for(let axis=0;axis<3;axis++)body.position[axis]+=body.velocity[axis]*dt/slices;solveWorld(body,colliders,previous);body.wasGrounded=body.grounded;}
     if (!wasGrounded && body.grounded && body.airTime >= 0.08) {
       body.landed = true;
