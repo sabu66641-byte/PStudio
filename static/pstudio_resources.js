@@ -77,6 +77,7 @@
     };
     records.set(id, record);
     emit('register', { type: record.type, key: record.key, category, sizeBytes: record.sizeBytes });
+    trim(category, undefined, id);
     return record;
   }
 
@@ -160,7 +161,7 @@
     return trim(key);
   }
 
-  function trim(category, targetBytes) {
+  function trim(category, targetBytes, protectId) {
     const categories = category ? [category] : ['cpu', 'gpu'];
     let removed = 0;
     for (const kind of categories) {
@@ -171,7 +172,7 @@
       for (const record of records.values()) {
         if (record.category !== kind) continue;
         total += record.sizeBytes;
-        if (record.refCount === 0 && !record.pinned) candidates.push(record);
+        if (record.refCount === 0 && !record.pinned && record.id !== protectId) candidates.push(record);
       }
       candidates.sort((a, b) => a.lastUsed - b.lastUsed);
       for (const record of candidates) {
