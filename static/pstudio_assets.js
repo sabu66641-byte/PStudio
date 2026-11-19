@@ -38,7 +38,10 @@
         type: blob.type || 'model/gltf-binary',
         updatedAt: Date.now()
       });
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        try { window.PStudioResources?.remove?.('binary-asset', String(name), { reason: 'asset-updated' }); } catch (_) {}
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error || new Error('モデルを保存できませんでした。'));
       tx.onabort = () => reject(tx.error || new Error('モデル保存が中断されました。'));
     });
