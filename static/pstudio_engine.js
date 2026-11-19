@@ -250,9 +250,8 @@
     }
   }
   function buildScenePreview3D() {
-    const commands = [];
-    commands.push({type:'grid',size:12,divisions:12});
-    commands.push({type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0});
+    const commands = new Map();
+    commands.set('__scene__',[{type:'grid',size:12,divisions:12},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
       const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
       const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
@@ -260,10 +259,12 @@
       const w = Math.max(0.05,(Number(o.w)||64)/100);
       const h = Math.max(0.05,(Number(o.h)||64)/100);
       const color = o.color || '#d1d5db';
-      if (o.shape === 'circle') commands.push({type:'sphere',x,y,z,radius:Math.max(w,h)/2,color});
-      else commands.push({type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180});
+      const draw = o.shape === 'circle'
+        ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
+        : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
+      commands.set(o.id,[draw]);
     }
-    return new Map([['scene-preview',commands]]);
+    return commands;
   }
   function setViewMode(mode) {
     if (!['auto','2d','3d'].includes(mode)) return;
