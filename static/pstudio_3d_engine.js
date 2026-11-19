@@ -11,7 +11,47 @@
   let primitiveGroup = null;
   let gridGroup = null;
   let lastSize = { width: 0, height: 0 };
+  let orbitYaw = 0, orbitPitch = 0, zoom = 1, pointerMode = null, pointerStart = null, dragInfo = null;
+  let raycaster = null, pointerNdc = null, controlsReady = false;
 
+  function setupControls() {
+    if (controlsReady) return;
+    controlsReady = true;
+    raycaster = new window.THREE.Raycaster(); pointerNdc = new window.THREE.Vector2();
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('pointerdown', e => {
+      if (!renderer || !camera) return;
+      const rect=canvas.getBoundingClientRect();
+      pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
+      raycaster.setFromCamera(pointerNdc,camera);
+      const hit=raycaster.intersectObjects(primitiveGroup.children,false).find(h=>h.object.userData.ownerId);
+      pointerStart={x:e.clientX,y:e.clientY};
+      if(hit){
+        const mesh=hit.object,ownerId=mesh.userData.ownerId;
+        window.PStudioSceneInteraction?.select?.(ownerId);
+        const plane=new window.THREE.Plane(new window.THREE.Vector3(0,1,0),-mesh.position.y);
+        const point=new window.THREE.Vector3();
+        if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
+        else pointerMode='orbit';
+      }else{pointerMode='orbit';dragInfo=null;}
+      try{canvas.setPointerCapture(e.pointerId)}catch(_){} e.preventDefault();
+    });
+    canvas.addEventListener('pointermove',e=>{
+      if(!pointerMode||!renderer)return;
+      if(pointerMode==='orbit'){
+        const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
+        orbitYaw+=dx*0.008;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.008));pointerStart={x:e.clientX,y:e.clientY};
+      }else if(pointerMode==='object'&&dragInfo){
+        const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
+        const point=new window.THREE.Vector3();
+        if(raycaster.ray.intersectPlane(dragInfo.plane,point)){const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));dragInfo.mesh.position.copy(pos);window.PStudioSceneInteraction?.move?.(dragInfo.ownerId,pos.x,pos.y,pos.z);}
+      }
+      e.preventDefault();
+    });
+    const end=()=>{pointerMode=null;dragInfo=null;pointerStart=null;};
+    canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.001)));e.preventDefault();},{passive:false});
+  }
   function ensureRenderer() {
     if (renderer) return true;
     if (!window.THREE || !window.THREE.WebGLRenderer) return false;
@@ -31,6 +71,7 @@
     const key = new T.DirectionalLight(0xffffff, 2.2);
     key.position.set(5, 8, 6);
     scene.add(key);
+    setupControls();
     return true;
   }
 
@@ -65,7 +106,7 @@
     disposeGroup(primitiveGroup);
     disposeGroup(gridGroup);
     let cameraCommand = null;
-    for (const list of commandsByObject.values()) {
+    for (const [ownerId,list] of commandsByObject.entries()) {
       for (const d of list) {
         if (d.type === 'camera') { cameraCommand = d; continue; }
         if (d.type === 'grid') {
@@ -81,18 +122,20 @@
         else continue;
         const material = new T.MeshStandardMaterial({ color: d.color || '#d1d5db', roughness: 0.72, metalness: 0.04 });
         const mesh = new T.Mesh(geometry, material);
+        mesh.userData.ownerId = ownerId;
         mesh.position.set(d.x, d.y, d.z);
         if (d.type === 'cube' || d.type === 'box') mesh.rotation.set(d.rotationX || 0, d.rotationY || 0, d.rotationZ || 0);
         primitiveGroup.add(mesh);
       }
     }
-    if (cameraCommand) {
-      camera.position.set(cameraCommand.x, cameraCommand.y, cameraCommand.z);
-      camera.lookAt(cameraCommand.targetX, cameraCommand.targetY, cameraCommand.targetZ);
-    } else {
-      camera.position.set(6, 5, 8);
-      camera.lookAt(0, 0, 0);
-    }
+    const target = cameraCommand ? new T.Vector3(cameraCommand.targetX,cameraCommand.targetY,cameraCommand.targetZ) : new T.Vector3(0,0,0);
+    const base = cameraCommand ? new T.Vector3(cameraCommand.x,cameraCommand.y,cameraCommand.z) : new T.Vector3(6,5,8);
+    const offset = base.sub(target).multiplyScalar(zoom);
+    offset.applyAxisAngle(new T.Vector3(0,1,0),orbitYaw);
+    const right = new T.Vector3(1,0,0).applyAxisAngle(new T.Vector3(0,1,0),orbitYaw);
+    offset.applyAxisAngle(right,orbitPitch);
+    camera.position.copy(target).add(offset);
+    camera.lookAt(target);
     resize();
     renderer.render(scene, camera);
   }
