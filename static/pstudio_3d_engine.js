@@ -262,10 +262,10 @@
       if (!window.PStudioGLTFLoader) throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
       if (!window.PStudioAssetStore) throw new Error('3D asset storage is unavailable.');
       const blob=await window.PStudioAssetStore.get(name);
-      if (!blob) throw new Error('Model asset not found: '+name+' (import the .glb file first)');
-      const buffer=await blob.arrayBuffer();
+      if (!blob) throw new Error('Model asset not found: '+name+' (import a .glb or .gltf file first)');
       const loader=new window.PStudioGLTFLoader();
-      const gltf=await new Promise((resolve,reject)=>loader.parse(buffer,'',resolve,reject));
+      const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer();
+      const gltf=await new Promise((resolve,reject)=>loader.parse(source,'',resolve,reject));
       if (!gltf || !gltf.scene) throw new Error('The GLB file contains no scene: '+name);
       const asset={scene:gltf.scene,animations:gltf.animations||[]};
       modelCache.set(name,asset);
@@ -277,10 +277,13 @@
       window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
       return null;
     }).then(asset=>{
+      if(asset)modelLoadErrors.delete(name);
       if(asset && renderer && lastCommands) {
         try { render(lastCommands); } catch(error) { console.error('[PStudio] Model render failed:',error); }
       }
       return asset;
+    }).finally(()=>{
+      modelPromises.delete(name);
     });
     modelPromises.set(name,promise);
     return promise;
@@ -463,6 +466,18 @@
     if(renderer)renderer.render(scene,camera);
   }
 
-  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE, getModelError: name => modelLoadErrors.get(name) || null };
+  function invalidateAsset(name) {
+    const key=String(name);
+    modelCache.delete(key);
+    modelPromises.delete(key);
+    modelLoadErrors.delete(key);
+    for(const [instanceKey,instance] of modelInstances){
+      if(instance.name===key)removeModelInstance(instanceKey);
+    }
+    if(renderer&&lastCommands){
+      try{render(lastCommands);}catch(error){console.error('[PStudio] Asset refresh failed:',error);}
+    }
+  }
+  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE, getModelError: name => modelLoadErrors.get(name) || null, invalidateAsset };
   window.addEventListener('resize', resize);
 })();
