@@ -213,6 +213,7 @@
       case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:o.color||'#a1a1aa'}); return null; } break;
       case 'draw_box': if (a.length===6) { c.draw.push({type:'box',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),depth:Math.max(0.001,finite(a[5])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
       case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:o.color||'#64748b'}); return null; } break;
+      case 'add_triangle_collider': if(a.length===9){c.draw.push({type:'triangle_collider',points:a.map(finite)});return null;} break;
       case 'draw_cylinder': if (a.length===5) { c.draw.push({type:'cylinder',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_cone': if (a.length===5) { c.draw.push({type:'cone',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:o.color||'#93c5fd'}); return null; } break;
@@ -230,6 +231,8 @@
       case 'set_velocity_y': if (a.length===1) return physics?.setVelocity(o.id,1,finite(a[0])); break;
       case 'set_velocity_z': if (a.length===1) return physics?.setVelocity(o.id,2,finite(a[0])); break;
       case 'character_controller': if (a.length===3) { physics?.configureController(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
+      case 'set_step_height': if(a.length===1){physics?.setStepHeight(o.id,finite(a[0]));return null;} break;
+      case 'set_max_slope': if(a.length===1){physics?.setMaxSlope(o.id,finite(a[0]));return null;} break;
       case 'move_character': if (a.length===2) {
         let moveX=finite(a[0]),moveZ=finite(a[1]);
         const basis=window.PStudio3D?.getCameraBasis?.();
