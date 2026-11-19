@@ -1562,6 +1562,14 @@ try {
   catch (error) { console.warn('[PStudio] SSAO unavailable:', error); }
   try { postFX.OutputPass = (await import('three/addons/postprocessing/OutputPass.js')).OutputPass; }
   catch (error) { console.warn('[PStudio] OutputPass unavailable:', error); }
+  try { postFX.GTAOPass = (await import('three/addons/postprocessing/GTAOPass.js')).GTAOPass; }
+  catch (error) { console.warn('[PStudio] GTAO unavailable; SSAO fallback will be used.', error); }
+  try { postFX.SSRPass = (await import('three/addons/postprocessing/SSRPass.js')).SSRPass; }
+  catch (error) { console.warn('[PStudio] Screen-space reflections unavailable.', error); }
+  try { postFX.LightProbeGenerator = (await import('three/addons/lights/LightProbeGenerator.js')).LightProbeGenerator; }
+  catch (error) { console.warn('[PStudio] Light probe baking unavailable.', error); }
+  try { window.PStudioHDRLoader = (await import('three/addons/loaders/RGBELoader.js')).RGBELoader; }
+  catch (error) { console.warn('[PStudio] HDR environment loading unavailable.', error); }
   window.PStudioPostFX = postFX;
 
   try {
