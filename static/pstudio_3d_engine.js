@@ -259,8 +259,10 @@
       modelCache.set(name,asset);
       return asset;
     })().catch(error=>{
-      modelLoadErrors.set(name,String(error?.message||error));
+      const message=String(error?.message||error);
+      modelLoadErrors.set(name,message);
       console.error('[PStudio] Model load failed:',name,error);
+      window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
       return null;
     }).then(asset=>{
       if(asset && renderer && lastCommands) {
@@ -314,8 +316,12 @@
         action.play();
         instance.activeClip=clip.name;
         instance.activeLoop=state.loop!==false;
-      } else if(!clip && !modelLoadErrors.has(instance.name)) {
-        console.warn('[PStudio] Animation clip not found:',state.clipName,'in',instance.name);
+      } else if(!clip) {
+        const warningKey=instance.name+':'+state.clipName;
+        if(!modelLoadErrors.has(warningKey)){
+          modelLoadErrors.set(warningKey,'animation clip not found');
+          console.warn('[PStudio] Animation clip not found:',state.clipName,'in',instance.name);
+        }
       }
     }
     instance.mixer.timeScale=instance.speed;
