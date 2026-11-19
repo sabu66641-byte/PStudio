@@ -810,7 +810,7 @@ async function renameProjectFile(oldName){
  if(activeProjectFile===oldName)activeProjectFile=next;
  persistProject();renderProjectTree();openProjectFile(next);toast('Renamed: '+next);
 }
-function deleteProjectFile(name){
+async function deleteProjectFile(name){
  const file=projectFiles[name];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
  if(file.type==='ps'&&Object.values(projectFiles).filter(f=>f.type==='ps').length<=1){toast('最後のScriptファイルは削除できません');return;}
  if(!await showPStudioConfirm("「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。","削除"))return;
