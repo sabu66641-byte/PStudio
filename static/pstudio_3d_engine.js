@@ -17,6 +17,7 @@
   const modelLoadErrors = new Map();
   let lastCommands = null;
   let selectedOwnerId = null;
+  let selectionSignature = '';
   let gridGroup = null;
   let hemisphereLight = null;
   let keyLight = null;
@@ -169,30 +170,42 @@
 
   function refreshSelectionOutline() {
     if (!selectionGroup || !window.THREE) return;
-    disposeGroup(selectionGroup);
-    if (!selectedOwnerId || !primitiveGroup) return;
+    if (!selectedOwnerId || !primitiveGroup) {
+      if(selectionGroup.children.length)disposeGroup(selectionGroup);
+      selectionSignature='';
+      return;
+    }
     const T = window.THREE;
     const meshes = [];
-    primitiveGroup.traverse(object => { if (object.isMesh) meshes.push(object); });
-    if (modelGroup) modelGroup.traverse(object => { if (object.isMesh) meshes.push(object); });
-    for (const mesh of meshes) {
-      if (mesh.userData.ownerId !== selectedOwnerId || !mesh.geometry) continue;
-      const edges = mesh.geometry.type === 'SphereGeometry' ? new T.WireframeGeometry(mesh.geometry) : new T.EdgesGeometry(mesh.geometry, 1);
-      const material = new T.LineDashedMaterial({
-        color: 0xffffff, dashSize: 0.12, gapSize: 0.08,
-        transparent: true, opacity: 0.98, depthTest: false
-      });
-      const outline = new T.LineSegments(edges, material);
-      outline.computeLineDistances();
-      mesh.updateWorldMatrix(true, false);
-      mesh.matrixWorld.decompose(outline.position, outline.quaternion, outline.scale);
+    primitiveGroup.traverse(object => { if (object.isMesh && object.userData.ownerId === selectedOwnerId) meshes.push(object); });
+    if (modelGroup) modelGroup.traverse(object => { if (object.isMesh && object.userData.ownerId === selectedOwnerId) meshes.push(object); });
+    const signature=selectedOwnerId+':'+meshes.map(mesh=>mesh.uuid+':'+mesh.geometry?.uuid).join('|');
+    if(signature!==selectionSignature){
+      disposeGroup(selectionGroup);
+      for (const mesh of meshes) {
+        if(!mesh.geometry)continue;
+        const edges = mesh.geometry.type === 'SphereGeometry' ? new T.WireframeGeometry(mesh.geometry) : new T.EdgesGeometry(mesh.geometry, 1);
+        const material = new T.LineDashedMaterial({
+          color: 0xffffff, dashSize: 0.12, gapSize: 0.08,
+          transparent: true, opacity: 0.98, depthTest: false
+        });
+        const outline = new T.LineSegments(edges, material);
+        outline.computeLineDistances();
+        outline.renderOrder = 10;
+        outline.userData.isSelectionOutline = true;
+        outline.userData.sourceMesh = mesh;
+        selectionGroup.add(outline);
+      }
+      selectionSignature=signature;
+    }
+    for(const outline of selectionGroup.children){
+      const mesh=outline.userData.sourceMesh;
+      if(!mesh)continue;
+      mesh.updateWorldMatrix(true,false);
+      mesh.matrixWorld.decompose(outline.position,outline.quaternion,outline.scale);
       outline.scale.multiplyScalar(1.015);
-      outline.renderOrder = 10;
-      outline.userData.isSelectionOutline = true;
-      selectionGroup.add(outline);
     }
   }
-
   function geometrySignature(d) {
     const n = v => Math.max(0.001, Number(v) || 0.001);
     switch (d.type) {
@@ -446,6 +459,7 @@
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
     gridCache.clear();
     disposeGroup(selectionGroup);
+    selectionSignature='';
     if(renderer)renderer.render(scene,camera);
   }
 
