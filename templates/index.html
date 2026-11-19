@@ -688,10 +688,128 @@ let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='playe
 let workspaceView='editor';
 function persistProject(){try{if(projectFiles['main.scene'])projectFiles['main.scene'].content=serializeScene();localStorage.setItem(PROJECT_KEY,JSON.stringify({files:projectFiles,assets:projectAssets,objects:sceneObjects,active:activeProjectFile}))}catch(e){toast('Project storage is full. Remove large assets and retry.')}}
 function loadProject(){try{const saved=JSON.parse(localStorage.getItem(PROJECT_KEY)||'null');if(saved&&saved.files){projectFiles=saved.files;projectAssets=saved.assets||[];sceneObjects=saved.objects||sceneObjects;sceneObjects.forEach(o=>{if(typeof o.collider!=='boolean')o.collider=false;if(!Number.isFinite(Number(o.z)))o.z=0;if(!Number.isFinite(Number(o.rotationX)))o.rotationX=0;if(!Number.isFinite(Number(o.rotationY)))o.rotationY=0;if(!Number.isFinite(Number(o.rotationZ)))o.rotationZ=0});activeProjectFile=saved.active in projectFiles?saved.active:'main.ps'}}catch(e){console.warn('Project restore skipped',e)}}
-function renderProjectTree(){const host=document.getElementById('project-tree');if(!host)return;host.innerHTML='';const scripts=Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps'||projectFiles[k].type==='scene');const groups=[['SCENES',scripts.filter(k=>projectFiles[k].type==='scene')],['SCRIPTS',scripts.filter(k=>projectFiles[k].type==='ps')]];for(const [label,files] of groups){const heading=document.createElement('div');heading.className='tree-folder';heading.textContent=label;host.appendChild(heading);for(const name of files){const b=document.createElement('button');b.className='tree-file'+(name===activeProjectFile?' active':'');b.setAttribute('aria-current',name===activeProjectFile?'page':'false');const icon=document.createElement('span');icon.className='file-icon';icon.textContent=projectFiles[name].type==='scene'?'SCN':'PS';const title=document.createElement('span');title.className='file-label';title.textContent=name;b.append(icon,title);b.onclick=()=>openProjectFile(name);host.appendChild(b)}}renderAssetList()}
-function renderAssetList(){const host=document.getElementById('asset-list');if(!host)return;host.innerHTML='';for(const asset of projectAssets){const row=document.createElement('div');row.className='asset-row';if(asset.kind==='image'){const img=document.createElement('img');img.src=asset.data;img.alt='';row.appendChild(img)}else{const icon=document.createElement('span');icon.textContent=asset.kind==='model'?'3D':'♪';row.appendChild(icon)}const name=document.createElement('span');name.textContent=asset.name;row.appendChild(name);host.appendChild(row)}refreshInspectorAssetOptions()}
+function renderProjectTree(){
+ const host=document.getElementById('project-tree');if(!host)return;host.innerHTML='';
+ const scripts=Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps'||projectFiles[k].type==='scene');
+ const groups=[['SCENES',scripts.filter(k=>projectFiles[k].type==='scene')],['SCRIPTS',scripts.filter(k=>projectFiles[k].type==='ps')]];
+ for(const [label,files] of groups){
+  const heading=document.createElement('div');heading.className='tree-folder';heading.textContent=label;host.appendChild(heading);
+  for(const name of files){
+   const file=projectFiles[name],row=document.createElement('div');row.className='tree-file'+(name===activeProjectFile?' active':'');
+   const open=document.createElement('button');open.type='button';open.className='file-open';open.setAttribute('aria-current',name===activeProjectFile?'page':'false');open.onclick=()=>openProjectFile(name);
+   const icon=document.createElement('span');icon.className='file-icon';icon.textContent=file.type==='scene'?'SCN':'PS';
+   const title=document.createElement('span');title.className='file-label';title.textContent=name;open.append(icon,title);
+   if(file.locked){const lock=document.createElement('span');lock.className='file-lock';lock.textContent='LOCK';open.appendChild(lock);}
+   const menu=document.createElement('button');menu.type='button';menu.className='file-menu-trigger';menu.textContent='⋯';menu.title='File actions';menu.setAttribute('aria-label',name+' actions');menu.onclick=e=>showEntryMenu(e,'file',name);
+   row.append(open,menu);host.appendChild(row);
+  }
+ }
+ renderAssetList();
+}
+function renderAssetList(){
+ const host=document.getElementById('asset-list');if(!host)return;host.innerHTML='';
+ for(const asset of projectAssets){
+  const row=document.createElement('div');row.className='asset-row';
+  if(asset.kind==='image'){const img=document.createElement('img');img.src=asset.data;img.alt='';row.appendChild(img);}
+  else{const icon=document.createElement('span');icon.textContent=asset.kind==='model'?'3D':'♪';row.appendChild(icon);}
+  const name=document.createElement('span');name.className='asset-name';name.textContent=asset.name;row.appendChild(name);
+  if(asset.locked){const lock=document.createElement('span');lock.className='file-lock';lock.textContent='LOCK';row.appendChild(lock);}
+  const menu=document.createElement('button');menu.type='button';menu.className='file-menu-trigger';menu.textContent='⋯';menu.title='Asset actions';menu.setAttribute('aria-label',asset.name+' actions');menu.onclick=e=>showEntryMenu(e,'asset',asset.name);row.appendChild(menu);
+  host.appendChild(row);
+ }
+ refreshInspectorAssetOptions();
+}
 function openProjectFile(name){if(!projectFiles[name])return;if(isDirty&&projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;activeProjectFile=name;const file=projectFiles[name];document.getElementById('active-file-label').textContent=name;document.querySelector('.tab').innerHTML='<span class="file-icon">'+(file.type==='scene'?'SCN':'PS')+'</span>'+escapeHTML(name)+'<span class="tab-dot" id="dirty-dot"></span>';if(file.type==='scene'){switchWorkspaceView('game');document.getElementById('scene-name-label').textContent=name;loadSceneText(file.content)}else{codeEditor.value=file.content;switchWorkspaceView('editor');isDirty=false;updateLineNumbers();updateCursor();document.getElementById('save-state').textContent='Project file';}renderProjectTree();persistProject()}
 function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+let activeFileContextMenu=null;
+function closeFileContextMenu(){if(activeFileContextMenu){activeFileContextMenu.remove();activeFileContextMenu=null;}}
+function showEntryMenu(event,kind,name){
+ event.preventDefault();event.stopPropagation();closeFileContextMenu();
+ const entry=kind==='file'?projectFiles[name]:projectAssets.find(a=>a.name===name);if(!entry)return;
+ const locked=!!entry.locked,running=!!window.PStudioEngine?.isRunning();
+ const menu=document.createElement('div');menu.className='file-context-menu';menu.setAttribute('role','menu');
+ const add=(label,action,options={})=>{
+  const button=document.createElement('button');button.type='button';button.textContent=label;
+  if(options.danger)button.classList.add('danger');if(options.disabled)button.disabled=true;
+  button.onclick=e=>{e.stopPropagation();closeFileContextMenu();action();};menu.appendChild(button);
+ };
+ add('名前を変更',()=>kind==='file'?renameProjectFile(name):renameProjectAsset(name),{disabled:locked||running});
+ add(locked?'ロック解除':'ロック',()=>toggleEntryLock(kind,name));
+ add('削除',()=>kind==='file'?deleteProjectFile(name):deleteProjectAsset(name),{danger:true,disabled:locked||running});
+ document.getElementById('file-context-menu-root').appendChild(menu);activeFileContextMenu=menu;
+ const rect=event.currentTarget.getBoundingClientRect();const left=Math.min(rect.right-8,window.innerWidth-178);const top=Math.min(rect.bottom,window.innerHeight-150);
+ menu.style.left=Math.max(8,left)+'px';menu.style.top=Math.max(8,top)+'px';
+ setTimeout(()=>document.addEventListener('pointerdown',closeFileContextMenu,{once:true}),0);
+}
+function toggleEntryLock(kind,name){
+ const entry=kind==='file'?projectFiles[name]:projectAssets.find(a=>a.name===name);if(!entry)return;
+ entry.locked=!entry.locked;persistProject();renderProjectTree();toast((entry.locked?'Locked: ':'Unlocked: ')+name);
+}
+function validEntryName(value,extension){
+ let name=String(value||'').trim();if(!name)return '';
+ if(/[\\/\\\\:*?"<>|]/.test(name))return '';
+ if(extension&&!name.toLowerCase().endsWith(extension))name+=extension;
+ return name;
+}
+function renameProjectFile(oldName){
+ const file=projectFiles[oldName];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
+ if(activeProjectFile===oldName&&file.type==='ps')file.content=codeEditor.value;
+ const ext=file.type==='scene'?'.scene':'.ps';
+ const next=validEntryName(prompt('新しいファイル名を入力してください',oldName),ext);
+ if(!next||next===oldName)return;if(projectFiles[next]){toast('同じ名前のファイルが既にあります');return;}
+ projectFiles[next]=file;delete projectFiles[oldName];
+ sceneObjects.forEach(o=>{if(o.script===oldName)o.script=next;});
+ if(activeProjectFile===oldName)activeProjectFile=next;
+ persistProject();renderProjectTree();openProjectFile(next);toast('Renamed: '+next);
+}
+function deleteProjectFile(name){
+ const file=projectFiles[name];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
+ if(file.type==='ps'&&Object.values(projectFiles).filter(f=>f.type==='ps').length<=1){toast('最後のScriptファイルは削除できません');return;}
+ if(!confirm('「'+name+'」を削除しますか？'))return;
+ if(activeProjectFile===name&&file.type==='ps')file.content=codeEditor.value;
+ delete projectFiles[name];sceneObjects.forEach(o=>{if(o.script===name)o.script='';});
+ if(activeProjectFile===name){
+  const next=Object.keys(projectFiles).find(k=>projectFiles[k].type==='ps')||Object.keys(projectFiles)[0];
+  if(next)activeProjectFile=next;
+ }
+ persistProject();renderProjectTree();
+ if(activeProjectFile&&projectFiles[activeProjectFile])openProjectFile(activeProjectFile);
+ else{document.getElementById('active-file-label').textContent='No file';codeEditor.value='';}
+ toast('Deleted: '+name);
+}
+async function renameProjectAsset(oldName){
+ const asset=projectAssets.find(a=>a.name===oldName);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
+ const ext=oldName.slice(oldName.lastIndexOf('.')).toLowerCase();
+ const next=validEntryName(prompt('新しいアセット名を入力してください',oldName),ext);
+ if(!next||next===oldName)return;if(projectAssets.some(a=>a.name===next)){toast('同じ名前のアセットが既にあります');return;}
+ try{
+  if(asset.kind==='model'){
+   const blob=await window.PStudioAssetStore.get(oldName);if(!blob)throw new Error('保存されたモデルが見つかりません');
+   await window.PStudioAssetStore.put(next,blob);await window.PStudioAssetStore.remove(oldName);
+   window.PStudio3D?.invalidateAsset?.(oldName);window.PStudio3D?.invalidateAsset?.(next);
+  }
+  asset.name=next;
+  if(asset.kind==='image')sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});
+  for(const key of Object.keys(projectFiles)){
+   if(projectFiles[key].type==='ps')projectFiles[key].content=String(projectFiles[key].content||'').split(oldName).join(next);
+  }
+  if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');}
+  persistProject();renderProjectTree();toast('Renamed asset: '+next);
+ }catch(error){toast('Rename failed: '+error.message);}
+}
+async function deleteProjectAsset(name){
+ const asset=projectAssets.find(a=>a.name===name);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
+ const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
+ const warning=refs?'\\n\\n'+refs+'個のScriptにこのモデル名が含まれています。参照は自動では書き換えません。':'';
+ if(!confirm('アセット「'+name+'」を削除しますか？'+warning))return;
+ try{
+  if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
+  projectAssets=projectAssets.filter(a=>a.name!==name);
+  if(asset.kind==='image')sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});
+  persistProject();renderProjectTree();renderGamePreview();toast('Deleted asset: '+name);
+ }catch(error){toast('Delete failed: '+error.message);}
+}
+
 function createProjectFile(type){let base=type==='scene'?'scene':'script',ext=type==='scene'?'.scene':'.ps',i=1,name;do{name=(type==='scene'&&i===1?'new':base+(i===1?'':i))+ext;i++}while(projectFiles[name]);projectFiles[name]={type,content:type==='scene'?'':`# ${name}\n`};persistProject();openProjectFile(name);toast('Created '+name)}
 function saveActiveProjectFile(show=false){if(projectFiles[activeProjectFile])projectFiles[activeProjectFile].content=projectFiles[activeProjectFile].type==='ps'?codeEditor.value:serializeScene();persistProject();saveCode(false);if(show)toast('Project saved on this device')}
 async function importAssets(files){
