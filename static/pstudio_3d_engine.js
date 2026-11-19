@@ -464,6 +464,19 @@
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       const asset={scene:gltf.scene,animations:gltf.animations||[]};
       modelCache.set(name,asset);
+      if(window.PStudioResources?.register){
+        window.PStudioResources.register('model-gpu',name,asset,{
+          category:'gpu',
+          sizeBytes:Math.max(blob.size*2,blob.size+1024),
+          metadata:{sourceBytes:blob.size,estimate:'decoded model and GPU allocation'},
+          dispose:disposeModelAsset,
+          onEvict:()=>{
+            if(modelCache.get(name)===asset)modelCache.delete(name);
+            modelCollisionCache.delete(name);
+            for(const cacheKey of transformedCollisionCache.keys())if(cacheKey.startsWith(name+'|'))transformedCollisionCache.delete(cacheKey);
+          }
+        });
+      }
       return asset;
     })().catch(error=>{
       const message=String(error?.message||error);
@@ -524,7 +537,8 @@
       .sort((a,b)=>a[0]-b[0])
       .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
-    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,activeLOD:null,activeClip:null,activeLoop:true,speed:1};
+    const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
+    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -634,6 +648,7 @@
       materials.forEach(material=>material.dispose());
     });
     modelInstances.delete(key);
+    instance.resourceLease?.release?.();
   }
 
   function render(commandsByObject) {
@@ -858,7 +873,8 @@
     for(const [instanceKey,instance] of modelInstances){
       if(instance.name===key)removeModelInstance(instanceKey);
     }
-    if(cachedAsset)disposeModelAsset(cachedAsset);
+    const managed=window.PStudioResources?.remove?.('model-gpu',key,{force:true,reason:'asset-invalidated'})||false;
+    if(cachedAsset&&!managed)disposeModelAsset(cachedAsset);
     if(renderer&&lastCommands){
       try{render(lastCommands);}catch(error){console.error('[PStudio] Asset refresh failed:',error);}
     }
