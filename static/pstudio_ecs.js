@@ -16,6 +16,7 @@
   const sceneEntityByObjectId = new Map();
   const sceneSnapshots = new Map();
   const deferred = [];
+  let deferredHead = 0;
 
   let nextEntityId = 1;
   let systemSequence = 0;
@@ -129,7 +130,7 @@
   function registerComponent(type, options) {
     const key = String(type || '');
     const settings = options || {};
-    if (!COMPONENT_ID.test(key)) throw new Error('Invalid ECS component type: ' + key);
+    if (!COMPONENT_ID.test(key) || ['constructor', 'prototype'].includes(key)) throw new Error('Invalid ECS component type: ' + key);
     if (componentDefinitions.has(key)) throw new Error('ECS component is already registered: ' + key);
     for (const hook of ['create', 'normalize', 'validate', 'onAdd', 'onRemove']) {
       if (settings[hook] !== undefined && typeof settings[hook] !== 'function') {
@@ -168,11 +169,13 @@
   }
 
   function setComponent(entity, type, value) {
-    assertStructureMutable();
     const id = requireEntity(entity);
     const key = requireComponentType(type);
     const store = componentStores.get(key);
-    if (!store.has(id)) return addComponent(id, key, value);
+    if (!store.has(id)) {
+      assertStructureMutable();
+      return addComponent(id, key, value);
+    }
     const data = normalizeComponent(key, value, id);
     store.set(id, data);
     emit('component-updated', { entity: id, type: key });
@@ -277,26 +280,34 @@
   function forEach(types, callback) {
     if (typeof callback !== 'function') throw new TypeError('ECS forEach callback must be a function.');
     const required = normalizeTypes(types);
-    const base = matchingBase(required);
-    const source = base ? base.entities : entities;
+    const stores = required.map(type => componentStores.get(type));
+    let base = null;
+    for (const store of stores) if (!base || store.size < base.size) base = store;
     iterationDepth++;
     try {
-      if (base) {
+      if (!stores.length) {
+        for (const id of entities) callback(id);
+      } else {
         const limit = base.entities.length;
-        for (let index = 0; index < limit && index < base.entities.length; index++) {
+        for (let index = 0; index < limit; index++) {
           const id = base.entities[index];
           if (!entities.has(id)) continue;
           let matches = true;
-          for (const type of required) {
-            if (!componentStores.get(type).has(id)) { matches = false; break; }
+          for (const store of stores) {
+            if (!store.has(id)) { matches = false; break; }
           }
           if (!matches) continue;
-          const values = required.map(type => componentStores.get(type).get(id));
-          callback(id, ...values);
+          if (stores.length === 1) {
+            callback(id, stores[0].get(id));
+          } else if (stores.length === 2) {
+            callback(id, stores[0].get(id), stores[1].get(id));
+          } else {
+            const args = new Array(stores.length + 1);
+            args[0] = id;
+            for (let i = 0; i < stores.length; i++) args[i + 1] = stores[i].get(id);
+            callback.apply(null, args);
+          }
         }
-      } else {
-        const ids = Array.from(source);
-        for (const id of ids) if (entities.has(id)) callback(id);
       }
     } finally {
       iterationDepth--;
@@ -347,16 +358,20 @@
   }
 
   function flushDeferred() {
-    if (flushingDeferred || iterationDepth > 0 || updating || deferred.length === 0) return;
+    if (flushingDeferred || iterationDepth > 0 || updating || deferredHead >= deferred.length) return;
     flushingDeferred = true;
     let processed = 0;
     try {
-      while (deferred.length) {
+      while (deferredHead < deferred.length) {
         if (++processed > 100000) throw new Error('ECS deferred operation limit exceeded.');
-        const action = deferred.shift();
+        const action = deferred[deferredHead++];
         action(api);
       }
     } finally {
+      if (deferredHead >= deferred.length) {
+        deferred.length = 0;
+        deferredHead = 0;
+      }
       flushingDeferred = false;
     }
   }
@@ -365,7 +380,7 @@
     if (typeof action !== 'function') throw new TypeError('ECS defer expects a function.');
     deferred.push(action);
     if (iterationDepth === 0 && !updating) flushDeferred();
-    return deferred.length;
+    return deferred.length - deferredHead;
   }
 
   function update(deltaTime, context) {
@@ -400,7 +415,7 @@
   }
 
   function stats() {
-    const componentCounts = {};
+    const componentCounts = Object.create(null);
     for (const [type, store] of componentStores) componentCounts[type] = store.size;
     let enabledSystemCount = 0;
     for (const system of orderedSystems) if (system.enabled) enabledSystemCount++;
