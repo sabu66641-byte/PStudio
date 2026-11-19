@@ -34,6 +34,9 @@
   let cameraTarget = [0, 0, 0];
   let cameraBase = [6, 5, 8];
   let cameraPan = null;
+  let cameraSmoothing = 0;
+  let smoothedTarget = null;
+  let smoothedPosition = null;
   let pinchMidpoint = null;
   let lastObjectTap = null;
   const DOUBLE_TAP_MS = 500;
@@ -187,7 +190,7 @@
     cameraPan.addScaledVector(up, dy * scale);
   }
 
-  function updateCamera() {
+  function updateCamera(deltaTime = 1 / 60) {
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
@@ -195,8 +198,22 @@
     offset.applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
     const right = new T.Vector3(1, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
     offset.applyAxisAngle(right, orbitPitch);
-    camera.position.copy(target).add(offset);
-    camera.lookAt(target);
+    const desiredPosition = target.clone().add(offset);
+    if (!smoothedTarget || !smoothedPosition) {
+      smoothedTarget = target.clone();
+      smoothedPosition = desiredPosition.clone();
+    }
+    if (cameraSmoothing > 0) {
+      const dt = Math.max(0, Math.min(0.1, Number(deltaTime) || 0));
+      const alpha = 1 - Math.exp(-cameraSmoothing * dt);
+      smoothedTarget.lerp(target, alpha);
+      smoothedPosition.lerp(desiredPosition, alpha);
+    } else {
+      smoothedTarget.copy(target);
+      smoothedPosition.copy(desiredPosition);
+    }
+    camera.position.copy(smoothedPosition);
+    camera.lookAt(smoothedTarget);
     resize();
     renderer.render(scene, camera);
   }
@@ -349,6 +366,7 @@
     const clone=window.PStudioSkeletonUtils?.clone
       ? window.PStudioSkeletonUtils.clone(asset.scene)
       : asset.scene.clone(true);
+    const materialDefaults=new Map();
     clone.userData.ownerId=ownerId;
     clone.traverse(object=>{
       object.userData.ownerId=ownerId;
@@ -356,13 +374,38 @@
       if(object.isMesh && object.material){
         object.castShadow=true;
         object.receiveShadow=true;
+        const cloneMaterial=material=>{
+          const copy=material.clone();
+          materialDefaults.set(copy,{
+            roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
+            metalness:Number.isFinite(material.metalness)?material.metalness:0.04
+          });
+          return copy;
+        };
+        object.material=Array.isArray(object.material)
+          ? object.material.map(cloneMaterial)
+          : cloneMaterial(object.material);
       }
     });
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
-    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,activeClip:null,activeLoop:true,speed:1};
+    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,activeClip:null,activeLoop:true,speed:1};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
+  }
+
+  function applyModelMaterial(instance, state) {
+    if(!instance?.materialDefaults)return;
+    instance.root.traverse(object=>{
+      if(!object.isMesh||!object.material)return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        const defaults=instance.materialDefaults.get(material);
+        if(!defaults)continue;
+        material.roughness=state?state.roughness:defaults.roughness;
+        material.metalness=state?state.metalness:defaults.metalness;
+      }
+    });
   }
 
   function updateModelAnimation(instance, state, dt) {
@@ -404,6 +447,11 @@
     if(!instance) return;
     if(instance.mixer) instance.mixer.stopAllAction();
     if(instance.root.parent) instance.root.parent.remove(instance.root);
+    instance.root.traverse(object=>{
+      if(!object.isMesh||!object.material)return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      materials.forEach(material=>material.dispose());
+    });
     modelInstances.delete(key);
   }
 
@@ -419,11 +467,13 @@
     if(hemisphereLight) hemisphereLight.intensity=1.15;
     if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
+      let ownerMaterial=null;
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+        if (d.type==='material') { ownerMaterial={roughness:Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:Math.max(0,Math.min(1,Number(d.metalness)||0))}; continue; }
         if (d.type==='animation') continue;
         if (d.type==='model') {
           let instance=modelInstances.get(key);
@@ -437,6 +487,7 @@
           instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
           instance.root.rotation.set(Number(d.rotationX)||0,Number(d.rotationY)||0,Number(d.rotationZ)||0);
           instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
+          applyModelMaterial(instance,ownerMaterial);
           const animState={loop:true};
           for(const item of list){
             if(item.type!=='animation')continue;
@@ -478,6 +529,8 @@
           primitiveGroup.add(mesh);
         }
         if(d.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
+        mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:0.72;
+        mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
         const baseRotationX=d.type==='plane'?-Math.PI/2:0;
@@ -508,8 +561,10 @@
     cameraBase = cameraCommand
       ? [cameraCommand.x, cameraCommand.y, cameraCommand.z]
       : [6, 5, 8];
+    cameraSmoothing = cameraCommand ? Math.max(0, Math.min(30, Number(cameraCommand.smoothing) || 0)) : 0;
+    if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
     refreshSelectionOutline();
-    updateCamera();
+    updateCamera(cameraCommand?.dt ?? 1 / 60);
   }
   function clear() {
     if (!renderer) return;
