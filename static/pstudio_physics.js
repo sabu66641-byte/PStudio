@@ -161,6 +161,7 @@
           {const points=d.points.map(v=>finite(v)),xs=[points[0],points[3],points[6]],ys=[points[1],points[4],points[7]],zs=[points[2],points[5],points[8]];colliders.push({type:'triangle',id:String(ownerId)+':'+colliders.length,points,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs),deltaX:0,deltaY:0,deltaZ:0});}
           continue;
         }
+        if(d.type==='model_mesh_collider'&&Array.isArray(d.triangles)){const v=d.triangles;for(let i=0;i+8<v.length;i+=9){const points=v.slice(i,i+9).map(finite),xs=[points[0],points[3],points[6]],ys=[points[1],points[4],points[7]],zs=[points[2],points[5],points[8]];colliders.push({type:'triangle',id:String(ownerId)+':model:'+i,points,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs)});}}
         if(d.type==='terrain'){
           const segments=Math.max(2,Math.min(96,Math.floor(finite(d.segments,2)))),width=Math.max(1,finite(d.width)),depth=Math.max(1,finite(d.depth)),height=Math.max(0,finite(d.height));
           const at=(ix,iz)=>{const lx=(ix/segments-.5)*width,lz=(iz/segments-.5)*depth;return [x+lx,y+height*(Math.sin(lx*.18)*Math.cos(lz*.16)*.5+Math.sin((lx+lz)*.07)*.15),z+lz];};
