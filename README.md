@@ -81,6 +81,28 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - This is a game-development foundation, not a finished large-world action-RPG engine. The current runtime includes PMREM-filtered environment lighting, optional Bloom/SSAO post-processing, planar Reflector water, primitive GLSL shader nodes, named GLB material overrides, terrain collision, triangle-derived navigation, moving/rotating platform carry, adaptive swept collision, persistent particle emitters, animation layers, CCD-style bone IK, generic weapon attacks and combo chains, a small enemy state machine, equipment/consumable inventory, quest prerequisites/rewards, dialogue choices and DOM-based game UI. Still missing are true multi-bounce real-time global illumination, HDR lighting capture, a free-form drag-and-drop shader graph, water refraction/wave simulation, fully general CCD for arbitrary deforming meshes, dynamic NavMesh updates, motion-capture-grade IK/retargeting, tactical squad AI, complex hitbox animation events, multiplayer, audio mixing, save/load of live gameplay state and a standalone build/export pipeline.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
 
+## Module System 1.0
+
+The module manager is exposed as `window.PStudioModules`. It supports module registration, required and optional dependency metadata, dependency-order resolution, conflict checks, asynchronous activation/deactivation hooks, cascading disable, lifecycle events and rollback when activation fails.
+
+A module definition uses `id`, `version`, `dependencies`, `optionalDependencies`, `conflicts`, `activate(context)` and `deactivate(context)`. IDs are lowercase and stable. Example:
+
+```js
+PStudioModules.register({
+  id: 'sample.editor-tool',
+  version: '1.0.0',
+  dependencies: [],
+  activate: async () => { console.log('enabled'); },
+  deactivate: async () => { console.log('disabled'); }
+});
+await PStudioModules.enable('sample.editor-tool');
+await PStudioModules.disable('sample.editor-tool');
+```
+
+Use `enable(id)` to activate a module and its required dependencies. `disable(id)` refuses to disable a module while enabled dependents exist; pass `{ cascade: true }` to disable dependents first. `on(event, callback)` subscribes to `registered`, `enabled`, `disabled`, `unregistered` and `initialized` events.
+
+**Current boundary:** this is the module-management foundation. Existing engine scripts (physics, gameplay, rendering, and asset storage) are still loaded as core scripts and are not yet dynamically unloaded or editor-toggleable. Converting those systems into independently managed modules is a later integration step; this manager does not pretend to hot-unload them.
+
 ## Project Backup and Restore
 
 Use the **Backup** menu in the application header to export or restore a portable `.pstudio` project archive. The archive includes project scripts, scene files, scene-object settings, image/audio data URLs, and the binary GLB/GLTF model files stored in IndexedDB. This allows a project to be moved to another browser or device instead of relying only on the current browser's local storage.
