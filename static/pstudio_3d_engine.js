@@ -10,7 +10,7 @@
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null;
-  let particleClock=0;
+  let particleClock=0,lastRenderDurationMs=0;
   const waterMaterials=new Set();
   const instancedBatches=new Map();
   let pmremGenerator = null, environmentTarget = null;
@@ -166,6 +166,7 @@
     if(!window.THREE||!window.THREE.WebGLRenderer)return false;
     const T=window.THREE;
     renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
+    if(renderer.info)renderer.info.autoReset=false;
     renderer.outputColorSpace=T.SRGBColorSpace;
     renderer.toneMapping=T.ACESFilmicToneMapping;
     renderer.toneMappingExposure=1.12;
@@ -219,7 +220,22 @@
     }
   }
 
-  function drawFrame(){if(!renderer||!scene||!camera)return;if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;if(ssrPass)ssrPass.enabled=ssrEnabled;composer.render();}else{if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;renderer.render(scene,camera);}}
+  function drawFrame(){
+    if(!renderer||!scene||!camera)return;
+    renderer.info?.reset?.();
+    const started=window.performance?.now?.()??Date.now();
+    if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){
+      if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
+      if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
+      if(ssrPass)ssrPass.enabled=ssrEnabled;
+      composer.render();
+    }else{
+      if(ssaoPass)ssaoPass.enabled=false;
+      if(ssrPass)ssrPass.enabled=false;
+      renderer.render(scene,camera);
+    }
+    lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+  }
 
   function createGpuParticleSystem(capacity,color,size=0.085){
     const T=window.THREE,count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
@@ -1121,6 +1137,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset)}),
+    getStats:()=>renderer?{
+      calls:renderer.info?.render?.calls||0,
+      triangles:renderer.info?.render?.triangles||0,
+      points:renderer.info?.render?.points||0,
+      geometries:renderer.info?.memory?.geometries||0,
+      textures:renderer.info?.memory?.textures||0,
+      instancedBatches:instancedBatches.size,
+      instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),
+      gpuParticleSystems:particleEmitters.size+particleBursts.size,
+      models:modelInstances.size,
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),
+      quality:resolveQualityPreset(qualityPreset)
+    }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
     clearLightProbe:()=>{if(!bakedLightProbe)return false;scene?.remove(bakedLightProbe);bakedLightProbe=null;drawFrame();return true;},
