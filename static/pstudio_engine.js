@@ -230,18 +230,32 @@
       case 'set_velocity_y': if (a.length===1) return physics?.setVelocity(o.id,1,finite(a[0])); break;
       case 'set_velocity_z': if (a.length===1) return physics?.setVelocity(o.id,2,finite(a[0])); break;
       case 'character_controller': if (a.length===3) { physics?.configureController(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
-      case 'move_character': if (a.length===2) { physics?.moveCharacter(o.id,finite(a[0]),finite(a[1])); return null; } break;
+      case 'move_character': if (a.length===2) {
+        let moveX=finite(a[0]),moveZ=finite(a[1]);
+        const basis=window.PStudio3D?.getCameraBasis?.();
+        if(basis){
+          const worldX=basis.rightX*moveX-basis.forwardX*moveZ;
+          const worldZ=basis.rightZ*moveX-basis.forwardZ*moveZ;
+          moveX=worldX;moveZ=worldZ;
+        }
+        physics?.moveCharacter(o.id,moveX,moveZ);
+        return null;
+      } break;
       case 'jump': if (a.length===1) return physics?.jump(o.id,finite(a[0])) ?? false; break;
       case 'is_grounded': if (!a.length) return physics?.isGrounded(o.id) ?? false; break;
       case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:c.dt}); return null; } break;
+      case 'character_animation': if (a.length===6) {
+        c.draw.push({type:'locomotion',idle:String(a[0]),walk:String(a[1]),run:String(a[2]),jump:String(a[3]),fall:String(a[4]),land:String(a[5])});
+        return null;
+      } break;
       case 'play_animation': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:true}); return null; } break;
       case 'play_animation_once': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:false}); return null; } break;
       case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
       case 'set_animation_speed': if (a.length===1) { c.draw.push({type:'animation',speed:finite(a[0])}); return null; } break;
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
-      case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt}); return null; } break;
-      case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt}); return null; } break;
+      case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
+      case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
     }
     throw new PsRuntimeError(`未対応の関数、または引数の数が不正です: ${name}()`);
@@ -425,14 +439,32 @@
     try {
       const commands=new Map();
       window.PStudioPhysics?.beginFrame?.();
-      for(const o of sceneObjects||[]){const script=astForScript(o.script);if(!script)continue;const c=setupContext(o,dt);c.steps=0;
-        if(!runtime.initialized.has(o.id)){runtime.initialized.add(o.id);const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');if(topLevel.length)execBlock(c,topLevel,c.env);}
-        if(!runtime.started.has(o.id)){runtime.started.add(o.id);if(c.funcs.start)callFunction(c,'start',[]);}
-        c.dt=dt;if(c.funcs.update)callFunction(c,'update',[dt]);runtime.states.set(o.id,c.env);const objectDraws=c.draw.slice();if(o.model&&!objectDraws.some(d=>d.type==='model')){const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});}commands.set(o.id,objectDraws);
+      for(const o of sceneObjects||[]){
+        const script=astForScript(o.script);if(!script)continue;
+        const c=setupContext(o,dt);c.steps=0;
+        if(!runtime.initialized.has(o.id)){
+          runtime.initialized.add(o.id);
+          const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');
+          if(topLevel.length)execBlock(c,topLevel,c.env);
+        }
+        if(!runtime.started.has(o.id)){
+          runtime.started.add(o.id);
+          if(c.funcs.start)callFunction(c,'start',[]);
+        }
+        c.dt=dt;
+        if(c.funcs.update)callFunction(c,'update',[dt]);
+        runtime.states.set(o.id,c.env);
+        const objectDraws=c.draw.slice();
+        if(o.model&&!objectDraws.some(d=>d.type==='model')){
+          const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
+          const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
+          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
+        }
+        commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
-      // Imported models placed in the Scene remain visible during Play even
-      // when they do not have a script attached.
+
+      // Models added directly to the Scene remain visible even without scripts.
       for(const o of sceneObjects||[]){
         if(!o.model||o.script)continue;
         const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
@@ -440,22 +472,62 @@
         const z=(Number(o.z)||0)/100;
         commands.set(o.id,[{type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt}]);
       }
+
       const transforms=window.PStudioPhysics?.step?.(dt,commands)||new Map();
       for(const [id,transform] of transforms){
+        const owner=(sceneObjects||[]).find(item=>item.id===id);
         const draws=commands.get(id)||[];
+
+        // Rotate a controlled character toward its actual world-space travel direction.
+        if(owner&&transform.controlled&&transform.horizontalSpeed>0.12){
+          const current=(Number(owner.rotationY)||0)*Math.PI/180;
+          const desired=Math.atan2(transform.velocityX,transform.velocityZ);
+          const delta=Math.atan2(Math.sin(desired-current),Math.cos(desired-current));
+          const turnAlpha=1-Math.exp(-14*Math.max(0,Math.min(0.1,dt)));
+          owner.rotationY=(current+delta*turnAlpha)*180/Math.PI;
+        }
+
+        if(transform.landed){
+          runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
+          runtime.landSequences.set(id,runtime.nextLandSequence);
+        }
+
         for(const draw of draws){
+          if(draw.type==='camera'){
+            draw.x=finite(draw.x)+transform.dx;
+            draw.y=finite(draw.y)+transform.dy;
+            draw.z=finite(draw.z)+transform.dz;
+            draw.targetX=finite(draw.targetX)+transform.dx;
+            draw.targetY=finite(draw.targetY)+transform.dy;
+            draw.targetZ=finite(draw.targetZ)+transform.dz;
+            continue;
+          }
           if(['cube','box','sphere','plane','cylinder','cone','capsule','model'].includes(draw.type)){
             draw.x=finite(draw.x)+transform.dx;
             draw.y=finite(draw.y)+transform.dy;
             draw.z=finite(draw.z)+transform.dz;
+            if(owner&&transform.controlled){
+              draw.rotationY=(Number(owner.rotationY)||0)*Math.PI/180;
+            }
+          }
+          if(draw.type==='locomotion'){
+            draw.grounded=transform.grounded;
+            draw.speed=transform.horizontalSpeed;
+            draw.velocityY=transform.velocityY;
+            draw.landSequence=runtime.landSequences.get(id)||0;
           }
         }
       }
-      runtime.contexts=commands;updateCollisions();update3DCollisions(commands);renderFrame();
+      runtime.contexts=commands;
+      updateCollisions();
+      update3DCollisions(commands);
+      renderFrame();
       justPressed.clear();
-      // renderFrame() owns the detailed status, including VIEW mode and draw-call count.
       raf=requestAnimationFrame(tick);
-    } catch(err) { stopGame();setOutput?.(`Game runtime error: ${err.message}`,'error'); }
+    } catch(err) {
+      stopGame();
+      setOutput?.(`Game runtime error: ${err.message}`,'error');
+    }
   }
   async function startGame() {
     if(runtime?.running)return;
@@ -473,7 +545,7 @@
       }
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
       window.PStudioPhysics?.clear?.();
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
