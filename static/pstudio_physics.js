@@ -139,12 +139,15 @@
           continue;
         }
         let hx, hy, hz;
-        if (d.type === 'cube') {
-          hx = hy = hz = Math.max(0.001, finite(d.size)) / 2;
-        } else if (d.type === 'box') {
-          hx = Math.max(0.001, finite(d.width)) / 2;
-          hy = Math.max(0.001, finite(d.height)) / 2;
-          hz = Math.max(0.001, finite(d.depth)) / 2;
+        if (d.type === 'cube' || d.type === 'box') {
+          const a = d.type === 'cube' ? Math.max(0.001, finite(d.size)) / 2 : Math.max(0.001, finite(d.width)) / 2;
+          const b = d.type === 'cube' ? a : Math.max(0.001, finite(d.height)) / 2;
+          const c = d.type === 'cube' ? a : Math.max(0.001, finite(d.depth)) / 2;
+          const rx=finite(d.rotationX),ry=finite(d.rotationY),rz=finite(d.rotationZ);
+          const c1=Math.cos(rx),s1=Math.sin(rx),c2=Math.cos(ry),s2=Math.sin(ry),c3=Math.cos(rz),s3=Math.sin(rz);
+          hx=Math.abs(c2*c3)*a+Math.abs(c2*s3)*b+Math.abs(s2)*c;
+          hy=Math.abs(s1*s2*c3+c1*s3)*a+Math.abs(s1*s2*s3-c1*c3)*b+Math.abs(s1*c2)*c;
+          hz=Math.abs(c1*s2*c3-s1*s3)*a+Math.abs(c1*s2*s3+s1*c3)*b+Math.abs(c1*c2)*c;
         } else if (d.type === 'cylinder' || d.type === 'cone' || d.type === 'capsule') {
           hx = hz = Math.max(0.001, finite(d.radius));
           hy = Math.max(0.001, finite(d.height)) / 2;
