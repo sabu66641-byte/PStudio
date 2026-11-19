@@ -208,18 +208,42 @@
     const u=(v2x*v1z-v1x*v2z)/den,v=(v0x*v2z-v2x*v0z)/den,w=1-u-v;
     return u>=-1e-5&&v>=-1e-5&&w>=-1e-5?[w,v,u]:null;
   }
+  function closestPointTriangle(p,a,b,c) {
+    const sub=(u,v)=>[u[0]-v[0],u[1]-v[1],u[2]-v[2]],dot=(u,v)=>u[0]*v[0]+u[1]*v[1]+u[2]*v[2];
+    const ab=sub(b,a),ac=sub(c,a),ap=sub(p,a),d1=dot(ab,ap),d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a.slice();
+    const bp=sub(p,b),d3=dot(ab,bp),d4=dot(ac,bp);if(d3>=0&&d4<=d3)return b.slice();
+    const vc=d1*d4-d3*d2;if(vc<=0&&d1>=0&&d3<=0){const v=d1/(d1-d3);return a.map((x,i)=>x+ab[i]*v);}
+    const cp=sub(p,c),d5=dot(ab,cp),d6=dot(ac,cp);if(d6>=0&&d5<=d6)return c.slice();
+    const vb=d5*d2-d1*d6;if(vb<=0&&d2>=0&&d6<=0){const w=d2/(d2-d6);return a.map((x,i)=>x+ac[i]*w);}
+    const va=d3*d6-d5*d4;if(va<=0&&(d4-d3)>=0&&(d5-d6)>=0){const w=(d4-d3)/((d4-d3)+(d5-d6));return b.map((x,i)=>x+(c[i]-b[i])*w);}
+    const denom=1/(va+vb+vc),v=vb*denom,w=vc*denom;return a.map((x,i)=>x+ab[i]*v+ac[i]*w);
+  }
   function solveTriangle(body,tri,oldPosition) {
     const p=tri.points,a=p.slice(0,3),b=p.slice(3,6),c=p.slice(6,9);
     const ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
     let nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0];
     const len=Math.hypot(nx,ny,nz);if(len<1e-9)return false;nx/=len;ny/=len;nz/=len;if(ny<0){nx=-nx;ny=-ny;nz=-nz;}
-    if(ny<body.maxSlope)return false;
-    const weights=barycentricXZ(body.position[0],body.position[2],a,b,c);if(!weights)return false;
-    const surfaceY=weights[0]*a[1]+weights[1]*b[1]+weights[2]*c[1];
-    const bottom=body.position[1]-body.height/2,oldBottom=oldPosition[1]-body.height/2;
-    if(body.velocity[1]>0||bottom>surfaceY+SKIN||oldBottom<surfaceY-SKIN)return false;
-    body.position[1]=surfaceY+body.height/2;if(body.velocity[1]<0)body.velocity[1]=0;
-    body.grounded=true;body.groundPlatformId=tri.id||null;return true;
+    if(ny>=body.maxSlope){
+      const weights=barycentricXZ(body.position[0],body.position[2],a,b,c);
+      if(weights){
+        const surfaceY=weights[0]*a[1]+weights[1]*b[1]+weights[2]*c[1];
+        const bottom=body.position[1]-body.height/2,oldBottom=oldPosition[1]-body.height/2;
+        if(body.velocity[1]<=0&&bottom<=surfaceY+SKIN&&oldBottom>=surfaceY-SKIN){
+          body.position[1]=surfaceY+body.height/2;if(body.velocity[1]<0)body.velocity[1]=0;
+          body.grounded=true;body.groundPlatformId=tri.id||null;return true;
+        }
+      }
+    }
+    const halfSegment=Math.max(0,body.height/2-body.radius),samples=[body.position[1]-halfSegment,body.position[1],body.position[1]+halfSegment];
+    let best=null;
+    for(const y of samples){const point=[body.position[0],y,body.position[2]],closest=closestPointTriangle(point,a,b,c),dx=point[0]-closest[0],dy=point[1]-closest[1],dz=point[2]-closest[2],distance=Math.hypot(dx,dy,dz);if(!best||distance<best.distance)best={dx,dy,dz,distance};}
+    if(!best||best.distance>=body.radius)return false;
+    let nx2,ny2,nz2;if(best.distance>1e-7){nx2=best.dx/best.distance;ny2=best.dy/best.distance;nz2=best.dz/best.distance;}else{nx2=nx;ny2=ny;nz2=nz;}
+    const penetration=body.radius-best.distance+SKIN;body.position[0]+=nx2*penetration;body.position[1]+=ny2*penetration;body.position[2]+=nz2*penetration;
+    const into=body.velocity[0]*nx2+body.velocity[1]*ny2+body.velocity[2]*nz2;if(into<0){body.velocity[0]-=nx2*into;body.velocity[1]-=ny2*into;body.velocity[2]-=nz2*into;}
+    if(ny2>=body.maxSlope&&body.velocity[1]<=0.05){body.velocity[1]=0;body.grounded=true;body.groundPlatformId=tri.id||null;}
+    return true;
   }
 
   function solveBox(body, box) {
@@ -323,7 +347,7 @@
     if(wasGrounded&&body.groundPlatformId){const platform=colliders.find(c=>c.id===body.groundPlatformId);if(platform){body.position[0]+=platform.deltaX||0;body.position[1]+=platform.deltaY||0;body.position[2]+=platform.deltaZ||0;}}
     for(let axis=0;axis<3;axis++)body.velocity[axis]+=(body.gravity[axis]+body.force[axis]*body.invMass)*dt;
     const travel=Math.hypot(body.velocity[0]*dt,body.velocity[1]*dt,body.velocity[2]*dt);
-    const slices=clamp(Math.ceil(travel/Math.max(0.08,body.radius*0.45)),1,16);
+    const slices=clamp(Math.ceil(travel/Math.max(0.08,body.radius*0.45)),1,64);
     for(let slice=0;slice<slices;slice++){const previous=body.position.slice();for(let axis=0;axis<3;axis++)body.position[axis]+=body.velocity[axis]*dt/slices;solveWorld(body,colliders,previous);body.wasGrounded=body.grounded;}
     if (!wasGrounded && body.grounded && body.airTime >= 0.08) {
       body.landed = true;
