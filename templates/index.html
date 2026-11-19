@@ -801,6 +801,7 @@ async function renameProjectAsset(oldName){
   }
   asset.name=next;
   if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});imageCache.delete(oldName);}
+  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===oldName)o.model=next;});
   for(const key of Object.keys(projectFiles)){
    if(projectFiles[key].type==='ps')projectFiles[key].content=replaceQuotedAssetReference(projectFiles[key].content,oldName,next);
   }
@@ -812,12 +813,14 @@ async function deleteProjectAsset(name){
  const asset=projectAssets.find(a=>a.name===name);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
- const warning=refs?'\\n\\n'+refs+'個のScriptにこのモデル名が含まれています。参照は自動では書き換えません。':'';
+ const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>o.model===name).length:0;
+ const warning=(refs||sceneRefs)?'\\n\\n'+refs+'個のScriptと'+sceneRefs+'個のScene Objectがこのモデルを参照しています。Scene Object側の参照は削除後に解除されます。':'';
  if(!confirm('アセット「'+name+'」を削除しますか？'+warning))return;
  try{
   if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
   projectAssets=projectAssets.filter(a=>a.name!==name);
   if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});imageCache.delete(name);}
+  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===name)o.model='';});
   persistProject();renderProjectTree();renderGamePreview();toast('Deleted asset: '+name);
  }catch(error){toast('Delete failed: '+error.message);}
 }
