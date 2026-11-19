@@ -38,6 +38,7 @@
       position: [finite(x), finite(y), finite(z)],
       velocity: [0, 0, 0],
       force: [0, 0, 0],
+      pendingForce: [0, 0, 0],
       gravity: [0, -9.81, 0],
       radius: r,
       height: h,
@@ -79,8 +80,7 @@
     b.gravity = [finite(x), finite(y), finite(z)];
   }
   function beginFrame() {
-    // Forces stay pending until at least one fixed physics step consumes them.
-    // This avoids losing input on render frames that occur between 60 Hz steps.
+    for (const body of bodies.values()) body.force = [0, 0, 0];
   }
 
   function applyForce(id, x, y, z) {
@@ -294,13 +294,27 @@
     const colliders = getStaticColliders(commandsByObject || new Map());
     accumulator = Math.min(accumulator + clamp(finite(frameDt), 0, 0.1), FIXED_STEP * MAX_SUBSTEPS);
     let steps = 0;
+    if (accumulator + 1e-9 >= FIXED_STEP) {
+      for (const body of bodies.values()) {
+        const hasCurrentForce = body.force.some(value => Math.abs(value) > 1e-12);
+        if (hasCurrentForce) body.pendingForce = body.force.slice();
+        else body.force = body.pendingForce.slice();
+      }
+    } else {
+      for (const body of bodies.values()) {
+        if (body.force.some(value => Math.abs(value) > 1e-12)) body.pendingForce = body.force.slice();
+      }
+    }
     while (accumulator + 1e-9 >= FIXED_STEP && steps < MAX_SUBSTEPS) {
       for (const body of bodies.values()) simulateBody(body, FIXED_STEP, colliders);
       accumulator -= FIXED_STEP;
       steps++;
     }
     if (steps > 0) {
-      for (const body of bodies.values()) body.force = [0, 0, 0];
+      for (const body of bodies.values()) {
+        body.force = [0, 0, 0];
+        body.pendingForce = [0, 0, 0];
+      }
     }
     const result = new Map();
     for (const [id, body] of bodies) {
