@@ -8,6 +8,7 @@
   const MAX_SUBSTEPS = 8;
   const SKIN = 0.001;
   const bodies = new Map();
+  const platformPositions = new Map();
   let accumulator = 0;
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -143,12 +144,17 @@
 
   function getStaticColliders(commandsByObject) {
     const colliders = [];
+    const trackPlatform = (collider, x, y, z) => {
+      const previous=platformPositions.get(collider.id);
+      collider.deltaX=previous?x-previous.x:0;collider.deltaY=previous?y-previous.y:0;collider.deltaZ=previous?z-previous.z:0;
+      platformPositions.set(collider.id,{x,y,z});return collider;
+    };
     for (const [ownerId, draws] of commandsByObject) {
       if (bodies.has(ownerId)) continue;
       for (const d of draws) {
         const x = finite(d.x), y = finite(d.y), z = finite(d.z);
         if (d.type === 'plane') {
-          colliders.push({type:'plane',id:String(ownerId)+':'+colliders.length,x,y,z,halfX:Math.max(0.001,finite(d.width))/2,halfZ:Math.max(0.001,finite(d.depth))/2,deltaX:finite(d.deltaX),deltaY:finite(d.deltaY),deltaZ:finite(d.deltaZ)});
+          colliders.push(trackPlatform({type:'plane',id:String(ownerId)+':'+colliders.length,x,y,z,halfX:Math.max(0.001,finite(d.width))/2,halfZ:Math.max(0.001,finite(d.depth))/2},x,y,z));
           continue;
         }
         if (d.type === 'triangle_collider' && Array.isArray(d.points) && d.points.length===9) {
@@ -169,7 +175,7 @@
           hx = hz = Math.max(0.001, finite(d.radius));
           hy = Math.max(0.001, finite(d.height)) / 2;
         } else continue;
-        colliders.push({type:'box',id:String(ownerId)+':'+colliders.length,minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz,deltaX:finite(d.deltaX),deltaY:finite(d.deltaY),deltaZ:finite(d.deltaZ)});
+        colliders.push(trackPlatform({type:'box',id:String(ownerId)+':'+colliders.length,minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz},x,y,z));
       }
     }
     return colliders;
@@ -414,6 +420,7 @@
 
   function clear() {
     bodies.clear();
+    platformPositions.clear();
     accumulator = 0;
   }
 
