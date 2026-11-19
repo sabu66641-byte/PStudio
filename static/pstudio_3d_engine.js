@@ -633,7 +633,7 @@
           if(light.target){light.target.position.set(Number(d.targetX)||0,Number(d.targetY)||0,Number(d.targetZ)||0);light.target.updateMatrixWorld();}
           usedLights.add(key);continue;
         }
-        if (d.type==='material') { ownerMaterial=Object.assign(ownerMaterial||{},{roughness:d.roughness===undefined?(ownerMaterial?.roughness??0.72):Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:d.metalness===undefined?(ownerMaterial?.metalness??0.04):Math.max(0,Math.min(1,Number(d.metalness)||0)),shader:d.shader||ownerMaterial?.shader||'standard'}); continue; }
+        if (d.type==='material') { ownerMaterial=Object.assign(ownerMaterial||{},{roughness:d.roughness===undefined?(ownerMaterial?.roughness??0.72):Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:d.metalness===undefined?(ownerMaterial?.metalness??0.04):Math.max(0,Math.min(1,Number(d.metalness)||0)),shader:d.shader||ownerMaterial?.shader||'standard',fragmentShader:d.fragmentShader||ownerMaterial?.fragmentShader||''}); continue; }
         if (d.type==='animation') continue;
         if (d.type==='model') {
           let instance=modelInstances.get(key);
@@ -714,20 +714,23 @@
         if(!signature) continue;
         let mesh=meshCache.get(key);
         const shaderMode=ownerMaterial?.shader||'standard';
-        if(!mesh||mesh.userData.signature!==signature||mesh.userData.shader!==shaderMode){
+        const fragmentShader=ownerMaterial?.fragmentShader||'';
+        if(!mesh||mesh.userData.signature!==signature||mesh.userData.shader!==shaderMode||mesh.userData.fragmentShader!==fragmentShader){
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
-          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
+          const vertexShader='varying vec2 vUv;\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
+          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='custom'?new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
           mesh=new T.Mesh(geometry,material);
           mesh.castShadow = d.type !== 'plane';
           mesh.receiveShadow = true;
           mesh.userData.signature=signature;
           mesh.userData.shader=shaderMode;
+          mesh.userData.fragmentShader=fragmentShader;
           meshCache.set(key,mesh);
           primitiveGroup.add(mesh);
         }
-        if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
+        if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
         if(d.type!=='water'){mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;}else{mesh.material.opacity=Number(d.opacity)||0.65;}
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,(Number(d.y)||0)+(d.type==='water'?Math.sin((performance.now?.()||0)*0.0015)*0.025:0),Number(d.z)||0);
