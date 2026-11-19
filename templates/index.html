@@ -787,11 +787,6 @@ function replaceQuotedAssetReference(source,oldName,newName){
  return text.split('"'+oldName+'"').join('"'+newName+'"').split("'"+oldName+"'").join("'"+newName+"'");
 }
 async function renameProjectAsset(oldName){
- const asset=projectAssets.find(a=>a.name===oldName);');
- const pattern=new RegExp('(["\\'])'+escaped+'\\1','g');
- return String(source).replace(pattern,(_,quote)=>quote+newName+quote);
-}
-async function renameProjectAsset(oldName){
  const asset=projectAssets.find(a=>a.name===oldName);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const ext=oldName.slice(oldName.lastIndexOf('.')).toLowerCase();
