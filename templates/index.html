@@ -782,6 +782,12 @@ function deleteProjectFile(name){
  else{document.getElementById('active-file-label').textContent='No file';codeEditor.value='';}
  toast('Deleted: '+name);
 }
+function replaceQuotedAssetReference(source,oldName,newName){
+ const escaped=String(oldName).replace(/[.*+?^${}()|[\]\\]/g,'\\async function renameProjectAsset(oldName){
+ const asset=projectAssets.find(a=>a.name===oldName);');
+ const pattern=new RegExp('(["\\'])'+escaped+'\\1','g');
+ return String(source).replace(pattern,(_,quote)=>quote+newName+quote);
+}
 async function renameProjectAsset(oldName){
  const asset=projectAssets.find(a=>a.name===oldName);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
@@ -797,7 +803,7 @@ async function renameProjectAsset(oldName){
   asset.name=next;
   if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});imageCache.delete(oldName);}
   for(const key of Object.keys(projectFiles)){
-   if(projectFiles[key].type==='ps')projectFiles[key].content=String(projectFiles[key].content||'').split(oldName).join(next);
+   if(projectFiles[key].type==='ps')projectFiles[key].content=replaceQuotedAssetReference(projectFiles[key].content,oldName,next);
   }
   if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');document.getElementById('save-state').textContent='Saved locally';}
   persistProject();renderProjectTree();renderGamePreview();toast('Renamed asset: '+next);
