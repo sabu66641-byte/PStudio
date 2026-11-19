@@ -429,6 +429,15 @@
         c.dt=dt;if(c.funcs.update)callFunction(c,'update',[dt]);runtime.states.set(o.id,c.env);commands.set(o.id,c.draw);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
+      // Imported models placed in the Scene remain visible during Play even
+      // when they do not have a script attached.
+      for(const o of sceneObjects||[]){
+        if(o.script||!o.model)continue;
+        const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
+        const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
+        const z=(Number(o.z)||0)/100;
+        commands.set(o.id,[{type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt}]);
+      }
       const transforms=window.PStudioPhysics?.step?.(dt,commands)||new Map();
       for(const [id,transform] of transforms){
         const draws=commands.get(id)||[];
