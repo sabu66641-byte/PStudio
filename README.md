@@ -426,3 +426,27 @@ Select a non-model Scene object and use the **Shader Editor** graph or GLSL edit
 - **Inventory:** `define_item(item, kind, slot, value)`, `inventory_add`, `equip_item` and `use_item` define equipment and consumables. `open_inventory()` and `open_quest_log()` open the built-in DOM panels.
 - **Quests and dialogue:** `quest_define(id, prerequisite, reward_item, reward_count)` defines a simple dependency and reward. Use `quest_start`, `quest_set_progress`, and `quest_complete`. `show_dialogue(speaker, text, choice1, choice2, choice3)` displays choices; `dialogue_choice()` reads the player's latest selection.
 - **Navigation:** `nav_build_from_terrain(x, y, z, width, depth, segments, height, max_slope)`, `nav_build_from_triangles(flat_vertices, max_slope)` and `nav_build_from_model(...)` build an edge-connected walkable triangle graph. This is an approximate static NavMesh; dynamic obstacle re-baking, off-mesh links and hierarchical streaming are not included.
+
+
+## Rendering Engine 1.6 — Spatial Irradiance and Large-World Rendering
+
+`PStudio3D.bakeLightProbeVolume(options)` captures a bounded grid of radiance probes (2–4 samples per axis, at most 32 probes, 32–128 cube resolution) and smoothly blends the nearest probes according to camera position. This is a camera-local lighting approximation, not per-object probe interpolation or complete multi-bounce real-time GI. Re-bake after major static lighting, geometry or environment changes.
+
+```js
+await PStudio3D.bakeLightProbeVolume({
+  min: { x: -80, y: 0, z: -80 },
+  max: { x: 80, y: 24, z: 80 },
+  xCount: 3, yCount: 2, zCount: 3,
+  resolution: 64, intensity: 0.8
+});
+```
+
+Large-world controls:
+
+- `PStudio3D.setWorldRenderConfig({ maxDrawDistance, lodDistances, shadowDistance, probeBlendCount })` configures distance visibility, imported-model LOD thresholds, directional shadow coverage and probe blending.
+- `PStudio3D.registerWorldChunk(id, { x, y, z, loadDistance, unloadDistance })` defines a render/asset activation region with hysteresis.
+- `PStudio3D.assignObjectToChunk(ownerId, id)` associates a Scene Object with a chunk. Inactive chunks stop issuing render commands while cached geometry/model instances are retained.
+- `PStudio3D.unregisterWorldChunk(id)` removes a chunk and owner assignments.
+- Three.js frustum culling remains enabled for ordinary meshes and model submeshes. Instanced batches compact visible instances and refresh selection mappings.
+
+Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This remains a single directional shadow camera, not cascaded shadow maps (CSM). Chunk visibility does not pause ps scripts, physics, AI or audio; full world streaming still needs project-level orchestration.
