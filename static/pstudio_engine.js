@@ -1,4 +1,4 @@
-/* PStudio Game Runtime 2.0.0
+/* PStudio Game Runtime 3.0.0
  * Browser-side, frame-driven interpreter for validated ps ASTs.
  * Normal ps -> C++17 execution remains on /run and is not changed.
  */
@@ -10,6 +10,7 @@
   const ctx = canvas.getContext('2d');
   const imageCache = window.imageCache || new Map();
   const keys = new Set();
+  const justPressed = new Set();
   let runtime = null;
   let raf = 0;
   let lastTime = 0;
@@ -29,9 +30,9 @@
     const r = canvas.getBoundingClientRect();
     return { x: (e.clientX-r.left)*canvas.width/r.width, y: (e.clientY-r.top)*canvas.height/r.height };
   }
-  window.addEventListener('keydown', e => { keys.add(e.key.toLowerCase()); const target=e.target; const editing=target && (target.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)); if(runtime?.running && !editing && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
+  window.addEventListener('keydown', e => { const key=e.key.toLowerCase(); if(!keys.has(key))justPressed.add(key); keys.add(key); const target=e.target; const editing=target && (target.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)); if(runtime?.running && !editing && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
   window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
-  window.addEventListener('blur', () => keys.clear());
+  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); });
   canvas.style.touchAction = 'none';
   canvas.style.userSelect = 'none';
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -96,19 +97,35 @@
   }
   function callBuiltin(c, name, a) {
     const o = c.object;
+    const physics = window.PStudioPhysics;
+    const physicsPosition = () => physics?.getPosition?.(o.id);
+    const readPosition = axis => physicsPosition()?.[['x','y','z'][axis]] ?? (Number(o[['x','y','z'][axis]])||0);
+    const writePosition = (axis,value) => {
+      const v=finite(value), field=['x','y','z'][axis];
+      if(physics?.getBody?.(o.id)) physics.setPosition(o.id,axis,v);
+      o[field]=v;
+      return v;
+    };
     switch (name) {
       case 'len': if (a.length!==1) break; return a[0]?.length ?? 0;
       case 'range': if (a.length===1) return Array.from({length:Math.max(0,Math.min(100000,Number(a[0])|0))},(_,i)=>i); if (a.length===2||a.length===3) { const step=a.length===3?Number(a[2]):1; if (!step) return []; const out=[]; for(let i=Number(a[0]); step>0?i<Number(a[1]):i>Number(a[1]); i+=step){out.push(i);if(out.length>100000)throw new PsRuntimeError('range() の要素数が上限を超えました。')} return out; } break;
-      case 'get_x': if (!a.length) return Number(o.x)||0; break;
-      case 'get_y': if (!a.length) return Number(o.y)||0; break;
-      case 'get_z': if (!a.length) return Number(o.z)||0; break;
-      case 'set_x': if (a.length===1) { o.x=finite(a[0]); return o.x; } break;
-      case 'set_y': if (a.length===1) { o.y=finite(a[0]); return o.y; } break;
-      case 'set_z': if (a.length===1) { o.z=finite(a[0]); return o.z; } break;
+      case 'get_x': if (!a.length) return readPosition(0); break;
+      case 'get_y': if (!a.length) return readPosition(1); break;
+      case 'get_z': if (!a.length) return readPosition(2); break;
+      case 'set_x': if (a.length===1) return writePosition(0,a[0]); break;
+      case 'set_y': if (a.length===1) return writePosition(1,a[0]); break;
+      case 'set_z': if (a.length===1) return writePosition(2,a[0]); break;
       case 'rotate_x': if (a.length===1) { o.rotationX=(Number(o.rotationX)||0)+finite(a[0]); return o.rotationX; } break;
       case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
       case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
-      case 'is_key_down': if (a.length===1) { const k=String(a[0]).toLowerCase(); const aliases={left:'arrowleft',right:'arrowright',up:'arrowup',down:'arrowdown',space:' '}; return keys.has(aliases[k]||k); } break;
+      case 'is_key_down': if (a.length===1) return keys.has(normalizeKey(a[0])); break;
+      case 'was_key_pressed': if (a.length===1) return justPressed.has(normalizeKey(a[0])); break;
+      case 'get_axis': if (a.length===1) {
+        const axis=String(a[0]).toLowerCase();
+        if(axis==='horizontal'||axis==='x')return (keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0);
+        if(axis==='vertical'||axis==='z')return (keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0);
+        break;
+      }
       case 'is_touched': if (!a.length) return touchActive; break;
       case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
       case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
@@ -128,6 +145,25 @@
       case 'set_background': if (a.length===1) { c.draw.push({type:'environment',background:String(a[0])}); return null; } break;
       case 'set_fog': if (a.length===3) { c.draw.push({type:'environment',fogColor:String(a[0]),fogNear:Math.max(0,finite(a[1])),fogFar:Math.max(0.001,finite(a[2]))}); return null; } break;
       case 'set_light': if (a.length===4) { c.draw.push({type:'environment',lightX:finite(a[0]),lightY:finite(a[1]),lightZ:finite(a[2]),lightIntensity:Math.max(0,finite(a[3]))}); return null; } break;
+      case 'physics_body': if (a.length===6) { if(!physics)throw new PsRuntimeError('Physics module is unavailable.'); physics.createBody(o.id,finite(a[0]),finite(a[1]),finite(a[2]),Math.max(0.05,finite(a[3])),Math.max(0.1,finite(a[4])),Math.max(0.001,finite(a[5]))); return null; } break;
+      case 'set_gravity': if (a.length===3) { physics?.setGravity(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
+      case 'apply_force': if (a.length===3) { physics?.applyForce(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
+      case 'apply_impulse': if (a.length===3) { physics?.applyImpulse(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
+      case 'get_velocity_x': if (!a.length) return physics?.getVelocity(o.id,0) ?? 0; break;
+      case 'get_velocity_y': if (!a.length) return physics?.getVelocity(o.id,1) ?? 0; break;
+      case 'get_velocity_z': if (!a.length) return physics?.getVelocity(o.id,2) ?? 0; break;
+      case 'set_velocity_x': if (a.length===1) return physics?.setVelocity(o.id,0,finite(a[0])); break;
+      case 'set_velocity_y': if (a.length===1) return physics?.setVelocity(o.id,1,finite(a[0])); break;
+      case 'set_velocity_z': if (a.length===1) return physics?.setVelocity(o.id,2,finite(a[0])); break;
+      case 'character_controller': if (a.length===3) { physics?.configureController(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
+      case 'move_character': if (a.length===2) { physics?.moveCharacter(o.id,finite(a[0]),finite(a[1])); return null; } break;
+      case 'jump': if (a.length===1) return physics?.jump(o.id,finite(a[0])) ?? false; break;
+      case 'is_grounded': if (!a.length) return physics?.isGrounded(o.id) ?? false; break;
+      case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),dt:c.dt}); return null; } break;
+      case 'play_animation': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:true}); return null; } break;
+      case 'play_animation_once': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:false}); return null; } break;
+      case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
+      case 'set_animation_speed': if (a.length===1) { c.draw.push({type:'animation',speed:finite(a[0])}); return null; } break;
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5])}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -135,6 +171,11 @@
     throw new PsRuntimeError(`未対応の関数、または引数の数が不正です: ${name}()`);
   }
   function finite(v) { const n=Number(v); if(!Number.isFinite(n)) throw new PsRuntimeError('座標・サイズには有限の数値を指定してください。'); return n; }
+  function normalizeKey(value) {
+    const k=String(value).toLowerCase();
+    const aliases={left:'arrowleft',right:'arrowright',up:'arrowup',down:'arrowdown',space:' '};
+    return aliases[k]||k;
+  }
   function evalExpr(c, env, n) {
     if (!n) return null;
     switch(n.type) {
@@ -310,13 +351,26 @@
         c.dt=dt;if(c.funcs.update)callFunction(c,'update',[dt]);runtime.states.set(o.id,c.env);commands.set(o.id,c.draw);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
+      const transforms=window.PStudioPhysics?.step?.(dt,commands)||new Map();
+      for(const [id,transform] of transforms){
+        const draws=commands.get(id)||[];
+        for(const draw of draws){
+          if(['cube','box','sphere','plane','cylinder','cone','capsule','model'].includes(draw.type)){
+            draw.x=finite(draw.x)+transform.dx;
+            draw.y=finite(draw.y)+transform.dy;
+            draw.z=finite(draw.z)+transform.dz;
+          }
+        }
+      }
       runtime.contexts=commands;updateCollisions();update3DCollisions(commands);renderFrame();
+      justPressed.clear();
       // renderFrame() owns the detailed status, including VIEW mode and draw-call count.
       raf=requestAnimationFrame(tick);
     } catch(err) { stopGame();setOutput?.(`Game runtime error: ${err.message}`,'error'); }
   }
   async function startGame() {
     if(runtime?.running)return;
+    if(window.PStudio3DReady)await window.PStudio3DReady;
     if(projectFiles[activeProjectFile]?.type==='ps' && typeof codeEditor!=='undefined') projectFiles[activeProjectFile].content=codeEditor.value;
     if(typeof persistProject==='function')persistProject();
     const scripts={};for(const [name,file] of Object.entries(projectFiles||{}))if(file.type==='ps')scripts[name]=file.content;
@@ -325,10 +379,11 @@
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
+      window.PStudioPhysics?.clear?.();
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
-      $('game-status').textContent='STARTING · PStudio Runtime 2.0.0';
+      $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestAnimationFrame(tick);
     } catch(err) {setOutput?.(`Game start failed: ${err.message}`,'error');}
@@ -337,11 +392,13 @@
     if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
+    window.PStudioPhysics?.clear?.();
+    justPressed.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
   }
-  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'2.0.0'};
+  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'3.0.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
   updateViewModeButtons();
