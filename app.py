@@ -656,7 +656,7 @@ GAME_FUNCTIONS = {
     "add_triangle_collider": 9,
     "draw_grid": 2, "set_camera": 6, "set_camera_follow": 7,
     "set_background": 1, "set_fog": 3, "set_light": 4, "set_material": 2,
-    "set_point_light": 6, "set_spot_light": 9, "set_environment": 3,
+    "set_point_light": 6, "set_spot_light": 9, "set_environment": 3, "set_shader": 1,
     "draw_terrain": 7, "draw_water": 7, "emit_particles": 7,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3,
     "draw_terrain": 7, "draw_water": 7,
