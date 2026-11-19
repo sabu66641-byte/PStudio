@@ -397,11 +397,11 @@ await PStudio3D.loadEnvironmentHDR("https://your-host.example/studio.hdr", {
 });
 ```
 
-After the scene, environment and lighting are in place, `PStudio3D.bakeLightProbe({ x, y, z, resolution, intensity })` captures the scene with a cube camera and converts the radiance to spherical-harmonic diffuse illumination. This is a **single global irradiance probe**, not a UV lightmap or spatially blended probe volume. Re-bake it after major static-scene or environment changes. It is a practical baked-indirect-light foundation, not full multi-bounce real-time path-traced GI.
+After the scene, environment and lighting are in place, `PStudio3D.bakeLightProbe({ x, y, z, resolution, intensity })` captures the scene with a cube camera and converts the radiance to spherical-harmonic diffuse illumination. This is a **single global irradiance probe**, not a UV lightmap or spatially blended probe volume. The current probe is runtime-only and is not serialized into project files; re-bake it after page reloads and major static-scene or environment changes. It is a practical baked-indirect-light foundation, not full multi-bounce real-time path-traced GI.
 
 ### Water and reflections
 
-`draw_water(x, y, z, width, depth, color, opacity)` now creates a tessellated physically based water surface. A vertex shader animates multiple wave components and perturbs the normals; the physical material uses water-like refraction (IOR 1.333), transmission and clearcoat. SSR can add screen-space reflections on high/ultra presets. Refraction and reflections are limited by what is visible to the camera and by the browser's transmission-buffer support. Caustics, volumetric underwater scattering, shore foam and fully simulated fluid dynamics are not included.
+`draw_water(x, y, z, width, depth, color, opacity)` now creates a tessellated physically based water surface. A vertex shader animates multiple wave components and perturbs the normals; the physical material uses water-like refraction (IOR 1.333), transmission and clearcoat. SSR can add screen-space reflections on high/ultra presets. Screen-space reflections cannot show off-screen objects and can be incomplete on transparent/refractive surfaces. Refraction is limited by the browser's transmission-buffer support. Caustics, volumetric underwater scattering, shore foam and fully simulated fluid dynamics are not included.
 
 ### GPU particles and instancing
 
