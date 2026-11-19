@@ -158,6 +158,7 @@
       if(keyLight?.shadow){keyLight.shadow.mapSize.set(profile.shadowSize,profile.shadowSize);keyLight.shadow.radius=profile.shadowMode==='vsm'?4:3;if('blurSamples' in keyLight.shadow)keyLight.shadow.blurSamples=profile.shadowMode==='vsm'?8:4;keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;keyLight.shadow.needsUpdate=true;}
       lastSize={width:0,height:0};resize();
     }
+    try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile});}catch(_){}
     return {preset:selected,...profile};
   }
 
@@ -516,7 +517,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       case 'cone': return ['cone',n(d.radius),n(d.height)].join(':');
       case 'capsule': return ['capsule',n(d.radius),Math.max(n(d.radius)*2,n(d.height))].join(':');
       case 'terrain': return ['terrain',n(d.width),n(d.depth),Math.max(2,Number(d.segments)||2),n(d.height)].join(':');
-      case 'water': return ['water',n(d.width),n(d.depth)].join(':');
+      case 'water': {const preset=resolveQualityPreset(qualityPreset),segments=preset==='ultra'?96:preset==='high'?72:48;return ['water',n(d.width),n(d.depth),segments].join(':');}
       default: return null;
     }
   }
