@@ -309,6 +309,12 @@
     return true;
   }
 
+  function sweepBodyAABB(body,start,end,box){
+    const bounds=[[box.minX-body.radius,box.maxX+body.radius],[box.minY-body.height/2,box.maxY+body.height/2],[box.minZ-body.radius,box.maxZ+body.radius]],delta=end.map((v,i)=>v-start[i]);let enter=0,exit=1,normal=[0,0,0];
+    for(let axis=0;axis<3;axis++){if(Math.abs(delta[axis])<1e-10){if(start[axis]<bounds[axis][0]||start[axis]>bounds[axis][1])return false;continue;}let t1=(bounds[axis][0]-start[axis])/delta[axis],t2=(bounds[axis][1]-start[axis])/delta[axis],sign=-Math.sign(delta[axis]);if(t1>t2){const tmp=t1;t1=t2;t2=tmp;sign=-sign;}if(t1>enter){enter=t1;normal=[0,0,0];normal[axis]=sign;}exit=Math.min(exit,t2);if(enter>exit)return false;}
+    if(enter<0||enter>1||normal.every(v=>v===0))return false;const t=Math.max(0,enter-0.0005);for(let axis=0;axis<3;axis++)body.position[axis]=start[axis]+delta[axis]*t;const into=body.velocity[0]*normal[0]+body.velocity[1]*normal[1]+body.velocity[2]*normal[2];if(into<0)for(let axis=0;axis<3;axis++)body.velocity[axis]-=normal[axis]*into;if(normal[1]>0.5){body.velocity[1]=0;body.grounded=true;body.groundPlatformId=box.id||null;}return true;
+  }
+
   function solveWorld(body, colliders, oldPosition) {
     body.grounded = false;
     for (let iteration = 0; iteration < 4; iteration++) {
@@ -359,7 +365,7 @@
     for(let axis=0;axis<3;axis++)body.velocity[axis]+=(body.gravity[axis]+body.force[axis]*body.invMass)*dt;
     const travel=Math.hypot(body.velocity[0]*dt,body.velocity[1]*dt,body.velocity[2]*dt);
     const slices=clamp(Math.ceil(travel/Math.max(0.035,body.radius*0.25)),1,256);
-    for(let slice=0;slice<slices;slice++){const previous=body.position.slice();for(let axis=0;axis<3;axis++)body.position[axis]+=body.velocity[axis]*dt/slices;solveWorld(body,colliders,previous);body.wasGrounded=body.grounded;}
+    for(let slice=0;slice<slices;slice++){const previous=body.position.slice();for(let axis=0;axis<3;axis++)body.position[axis]+=body.velocity[axis]*dt/slices;for(const collider of colliders)if(collider.type==='box')sweepBodyAABB(body,previous,body.position.slice(),collider);solveWorld(body,colliders,previous);body.wasGrounded=body.grounded;}
     if (!wasGrounded && body.grounded && body.airTime >= 0.08) {
       body.landed = true;
     }
