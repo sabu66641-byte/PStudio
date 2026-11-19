@@ -1,4 +1,4 @@
-# PStudio Game Engine 2.0.0
+# PStudio Game Engine 3.0.0
 
 PStudio is an indentation-based `ps` IDE with two separate execution paths:
 
@@ -72,9 +72,13 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - Existing normal ps execution, C++17 generation, Discord routes, editor, local project storage, asset import, scene serialization and language UI are retained.
 - Game APIs are opt-in: they are accepted by `/game/prepare`, but are not added to normal C++ execution. This prevents game-only calls from generating invalid C++.
 - Game scripts execute in the browser runtime. `input()` and Discord side-effect functions are intentionally unavailable in game callbacks. Use the normal Run path for those workflows.
-- The browser runtime provides frame lifecycle, per-object script state, keyboard/pointer input, 2D drawing, 3D primitive rendering, a persistent 3D mesh cache, basic 2D/3D collision callbacks, and simple 3D environment controls.
-- The 3D renderer supports cubes, boxes, spheres, planes, cylinders, cones and capsules. Environment controls include background color, distance fog and one configurable directional light.
-- It is not yet a full action-RPG engine: rigid-body physics, gravity, player character controller, terrain streaming, skeletal model import, animation blending, navigation, particles, audio mixing, combat and save systems are future work.
+- The browser runtime provides the existing 2D path, a persistent 3D primitive renderer, basic 2D/3D collision callbacks, a fixed-step capsule character controller, GLB model loading and glTF animation playback.
+- The custom physics module uses a 1/60-second fixed simulation step with a bounded accumulator, gravity, force/impulse, velocity, ground contact, jump buffering and a short coyote-time window.
+- Character control includes normalized X/Z movement, ground acceleration, configurable air control, vertical jump speed and grounded state.
+- Static world collision currently supports horizontal `draw_plane` surfaces and axis-aligned bounding approximations for box-like primitives. It is not a general rigid-body solver: dynamic body-to-body response, arbitrary triangle-mesh collision, sloped terrain, stairs/step climbing, joints and continuous collision detection are not implemented.
+- Import binary glTF `.glb` files through ASSETS. Model binaries are stored in IndexedDB (up to 30 MB per imported model), separate from localStorage project metadata. `.gltf` files with external sidecar resources are not supported in this build.
+- `load_model(name, x, y, z, scale)` instantiates an imported model. `play_animation(name)` loops a matching animation clip; `play_animation_once(name)` plays it once. Clip names come from the GLB file.
+- This is a game-development foundation, not a finished large-world action-RPG engine. Terrain streaming, robust mesh physics, navigation, advanced animation blending, particles, audio mixing, combat systems and save data are future work.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
 
 ## Validation performed for this build
@@ -117,4 +121,63 @@ func update(dt)
     draw_cylinder(3, 1, 0, 0.5, 2)
     draw_cone(-3, 1, 0, 0.7, 2)
     draw_capsule(0, 1, 3, 0.4, 2)
+```
+
+## PStudio 3.0 Physics and Character API
+
+| Function | Meaning |
+|---|---|
+| `physics_body(x, y, z, radius, height, mass)` | Create a vertical capsule body in world units |
+| `set_gravity(x, y, z)` | Set acceleration due to gravity |
+| `apply_force(x, y, z)` / `apply_impulse(x, y, z)` | Apply force over the next physics step or an immediate impulse |
+| `get_velocity_x/y/z()` | Read velocity components |
+| `set_velocity_x/y/z(value)` | Set velocity components |
+| `character_controller(max_speed, acceleration, air_control)` | Configure ground speed, acceleration and 0–1 air-control ratio |
+| `move_character(x, z)` | Set normalized horizontal movement input |
+| `jump(speed)` | Buffer a jump using the requested initial upward speed |
+| `is_grounded()` | Check current ground contact |
+| `get_axis("horizontal" or "vertical")` | Read A/D + arrow-key movement axes; W/Up is negative Z |
+| `was_key_pressed("space")` | Detect a key press edge for one game frame |
+
+The character body is a vertical capsule. The physics step is fixed at 60 Hz and capped at eight substeps per rendered frame. The controller uses semi-implicit Euler integration, ground/air acceleration, a 0.12-second jump buffer and 0.12-second coyote time. It currently collides against horizontal planes and primitive AABB approximations. It is intentionally not described as production-grade general-purpose physics.
+
+## GLB Model and Animation API
+
+Import a binary glTF `.glb` model in the ASSETS area, then refer to its exact filename from a game script:
+
+| Function | Meaning |
+|---|---|
+| `load_model(name, x, y, z, scale)` | Load and draw an imported GLB model |
+| `play_animation(name)` | Loop the matching animation clip |
+| `play_animation_once(name)` | Play a clip once and hold its final pose |
+| `stop_animation()` | Stop the current model animation |
+| `set_animation_speed(speed)` | Change animation playback speed |
+
+The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files are stored as binary Blobs in IndexedDB, not embedded into the project JSON. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Standard embedded GLB resources are supported; external `.gltf` sidecar files and compressed assets requiring separately configured decoders are not included in this build.
+
+## 3D RPG Starter Example
+
+Attach `examples/3d_rpg/world.ps` to a world Game Object and `examples/3d_rpg/player_controller.ps` to a player Game Object. Import a rigged `Traveler.glb` with animation clips whose names include Idle, Run and Jump.
+
+```ps
+func start()
+    physics_body(0, 2.4, 0, 0.38, 1.8, 1)
+    set_gravity(0, -18, 0)
+    character_controller(5.5, 28, 0.28)
+
+func update(dt)
+    move_character(get_axis("horizontal"), get_axis("vertical"))
+
+    if was_key_pressed("space")
+        jump(7.5)
+
+    if not is_grounded()
+        play_animation("Jump")
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 1
+        play_animation("Run")
+    else
+        play_animation("Idle")
+
+    load_model("Traveler.glb", get_x(), get_y() - 0.9, get_z(), 1)
+    set_camera(get_x() + 4, get_y() + 3, get_z() + 6, get_x(), get_y(), get_z())
 ```
