@@ -36,6 +36,7 @@
     const body = {
       id,
       position: [finite(x), finite(y), finite(z)],
+      previousPosition: [finite(x), finite(y), finite(z)],
       velocity: [0, 0, 0],
       force: [0, 0, 0],
       pendingForce: [0, 0, 0],
@@ -64,6 +65,7 @@
   function setPosition(id, axis, value) {
     const b = requireBody(id);
     b.position[axis] = finite(value);
+    b.previousPosition = b.position.slice();
     return b.position[axis];
   }
   function getVelocity(id, axis) {
@@ -80,7 +82,11 @@
     b.gravity = [finite(x), finite(y), finite(z)];
   }
   function beginFrame() {
-    for (const body of bodies.values()) body.force = [0, 0, 0];
+    for (const body of bodies.values()) {
+      body.force = [0, 0, 0];
+      // Movement input is sampled per rendered frame; never retain stale input.
+      body.input = [0, 0];
+    }
   }
 
   function applyForce(id, x, y, z) {
@@ -306,7 +312,10 @@
       }
     }
     while (accumulator + 1e-9 >= FIXED_STEP && steps < MAX_SUBSTEPS) {
-      for (const body of bodies.values()) simulateBody(body, FIXED_STEP, colliders);
+      for (const body of bodies.values()) {
+        body.previousPosition = body.position.slice();
+        simulateBody(body, FIXED_STEP, colliders);
+      }
       accumulator -= FIXED_STEP;
       steps++;
     }
@@ -319,11 +328,15 @@
     const result = new Map();
     for (const [id, body] of bodies) {
       const old = before.get(id) || body.position;
+      const previous = body.previousPosition || body.position;
+      const alpha = clamp(accumulator / FIXED_STEP, 0, 1);
+      const renderPosition = previous.map((value, axis) => value + (body.position[axis] - value) * alpha);
       result.set(id, {
         x: body.position[0], y: body.position[1], z: body.position[2],
-        dx: body.position[0] - old[0],
-        dy: body.position[1] - old[1],
-        dz: body.position[2] - old[2],
+        renderX: renderPosition[0], renderY: renderPosition[1], renderZ: renderPosition[2],
+        dx: renderPosition[0] - old[0],
+        dy: renderPosition[1] - old[1],
+        dz: renderPosition[2] - old[2],
         grounded: body.grounded
       });
     }
