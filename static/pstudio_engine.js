@@ -239,7 +239,9 @@
       case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
       case 'set_animation_speed': if (a.length===1) { c.draw.push({type:'animation',speed:finite(a[0])}); return null; } break;
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
-      case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5])}); return null; } break;
+      case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
+      case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt}); return null; } break;
+      case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
     }
     throw new PsRuntimeError(`未対応の関数、または引数の数が不正です: ${name}()`);
@@ -464,7 +466,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_background|set_fog|set_light|load_model)\s*\(/.test(source));
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_background|set_fog|set_light|load_model)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
