@@ -66,7 +66,7 @@
     const record = {
       id, type: String(type), key: String(key), value,
       category,
-      sizeBytes: finiteBytes(options.sizeBytes),
+      sizeBytes: options.sizeBytes === undefined ? finiteBytes(value?.size) : finiteBytes(options.sizeBytes),
       refCount: 0,
       pinned: options.pinned === true,
       dispose: options.dispose,
