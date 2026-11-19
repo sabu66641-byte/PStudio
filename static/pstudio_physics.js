@@ -302,6 +302,9 @@
         body.velocity[2] *= friction;
       }
       applyBufferedJump(body);
+      // A buffered re-jump on the landing frame should transition directly to Jump,
+      // not briefly request a separate Land animation.
+      if(body.jumped)body.landed=false;
     } else {
       body.airTime += dt;
     }
