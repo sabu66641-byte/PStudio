@@ -364,6 +364,7 @@
           }
           instance.ownerId=ownerId;
           instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+          instance.root.rotation.set(Number(d.rotationX)||0,Number(d.rotationY)||0,Number(d.rotationZ)||0);
           instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
           const animState={loop:true};
           for(const item of list){
