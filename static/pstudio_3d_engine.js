@@ -232,7 +232,7 @@
       vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
 uniform float uTime;uniform float uSize;uniform float uPixelRatio;uniform float uGravity;varying float vAlpha;
 void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3 p=aOrigin+aVelocity*age+vec3(0.0,-0.5*uGravity*age*age,0.0);vec4 mvPosition=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mvPosition;gl_PointSize=clamp(uSize*uPixelRatio*(280.0/max(0.1,-mvPosition.z)),1.0,40.0);vAlpha=alive*(1.0-smoothstep(aLife*0.68,aLife,age));}`,
-      fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);#include <tonemapping_fragment>
+      fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);\n#include <tonemapping_fragment>
 #include <colorspace_fragment>}`
     });
     const points=new T.Points(geometry,material);points.frustumCulled=false;points.renderOrder=3;geometry.setDrawRange(0,count);
@@ -770,7 +770,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const T = window.THREE;
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
-    const frameDelta=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(item=>Number.isFinite(item.dt))?.dt)||1/60));
+    let frameDelta=1/60;
+    for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
     particleClock+=frameDelta;
     for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
@@ -793,18 +794,45 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(d.type==='model_material')continue;
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
-          const emitterKey=String(ownerId)+':'+String(d.emitterId);let emitter=particleEmitters.get(emitterKey);
-          if(!emitter){if(particleEmitters.size>=32){const oldestKey=particleEmitters.keys().next().value,oldest=particleEmitters.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleEmitters.delete(oldestKey);}const geometry=new T.BufferGeometry(),positions=new Float32Array(Math.max(1,Number(d.maxCount)||100)*3);geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.085,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);emitter={points,particles:[],accumulator:0,capacity:Math.max(1,Number(d.maxCount)||100)};particleEmitters.set(emitterKey,emitter);}
-          const requestedCapacity=Math.max(1,Math.min(1200,Math.floor(Number(d.maxCount)||100)));if(emitter.capacity!==requestedCapacity){emitter.capacity=requestedCapacity;emitter.particles=emitter.particles.slice(0,requestedCapacity);const oldAttribute=emitter.points.geometry.getAttribute('position');const positions=new Float32Array(requestedCapacity*3);positions.set(oldAttribute.array.subarray(0,Math.min(oldAttribute.array.length,positions.length)));emitter.points.geometry.setAttribute('position',new T.BufferAttribute(positions,3));}
-          emitter.config=d;emitter.points.material.color.set(d.color||'#ffffff');usedEmitters.add(emitterKey);continue;
+          const emitterKey=String(ownerId)+':'+String(d.emitterId);
+          const capacity=Math.max(1,Math.min(1200,Math.floor(Number(d.maxCount)||100)));
+          let emitter=particleEmitters.get(emitterKey);
+          if(!emitter||emitter.capacity!==capacity){
+            if(emitter)disposeGpuParticleSystem(emitter.system);
+            const system=createGpuParticleSystem(capacity,d.color,0.085);
+            primitiveGroup.add(system.points);
+            emitter={system,capacity,accumulator:0,config:d};
+            particleEmitters.set(emitterKey,emitter);
+          }
+          emitter.config=d;
+          emitter.system.uniforms.uColor.value.set(d.color||'#ffffff');
+          const dt=Math.max(0,Math.min(0.1,Number(d.dt)||frameDelta));
+          emitter.accumulator+=Math.max(0,Number(d.rate)||0)*dt;
+          const spawn=Math.min(capacity,Math.floor(emitter.accumulator));
+          emitter.accumulator-=spawn;
+          for(let n=0;n<spawn;n++){
+            const angle=Math.random()*Math.PI*2,speed=Math.max(0,Number(d.speed)||1);
+            spawnGpuParticle(emitter.system,[Number(d.x)||0,Number(d.y)||0,Number(d.z)||0],
+              [Math.cos(angle)*speed*(0.3+Math.random()*0.7),(0.3+Math.random())*speed,Math.sin(angle)*speed*(0.3+Math.random()*0.7)],
+              Number(d.lifetime)||1);
+          }
+          usedEmitters.add(emitterKey);continue;
         }
         if(d.type==='particles'){
-          const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
-            if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value,oldest=particleBursts.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleBursts.delete(oldestKey);}
-            const count=Math.max(1,Math.min(400,Number(d.count)||1)),positions=new Float32Array(count*3),velocities=[];
-            for(let i=0;i<count;i++){const theta=Math.random()*Math.PI*2,u=Math.random()*2-1,speed=(0.25+Math.random()*0.75)*(Number(d.speed)||1);positions[i*3]=Number(d.x)||0;positions[i*3+1]=Number(d.y)||0;positions[i*3+2]=Number(d.z)||0;velocities.push([Math.cos(theta)*Math.sqrt(1-u*u)*speed,(u*0.8+0.35)*speed,Math.sin(theta)*Math.sqrt(1-u*u)*speed]);}
-            const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.09,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);particleBursts.set(burstKey,{points,velocities,age:0,lifetime:Number(d.lifetime)||1});
-          }continue;
+          const burstKey=String(d.burstId);
+          if(!particleBursts.has(burstKey)){
+            if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value;const oldest=particleBursts.get(oldestKey);disposeGpuParticleSystem(oldest.system);particleBursts.delete(oldestKey);}
+            const count=Math.max(1,Math.min(400,Number(d.count)||1));
+            const system=createGpuParticleSystem(count,d.color,0.095);
+            primitiveGroup.add(system.points);
+            const origin=[Number(d.x)||0,Number(d.y)||0,Number(d.z)||0],speed=Number(d.speed)||1,lifetime=Number(d.lifetime)||1;
+            for(let i=0;i<count;i++){
+              const theta=Math.random()*Math.PI*2,u=Math.random()*2-1,v=(0.25+Math.random()*0.75)*speed;
+              spawnGpuParticle(system,origin,[Math.cos(theta)*Math.sqrt(1-u*u)*v,(u*0.8+0.35)*v,Math.sin(theta)*Math.sqrt(1-u*u)*v],lifetime);
+            }
+            particleBursts.set(burstKey,{system,expiresAt:particleClock+lifetime});
+          }
+          continue;
         }
         if(d.type==='light'){
           let light=dynamicLights.get(key);
@@ -940,9 +968,12 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
-    for(const [key,emitter] of particleEmitters){if(stoppedEmitters.has(key)||!usedEmitters.has(key)){primitiveGroup.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();particleEmitters.delete(key);continue;}const d=emitter.config,dt=Math.max(0,Math.min(0.1,Number(d.dt)||1/60)),max=Math.max(1,Math.min(1200,Math.floor(Number(d.maxCount)||100)));emitter.accumulator+=Math.max(0,Number(d.rate)||0)*dt;let spawn=Math.min(max,Math.floor(emitter.accumulator));emitter.accumulator-=spawn;for(let n=0;n<spawn;n++){if(emitter.particles.length>=max)break;const angle=Math.random()*Math.PI*2,speed=Math.max(0,Number(d.speed)||1);emitter.particles.push({x:Number(d.x)||0,y:Number(d.y)||0,z:Number(d.z)||0,vx:Math.cos(angle)*speed*(0.3+Math.random()*0.7),vy:(0.3+Math.random())*speed,vz:Math.sin(angle)*speed*(0.3+Math.random()*0.7),life:Number(d.lifetime)||1,maxLife:Number(d.lifetime)||1});}const alive=[];for(const p of emitter.particles){p.life-=dt;if(p.life<=0)continue;p.vy-=2.4*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;alive.push(p);}emitter.particles=alive;const attr=emitter.points.geometry.attributes.position;let idx=0;for(const p of alive){attr.array[idx++]=p.x;attr.array[idx++]=p.y;attr.array[idx++]=p.z;}attr.needsUpdate=true;emitter.points.geometry.setDrawRange(0,alive.length);emitter.points.material.opacity=alive.length?0.9:0;}
-    for(const key of stoppedEmitters){const emitter=particleEmitters.get(key);if(emitter){primitiveGroup.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();particleEmitters.delete(key);}}
-    for(const [key,effect] of particleBursts){effect.age+=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));const positions=effect.points.geometry.attributes.position;for(let i=0;i<effect.velocities.length;i++){const ageStep=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));effect.velocities[i][1]-=2.2*ageStep;positions.array[i*3]+=effect.velocities[i][0]*ageStep;positions.array[i*3+1]+=effect.velocities[i][1]*ageStep;positions.array[i*3+2]+=effect.velocities[i][2]*ageStep;}positions.needsUpdate=true;effect.points.material.opacity=Math.max(0,1-effect.age/effect.lifetime);if(effect.age>=effect.lifetime){primitiveGroup.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();particleBursts.delete(key);}}
+    for(const [key,emitter] of particleEmitters){
+      if(stoppedEmitters.has(key)||!usedEmitters.has(key)){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
+    }
+    for(const key of stoppedEmitters){const emitter=particleEmitters.get(key);if(emitter){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}}
+    for(const [key,effect] of particleBursts){if(particleClock>=effect.expiresAt){disposeGpuParticleSystem(effect.system);particleBursts.delete(key);}}
+    updateGpuParticleSystems();
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
@@ -988,9 +1019,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
     gridCache.clear();
     disposeGroup(selectionGroup);
-    for(const emitter of particleEmitters.values()){primitiveGroup?.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();}particleEmitters.clear();
-    for(const effect of particleBursts.values()){primitiveGroup?.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();}particleBursts.clear();
-    selectionSignature='';
+    for(const emitter of particleEmitters.values())disposeGpuParticleSystem(emitter.system);particleEmitters.clear();
+    for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
+    particleClock=0;    selectionSignature='';
     if(renderer)drawFrame();
   }
 
