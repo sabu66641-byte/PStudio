@@ -854,7 +854,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
-    if(scene.background) scene.background.set(defaultBackground);
+    if(hdrTexture&&hdrShowBackground)scene.background=hdrTexture;
+    else if(scene.background?.isColor)scene.background.set(defaultBackground);
+    else scene.background=new T.Color(defaultBackground);
     scene.fog=null;
     if(hemisphereLight) hemisphereLight.intensity=1.15;
     if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
@@ -1009,7 +1011,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
-          const vertexShader='varying vec2 vUv;\\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
+          const vertexShader='varying vec2 vUv;\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
           let material;
           if(d.type==='water'){
             material=configureWaterMaterial(new T.MeshPhysicalMaterial({
