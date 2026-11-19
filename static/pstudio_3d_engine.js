@@ -521,8 +521,14 @@
         action.setEffectiveWeight(1);
         action.setLoop(state.loop===false ? window.THREE.LoopOnce : window.THREE.LoopRepeat, state.loop===false ? 1 : Infinity);
         action.clampWhenFinished=state.loop===false;
-        if(previousAction && previousAction!==action && previousAction.isRunning()){
-          previousAction.crossFadeTo(action,0.18,false);
+        if(previousAction && previousAction!==action){
+          if(previousAction.isRunning()){
+            previousAction.crossFadeTo(action,0.18,false);
+          }else{
+            previousAction.stopFading();
+            previousAction.fadeOut(0.12);
+            action.fadeIn(0.12);
+          }
         }else{
           action.fadeIn(0.12);
         }
