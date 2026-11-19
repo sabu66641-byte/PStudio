@@ -673,7 +673,7 @@ GAME_FUNCTIONS = {
     "apply_damage": 2, "attack_hitbox": 2, "use_skill": 3, "enemy_follow": 3, "enemy_attack": 4,
     "inventory_add": 2, "inventory_remove": 2, "inventory_count": 1,
     "quest_start": 1, "quest_complete": 1, "quest_is_complete": 1, "quest_set_progress": 3, "quest_get_progress": 1,
-    "nav_add_node": 4, "nav_connect": 2, "nav_build_grid": 5, "nav_block_node": 2, "nav_next_node": 2, "nav_clear": 0,
+    "nav_add_node": 4, "nav_connect": 2, "nav_build_grid": 5, "nav_build_from_triangles": 2, "nav_build_from_terrain": 7, "nav_build_from_model": 6, "nav_block_node": 2, "nav_next_node": 2, "nav_clear": 0,
     "draw_hud_text": 5, "draw_hud_bar": 7,
     "set_step_height": 1, "set_max_slope": 1,
     "get_axis": 1, "was_key_pressed": 1,
