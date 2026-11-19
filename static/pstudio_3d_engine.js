@@ -27,6 +27,9 @@
   let keyLight = null;
   const dynamicLights = new Map();
   const particleBursts = new Map();
+  const particleEmitters = new Map();
+  const modelCollisionCache = new Map();
+  let transformedCollisionCache = null;
   let environmentTexture = null;
   let environmentSignature = '';
   const meshCache = new Map();
@@ -540,6 +543,19 @@
     });
   }
 
+  function updateModelIK(instance, ik) {
+    if(!ik||!instance?.root)return;const T=window.THREE;let root=null,end=null;
+    instance.root.traverse(object=>{if(object.isBone&&object.name===ik.rootBone)root=object;if(object.isBone&&object.name===ik.endBone)end=object;});if(!root||!end||root===end)return;
+    const target=new T.Vector3(...ik.target),weight=Math.max(0,Math.min(1,Number(ik.weight)||0));if(weight<=0)return;
+    for(let iteration=0;iteration<Math.max(1,Math.min(20,ik.iterations||8));iteration++){
+      let joint=end.parent,changed=false;while(joint&&joint!==root.parent){
+        if(joint.isBone){instance.root.updateMatrixWorld(true);const jointPos=new T.Vector3(),endPos=new T.Vector3();joint.getWorldPosition(jointPos);end.getWorldPosition(endPos);const from=endPos.sub(jointPos).normalize(),to=target.clone().sub(jointPos).normalize();if(from.lengthSq()>0.5&&to.lengthSq()>0.5){const worldDelta=new T.Quaternion().setFromUnitVectors(from,to),parentQuat=new T.Quaternion();if(joint.parent)joint.parent.getWorldQuaternion(parentQuat);const localDelta=parentQuat.clone().invert().multiply(worldDelta).multiply(parentQuat);const desired=joint.quaternion.clone().premultiply(localDelta);joint.quaternion.slerp(desired,weight);joint.updateMatrixWorld(true);changed=true;}}
+        if(joint===root)break;joint=joint.parent;
+      }
+      if(!changed)break;instance.root.updateMatrixWorld(true);const endPos=new T.Vector3();end.getWorldPosition(endPos);if(endPos.distanceToSquared(target)<0.0004)break;
+    }
+  }
+
   function updateModelAnimation(instance, state, dt) {
     if(!instance.mixer) return;
     if(state.speed !== undefined) instance.speed=state.speed;
@@ -556,6 +572,11 @@
       instance.mixer.stopAllAction();
       instance.activeClip=null;instance.activeBlend=null;instance.blendActions=[];
     }
+    if(state.layers){
+      const active=new Set();
+      for(const layer of state.layers){const clip=instance.animations.find(item=>item.name.toLowerCase()===String(layer.clip).toLowerCase())||instance.animations.find(item=>item.name.toLowerCase().includes(String(layer.clip).toLowerCase()));if(!clip)continue;active.add(clip.name);if(!instance.layerActions)instance.layerActions=new Map();let action=instance.layerActions.get(clip.name);if(!action){action=instance.mixer.clipAction(clip);action.reset();action.setLoop(window.THREE.LoopRepeat,Infinity);if(layer.additive)action.blendMode=window.THREE.AdditiveAnimationBlendMode;action.play();instance.layerActions.set(clip.name,action);}action.enabled=true;action.setEffectiveWeight(Math.max(0,Math.min(1,layer.weight)));}
+      if(instance.layerActions)for(const [name,action] of instance.layerActions){if(!active.has(name)){action.fadeOut(0.12);instance.layerActions.delete(name);}}
+    }else if(instance.layerActions){for(const action of instance.layerActions.values())action.fadeOut(0.12);instance.layerActions.clear();}
     if(state.blend){
       instance.mixer.timeScale=instance.speed;
       instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));
@@ -619,7 +640,7 @@
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
     lastCommands=commandsByObject;
-    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set();
+    const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
     if(scene.background) scene.background.set(defaultBackground);
@@ -637,6 +658,12 @@
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=!!d.bloom;ssaoEnabled=!!d.ssao;bloomStrength=Math.max(0,Math.min(2,Number(d.strength)||0.45));continue;}
       if(d.type==='model_material')continue;
+        if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
+        if(d.type==='particle_emitter'){
+          const emitterKey=String(ownerId)+':'+String(d.emitterId);let emitter=particleEmitters.get(emitterKey);
+          if(!emitter){const geometry=new T.BufferGeometry(),positions=new Float32Array(Math.max(1,Number(d.maxCount)||100)*3);geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.085,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);emitter={points,particles:[],accumulator:0};particleEmitters.set(emitterKey,emitter);}
+          emitter.config=d;emitter.points.material.color.set(d.color||'#ffffff');usedEmitters.add(emitterKey);continue;
+        }
         if(d.type==='particles'){
           const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
             if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value,oldest=particleBursts.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleBursts.delete(oldestKey);}
@@ -667,7 +694,7 @@
           instance.root.rotation.set(Number(d.rotationX)||0,Number(d.rotationY)||0,Number(d.rotationZ)||0);
           instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
           applyModelMaterial(instance,ownerMaterial);
-          const animState={loop:true};
+          const animState={loop:true,layers:[]};
           for(const item of list){
             if(item.type==='animation'){
               if(item.stop)animState.stop=true;
@@ -675,6 +702,10 @@
               if(item.speed!==undefined)animState.speed=Number(item.speed);
             }else if(item.type==='animation_blend'){
               animState.blend={first:item.first,second:item.second,weight:Math.max(0,Math.min(1,Number(item.weight)||0))};
+            }else if(item.type==='animation_layer'){
+              animState.layers.push({clip:item.clip,weight:item.weight,additive:item.additive});
+            }else if(item.type==='ik'){
+              animState.ik=item;
             }else if(item.type==='locomotion'){
               animState.locomotion=item;
             }
@@ -712,6 +743,7 @@
             }
           }
           updateModelAnimation(instance,animState,d.dt);
+          updateModelIK(instance,animState.ik);
           usedModels.add(key);
           continue;
         }
@@ -761,6 +793,8 @@
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)){disposeMesh(mesh);meshCache.delete(key);}}
+    for(const [key,emitter] of particleEmitters){if(stoppedEmitters.has(key)||!usedEmitters.has(key)){primitiveGroup.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();particleEmitters.delete(key);continue;}const d=emitter.config,dt=Math.max(0,Math.min(0.1,Number(d.dt)||1/60)),max=Math.max(1,Math.min(1200,Math.floor(Number(d.maxCount)||100)));emitter.accumulator+=Math.max(0,Number(d.rate)||0)*dt;let spawn=Math.min(max,Math.floor(emitter.accumulator));emitter.accumulator-=spawn;for(let n=0;n<spawn;n++){if(emitter.particles.length>=max)break;const angle=Math.random()*Math.PI*2,speed=Math.max(0,Number(d.speed)||1);emitter.particles.push({x:Number(d.x)||0,y:Number(d.y)||0,z:Number(d.z)||0,vx:Math.cos(angle)*speed*(0.3+Math.random()*0.7),vy:(0.3+Math.random())*speed,vz:Math.sin(angle)*speed*(0.3+Math.random()*0.7),life:Number(d.lifetime)||1,maxLife:Number(d.lifetime)||1});}const alive=[];for(const p of emitter.particles){p.life-=dt;if(p.life<=0)continue;p.vy-=2.4*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;alive.push(p);}emitter.particles=alive;const attr=emitter.points.geometry.attributes.position;let idx=0;for(const p of alive){attr.array[idx++]=p.x;attr.array[idx++]=p.y;attr.array[idx++]=p.z;}attr.needsUpdate=true;emitter.points.geometry.setDrawRange(0,alive.length);emitter.points.material.opacity=alive.length?0.9:0;}
+    for(const key of stoppedEmitters){const emitter=particleEmitters.get(key);if(emitter){primitiveGroup.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();particleEmitters.delete(key);}}
     for(const [key,effect] of particleBursts){effect.age+=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));const positions=effect.points.geometry.attributes.position;for(let i=0;i<effect.velocities.length;i++){const ageStep=Math.max(0,Math.min(0.1,Number([...commandsByObject.values()].flat().find(d=>d.type==='particles')?.dt)||1/60));effect.velocities[i][1]-=2.2*ageStep;positions.array[i*3]+=effect.velocities[i][0]*ageStep;positions.array[i*3+1]+=effect.velocities[i][1]*ageStep;positions.array[i*3+2]+=effect.velocities[i][2]*ageStep;}positions.needsUpdate=true;effect.points.material.opacity=Math.max(0,1-effect.age/effect.lifetime);if(effect.age>=effect.lifetime){primitiveGroup.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();particleBursts.delete(key);}}
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
@@ -805,6 +839,7 @@
     for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
     gridCache.clear();
     disposeGroup(selectionGroup);
+    for(const emitter of particleEmitters.values()){primitiveGroup?.remove(emitter.points);emitter.points.geometry.dispose();emitter.points.material.dispose();}particleEmitters.clear();
     for(const effect of particleBursts.values()){primitiveGroup?.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();}particleBursts.clear();
     selectionSignature='';
     if(renderer)drawFrame();
@@ -825,11 +860,19 @@
       try{render(lastCommands);}catch(error){console.error('[PStudio] Asset refresh failed:',error);}
     }
   }
+  function getModelCollisionTriangles(command){
+    const asset=modelCache.get(command.name);if(!asset)return null;let local=modelCollisionCache.get(command.name);
+    if(!local){const T=window.THREE;asset.scene.updateMatrixWorld(true);const vertices=[];let total=0;asset.scene.traverse(mesh=>{if(!mesh.isMesh||!mesh.geometry?.attributes?.position)return;const pos=mesh.geometry.attributes.position,index=mesh.geometry.index,count=index?index.count:pos.count,world=mesh.matrixWorld;const stride=Math.max(1,Math.ceil((count/3)/4000));for(let tri=0;tri+2<count;tri+=3*stride){for(let k=0;k<3;k++){const vi=index?index.getX(tri+k):tri+k;const v=new T.Vector3().fromBufferAttribute(pos,vi).applyMatrix4(world);vertices.push(v.x,v.y,v.z);}if(++total>=4000)break;}});local=vertices;modelCollisionCache.set(command.name,local);}
+    const T=window.THREE,pos=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0),rot=new T.Euler(Number(command.rotationX)||0,Number(command.rotationY)||0,Number(command.rotationZ)||0),sc=new T.Vector3().setScalar(Math.max(0.001,Number(command.scale)||1)),matrix=new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(rot),sc),signature=[command.name,pos.x,pos.y,pos.z,rot.x,rot.y,rot.z,sc.x].join('|');if(transformedCollisionCache?.signature===signature)return transformedCollisionCache.triangles;const result=[];for(let i=0;i+8<local.length;i+=9)for(let j=0;j<9;j+=3){const v=new T.Vector3(local[i+j],local[i+j+1],local[i+j+2]).applyMatrix4(matrix);result.push(v.x,v.y,v.z);}transformedCollisionCache={signature,triangles:result};return result;
+  }
+
   window.PStudio3D = {
     render,
     clear,
     setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) drawFrame(); },
     getCameraBasis,
+    getModelCollisionTriangles,
+    setPostProcessing:(bloom,ssao,strength)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(renderer&&scene&&camera)drawFrame();},
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset
