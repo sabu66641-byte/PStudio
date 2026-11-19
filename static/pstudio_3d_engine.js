@@ -9,7 +9,7 @@
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
-  let hdrTexture=null,hdrEnvironmentTarget=null,bakedLightProbe=null;
+  let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null;
   let particleClock=0;
   const waterMaterials=new Set();
   const instancedBatches=new Map();
@@ -82,7 +82,7 @@
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
-      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId||h.object.userData.instanceOwnerIds?.[h.instanceId]);
+      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId!==undefined||h.object.userData.instanceOwnerIds?.[h.instanceId]!==undefined);
       pointerStart={x:e.clientX,y:e.clientY};
       if(hit){
         const sourceKey=hit.object.userData.instanceSourceKeys?.[hit.instanceId];
@@ -291,7 +291,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const previousTarget=hdrEnvironmentTarget||environmentTarget,previousTexture=hdrTexture;
     hdrEnvironmentTarget=nextTarget;environmentTarget=nextTarget;hdrTexture=texture;
     scene.environment=nextTarget.texture;
-    if(options.background!==false)scene.background=texture;
+    hdrShowBackground=options.background!==false;
+    if(hdrShowBackground)scene.background=texture;
     scene.environmentIntensity=Math.max(0,Math.min(5,Number(options.intensity)||1));
     if(previousTarget&&previousTarget!==nextTarget)previousTarget.dispose?.();
     if(previousTexture&&previousTexture!==texture)previousTexture.dispose?.();
@@ -517,7 +518,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!window.THREE||!primitiveGroup)return;
     const T=window.THREE,groups=new Map(),desired=new Set(),batchedSources=new Set();
     for(const [sourceKey,mesh] of meshCache){
-      if(!mesh?.userData?.ownerId)continue;
+      if(mesh?.userData?.ownerId===undefined||mesh?.userData?.ownerId===null)continue;
       const key=getInstanceBatchKey(mesh);
       if(!key)continue;
       if(!groups.has(key))groups.set(key,[]);
@@ -1038,11 +1039,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const key of modelInstances.keys()){if(!usedModels.has(key))removeModelInstance(key);}
     if(environment){
-      if(environment.background&&scene.background)scene.background.set(environment.background);
+      if(environment.background){scene.background=new T.Color(environment.background);hdrShowBackground=false;}
       if(environment.environmentSky&&environment.environmentGround){
         const signature=environment.environmentSky+'|'+environment.environmentGround;
-        if(signature!==environmentSignature){const c=document.createElement('canvas');c.width=512;c.height=256;const cx=c.getContext('2d'),g=cx.createLinearGradient(0,0,0,256);g.addColorStop(0,environment.environmentSky);g.addColorStop(1,environment.environmentGround);cx.fillStyle=g;cx.fillRect(0,0,512,256);environmentTexture?.dispose?.();environmentTexture=new T.CanvasTexture(c);environmentTexture.mapping=T.EquirectangularReflectionMapping;environmentTexture.colorSpace=T.SRGBColorSpace;environmentTexture.needsUpdate=true;if(pmremGenerator){const nextTarget=pmremGenerator.fromEquirectangular(environmentTexture);environmentTarget?.dispose?.();environmentTarget=nextTarget;scene.environment=environmentTarget.texture;}else scene.environment=environmentTexture;environmentSignature=signature;}
-        if('environmentIntensity' in scene)scene.environmentIntensity=Number(environment.environmentIntensity)||1;
+        if(signature!==environmentSignature){const c=document.createElement('canvas');c.width=512;c.height=256;const cx=c.getContext('2d'),g=cx.createLinearGradient(0,0,0,256);g.addColorStop(0,environment.environmentSky);g.addColorStop(1,environment.environmentGround);cx.fillStyle=g;cx.fillRect(0,0,512,256);environmentTexture?.dispose?.();environmentTexture=new T.CanvasTexture(c);environmentTexture.mapping=T.EquirectangularReflectionMapping;environmentTexture.colorSpace=T.SRGBColorSpace;environmentTexture.needsUpdate=true;if(pmremGenerator){const nextTarget=pmremGenerator.fromEquirectangular(environmentTexture);environmentTarget?.dispose?.();environmentTarget=nextTarget;hdrEnvironmentTarget=null;scene.environment=environmentTarget.texture;}else scene.environment=environmentTexture;environmentSignature=signature;}
+        if('environmentIntensity' in scene)scene.environmentIntensity=Math.max(0,Number(environment.environmentIntensity)||0);
       }
       if(environment.fogColor){
         const near=Math.max(0,Number(environment.fogNear)||0);
@@ -1081,7 +1082,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     disposeGroup(selectionGroup);
     for(const emitter of particleEmitters.values())disposeGpuParticleSystem(emitter.system);particleEmitters.clear();
     for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
-    particleClock=0;    selectionSignature='';
+    particleClock=0;
+    selectionSignature='';
     if(renderer)drawFrame();
   }
 
