@@ -26,7 +26,7 @@
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
   let orbitYaw = 0, orbitPitch = 0, zoom = 1, pointerMode = null, pointerStart = null, dragInfo = null;
-  let raycaster = null, pointerNdc = null, controlsReady = false;
+  let raycaster = null, cameraCollisionRaycaster = null, pointerNdc = null, controlsReady = false;
   const activePointers = new Map();
   let pinchDistance = 0;
   let pinchGestureStart = null;
@@ -45,7 +45,9 @@
   function setupControls() {
     if (controlsReady) return;
     controlsReady = true;
-    raycaster = new window.THREE.Raycaster(); pointerNdc = new window.THREE.Vector2();
+    raycaster = new window.THREE.Raycaster();
+    cameraCollisionRaycaster = new window.THREE.Raycaster();
+    pointerNdc = new window.THREE.Vector2();
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', e => {
       if (!renderer || !camera) return;
@@ -190,7 +192,72 @@
     cameraPan.addScaledVector(up, dy * scale);
   }
 
-  function updateCamera(deltaTime = 1 / 60) {
+  const CAMERA_CLEARANCE = 0.28;
+  const CAMERA_MIN_DISTANCE = 0.42;
+
+  function resolveCameraCollision(target, desiredPosition, excludedOwnerId) {
+    if(!cameraCollisionRaycaster||!primitiveGroup||!modelGroup)return desiredPosition;
+    const offset=desiredPosition.clone().sub(target);
+    const distance=offset.length();
+    if(distance<=CAMERA_MIN_DISTANCE)return desiredPosition;
+    const direction=offset.multiplyScalar(1/distance);
+    const worldUp=new window.THREE.Vector3(0,1,0);
+    let right=new window.THREE.Vector3().crossVectors(direction,worldUp);
+    if(right.lengthSq()<1e-8)right.set(1,0,0);
+    else right.normalize();
+    const up=new window.THREE.Vector3().crossVectors(right,direction).normalize();
+    const side=0.22,vertical=0.16;
+    const origins=[
+      target.clone(),
+      target.clone().addScaledVector(right,side),
+      target.clone().addScaledVector(right,-side),
+      target.clone().addScaledVector(up,vertical),
+      target.clone().addScaledVector(up,-vertical)
+    ];
+    let safeDistance=distance;
+    const roots=[primitiveGroup,modelGroup];
+    for(const origin of origins){
+      cameraCollisionRaycaster.set(origin,direction);
+      cameraCollisionRaycaster.near=0.04;
+      cameraCollisionRaycaster.far=safeDistance;
+      const hits=cameraCollisionRaycaster.intersectObjects(roots,true);
+      const hit=hits.find(item=>{
+        const ownerId=item.object?.userData?.ownerId;
+        return ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId;
+      });
+      if(hit){
+        safeDistance=Math.min(safeDistance,Math.max(CAMERA_MIN_DISTANCE,hit.distance-CAMERA_CLEARANCE));
+      }
+    }
+    return target.clone().addScaledVector(direction,safeDistance);
+  }
+
+  function getCameraBasis() {
+    let direction;
+    if(camera&&window.THREE){
+      direction=new window.THREE.Vector3();
+      camera.getWorldDirection(direction);
+    }else{
+      const offset=new window.THREE.Vector3(
+        cameraBase[0]-cameraTarget[0],
+        cameraBase[1]-cameraTarget[1],
+        cameraBase[2]-cameraTarget[2]
+      );
+      offset.applyAxisAngle(new window.THREE.Vector3(0,1,0),orbitYaw);
+      direction=offset.negate();
+    }
+    direction.y=0;
+    if(direction.lengthSq()<1e-8)direction.set(0,0,-1);
+    direction.normalize();
+    return {
+      forwardX:direction.x,
+      forwardZ:direction.z,
+      rightX:-direction.z,
+      rightZ:direction.x
+    };
+  }
+
+  function updateCamera(deltaTime = 1 / 60, excludedOwnerId = null) {
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
@@ -212,7 +279,8 @@
       smoothedTarget.copy(target);
       smoothedPosition.copy(desiredPosition);
     }
-    camera.position.copy(smoothedPosition);
+    const collisionSafePosition=resolveCameraCollision(target,smoothedPosition,excludedOwnerId);
+    camera.position.copy(collisionSafePosition);
     camera.lookAt(smoothedTarget);
     for(const instance of modelInstances.values()){
       if(!instance.lodLevels||instance.lodLevels.length<2)continue;
@@ -491,7 +559,7 @@
     const T = window.THREE;
     lastCommands=commandsByObject;
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set();
-    let cameraCommand=null,environment=null;
+    let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
     if(scene.background) scene.background.set(defaultBackground);
     scene.fog=null;
@@ -502,7 +570,7 @@
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
         const key=String(ownerId)+':'+commandIndex;
-        if (d.type==='camera') { cameraCommand=d; continue; }
+        if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
         if (d.type==='material') { ownerMaterial={roughness:Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:Math.max(0,Math.min(1,Number(d.metalness)||0))}; continue; }
         if (d.type==='animation') continue;
@@ -521,10 +589,42 @@
           applyModelMaterial(instance,ownerMaterial);
           const animState={loop:true};
           for(const item of list){
-            if(item.type!=='animation')continue;
-            if(item.stop)animState.stop=true;
-            if(item.clipName!==undefined){animState.clipName=item.clipName;animState.loop=item.loop!==false;}
-            if(item.speed!==undefined)animState.speed=Number(item.speed);
+            if(item.type==='animation'){
+              if(item.stop)animState.stop=true;
+              if(item.clipName!==undefined){animState.clipName=item.clipName;animState.loop=item.loop!==false;}
+              if(item.speed!==undefined)animState.speed=Number(item.speed);
+            }else if(item.type==='locomotion'){
+              animState.locomotion=item;
+            }
+          }
+          if(animState.locomotion&&!animState.clipName){
+            const locomotion=animState.locomotion;
+            const previousClip=instance.animations.find(item=>item.name===instance.activeClip);
+            const previousAction=previousClip?instance.mixer?.existingAction(previousClip):null;
+            const oneShotPlaying=instance.activeLoop===false&&previousAction?.isRunning();
+            if(oneShotPlaying){
+              animState.clipName=instance.activeClip;
+              animState.loop=false;
+            }else{
+              const landSequence=Number(locomotion.landSequence)||0;
+              if(locomotion.land&&landSequence>0&&landSequence!==instance.lastLandSequence){
+                animState.clipName=locomotion.land;
+                animState.loop=false;
+                instance.lastLandSequence=landSequence;
+              }else{
+                const speed=Math.max(0,Number(locomotion.speed)||0);
+                if(!locomotion.grounded){
+                  animState.clipName=(Number(locomotion.velocityY)||0)>0.12?locomotion.jump:locomotion.fall;
+                }else if(speed>3.8){
+                  animState.clipName=locomotion.run;
+                }else if(speed>0.18){
+                  animState.clipName=locomotion.walk;
+                }else{
+                  animState.clipName=locomotion.idle;
+                }
+                animState.loop=true;
+              }
+            }
           }
           updateModelAnimation(instance,animState,d.dt);
           usedModels.add(key);
@@ -595,7 +695,7 @@
     cameraSmoothing = cameraCommand ? Math.max(0, Math.min(30, Number(cameraCommand.smoothing) || 0)) : 0;
     if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
     refreshSelectionOutline();
-    updateCamera(cameraCommand?.dt ?? 1 / 60);
+    updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
   }
   function clear() {
     if (!renderer) return;
@@ -624,6 +724,14 @@
       try{render(lastCommands);}catch(error){console.error('[PStudio] Asset refresh failed:',error);}
     }
   }
-  window.PStudio3D = { render, clear, setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); }, isAvailable: () => !!window.THREE, getModelError: name => modelLoadErrors.get(name) || null, invalidateAsset };
+  window.PStudio3D = {
+    render,
+    clear,
+    setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); },
+    getCameraBasis,
+    isAvailable: () => !!window.THREE,
+    getModelError: name => modelLoadErrors.get(name) || null,
+    invalidateAsset
+  };
   window.addEventListener('resize', resize);
 })();
