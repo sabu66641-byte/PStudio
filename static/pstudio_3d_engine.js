@@ -6,8 +6,13 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer = null, bloomPass = null, ssaoPass = null, outputPass = null;
-  let bloomEnabled = false, ssaoEnabled = false, bloomStrength = 0.45;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
+  let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
+  let hdrTexture=null,hdrEnvironmentTarget=null,bakedLightProbe=null;
+  let particleClock=0;
+  const waterMaterials=new Set();
+  const instancedBatches=new Map();
   let pmremGenerator = null, environmentTarget = null;
   let scene = null;
   let camera = null;
@@ -132,57 +137,59 @@
     canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));updateCamera();e.preventDefault();},{passive:false});
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
   }
-  function ensureRenderer() {
-    if (renderer) return true;
-    if (!window.THREE || !window.THREE.WebGLRenderer) return false;
-    const T = window.THREE;
-    renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = T.PCFSoftShadowMap;
-    renderer.outputColorSpace = T.SRGBColorSpace;
-    renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
-    renderer.setClearColor(0x171d26, 1);
-    scene = new T.Scene();
-    scene.background = new T.Color(0x171d26);
-    if(T.PMREMGenerator && window.PStudioRoomEnvironment){
-      pmremGenerator=new T.PMREMGenerator(renderer);
-      const room=new window.PStudioRoomEnvironment();environmentTarget=pmremGenerator.fromScene(room,0.04);scene.environment=environmentTarget.texture;room.dispose?.();
+  const QUALITY_PROFILES={
+    mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false},
+    balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false},
+    high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true},
+    ultra:{pixelRatio:2,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true}
+  };
+  function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0||Number(window.innerWidth||0)<760?'balanced':'high';}
+  function applyQualityPreset(name='auto'){
+    qualityPreset=QUALITY_PROFILES[name]?name:'auto';
+    const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];
+    qualityAOEnabled=profile.ao;ssrEnabled=profile.ssr&&!!ssrPass;
+    if(renderer){
+      renderer.setPixelRatio(Math.min(Math.max(1,Number(window.devicePixelRatio)||1),profile.pixelRatio));
+      renderer.shadowMap.enabled=true;
+      renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
+      renderer.shadowMap.needsUpdate=true;
+      if(keyLight?.shadow){keyLight.shadow.mapSize.set(profile.shadowSize,profile.shadowSize);keyLight.shadow.radius=profile.shadowMode==='vsm'?4:3;if('blurSamples' in keyLight.shadow)keyLight.shadow.blurSamples=profile.shadowMode==='vsm'?8:4;keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;keyLight.shadow.needsUpdate=true;}
+      lastSize={width:0,height:0};resize();
     }
-    camera = new T.PerspectiveCamera(55, 16 / 9, 0.1, 1000);
-    camera.position.set(6, 5, 8);
-    camera.lookAt(0, 0, 0);
+    return {preset:selected,...profile};
+  }
+
+  function ensureRenderer(){
+    if(renderer)return true;
+    if(!window.THREE||!window.THREE.WebGLRenderer)return false;
+    const T=window.THREE;
+    renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
+    renderer.outputColorSpace=T.SRGBColorSpace;
+    renderer.toneMapping=T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.12;
+    renderer.setClearColor(0x171d26,1);
+    if('useLegacyLights' in renderer)renderer.useLegacyLights=false;
+    scene=new T.Scene();scene.background=new T.Color(0x171d26);
+    if(T.PMREMGenerator){
+      pmremGenerator=new T.PMREMGenerator(renderer);pmremGenerator.compileEquirectangularShader?.();
+      if(window.PStudioRoomEnvironment){const room=new window.PStudioRoomEnvironment();environmentTarget=pmremGenerator.fromScene(room,0.04);scene.environment=environmentTarget.texture;room.dispose?.();}
+    }
+    camera=new T.PerspectiveCamera(55,16/9,0.1,1600);camera.position.set(6,5,8);camera.lookAt(0,0,0);
     const FX=window.PStudioPostFX;
-    if(FX?.EffectComposer&&FX?.RenderPass&&FX?.UnrealBloomPass&&FX?.SSAOPass&&FX?.OutputPass){
+    if(FX?.EffectComposer&&FX?.RenderPass&&FX?.OutputPass){
       composer=new FX.EffectComposer(renderer);composer.addPass(new FX.RenderPass(scene,camera));
-      ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);
-      bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.82);bloomPass.enabled=false;composer.addPass(bloomPass);outputPass=new FX.OutputPass();composer.addPass(outputPass);
+      if(FX.GTAOPass){gtaoPass=new FX.GTAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));if(FX.GTAOPass.OUTPUT?.Denoise!==undefined)gtaoPass.output=FX.GTAOPass.OUTPUT.Denoise;gtaoPass.enabled=false;composer.addPass(gtaoPass);ssaoPass=gtaoPass;}
+      else if(FX.SSAOPass){ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);}
+      if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
+      if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
+      outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
-    primitiveGroup = new T.Group();
-    modelGroup = new T.Group();
-    gridGroup = new T.Group();
-    selectionGroup = new T.Group();
-    scene.add(primitiveGroup, modelGroup, gridGroup, selectionGroup);
-    cameraPan = new T.Vector3();
-    hemisphereLight = new T.HemisphereLight(0xeaf2ff, 0x394150, 1.15);
-    scene.add(hemisphereLight);
-    keyLight = new T.DirectionalLight(0xfff1dc, 2.4);
-    keyLight.position.set(5, 9, 6);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    keyLight.shadow.camera.left = -24;
-    keyLight.shadow.camera.right = 24;
-    keyLight.shadow.camera.top = 24;
-    keyLight.shadow.camera.bottom = -24;
-    keyLight.shadow.camera.near = 0.5;
-    keyLight.shadow.camera.far = 70;
-    keyLight.shadow.camera.updateProjectionMatrix();
-    keyLight.shadow.bias = -0.00015;
-    keyLight.shadow.normalBias = 0.025;
-    scene.add(keyLight);
-    setupControls();
-    return true;
+    primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
+    cameraPan=new T.Vector3();
+    hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
+    keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;
+    keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;
+    scene.add(keyLight);applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
   function disposeGroup(group) {
@@ -210,7 +217,7 @@
     }
   }
 
-  function drawFrame(){if(composer&&(bloomEnabled||ssaoEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;composer.render();}else renderer.render(scene,camera);}
+  function drawFrame(){if(!renderer||!scene||!camera)return;if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;if(ssrPass)ssrPass.enabled=ssrEnabled;composer.render();}else{if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;renderer.render(scene,camera);}}
 
   function panCamera(dx, dy) {
     if (!camera || !window.THREE) return;
