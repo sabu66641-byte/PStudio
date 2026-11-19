@@ -6,9 +6,9 @@
   const stats=new Map(), inventories=new Map(), quests=new Map(), navNodes=new Map(), attackTimes=new Map();
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
-  function stat(id){if(!stats.has(id))stats.set(id,{max:100,hp:100});return stats.get(id);}
-  function setMaxHP(id,value){const s=stat(id);s.max=Math.max(1,number(value,100));s.hp=clamp(s.hp,0,s.max);return s.max;}
-  function setHP(id,value){const s=stat(id);s.hp=clamp(number(value),0,s.max);return s.hp;}
+  function stat(id){if(!stats.has(id))stats.set(id,{max:100,hp:100,configured:false});return stats.get(id);}
+  function setMaxHP(id,value){const s=stat(id);s.max=Math.max(1,number(value,100));s.hp=s.configured?clamp(s.hp,0,s.max):s.max;s.configured=true;return s.max;}
+  function setHP(id,value){const s=stat(id);s.hp=clamp(number(value),0,s.max);s.configured=true;return s.hp;}
   function getHP(id){return stat(id).hp;}
   function getMaxHP(id){return stat(id).max;}
   function damage(id,value){const s=stat(id);s.hp=clamp(s.hp-Math.max(0,number(value)),0,s.max);return s.hp;}
