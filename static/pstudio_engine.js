@@ -276,7 +276,7 @@
       case 'inventory_remove': if(a.length===2)return window.PStudioGameplay?.inventoryRemove(o.id,a[0],a[1]); break;
       case 'inventory_count': if(a.length===1)return window.PStudioGameplay?.inventoryCount(o.id,a[0])??0; break;
       case 'quest_start': if(a.length===1)return window.PStudioGameplay?.questStart(a[0])??false; break;
-      case 'quest_complete': if(a.length===1)return window.PStudioGameplay?.questComplete(a[0])??false; break;
+      case 'quest_complete': if(a.length===1)return window.PStudioGameplay?.questComplete(a[0],o.id)??false; break;
       case 'quest_is_complete': if(a.length===1)return window.PStudioGameplay?.questIsComplete(a[0])??false; break;
       case 'quest_set_progress': if(a.length===3)return window.PStudioGameplay?.questSetProgress(a[0],a[1],a[2])??0; break;
       case 'quest_get_progress': if(a.length===1)return window.PStudioGameplay?.questGetProgress(a[0])??0; break;
@@ -286,6 +286,20 @@
       case 'nav_block_node': if(a.length===2)return window.PStudioGameplay?.navBlock(a[0],truthy(a[1]))??false; break;
       case 'nav_next_node': if(a.length===2)return window.PStudioGameplay?.navNext(a[0],a[1])??''; break;
       case 'nav_clear': if(!a.length)return window.PStudioGameplay?.navClear(); break;
+      case 'nav_build_from_triangles': if(a.length===2)return window.PStudioGameplay?.navBuildFromTriangles(a[0],a[1])??0; break;
+      case 'weapon_attack': if(a.length===5)return window.PStudioGameplay?.weaponAttack(o.id,a[0],a[1],a[2],a[3],a[4],sceneObjects,physics)??0; break;
+      case 'combo_count': if(!a.length)return window.PStudioGameplay?.comboCount(o.id)??0; break;
+      case 'enemy_ai': if(a.length===4)return window.PStudioGameplay?.enemyAI(o.id,a[0],a[1],a[2],a[3],sceneObjects,physics)??'idle'; break;
+      case 'ai_state': if(!a.length)return window.PStudioGameplay?.getAIState(o.id)??'idle'; break;
+      case 'define_item': if(a.length===4)return window.PStudioGameplay?.defineItem(a[0],a[1],a[2],a[3])??false; break;
+      case 'equip_item': if(a.length===1)return window.PStudioGameplay?.equipItem(o.id,a[0])??false; break;
+      case 'use_item': if(a.length===1)return window.PStudioGameplay?.useItem(o.id,a[0])??false; break;
+      case 'open_inventory': if(!a.length)return window.PStudioGameplay?.openInventory(o.id)??false; break;
+      case 'open_quest_log': if(!a.length)return window.PStudioGameplay?.openQuestLog(o.id)??false; break;
+      case 'close_game_ui': if(!a.length)return window.PStudioGameplay?.closeUI()??false; break;
+      case 'show_dialogue': if(a.length===5)return window.PStudioGameplay?.showDialogue(a[0],a[1],a[2],a[3],a[4])??false; break;
+      case 'dialogue_choice': if(!a.length)return window.PStudioGameplay?.getDialogueChoice()??''; break;
+      case 'quest_define': if(a.length===4)return window.PStudioGameplay?.questDefine(a[0],a[1],a[2],a[3])??false; break;
       case 'load_model': if (a.length===5) { c.draw.push({type:'model',name:String(a[0]),x:finite(a[1]),y:finite(a[2]),z:finite(a[3]),scale:Math.max(0.001,finite(a[4])),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:c.dt}); return null; } break;
       case 'character_animation': if (a.length===6) {
         c.draw.push({type:'locomotion',idle:String(a[0]),walk:String(a[1]),run:String(a[2]),jump:String(a[3]),fall:String(a[4]),land:String(a[5])});
@@ -293,6 +307,7 @@
       } break;
       case 'play_animation': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:true}); return null; } break;
       case 'play_animation_once': if (a.length===1) { c.draw.push({type:'animation',clipName:String(a[0]),loop:false}); return null; } break;
+      case 'animation_layer': if(a.length===3){c.draw.push({type:'animation_layer',clip:String(a[0]),weight:Math.max(0,Math.min(1,finite(a[1]))),additive:truthy(a[2])});return null;} break;
       case 'blend_animations': if(a.length===3){c.draw.push({type:'animation_blend',first:String(a[0]),second:String(a[1]),weight:clampAxis(finite(a[2]))});return null;} break;
       case 'stop_animation': if (!a.length) { c.draw.push({type:'animation',stop:true}); return null; } break;
       case 'set_animation_speed': if (a.length===1) { c.draw.push({type:'animation',speed:finite(a[0])}); return null; } break;
@@ -301,6 +316,10 @@
       case 'set_shader': if(a.length===1){const mode=String(a[0]).toLowerCase();if(!['standard','toon','unlit','normal','wireframe'].includes(mode))throw new PsRuntimeError('Shader preset must be standard, toon, unlit, normal or wireframe.');c.draw.push({type:'material',shader:mode});return null;} break;
       case 'set_model_material': if(a.length===4){c.draw.push({type:'model_material',name:String(a[0]),roughness:Math.max(0,Math.min(1,finite(a[1]))),metalness:Math.max(0,Math.min(1,finite(a[2]))),color:String(a[3])});return null;} break;
       case 'set_postprocessing': if(a.length===3){c.draw.push({type:'postfx',bloom:truthy(a[0]),ssao:truthy(a[1]),strength:finite(a[2])});return null;} break;
+      case 'particle_emitter': if(a.length===6){c.draw.push({type:'particle_emitter',emitterId:String(a[0]),x:readPosition(0),y:readPosition(1),z:readPosition(2),rate:Math.max(0,finite(a[1])),color:String(a[2]),speed:Math.max(0,finite(a[3])),lifetime:Math.max(0.05,Math.min(20,finite(a[4]))),maxCount:Math.max(1,Math.min(1200,Math.floor(finite(a[5])))),dt:c.dt});return null;} break;
+      case 'stop_particle_emitter': if(a.length===1){c.draw.push({type:'particle_emitter_stop',emitterId:String(a[0])});return null;} break;
+      case 'solve_ik': if(a.length===7){c.draw.push({type:'ik',rootBone:String(a[0]),endBone:String(a[1]),target:[finite(a[2]),finite(a[3]),finite(a[4])],iterations:Math.max(1,Math.min(20,Math.floor(finite(a[5])))),weight:Math.max(0,Math.min(1,finite(a[6])))});return null;} break;
+      case 'animation_layer': if(a.length===3){c.draw.push({type:'animation_layer',clip:String(a[0]),weight:Math.max(0,Math.min(1,finite(a[1]))),additive:truthy(a[2])});return null;} break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -513,6 +532,12 @@
         if(c.funcs.update)callFunction(c,'update',[dt]);
         runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
+        if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number(o.postProcessing.strength)||0.45});
+        if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
+        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+      if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number(o.postProcessing.strength)||0.45});
+      if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
+      if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
         if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
         if(o.model&&!objectDraws.some(d=>d.type==='model')){
           const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
@@ -582,6 +607,7 @@
       updateCollisions();
       update3DCollisions(commands);
       renderFrame();
+      window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null);
       justPressed.clear();
       raf=requestAnimationFrame(tick);
     } catch(err) {
