@@ -258,13 +258,17 @@
 
   function disposeModelAsset(asset) {
     if(!asset?.scene)return;
-    const geometries=new Set(),materials=new Set();
+    const geometries=new Set(),materials=new Set(),textures=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
       if(object.geometry)geometries.add(object.geometry);
       for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
     });
+    materials.forEach(material=>{
+      for(const value of Object.values(material))if(value?.isTexture)textures.add(value);
+    });
     geometries.forEach(geometry=>geometry.dispose());
+    textures.forEach(texture=>texture.dispose());
     materials.forEach(material=>material.dispose());
   }
 
