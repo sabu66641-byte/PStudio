@@ -214,6 +214,9 @@
       target.clone().addScaledVector(up,vertical),
       target.clone().addScaledVector(up,-vertical)
     ];
+    // Raycaster reads matrixWorld; refresh it after the runtime moved this frame's objects.
+    primitiveGroup.updateMatrixWorld(true);
+    modelGroup.updateMatrixWorld(true);
     let safeDistance=distance;
     const roots=[primitiveGroup,modelGroup];
     for(const origin of origins){
