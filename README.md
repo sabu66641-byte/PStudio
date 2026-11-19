@@ -135,7 +135,7 @@ PStudioECS.registerSystem({
 });
 ```
 
-**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
+**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. `PStudioECS` is currently a JavaScript-side engine API; direct Entity/Component/System declarations from the ps language and Inspector controls are a later integration step. The existing ps API remains unchanged. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
 
 Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
 
