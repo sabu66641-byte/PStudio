@@ -640,6 +640,7 @@
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
     const T = window.THREE;
     lastCommands=commandsByObject;
+    bloomEnabled=false;ssaoEnabled=false;bloomStrength=0.45;
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set();
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
@@ -656,12 +657,12 @@
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
-      if(d.type==='postfx'){bloomEnabled=!!d.bloom;ssaoEnabled=!!d.ssao;bloomStrength=Math.max(0,Math.min(2,Number(d.strength)||0.45));continue;}
+      if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||!!d.ssao;const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
       if(d.type==='model_material')continue;
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
           const emitterKey=String(ownerId)+':'+String(d.emitterId);let emitter=particleEmitters.get(emitterKey);
-          if(!emitter){const geometry=new T.BufferGeometry(),positions=new Float32Array(Math.max(1,Number(d.maxCount)||100)*3);geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.085,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);emitter={points,particles:[],accumulator:0,capacity:Math.max(1,Number(d.maxCount)||100)};particleEmitters.set(emitterKey,emitter);}
+          if(!emitter){if(particleEmitters.size>=32){const oldestKey=particleEmitters.keys().next().value,oldest=particleEmitters.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleEmitters.delete(oldestKey);}const geometry=new T.BufferGeometry(),positions=new Float32Array(Math.max(1,Number(d.maxCount)||100)*3);geometry.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.PointsMaterial({color:d.color||'#ffffff',size:0.085,transparent:true,opacity:1,depthWrite:false});const points=new T.Points(geometry,material);primitiveGroup.add(points);emitter={points,particles:[],accumulator:0,capacity:Math.max(1,Number(d.maxCount)||100)};particleEmitters.set(emitterKey,emitter);}
           const requestedCapacity=Math.max(1,Math.min(1200,Math.floor(Number(d.maxCount)||100)));if(emitter.capacity!==requestedCapacity){emitter.capacity=requestedCapacity;emitter.particles=emitter.particles.slice(0,requestedCapacity);const oldAttribute=emitter.points.geometry.getAttribute('position');const positions=new Float32Array(requestedCapacity*3);positions.set(oldAttribute.array.subarray(0,Math.min(oldAttribute.array.length,positions.length)));emitter.points.geometry.setAttribute('position',new T.BufferAttribute(positions,3));}
           emitter.config=d;emitter.points.material.color.set(d.color||'#ffffff');usedEmitters.add(emitterKey);continue;
         }
