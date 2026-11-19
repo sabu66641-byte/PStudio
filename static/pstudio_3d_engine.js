@@ -256,6 +256,18 @@
     if (mesh.material) mesh.material.dispose();
   }
 
+  function disposeModelAsset(asset) {
+    if(!asset?.scene)return;
+    const geometries=new Set(),materials=new Set();
+    asset.scene.traverse(object=>{
+      if(!object.isMesh)return;
+      if(object.geometry)geometries.add(object.geometry);
+      for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
+    });
+    geometries.forEach(geometry=>geometry.dispose());
+    materials.forEach(material=>material.dispose());
+  }
+
   function requestModelAsset(name) {
     if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
     if (modelPromises.has(name)) return modelPromises.get(name);
@@ -269,7 +281,7 @@
       const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer();
       const gltf=await new Promise((resolve,reject)=>loader.parse(source,'',resolve,reject));
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
-      if((modelRevisions.get(name)||0)!==revision)return null;
+      if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       const asset={scene:gltf.scene,animations:gltf.animations||[]};
       modelCache.set(name,asset);
       return asset;
@@ -474,12 +486,14 @@
   function invalidateAsset(name) {
     const key=String(name);
     modelRevisions.set(key,(modelRevisions.get(key)||0)+1);
+    const cachedAsset=modelCache.get(key);
     modelCache.delete(key);
     modelPromises.delete(key);
     modelLoadErrors.delete(key);
     for(const [instanceKey,instance] of modelInstances){
       if(instance.name===key)removeModelInstance(instanceKey);
     }
+    if(cachedAsset)disposeModelAsset(cachedAsset);
     if(renderer&&lastCommands){
       try{render(lastCommands);}catch(error){console.error('[PStudio] Asset refresh failed:',error);}
     }
