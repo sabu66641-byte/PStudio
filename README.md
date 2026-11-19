@@ -18,6 +18,33 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - `examples/` — a small player/enemy scene example.
 - `backup/` — untouched copies of the original uploaded `app.py` and PStudio HTML for rollback.
 
+## Core Infrastructure 1.0
+
+- Event bus (PStudioEvents): namespaced events, priority listeners, once subscriptions, AbortSignal cleanup, synchronous/asynchronous dispatch and FIFO deferred queue.
+- Platform facade (PStudioPlatform): capability detection, monotonic clock, frame/task scheduling, viewport and guarded storage. The memory fallback is non-persistent.
+- Job queue (PStudioJobs): priority scheduling, bounded cooperative async concurrency, cancellation, progress, pause/resume. This is not a Web Worker pool; synchronous CPU-heavy work still blocks the main thread.
+- Module, ECS and resource lifecycle notifications are bridged to the shared event bus without removing their existing listener APIs.
+- Automated tests cover these services and a source-level legacy runtime regression smoke test.
+
+Example:
+
+```js
+PStudioEvents.on("scene.object.created", event => console.log(event.detail), { priority: 10 });
+const job = PStudioJobs.submit(async ({ progress, yield: next }) => {
+  progress(0.25);
+  await next();
+  return "finished";
+});
+```
+
+Run from the repository root:
+
+```bash
+node --test tests/event_system.test.js tests/platform.test.js tests/job_system.test.js tests/core_regression.test.js
+```
+
+These are headless source tests, not a substitute for browser, Android, WebGL, IndexedDB or deployed-site smoke tests.
+
 ## Run locally
 
 ```bash
