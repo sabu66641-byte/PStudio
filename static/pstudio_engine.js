@@ -33,6 +33,10 @@
   window.addEventListener('keydown', e => { const key=e.key.toLowerCase(); if(!keys.has(key))justPressed.add(key); keys.add(key); const target=e.target; const editing=target && (target.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)); if(runtime?.running && !editing && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
   window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
   window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); });
+  window.addEventListener('pstudio-model-error', e => {
+    const detail=e.detail||{};
+    setOutput?.('3D model load failed: '+(detail.name||'unknown')+' — '+(detail.error||'unknown error'),'error');
+  });
   canvas.style.touchAction = 'none';
   canvas.style.userSelect = 'none';
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -371,7 +375,6 @@
   }
   async function startGame() {
     if(runtime?.running)return;
-    if(window.PStudio3DReady)await window.PStudio3DReady;
     if(projectFiles[activeProjectFile]?.type==='ps' && typeof codeEditor!=='undefined') projectFiles[activeProjectFile].content=codeEditor.value;
     if(typeof persistProject==='function')persistProject();
     const scripts={};for(const [name,file] of Object.entries(projectFiles||{}))if(file.type==='ps')scripts[name]=file.content;
@@ -379,6 +382,11 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|set_camera|load_model)\s*\(/.test(source));
+      if(needs3D&&window.PStudio3DReady){
+        const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
+        if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
+      }
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
       window.PStudioPhysics?.clear?.();
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
