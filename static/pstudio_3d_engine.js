@@ -185,8 +185,7 @@
       const outline = new T.LineSegments(edges, material);
       outline.computeLineDistances();
       mesh.updateWorldMatrix(true, false);
-      outline.matrix.copy(mesh.matrixWorld);
-      outline.matrixAutoUpdate = false;
+      mesh.matrixWorld.decompose(outline.position, outline.quaternion, outline.scale);
       outline.scale.multiplyScalar(1.015);
       outline.renderOrder = 10;
       outline.userData.isSelectionOutline = true;
@@ -306,13 +305,14 @@
       const requested=state.clipName.toLowerCase();
       const clip=instance.animations.find(item=>item.name.toLowerCase()===requested)
         || instance.animations.find(item=>item.name.toLowerCase().includes(requested));
-      if(clip && (instance.activeClip!==clip.name || instance.activeLoop!==state.loop)){
+      const existingAction=clip ? instance.mixer.existingAction(clip) : null;
+      const completedOneShot=!!(clip && state.loop===false && existingAction && !existingAction.isRunning());
+      if(clip && (instance.activeClip!==clip.name || instance.activeLoop!==state.loop || completedOneShot)){
         instance.mixer.stopAllAction();
         const action=instance.mixer.clipAction(clip);
         action.reset();
         action.setLoop(state.loop===false ? window.THREE.LoopOnce : window.THREE.LoopRepeat, state.loop===false ? 1 : Infinity);
         action.clampWhenFinished=state.loop===false;
-        action.timeScale=instance.speed;
         action.play();
         instance.activeClip=clip.name;
         instance.activeLoop=state.loop!==false;
