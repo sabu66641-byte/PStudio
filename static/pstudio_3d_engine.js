@@ -528,9 +528,23 @@
   function updateModelAnimation(instance, state, dt) {
     if(!instance.mixer) return;
     if(state.speed !== undefined) instance.speed=state.speed;
+    if(state.blend){
+      const findClip=name=>instance.animations.find(item=>item.name.toLowerCase()===String(name).toLowerCase())||instance.animations.find(item=>item.name.toLowerCase().includes(String(name).toLowerCase()));
+      const clipA=findClip(state.blend.first),clipB=findClip(state.blend.second);
+      if(clipA&&clipB){
+        const signature=clipA.name+'|'+clipB.name;
+        if(instance.activeBlend!==signature){for(const action of instance.blendActions||[])action.fadeOut(0.12);const actionA=instance.mixer.clipAction(clipA),actionB=instance.mixer.clipAction(clipB);actionA.reset().setLoop(window.THREE.LoopRepeat,Infinity).setEffectiveWeight(1-state.blend.weight).fadeIn(0.12).play();actionB.reset().setLoop(window.THREE.LoopRepeat,Infinity).setEffectiveWeight(state.blend.weight).fadeIn(0.12).play();instance.blendActions=[actionA,actionB];instance.activeBlend=signature;instance.activeClip=null;}
+        instance.blendActions[0].setEffectiveWeight(1-state.blend.weight);instance.blendActions[1].setEffectiveWeight(state.blend.weight);
+      }
+    }else if(instance.activeBlend){for(const action of instance.blendActions||[])action.fadeOut(0.12);instance.activeBlend=null;instance.blendActions=[];}
     if(state.stop){
       instance.mixer.stopAllAction();
-      instance.activeClip=null;
+      instance.activeClip=null;instance.activeBlend=null;instance.blendActions=[];
+    }
+    if(state.blend){
+      instance.mixer.timeScale=instance.speed;
+      instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));
+      return;
     }
     if(state.clipName){
       const requested=state.clipName.toLowerCase();
@@ -639,6 +653,8 @@
               if(item.stop)animState.stop=true;
               if(item.clipName!==undefined){animState.clipName=item.clipName;animState.loop=item.loop!==false;}
               if(item.speed!==undefined)animState.speed=Number(item.speed);
+            }else if(item.type==='animation_blend'){
+              animState.blend={first:item.first,second:item.second,weight:Math.max(0,Math.min(1,Number(item.weight)||0))};
             }else if(item.type==='locomotion'){
               animState.locomotion=item;
             }
