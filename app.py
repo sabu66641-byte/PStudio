@@ -672,7 +672,7 @@ GAME_FUNCTIONS = {
     "draw_hud_text": 5, "draw_hud_bar": 7,
     "set_step_height": 1, "set_max_slope": 1,
     "get_axis": 1, "was_key_pressed": 1,
-    "load_model": 5, "play_animation": 1, "play_animation_once": 1, "stop_animation": 0, "set_animation_speed": 1,
+    "load_model": 5, "play_animation": 1, "play_animation_once": 1, "blend_animations": 3, "stop_animation": 0, "set_animation_speed": 1,
     "get_delta_time": 0, "get_width": 0, "get_height": 0,
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
