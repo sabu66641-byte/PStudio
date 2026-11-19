@@ -277,7 +277,7 @@
     } else { if(c3)c3.style.display='none'; if(c2)c2.style.display='block'; if(typeof renderGamePreview==='function')renderGamePreview(); }
   }
   function renderFrame() {
-    const commands=new Map(); for(const [id,c] of runtime?.contexts||[])commands.set(id,c.draw||[]);
+    const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
     const draws=[...commands.values()].flat();
     const has3D=draws.some(d=>['cube','sphere','grid','camera'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
