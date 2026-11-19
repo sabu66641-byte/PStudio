@@ -35,6 +35,9 @@
   let cameraBase = [6, 5, 8];
   let cameraPan = null;
   let pinchMidpoint = null;
+  let lastObjectTap = null;
+  const DOUBLE_TAP_MS = 380;
+  const DOUBLE_TAP_DISTANCE = 28;
 
   function setupControls() {
     if (controlsReady) return;
@@ -54,15 +57,28 @@
       if(hit){
         const mesh=hit.object.userData.modelRoot || hit.object,ownerId=mesh.userData.ownerId;
         window.PStudioSceneInteraction?.select?.(ownerId);
-        // Drag on a camera-facing plane so horizontal and vertical finger movement
-        // both translate the object naturally in the editor view.
-        const normal=new window.THREE.Vector3();
-        camera.getWorldDirection(normal);
-        const plane=new window.THREE.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position);
-        const point=new window.THREE.Vector3();
-        if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
-        else pointerMode='orbit';
-      }else{pointerMode='orbit';dragInfo=null;}
+        const now=Date.now(),tap=lastObjectTap;
+        const isDoubleTap=!!(tap&&tap.ownerId===ownerId&&now-tap.time<=DOUBLE_TAP_MS&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)<=DOUBLE_TAP_DISTANCE);
+        if(isDoubleTap){
+          lastObjectTap=null;
+          const enabled=window.PStudioSceneInteraction?.toggleManipulation?.(ownerId);
+          pointerMode='locked-object';dragInfo=null;
+        }else{
+          lastObjectTap={ownerId,time:now,x:e.clientX,y:e.clientY};
+          const enabled=window.PStudioSceneInteraction?.isManipulationEnabled?.(ownerId)!==false;
+          if(!enabled){pointerMode='locked-object';dragInfo=null;}
+          else{
+            // Drag on a camera-facing plane so horizontal and vertical finger movement
+            // both translate the object naturally in the editor view.
+            const normal=new window.THREE.Vector3();
+            camera.getWorldDirection(normal);
+            const plane=new window.THREE.Plane().setFromNormalAndCoplanarPoint(normal,mesh.position);
+            const point=new window.THREE.Vector3();
+            if(raycaster.ray.intersectPlane(plane,point)){pointerMode='object';dragInfo={mesh,ownerId,plane,startPoint:point,startPosition:mesh.position.clone()};}
+            else pointerMode='orbit';
+          }
+        }
+      }else{pointerMode='orbit';dragInfo=null;lastObjectTap=null;}
       try{canvas.setPointerCapture(e.pointerId)}catch(_){} e.preventDefault();
     });
     canvas.addEventListener('pointermove',e=>{
