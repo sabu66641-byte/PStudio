@@ -55,6 +55,15 @@
       activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
       if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pinchGestureStart={distance:pinchDistance,midpoint:{...pinchMidpoint}};pinchGestureMode=null;pointerMode='pinch';dragInfo=null;lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
       if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      // During Play, pointer drags control the third-person camera rather than editing scene objects.
+      if(window.PStudioEngine?.isRunning?.()){
+        pointerMode='orbit';
+        pointerStart={x:e.clientX,y:e.clientY};
+        lastObjectTap=null;
+        try{canvas.setPointerCapture(e.pointerId)}catch(_){}
+        e.preventDefault();
+        return;
+      }
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
