@@ -36,8 +36,8 @@
   let cameraPan = null;
   let pinchMidpoint = null;
   let lastObjectTap = null;
-  const DOUBLE_TAP_MS = 380;
-  const DOUBLE_TAP_DISTANCE = 28;
+  const DOUBLE_TAP_MS = 500;
+  const DOUBLE_TAP_DISTANCE = 40;
 
   function setupControls() {
     if (controlsReady) return;
