@@ -147,15 +147,15 @@
       pmremGenerator=new T.PMREMGenerator(renderer);
       const room=new window.PStudioRoomEnvironment();environmentTarget=pmremGenerator.fromScene(room,0.04);scene.environment=environmentTarget.texture;room.dispose?.();
     }
+    camera = new T.PerspectiveCamera(55, 16 / 9, 0.1, 1000);
+    camera.position.set(6, 5, 8);
+    camera.lookAt(0, 0, 0);
     const FX=window.PStudioPostFX;
     if(FX?.EffectComposer&&FX?.RenderPass&&FX?.UnrealBloomPass&&FX?.SSAOPass&&FX?.OutputPass){
       composer=new FX.EffectComposer(renderer);composer.addPass(new FX.RenderPass(scene,camera));
       ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);
       bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.82);bloomPass.enabled=false;composer.addPass(bloomPass);outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
-    camera = new T.PerspectiveCamera(55, 16 / 9, 0.1, 1000);
-    camera.position.set(6, 5, 8);
-    camera.lookAt(0, 0, 0);
     primitiveGroup = new T.Group();
     modelGroup = new T.Group();
     gridGroup = new T.Group();
@@ -327,7 +327,7 @@
       instance.activeLOD=selected.level;
     }
     resize();
-    renderer.render(scene, camera);
+    drawFrame();
   }
 
   function refreshSelectionOutline() {
@@ -628,13 +628,15 @@
     if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
       let ownerMaterial=null;
+      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null}));
+      if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=!!d.bloom;ssaoEnabled=!!d.ssao;bloomStrength=Math.max(0,Math.min(2,Number(d.strength)||0.45));continue;}
-      if(d.type==='model_material'){ownerMaterial=ownerMaterial||{};ownerMaterial.modelOverrides=ownerMaterial.modelOverrides||[];ownerMaterial.modelOverrides.push({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null});continue;}
+      if(d.type==='model_material')continue;
         if(d.type==='particles'){
           const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
             if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value,oldest=particleBursts.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleBursts.delete(oldestKey);}
@@ -826,7 +828,7 @@
   window.PStudio3D = {
     render,
     clear,
-    setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) renderer.render(scene, camera); },
+    setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) drawFrame(); },
     getCameraBasis,
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
