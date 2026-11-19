@@ -79,7 +79,8 @@
     b.gravity = [finite(x), finite(y), finite(z)];
   }
   function beginFrame() {
-    for (const body of bodies.values()) body.force = [0, 0, 0];
+    // Forces stay pending until at least one fixed physics step consumes them.
+    // This avoids losing input on render frames that occur between 60 Hz steps.
   }
 
   function applyForce(id, x, y, z) {
