@@ -3,7 +3,7 @@
  */
 (() => {
   'use strict';
-  const stats=new Map(), inventories=new Map(), quests=new Map(), navNodes=new Map(), attackTimes=new Map();
+  const stats=new Map(), inventories=new Map(), quests=new Map(), navNodes=new Map(), blockedNavNodes=new Set(), attackTimes=new Map();
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
   function stat(id){if(!stats.has(id))stats.set(id,{max:100,hp:100,configured:false});return stats.get(id);}
@@ -50,13 +50,15 @@
   function questGetProgress(id){const q=quests.get(String(id));return q?q.progress:0;}
   function navAddNode(id,x,y,z){navNodes.set(String(id),{id:String(id),x:number(x),y:number(y),z:number(z),links:new Set()});return true;}
   function navConnect(a,b){a=navNodes.get(String(a));b=navNodes.get(String(b));if(!a||!b)return false;a.links.add(b.id);b.links.add(a.id);return true;}
+  function navBuildGrid(x,z,width,depth,cell){const step=Math.max(0.5,number(cell,2)),cols=Math.max(1,Math.min(50,Math.floor(number(width)/step))),rows=Math.max(1,Math.min(50,Math.floor(number(depth)/step)));if(cols*rows>2500)return 0;navClear();for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;navAddNode(id,number(x)+(ix/cols)*number(width),0,number(z)+(iz/rows)*number(depth));}for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;if(ix<cols)navConnect(id,'grid_'+(ix+1)+'_'+iz);if(iz<rows)navConnect(id,'grid_'+ix+'_'+(iz+1));}return navNodes.size;}
+  function navBlock(id,blocked=true){if(!navNodes.has(String(id)))return false;if(blocked)blockedNavNodes.add(String(id));else blockedNavNodes.delete(String(id));return true;}
   function navNext(start,goal){
     start=String(start);goal=String(goal);if(!navNodes.has(start)||!navNodes.has(goal))return '';
     const queue=[start],previous=new Map([[start,null]]);
-    while(queue.length){const id=queue.shift();if(id===goal)break;for(const next of navNodes.get(id).links)if(!previous.has(next)){previous.set(next,id);queue.push(next);}}
+    while(queue.length){const id=queue.shift();if(id===goal)break;for(const next of navNodes.get(id).links)if(!blockedNavNodes.has(next)&&!previous.has(next)){previous.set(next,id);queue.push(next);}}
     if(!previous.has(goal))return '';let step=goal;while(previous.get(step)!==start&&previous.get(step)!==null)step=previous.get(step);return step===start?'':step;
   }
-  function navClear(){navNodes.clear();}
+  function navClear(){navNodes.clear();blockedNavNodes.clear();}
   function resetTransient(){attackTimes.clear();}
-  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,navAddNode,navConnect,navNext,navClear,resetTransient,version:'1.1.0'};
+  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,navAddNode,navConnect,navBuildGrid,navBlock,navNext,navClear,resetTransient,version:'1.1.0'};
 })();
