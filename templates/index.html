@@ -721,7 +721,117 @@ function validateBackupDataUrl(value,kind){if(typeof value!=='string'||value.len
 function safeProjectName(name,extension){return typeof name==='string'&&name.length>0&&name.length<=160&&!['__proto__','prototype','constructor'].includes(name)&&!/[\\\/:\u0000-\u001f]/.test(name)&&name.toLowerCase().endsWith(extension);}
 async function exportProjectBackup(){if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してからバックアップしてください');return;}try{saveActiveProjectFile(false);const files=JSON.parse(JSON.stringify(projectFiles));const assets=JSON.parse(JSON.stringify(projectAssets));const objects=JSON.parse(JSON.stringify(sceneObjects));const binaryAssets=[];let totalBinaryBytes=0;for(const asset of assets){if(asset.kind!=='model')continue;const blob=await window.PStudioAssetStore?.get?.(asset.name);if(!blob)throw new Error('モデル「'+asset.name+'」の保存データが見つかりません。');totalBinaryBytes+=blob.size;if(totalBinaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('モデルデータの合計が64 MBを超えています。');binaryAssets.push({name:asset.name,type:blob.type||asset.mime||'application/octet-stream',size:blob.size,data:await blobToBase64(blob)});}const archive={format:PSTUDIO_BACKUP_FORMAT,version:PSTUDIO_BACKUP_VERSION,createdAt:new Date().toISOString(),project:{files,assets,objects,active:activeProjectFile},binaryAssets};const json=JSON.stringify(archive);const blob=new Blob([json],{type:'application/vnd.pstudio.project+json'});if(blob.size>PSTUDIO_BACKUP_LIMIT)throw new Error('バックアップが64 MBを超えています。アセットを整理してください。');const url=URL.createObjectURL(blob);const link=document.createElement('a');const stamp=new Date().toISOString().replace(/[:.]/g,'-');link.href=url;link.download='PStudio-Project-'+stamp+'.pstudio';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('プロジェクトのバックアップを書き出しました');}catch(error){setOutput('Backup export failed: '+(error?.message||String(error)),'error');toast('バックアップの書き出しに失敗しました');}}
 function validateAndBuildBackup(archive){if(!archive||archive.format!==PSTUDIO_BACKUP_FORMAT||archive.version!==PSTUDIO_BACKUP_VERSION||!archive.project||typeof archive.project!=='object')throw new Error('PStudio形式のバックアップではないか、バージョンが対応していません。');const sourceFiles=archive.project.files;if(!sourceFiles||typeof sourceFiles!=='object'||Array.isArray(sourceFiles))throw new Error('プロジェクトファイル一覧が不正です。');const files={};let sourceBytes=0;for(const [name,file] of Object.entries(sourceFiles)){if(!safeProjectName(name,name.toLowerCase().endsWith('.scene')?'.scene':'.ps')||!file||!['ps','scene'].includes(file.type)||typeof file.content!=='string'||(file.type==='ps'?!name.toLowerCase().endsWith('.ps'):!name.toLowerCase().endsWith('.scene')))throw new Error('不正なプロジェクトファイルがあります: '+name);sourceBytes+=new TextEncoder().encode(file.content).length;if(sourceBytes>10*1024*1024)throw new Error('スクリプトとシーンの合計が10 MBを超えています。');files[name]={type:file.type,content:file.content,locked:file.locked===true};if(Object.keys(files).length>256)throw new Error('プロジェクトファイルは256個までです。');}if(!Object.keys(files).some(name=>files[name].type==='ps'))throw new Error('プロジェクト内に .ps スクリプトがありません。');if(!files['main.scene'])files['main.scene']={type:'scene',content:'',locked:false};const sourceAssets=archive.project.assets;if(!Array.isArray(sourceAssets)||sourceAssets.length>512)throw new Error('アセット一覧が不正です。');const names=new Set();const assets=[];let inlineAssetBytes=0;for(const asset of sourceAssets){if(!asset||!safeProjectName(asset.name,'.'+String(asset.name||'').split('.').pop().toLowerCase())||names.has(asset.name)||!['image','audio','model'].includes(asset.kind))throw new Error('不正または重複したアセット名があります。');names.add(asset.name);const clean={name:asset.name,kind:asset.kind,locked:asset.locked===true};if(asset.kind==='image'||asset.kind==='audio'){clean.mime=String(asset.mime||'');clean.data=asset.data;inlineAssetBytes+=validateBackupDataUrl(clean.data,asset.kind);}else{clean.format=String(asset.format||'glb');clean.mime=String(asset.mime||'application/octet-stream');clean.size=Math.max(0,Number(asset.size)||0);clean.storage='indexeddb';if(typeof asset.scriptName==='string'&&files[asset.scriptName]?.type==='ps')clean.scriptName=asset.scriptName;}assets.push(clean);}const sourceBinaries=archive.binaryAssets;if(!Array.isArray(sourceBinaries)||sourceBinaries.length>512)throw new Error('モデルデータ一覧が不正です。');const binaries=[];const binaryNames=new Set();let binaryBytes=0;for(const item of sourceBinaries){if(!item||typeof item.name!=='string'||!names.has(item.name)||binaryNames.has(item.name)||!assets.some(asset=>asset.name===item.name&&asset.kind==='model'))throw new Error('バックアップ内のモデル対応関係が不正です。');const blob=decodeBackupBase64(item.data,item.type,item.size);binaryBytes+=blob.size;if(binaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('モデルデータの合計が64 MBを超えています。');binaryNames.add(item.name);binaries.push({name:item.name,blob});}for(const asset of assets){if(asset.kind==='model'&&!binaryNames.has(asset.name))throw new Error('モデル「'+asset.name+'」のデータがバックアップに含まれていません。');}if(inlineAssetBytes+binaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('アセットの合計が64 MBを超えています。');const sourceObjects=archive.project.objects;if(!Array.isArray(sourceObjects)||sourceObjects.length>5000)throw new Error('シーンオブジェクト一覧が不正です。');const objectIds=new Set();const assetByName=new Map(assets.map(asset=>[asset.name,asset]));const objects=sourceObjects.map((item,index)=>{if(!item||typeof item!=='object')throw new Error('シーンオブジェクトが不正です。');const id=String(item.id||'object-'+index).slice(0,128);if(objectIds.has(id))throw new Error('シーンオブジェクトIDが重複しています: '+id);objectIds.add(id);const numeric=(key,fallback)=>Number.isFinite(Number(item[key]))?Number(item[key]):fallback;const script=typeof item.script==='string'&&files[item.script]?.type==='ps'?item.script:'';const sprite=typeof item.sprite==='string'&&assetByName.get(item.sprite)?.kind==='image'?item.sprite:'';const model=typeof item.model==='string'&&assetByName.get(item.model)?.kind==='model'?item.model:'';if(item.model&&!model)throw new Error('モデル「'+item.model+'」がアセット一覧にありません。');return{id,name:String(item.name||'Object '+(index+1)).slice(0,128),x:numeric('x',0),y:numeric('y',0),z:numeric('z',0),rotationX:numeric('rotationX',0),rotationY:numeric('rotationY',0),rotationZ:numeric('rotationZ',0),w:Math.max(1,numeric('w',64)),h:Math.max(1,numeric('h',64)),sprite,script,color:String(item.color||'#d1d5db').slice(0,64),shape:item.shape==='circle'?'circle':'rect',collider:!!item.collider,model,modelScale:Math.max(0.001,numeric('modelScale',1)),manipulationEnabled:item.manipulationEnabled!==false};});const active=typeof archive.project.active==='string'&&Object.prototype.hasOwnProperty.call(files,archive.project.active)?archive.project.active:Object.keys(files).find(name=>files[name].type==='ps');return{files,assets,objects,active,binaries};}
-async function importProjectBackup(file){if(!file)return;if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してからバックアップを読み込んでください');return;}if(file.size>PSTUDIO_BACKUP_LIMIT){toast('バックアップは64 MB以下にしてください');return;}if(!await showPStudioConfirm('現在のプロジェクトを置き換えますか？','読み込むと、現在のファイル・アセット・シーンがバックアップの内容に置き換わります。必要なら先にバックアップを書き出してください。','読み込む'))return;let snapshot=new Map();let touchedNames=[];try{const archive=JSON.parse(await file.text());const next=validateAndBuildBackup(archive);const previousModelNames=projectAssets.filter(asset=>asset.kind==='model').map(asset=>asset.name);const allNames=[...new Set([...previousModelNames,...next.binaries.map(item=>item.name)])];for(const name of allNames){const old=await window.PStudioAssetStore?.get?.(name);snapshot.set(name,old||null);}for(const item of next.binaries){await window.PStudioAssetStore.put(item.name,item.blob);touchedNames.push(item.name);}const nextBinaryNames=new Set(next.binaries.map(item=>item.name));for(const name of previousModelNames){if(!nextBinaryNames.has(name)){await window.PStudioAssetStore.remove(name);touchedNames.push(name);}}next.files['main.scene'].content=JSON.stringify({width:960,height:540,objects:next.objects},null,2);const nextState={files:next.files,assets:next.assets,objects:next.objects,active:next.active};localStorage.setItem(PROJECT_KEY,JSON.stringify(nextState));projectFiles=next.files;projectAssets=next.assets;sceneObjects=next.objects;activeProjectFile=next.active;selectedObjectId=sceneObjects[0]?.id||null;isDirty=false;for(const name of allNames)window.PStudio3D?.invalidateAsset?.(name);renderProjectTree();openProjectFile(activeProjectFile);if(projectFiles[activeProjectFile]?.type==='ps')codeEditor.value=projectFiles[activeProjectFile].content;persistProject();updateLineNumbers();updateCursor();toast('プロジェクトを復元しました');setOutput('Project backup restored successfully.','success');}catch(error){for(const name of touchedNames.reverse()){try{const old=snapshot.get(name);if(old)await window.PStudioAssetStore.put(name,old);else await window.PStudioAssetStore.remove(name);}catch(rollbackError){console.error('PStudio asset rollback failed:',rollbackError);}}setOutput('Backup import failed: '+(error?.message||String(error)),'error');toast('バックアップの読み込みに失敗しました');}}
+async function importProjectBackup(file){
+ if(!file)return;
+ if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してからバックアップを読み込んでください');return;}
+ if(file.size>PSTUDIO_BACKUP_LIMIT){toast('バックアップは64 MB以下にしてください');return;}
+ if(!await showPStudioConfirm('現在のプロジェクトを置き換えますか？','読み込むと、現在のファイル・アセット・シーンがバックアップの内容に置き換わります。必要なら先にバックアップを書き出してください。','読み込む'))return;
+
+ const previousStorage=localStorage.getItem(PROJECT_KEY);
+ const previousState={
+  files:projectFiles,assets:projectAssets,objects:sceneObjects,
+  active:activeProjectFile,selected:selectedObjectId,dirty:isDirty,
+  editorValue:codeEditor.value,
+  activeType:projectFiles[activeProjectFile]?.type||'ps'
+ };
+ const snapshot=new Map();
+ const touchedNames=[];
+ let rollbackComplete=true;
+
+ try{
+  const archive=JSON.parse(await file.text());
+  const next=validateAndBuildBackup(archive);
+  const previousModelNames=projectAssets.filter(asset=>asset.kind==='model').map(asset=>asset.name);
+  const allNames=[...new Set([...previousModelNames,...next.binaries.map(item=>item.name)])];
+
+  for(const name of allNames){
+   const old=await window.PStudioAssetStore?.get?.(name);
+   snapshot.set(name,old||null);
+  }
+
+  for(const item of next.binaries){
+   await window.PStudioAssetStore.put(item.name,item.blob);
+   touchedNames.push(item.name);
+  }
+
+  const nextBinaryNames=new Set(next.binaries.map(item=>item.name));
+  for(const name of previousModelNames){
+   if(!nextBinaryNames.has(name)){
+    await window.PStudioAssetStore.remove(name);
+    touchedNames.push(name);
+   }
+  }
+
+  next.files['main.scene'].content=JSON.stringify({width:960,height:540,objects:next.objects},null,2);
+  const nextState={files:next.files,assets:next.assets,objects:next.objects,active:next.active};
+  localStorage.setItem(PROJECT_KEY,JSON.stringify(nextState));
+
+  projectFiles=next.files;
+  projectAssets=next.assets;
+  sceneObjects=next.objects;
+  activeProjectFile=next.active;
+  selectedObjectId=sceneObjects[0]?.id||null;
+  isDirty=false;
+
+  for(const name of allNames)window.PStudio3D?.invalidateAsset?.(name);
+  renderProjectTree();
+  openProjectFile(activeProjectFile);
+  if(projectFiles[activeProjectFile]?.type==='ps')codeEditor.value=projectFiles[activeProjectFile].content;
+  persistProject();
+  updateLineNumbers();
+  updateCursor();
+  toast('プロジェクトを復元しました');
+  setOutput('Project backup restored successfully.','success');
+ }catch(error){
+  for(const name of touchedNames.reverse()){
+   try{
+    const old=snapshot.get(name);
+    if(old)await window.PStudioAssetStore.put(name,old);
+    else await window.PStudioAssetStore.remove(name);
+   }catch(rollbackError){
+    rollbackComplete=false;
+    console.error('PStudio asset rollback failed:',rollbackError);
+   }
+  }
+
+  try{
+   if(previousStorage===null)localStorage.removeItem(PROJECT_KEY);
+   else localStorage.setItem(PROJECT_KEY,previousStorage);
+  }catch(storageRollbackError){
+   rollbackComplete=false;
+   console.error('PStudio project storage rollback failed:',storageRollbackError);
+  }
+
+  projectFiles=previousState.files;
+  projectAssets=previousState.assets;
+  sceneObjects=previousState.objects;
+  activeProjectFile=previousState.active;
+  selectedObjectId=previousState.selected;
+  isDirty=previousState.dirty;
+  try{
+   renderProjectTree();
+   document.getElementById('active-file-label').textContent=activeProjectFile||'No file';
+   if(previousState.activeType==='ps'){
+    codeEditor.value=previousState.editorValue;
+    switchWorkspaceView('editor');
+    updateLineNumbers();
+    updateCursor();
+   }else{
+    const scene=projectFiles[activeProjectFile];
+    if(scene)loadSceneText(scene.content);
+    switchWorkspaceView('game');
+   }
+   for(const name of touchedNames)window.PStudio3D?.invalidateAsset?.(name);
+  }catch(uiRollbackError){
+   rollbackComplete=false;
+   console.error('PStudio UI rollback failed:',uiRollbackError);
+  }
+
+  const detail=error?.message||String(error);
+  setOutput('Backup import failed: '+detail+(rollbackComplete?'\n元のプロジェクトは維持されています。':'\n警告: 自動復旧の一部に失敗しました。ブラウザを閉じず、現在の状態を確認してください。'),'error');
+  toast(rollbackComplete?'読み込み失敗：元のプロジェクトを維持しました':'読み込み失敗：復旧状態を確認してください');
+ }
+}
 
 function loadProject(){try{const saved=JSON.parse(localStorage.getItem(PROJECT_KEY)||'null');if(saved&&saved.files){projectFiles=saved.files;projectAssets=saved.assets||[];sceneObjects=saved.objects||sceneObjects;sceneObjects.forEach(o=>{if(typeof o.collider!=='boolean')o.collider=false;if(!Number.isFinite(Number(o.z)))o.z=0;if(!Number.isFinite(Number(o.rotationX)))o.rotationX=0;if(!Number.isFinite(Number(o.rotationY)))o.rotationY=0;if(!Number.isFinite(Number(o.rotationZ)))o.rotationZ=0;if(o.model){const asset=projectAssets.find(a=>a.name===o.model);if(asset&&!o.script)o.script=ensureModelScript(asset);}});activeProjectFile=saved.active in projectFiles?saved.active:'main.ps'}}catch(e){console.warn('Project restore skipped',e)}}
 function renderProjectTree(){
