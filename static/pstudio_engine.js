@@ -451,7 +451,8 @@
         : o.shape === 'circle'
           ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
           : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
-      commands.set(o.id,[draw]);
+      const objectCommands=o.shaderFragment?[{type:'material',shader:'custom',fragmentShader:o.shaderFragment},draw]:[draw];
+      commands.set(o.id,objectCommands);
     }
     return commands;
   }
@@ -508,6 +509,7 @@
         if(c.funcs.update)callFunction(c,'update',[dt]);
         runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
+        if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
         if(o.model&&!objectDraws.some(d=>d.type==='model')){
           const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
           const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
