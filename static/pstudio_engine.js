@@ -14,6 +14,7 @@
   const virtualKeys = new Set();
   const virtualAxis = { x: 0, z: 0 };
   let joystickPointer = null;
+  let jumpPointer = null;
   let runtime = null;
   let raf = 0;
   let lastTime = 0;
@@ -37,6 +38,8 @@
   window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
   function resetVirtualControls() {
     virtualKeys.clear();
+    jumpPointer = null;
+    $('touch-jump')?.classList.remove('is-pressed');
     virtualAxis.x=0;
     virtualAxis.z=0;
     const knob=$('touch-joystick-knob');
@@ -80,12 +83,20 @@
     }
     if(jumpButton){
       jumpButton.addEventListener('pointerdown',e=>{
+        if(jumpPointer!==null)return;
+        jumpPointer=e.pointerId;
         virtualKeys.add(' ');
         justPressed.add(' ');
+        jumpButton.classList.add('is-pressed');
         try{jumpButton.setPointerCapture(e.pointerId)}catch(_){}
         e.preventDefault();
       });
-      const releaseJump=()=>virtualKeys.delete(' ');
+      const releaseJump=e=>{
+        if(jumpPointer===null||(e?.pointerId!==undefined&&e.pointerId!==jumpPointer))return;
+        jumpPointer=null;
+        virtualKeys.delete(' ');
+        jumpButton.classList.remove('is-pressed');
+      };
       jumpButton.addEventListener('pointerup',releaseJump);
       jumpButton.addEventListener('pointercancel',releaseJump);
       jumpButton.addEventListener('lostpointercapture',releaseJump);
