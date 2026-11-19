@@ -96,7 +96,12 @@
     if (!window.THREE || !window.THREE.WebGLRenderer) return false;
     const T = window.THREE;
     renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.outputColorSpace = T.SRGBColorSpace;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     renderer.setClearColor(0x171d26, 1);
     scene = new T.Scene();
     scene.background = new T.Color(0x171d26);
@@ -109,10 +114,20 @@
     selectionGroup = new T.Group();
     scene.add(primitiveGroup, modelGroup, gridGroup, selectionGroup);
     cameraPan = new T.Vector3();
-    hemisphereLight = new T.HemisphereLight(0xffffff, 0x394150, 2.0);
+    hemisphereLight = new T.HemisphereLight(0xeaf2ff, 0x394150, 1.15);
     scene.add(hemisphereLight);
-    keyLight = new T.DirectionalLight(0xffffff, 2.2);
-    keyLight.position.set(5, 8, 6);
+    keyLight = new T.DirectionalLight(0xfff1dc, 2.4);
+    keyLight.position.set(5, 9, 6);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.camera.left = -24;
+    keyLight.shadow.camera.right = 24;
+    keyLight.shadow.camera.top = 24;
+    keyLight.shadow.camera.bottom = -24;
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 70;
+    keyLight.shadow.bias = -0.00015;
+    keyLight.shadow.normalBias = 0.025;
     scene.add(keyLight);
     setupControls();
     return true;
@@ -382,8 +397,8 @@
     let defaultBackground=0x171d26;
     if(scene.background) scene.background.set(defaultBackground);
     scene.fog=null;
-    if(hemisphereLight) hemisphereLight.intensity=2.0;
-    if(keyLight){keyLight.position.set(5,8,6);keyLight.intensity=2.2;}
+    if(hemisphereLight) hemisphereLight.intensity=1.15;
+    if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
@@ -437,6 +452,8 @@
           if(!geometry)continue;
           const material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:0.72,metalness:0.04});
           mesh=new T.Mesh(geometry,material);
+          mesh.castShadow = d.type !== 'plane';
+          mesh.receiveShadow = true;
           mesh.userData.signature=signature;
           meshCache.set(key,mesh);
           primitiveGroup.add(mesh);
