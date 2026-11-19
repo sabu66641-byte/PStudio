@@ -16,6 +16,8 @@
   let joystickPointer = null;
   let jumpPointer = null;
   let runtime = null;
+  const requestFrame = window.PStudioPlatform?.requestFrame?.bind(window.PStudioPlatform) || window.requestAnimationFrame.bind(window);
+  const cancelFrame = window.PStudioPlatform?.cancelFrame?.bind(window.PStudioPlatform) || window.cancelAnimationFrame.bind(window);
   let raf = 0;
   let lastTime = 0;
   let touchActive = false;
@@ -625,7 +627,7 @@
       renderFrame();
       window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null);
       justPressed.clear();
-      raf=requestAnimationFrame(tick);
+      raf=requestFrame(tick);
     } catch(err) {
       stopGame();
       setOutput?.(`Game runtime error: ${err.message}`,'error');
@@ -655,11 +657,11 @@
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
-      raf=requestAnimationFrame(tick);
+      raf=requestFrame(tick);
     } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelAnimationFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
