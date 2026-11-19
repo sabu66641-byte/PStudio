@@ -658,6 +658,7 @@ GAME_FUNCTIONS = {
     "set_background": 1, "set_fog": 3, "set_light": 4, "set_material": 2,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3, "set_shader": 1,
     "draw_terrain": 7, "draw_water": 7, "emit_particles": 7,
+    "set_model_material": 4, "set_postprocessing": 3,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3,
     "draw_terrain": 7, "draw_water": 7,
     "physics_body": 6, "set_gravity": 3, "apply_force": 3, "apply_impulse": 3,
