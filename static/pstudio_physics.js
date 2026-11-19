@@ -161,6 +161,12 @@
           colliders.push({type:'triangle',id:String(ownerId)+':'+colliders.length,points:d.points.map(v=>finite(v)),deltaX:0,deltaY:0,deltaZ:0});
           continue;
         }
+        if(d.type==='terrain'){
+          const segments=Math.max(2,Math.min(96,Math.floor(finite(d.segments,2)))),width=Math.max(1,finite(d.width)),depth=Math.max(1,finite(d.depth)),height=Math.max(0,finite(d.height));
+          const at=(ix,iz)=>{const lx=(ix/segments-.5)*width,lz=(iz/segments-.5)*depth;return [x+lx,y+height*(Math.sin(lx*.18)*Math.cos(lz*.16)*.5+Math.sin((lx+lz)*.07)*.15),z+lz];};
+          for(let iz=0;iz<segments;iz++)for(let ix=0;ix<segments;ix++){const a=at(ix,iz),b=at(ix+1,iz),c=at(ix,iz+1),e=at(ix+1,iz+1);colliders.push({type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':0',points:[...a,...c,...b]},{type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':1',points:[...b,...c,...e]});}
+          continue;
+        }
         let hx, hy, hz;
         if (d.type === 'cube' || d.type === 'box') {
           const a = d.type === 'cube' ? Math.max(0.001, finite(d.size)) / 2 : Math.max(0.001, finite(d.width)) / 2;
