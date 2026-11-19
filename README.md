@@ -12,6 +12,7 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - `app.py` — Flask app, original ps lexer/parser/validator/C++ generator/Discord endpoints, plus game AST and compile endpoints.
 - `templates/index.html` — PStudio IDE, project explorer, editor, scene, inspector, asset handling and existing language UI.
 - `static/pstudio_engine.js` — browser-side game runtime.
+- `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
 - `discord_runtime.py` — original Discord runtime dependency.
 - `network.py` — existing network runtime module, included unchanged.
 - `examples/` — a small player/enemy scene example.
@@ -105,6 +106,36 @@ Use `enable(id)` to activate a module and its required dependencies. `disable(id
 
 Module manager regression tests can be run with `node --test tests/module_system.test.js` (Node.js built-in test runner; no third-party package is required).
 
+## Resource Management 1.0
+
+The resource manager is exposed as `window.PStudioResources`. It centralizes runtime cache ownership, reference tracking, CPU/GPU budget accounting and disposal.
+
+- **Registration:** `register(type, key, value, options?)` tracks a resource. Options include `category: 'cpu' | 'gpu'`, `sizeBytes`, `pinned`, `dispose(value, reason)`, `onEvict(value, reason)` and metadata.
+- **Lookup and loading:** `get(type, key)` updates LRU recency. `getOrLoad(type, key, loader, options?)` deduplicates concurrent loads and caches successful non-null results. Missing values and failed loads are not cached.
+- **Reference safety:** `retain(type, key)` returns a lease with `value` and idempotent `release()`. Retained and pinned resources are excluded from budget eviction. `remove` refuses to remove retained resources unless `{ force: true }` is explicit.
+- **Memory budgets:** CPU and GPU caches each default to 128 MiB. `setBudget('cpu' | 'gpu', bytes)` updates a budget and immediately trims least-recently-used eligible entries. `trim(category?)` can be called manually. A newly registered resource is protected during its own registration pass; if that single resource exceeds the budget it remains cached rather than being immediately destroyed.
+- **Lifecycle and diagnostics:** `clear({ category?, force? })`, `stats()` and `on(event, callback)`. Events are also dispatched as `pstudio-resource-*` CustomEvents.
+
+The IndexedDB-backed `PStudioAssetStore` now caches loaded model Blobs in the CPU resource cache. Updating or removing a stored asset invalidates its cached Blob. The 3D renderer registers decoded model assets in the GPU resource category, retains them while model instances use their shared geometry, and releases those references when instances are removed. Model GPU memory is an estimate based on source-file size, not a measurement from the WebGL driver; browser APIs do not expose exact per-resource GPU allocation.
+
+Example:
+
+```js
+const lease = await PStudioResources.getOrLoad(
+  'texture-data',
+  'terrain-albedo',
+  async () => await fetch('/assets/terrain.png').then(response => response.blob()),
+  { category: 'cpu' }
+);
+// Use lease.value while needed; call lease.release() for retained resources.
+```
+
+For resources that need reference protection, first load/register them, then call `retain(type, key)`. The returned lease must be released when the consumer no longer uses the resource.
+
+Resource manager regression tests can be run with `node --test tests/resource_manager.test.js`.
+
+**Current boundary:** This stage manages cached binary assets and decoded 3D model lifetimes. It does not yet intercept every Three.js allocation, track browser-wide memory, measure actual GPU usage, or manage all image/audio/animation resources. Those integrations will be added incrementally rather than pretending the current counters represent total process memory.
+
 ## Entity Component System (ECS) 1.0
 
 The ECS core is exposed as `window.PStudioECS`. It separates entity identity, component data and update systems. Component storage uses dense arrays with sparse entity-index maps, so systems can iterate only the entities that contain the components they need instead of scanning every Scene Object for every behavior.
@@ -158,6 +189,7 @@ Use the **Backup** menu in the application header to export or restore a portabl
 - `/game/prepare` payload/AST response test with a Flask test double.
 - JavaScript syntax checks for the IDE inline script and game runtime.
 - ECS harness checks for sparse component removal, system priority, deferred structural changes, bidirectional Scene Object synchronization and stale-entity cleanup.
+- Resource manager harness checks for LRU budget trimming, CPU/GPU accounting, concurrent-load deduplication, reference protection and disposal.
 - Runtime harness tests for `start()`, `update(dt)`, persistent per-object state, drawing commands, Stop, and collision-enter de-duplication/re-entry.
 - Existing generated C++17 sample compiled with `g++` and printed the expected output.
 
