@@ -103,6 +103,8 @@ Use `enable(id)` to activate a module and its required dependencies. `disable(id
 
 **Current boundary:** this is the module-management foundation. Existing engine scripts (physics, gameplay, rendering, and asset storage) are still loaded as core scripts and are not yet dynamically unloaded or editor-toggleable. Converting those systems into independently managed modules is a later integration step; this manager does not pretend to hot-unload them.
 
+Module manager regression tests can be run with `node --test tests/module_system.test.js` (Node.js built-in test runner; no third-party package is required).
+
 ## Project Backup and Restore
 
 Use the **Backup** menu in the application header to export or restore a portable `.pstudio` project archive. The archive includes project scripts, scene files, scene-object settings, image/audio data URLs, and the binary GLB/GLTF model files stored in IndexedDB. This allows a project to be moved to another browser or device instead of relying only on the current browser's local storage.
