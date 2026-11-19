@@ -795,12 +795,12 @@ async function renameProjectAsset(oldName){
    window.PStudio3D?.invalidateAsset?.(oldName);window.PStudio3D?.invalidateAsset?.(next);
   }
   asset.name=next;
-  if(asset.kind==='image')sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});
+  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});imageCache.delete(oldName);}
   for(const key of Object.keys(projectFiles)){
    if(projectFiles[key].type==='ps')projectFiles[key].content=String(projectFiles[key].content||'').split(oldName).join(next);
   }
   if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');document.getElementById('save-state').textContent='Saved locally';}
-  persistProject();renderProjectTree();toast('Renamed asset: '+next);
+  persistProject();renderProjectTree();renderGamePreview();toast('Renamed asset: '+next);
  }catch(error){toast('Rename failed: '+error.message);}
 }
 async function deleteProjectAsset(name){
@@ -812,7 +812,7 @@ async function deleteProjectAsset(name){
  try{
   if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
   projectAssets=projectAssets.filter(a=>a.name!==name);
-  if(asset.kind==='image')sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});
+  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});imageCache.delete(name);}
   persistProject();renderProjectTree();renderGamePreview();toast('Deleted asset: '+name);
  }catch(error){toast('Delete failed: '+error.message);}
 }
@@ -897,10 +897,11 @@ async function importAssets(files){
    const data=await fileAsDataURL(file);
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
    projectAssets.push({name:file.name,kind:file.type.startsWith('image/')?'image':'audio',mime:file.type,data});
+   if(file.type.startsWith('image/'))imageCache.delete(file.name);
    added++;
   }catch(error){toast(file.name+': '+error.message);}
  }
- persistProject();renderProjectTree();
+ persistProject();renderProjectTree();renderGamePreview();
  if(added)toast(added+' 個のアセットをインポートしました');
  else toast('インポートできるアセットはありませんでした');
 }
