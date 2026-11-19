@@ -23,6 +23,7 @@
   let pointerPosition = { x: 0, y: 0 };
   let collisionPairs = new Set();
   let collision3DPairs = new Set();
+  let particleSequence = 0;
 
   class PsRuntimeError extends Error {}
   const truthy = (v) => Array.isArray(v) ? v.length > 0 : !!v;
@@ -227,6 +228,7 @@
       case 'set_environment': if(a.length===3){c.draw.push({type:'environment',environmentSky:String(a[0]),environmentGround:String(a[1]),environmentIntensity:Math.max(0,finite(a[2]))});return null;} break;
       case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:o.color||'#66835a'});return null;} break;
       case 'draw_water': if(a.length===7){c.draw.push({type:'water',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),color:String(a[5]),opacity:Math.max(0.05,Math.min(1,finite(a[6])))});return null;} break;
+      case 'emit_particles': if(a.length===7){c.draw.push({type:'particles',burstId:++particleSequence,x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),count:Math.max(1,Math.min(400,Math.floor(finite(a[3])))),color:String(a[4]),speed:Math.max(0,finite(a[5])),lifetime:Math.max(0.05,Math.min(10,finite(a[6]))),dt:c.dt});return null;} break;
       case 'set_point_light': if(a.length===6){c.draw.push({type:'light',kind:'point',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),intensity:Math.max(0,finite(a[3])),color:String(a[4]),distance:Math.max(0,finite(a[5]))});return null;} break;
       case 'set_spot_light': if(a.length===9){c.draw.push({type:'light',kind:'spot',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),intensity:Math.max(0,finite(a[6])),color:String(a[7]),angle:Math.max(0.01,Math.min(1.55,finite(a[8])))});return null;} break;
       case 'set_environment': if(a.length===3){c.draw.push({type:'environment',environmentSky:String(a[0]),environmentGround:String(a[1]),environmentIntensity:Math.max(0,finite(a[2]))});return null;} break;
@@ -470,7 +472,7 @@
     const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
     const draws=[...commands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
-    const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light'].includes(d.type));
+    const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
