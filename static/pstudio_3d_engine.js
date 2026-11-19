@@ -6,6 +6,9 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
+  let composer = null, bloomPass = null, ssaoPass = null, outputPass = null;
+  let bloomEnabled = false, ssaoEnabled = false, bloomStrength = 0.45;
+  let pmremGenerator = null, environmentTarget = null;
   let scene = null;
   let camera = null;
   let primitiveGroup = null;
@@ -82,7 +85,7 @@
           lastObjectTap=null;
           window.PStudioSceneInteraction?.toggleManipulation?.(ownerId);
           refreshSelectionOutline();
-          if(renderer&&scene&&camera)renderer.render(scene,camera);
+          if(renderer&&scene&&camera)drawFrame();
           pointerMode='double-tap';dragInfo=null;
         }else{
           const enabled=window.PStudioSceneInteraction?.isManipulationEnabled?.(ownerId)!==false;
@@ -115,7 +118,7 @@
           dragInfo.mesh.position.copy(pos);
           window.PStudioSceneInteraction?.moveWorld?.(dragInfo.ownerId,pos.x,pos.y,pos.z);
           refreshSelectionOutline();
-          renderer.render(scene,camera);
+          drawFrame();
         }
       }
       if(pointerMode==='orbit' || pointerMode==='pinch' || pointerMode==='pan') updateCamera();
@@ -140,6 +143,16 @@
     renderer.setClearColor(0x171d26, 1);
     scene = new T.Scene();
     scene.background = new T.Color(0x171d26);
+    if(T.PMREMGenerator && window.PStudioRoomEnvironment){
+      pmremGenerator=new T.PMREMGenerator(renderer);
+      const room=new window.PStudioRoomEnvironment();environmentTarget=pmremGenerator.fromScene(room,0.04);scene.environment=environmentTarget.texture;room.dispose?.();
+    }
+    const FX=window.PStudioPostFX;
+    if(FX?.EffectComposer&&FX?.RenderPass&&FX?.UnrealBloomPass&&FX?.SSAOPass&&FX?.OutputPass){
+      composer=new FX.EffectComposer(renderer);composer.addPass(new FX.RenderPass(scene,camera));
+      ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);
+      bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.82);bloomPass.enabled=false;composer.addPass(bloomPass);outputPass=new FX.OutputPass();composer.addPass(outputPass);
+    }
     camera = new T.PerspectiveCamera(55, 16 / 9, 0.1, 1000);
     camera.position.set(6, 5, 8);
     camera.lookAt(0, 0, 0);
@@ -187,12 +200,14 @@
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
     if (width !== lastSize.width || height !== lastSize.height) {
-      renderer.setSize(width, height, false);
+      renderer.setSize(width, height, false);composer?.setSize(width,height);ssaoPass?.setSize(width,height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       lastSize = { width, height };
     }
   }
+
+  function drawFrame(){if(composer&&(bloomEnabled||ssaoEnabled)){if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}if(ssaoPass)ssaoPass.enabled=ssaoEnabled;composer.render();}else renderer.render(scene,camera);}
 
   function panCamera(dx, dy) {
     if (!camera || !window.THREE) return;
@@ -411,6 +426,7 @@
     if (mesh.parent) mesh.parent.remove(mesh);
     if (mesh.geometry) mesh.geometry.dispose();
     if (mesh.material) mesh.material.dispose();
+    mesh.getRenderTarget?.()?.dispose?.();
   }
 
   function disposeModelAsset(asset) {
@@ -516,11 +532,10 @@
     instance.root.traverse(object=>{
       if(!object.isMesh||!object.material)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
-      for(const material of materials){
-        const defaults=instance.materialDefaults.get(material);
-        if(!defaults)continue;
-        material.roughness=state?state.roughness:defaults.roughness;
-        material.metalness=state?state.metalness:defaults.metalness;
+      for(const material of materials){const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
+        material.roughness=state&&Number.isFinite(state.roughness)?state.roughness:defaults.roughness;material.metalness=state&&Number.isFinite(state.metalness)?state.metalness:defaults.metalness;
+        const override=state?.modelOverrides?.find(item=>item.name==='*'||item.name===object.name||item.name===material.name);
+        if(override){if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));if(override.color&&material.color)material.color.set(override.color);}
       }
     });
   }
@@ -618,6 +633,8 @@
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
+      if(d.type==='postfx'){bloomEnabled=!!d.bloom;ssaoEnabled=!!d.ssao;bloomStrength=Math.max(0,Math.min(2,Number(d.strength)||0.45));continue;}
+      if(d.type==='model_material'){ownerMaterial=ownerMaterial||{};ownerMaterial.modelOverrides=ownerMaterial.modelOverrides||[];ownerMaterial.modelOverrides.push({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null});continue;}
         if(d.type==='particles'){
           const burstKey=String(d.burstId);if(!particleBursts.has(burstKey)){
             if(particleBursts.size>=64){const oldestKey=particleBursts.keys().next().value,oldest=particleBursts.get(oldestKey);primitiveGroup.remove(oldest.points);oldest.points.geometry.dispose();oldest.points.material.dispose();particleBursts.delete(oldestKey);}
@@ -720,7 +737,9 @@
           const geometry=createGeometry(d);
           if(!geometry)continue;
           const vertexShader='varying vec2 vUv;\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
-          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='custom'?new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
+          let mesh;
+          if(d.type==='water'&&window.PStudioReflector){mesh=new window.PStudioReflector(createGeometry(d),{clipBias:0.003,textureWidth:Math.max(256,Math.min(1024,Math.floor(canvas.clientWidth))),textureHeight:Math.max(256,Math.min(1024,Math.floor(canvas.clientHeight))),color:0x8799ad});mesh.userData.planarReflection=true;}
+          else {const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='custom'?new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});mesh=new T.Mesh(geometry,material);}
           mesh=new T.Mesh(geometry,material);
           mesh.castShadow = d.type !== 'plane';
           mesh.receiveShadow = true;
@@ -748,7 +767,7 @@
       if(environment.background&&scene.background)scene.background.set(environment.background);
       if(environment.environmentSky&&environment.environmentGround){
         const signature=environment.environmentSky+'|'+environment.environmentGround;
-        if(signature!==environmentSignature){const c=document.createElement('canvas');c.width=512;c.height=256;const cx=c.getContext('2d'),g=cx.createLinearGradient(0,0,0,256);g.addColorStop(0,environment.environmentSky);g.addColorStop(1,environment.environmentGround);cx.fillStyle=g;cx.fillRect(0,0,512,256);environmentTexture?.dispose?.();environmentTexture=new T.CanvasTexture(c);environmentTexture.mapping=T.EquirectangularReflectionMapping;environmentTexture.colorSpace=T.SRGBColorSpace;environmentTexture.needsUpdate=true;scene.environment=environmentTexture;environmentSignature=signature;}
+        if(signature!==environmentSignature){const c=document.createElement('canvas');c.width=512;c.height=256;const cx=c.getContext('2d'),g=cx.createLinearGradient(0,0,0,256);g.addColorStop(0,environment.environmentSky);g.addColorStop(1,environment.environmentGround);cx.fillStyle=g;cx.fillRect(0,0,512,256);environmentTexture?.dispose?.();environmentTexture=new T.CanvasTexture(c);environmentTexture.mapping=T.EquirectangularReflectionMapping;environmentTexture.colorSpace=T.SRGBColorSpace;environmentTexture.needsUpdate=true;if(pmremGenerator){const nextTarget=pmremGenerator.fromEquirectangular(environmentTexture);environmentTarget?.dispose?.();environmentTarget=nextTarget;scene.environment=environmentTarget.texture;}else scene.environment=environmentTexture;environmentSignature=signature;}
         if('environmentIntensity' in scene)scene.environmentIntensity=Number(environment.environmentIntensity)||1;
       }
       if(environment.fogColor){
@@ -786,7 +805,7 @@
     disposeGroup(selectionGroup);
     for(const effect of particleBursts.values()){primitiveGroup?.remove(effect.points);effect.points.geometry.dispose();effect.points.material.dispose();}particleBursts.clear();
     selectionSignature='';
-    if(renderer)renderer.render(scene,camera);
+    if(renderer)drawFrame();
   }
 
   function invalidateAsset(name) {
