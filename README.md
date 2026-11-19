@@ -87,7 +87,7 @@ Use the **Backup** menu in the application header to export or restore a portabl
 
 - Export saves the currently open file and active scene before creating the archive.
 - Restore validates the archive version, file names, asset references, object IDs and declared sizes before replacing the active project.
-- Existing model blobs are snapshotted before replacement. If an IndexedDB write or local project-storage write fails, the importer attempts to restore the previous model blobs.
+- Existing model blobs, the previous localStorage project record, and the in-memory editor state are snapshotted before replacement. If an IndexedDB write, local project-storage write, or post-import UI refresh fails, the importer attempts to restore the previous project and asset state; it reports explicitly if rollback itself is incomplete.
 - The archive is limited to 64 MB. Individual image/audio assets retain the existing 2 MB import limit.
 - This is a project source/asset backup, not a standalone compiled game build. A portable runtime build/export pipeline remains future work.
 - Browser storage is still local to each device; export backups regularly before clearing browser data.
@@ -187,7 +187,7 @@ Import a binary glTF `.glb` or JSON glTF `.gltf` model in the ASSETS area, then 
 | `stop_animation()` | Stop the current model animation |
 | `set_animation_speed(speed)` | Change animation playback speed |
 
-The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Compressed texture formats requiring separately configured decoders are not included in this build.
+The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Switching between clips uses a short cross-fade instead of abruptly stopping the previous action. Compressed texture formats requiring separately configured decoders are not included in this build.
 
 ## 3D RPG Starter Example
 
