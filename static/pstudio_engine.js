@@ -269,6 +269,8 @@
       case 'is_alive': if(!a.length)return window.PStudioGameplay?.isAlive(o.id)??true; break;
       case 'apply_damage': if(a.length===2){const target=(sceneObjects||[]).find(x=>x.id===String(a[0])||x.name===String(a[0]));return target?window.PStudioGameplay?.damage(target.id,a[1]):false;} break;
       case 'attack_hitbox': if(a.length===2)return window.PStudioGameplay?.attack(o.id,a[0],a[1],sceneObjects,physics)??0; break;
+      case 'use_skill': if(a.length===3)return window.PStudioGameplay?.attack(o.id,a[0],a[1],sceneObjects,physics,a[2])??0; break;
+      case 'enemy_attack': if(a.length===4)return window.PStudioGameplay?.strike(o.id,a[0],a[1],a[2],a[3],sceneObjects,physics)??false; break;
       case 'enemy_follow': if(a.length===3)return window.PStudioGameplay?.follow(o.id,a[0],a[1],a[2],sceneObjects,physics)??false; break;
       case 'inventory_add': if(a.length===2)return window.PStudioGameplay?.inventoryAdd(o.id,a[0],a[1]); break;
       case 'inventory_remove': if(a.length===2)return window.PStudioGameplay?.inventoryRemove(o.id,a[0],a[1]); break;
@@ -276,6 +278,8 @@
       case 'quest_start': if(a.length===1)return window.PStudioGameplay?.questStart(a[0])??false; break;
       case 'quest_complete': if(a.length===1)return window.PStudioGameplay?.questComplete(a[0])??false; break;
       case 'quest_is_complete': if(a.length===1)return window.PStudioGameplay?.questIsComplete(a[0])??false; break;
+      case 'quest_set_progress': if(a.length===3)return window.PStudioGameplay?.questSetProgress(a[0],a[1],a[2])??0; break;
+      case 'quest_get_progress': if(a.length===1)return window.PStudioGameplay?.questGetProgress(a[0])??0; break;
       case 'nav_add_node': if(a.length===4)return window.PStudioGameplay?.navAddNode(a[0],a[1],a[2],a[3])??false; break;
       case 'nav_connect': if(a.length===2)return window.PStudioGameplay?.navConnect(a[0],a[1])??false; break;
       case 'nav_next_node': if(a.length===2)return window.PStudioGameplay?.navNext(a[0],a[1])??''; break;
