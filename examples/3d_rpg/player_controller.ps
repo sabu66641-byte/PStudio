@@ -26,5 +26,6 @@ func update(dt)
     else
         play_animation("Idle")
 
+    set_material(0.48, 0.06)
     load_model("Traveler.glb", get_x(), get_y() - 0.9, get_z(), 1)
-    set_camera(get_x() + 4, get_y() + 3, get_z() + 6, get_x(), get_y(), get_z())
+    set_camera_follow(get_x() + 4, get_y() + 3, get_z() + 6, get_x(), get_y(), get_z(), 8)
