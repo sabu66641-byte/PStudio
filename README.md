@@ -161,7 +161,7 @@ The character body is a vertical capsule. The physics step is fixed at 60 Hz and
 
 Imported model assets can be added directly to the current Scene from the asset row's `⋯` menu using **シーンに追加**. The new Game Object stores the model asset name and model scale in the scene file; selecting it exposes its scale in the Inspector. The Scene preview switches to 3D automatically. Model-only game scripts also select the 3D renderer in AUTO mode.
 
-The 3D renderer enables directional shadow mapping with soft PCF filtering, shadow casting for model and primitive meshes, shadow receiving for scene surfaces, ACES filmic tone mapping and sRGB output. These settings improve depth and material readability, but are not physically based global illumination and do not make the renderer equivalent to a high-end AAA production pipeline. Shadow quality and frame rate depend on the device GPU and browser.
+The 3D renderer enables directional shadow mapping with soft PCF filtering, shadow casting for model and primitive meshes, shadow receiving for scene surfaces, ACES filmic tone mapping and sRGB output. These settings improve depth and material readability, but are not physically based global illumination and do not make the renderer equivalent to a high-end AAA production pipeline. Shadow quality and frame rate depend on the device GPU and browser. Imported models can opt into distance-based LOD by including sibling nodes or meshes named `LOD0`, `LOD1`, `LOD2`, etc. The renderer selects the first level at close range, then switches to progressively coarser levels at approximately 25, 70 and 150 world units. Models without named LOD levels render as before.
 
 ## Per-model ps Controller Scripts
 
