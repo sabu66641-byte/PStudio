@@ -382,7 +382,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|set_camera|load_model)\s*\(/.test(source));
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_background|set_fog|set_light|load_model)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
