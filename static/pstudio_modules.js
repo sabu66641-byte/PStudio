@@ -45,14 +45,14 @@
     const conflicts = normalizeIds(definition.conflicts);
     if ([...dependencies, ...optionalDependencies, ...conflicts].some(value => !validId(value))) throw new TypeError('Invalid module dependency or conflict id.');
     if (dependencies.includes(id) || optionalDependencies.includes(id) || conflicts.includes(id)) throw new Error('A module cannot depend on or conflict with itself.');
-    if (typeof definition.activate === 'function' === false && definition.activate != null) throw new TypeError('activate must be a function.');
-    if (typeof definition.deactivate === 'function' === false && definition.deactivate != null) throw new TypeError('deactivate must be a function.');
+    if (definition.activate != null && typeof definition.activate !== 'function') throw new TypeError('activate must be a function.');
+    if (definition.deactivate != null && typeof definition.deactivate !== 'function') throw new TypeError('deactivate must be a function.');
     const record = {
       id, version: String(definition.version || '1.0.0'),
       description: String(definition.description || ''),
       dependencies, optionalDependencies, conflicts,
       activate: definition.activate || null, deactivate: definition.deactivate || null,
-      enabled: false, state: 'registered', error: null,
+      enabled: false, enabledByDefault: definition.enabledByDefault === true, state: 'registered', error: null,
       metadata: Object.freeze({ ...(definition.metadata || {}) })
     };
     modules.set(id, record);
