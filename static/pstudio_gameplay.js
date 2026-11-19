@@ -4,7 +4,7 @@
 (() => {
   'use strict';
   const stats=new Map(), inventories=new Map(), quests=new Map(), navNodes=new Map(), blockedNavNodes=new Set(), attackTimes=new Map();
-  const weaponCombos=new Map(), elementalStates=new Map(), aiStates=new Map(), itemDefinitions=new Map(), equipment=new Map(), questDefinitions=new Map(), dialogueStates=new Map(), weaponDefinitions=new Map();
+  const weaponCombos=new Map(), aiStates=new Map(), itemDefinitions=new Map(), equipment=new Map(), questDefinitions=new Map(), dialogueStates=new Map(), weaponDefinitions=new Map();
   let activeUI=null, lastDialogueChoice='';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
@@ -56,16 +56,14 @@
   function questIsComplete(id){return !!quests.get(String(id))?.complete;}
   function questSetProgress(id,value,target=1){const key=String(id),q=quests.get(key)||{started:true,complete:false,progress:0,target:Math.max(1,number(target,1)),rewarded:false};q.started=true;q.target=Math.max(1,number(target,q.target));q.progress=clamp(number(value),0,q.target);if(q.progress>=q.target)q.complete=true;quests.set(key,q);return q.progress;}
   function questGetProgress(id){const q=quests.get(String(id));return q?q.progress:0;}
-  function setElement(id,element,duration=8){elementalStates.set(String(id),{element:String(element).toLowerCase(),expires:Date.now()+Math.max(0,number(duration,8))*1000});}
-  function elementReaction(previous,next){const pair=[previous,next].sort().join('|');const table={'hydro|pyro':['vaporize',1.5],'cryo|pyro':['melt',1.5],'dendro|pyro':['burning',1.2],'electro|hydro':['electro-charged',1.2],'cryo|electro':['superconduct',1.2],'cryo|hydro':['freeze',1.0],'dendro|hydro':['bloom',1.2],'dendro|electro':['quicken',1.25]};return table[pair]||['',1];}
   function defineWeapon(name,range,arcDegrees,damageMultiplier=1){weaponDefinitions.set(String(name),{range:Math.max(0.1,number(range,2)),arc:clamp(number(arcDegrees,100),1,360),multiplier:Math.max(0,number(damageMultiplier,1))});return true;}
-  function weaponAttack(sourceId,weapon,element,radius,amount,comboWindow,objects,physics){
+  function weaponAttack(sourceId,weapon,radius,amount,comboWindow,objects,physics){
     const source=resolveObject(sourceId,objects);if(!source||!isAlive(sourceId))return 0;
     const weaponDef=weaponDefinitions.get(String(weapon)),attackRange=weaponDef?.range??Math.max(0,number(radius)),minimumFacing=weaponDef?Math.cos(weaponDef.arc*Math.PI/360):0.25,weaponDamage=Math.max(0,number(amount))*(weaponDef?.multiplier??1);
     const now=Date.now(),old=weaponCombos.get(sourceId),windowMs=Math.max(150,number(comboWindow,1100));const combo=old&&now-old.time<=windowMs?old.count%5+1:1;weaponCombos.set(sourceId,{count:combo,time:now,weapon:String(weapon)});
     const a=position(source,physics),forwardX=Math.sin(number(source.rotationY)*Math.PI/180),forwardZ=Math.cos(number(source.rotationY)*Math.PI/180);let hits=0;
     for(const target of objects||[]){if(target.id===sourceId||!physics?.getBody?.(target.id)||!isAlive(target.id))continue;const b=position(target,physics),dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz);if(dist>attackRange)continue;if(dist>0.001&&(dx/dist)*forwardX+(dz/dist)*forwardZ<minimumFacing)continue;
-      const prev=elementalStates.get(String(target.id)),reaction=prev&&prev.expires>Date.now()?elementReaction(prev.element,element):['',1];const multiplier=[1,1.08,1.22,1.45,1.8][combo-1]*reaction[1];damage(target.id,weaponDamage*multiplier);if(element)setElement(target.id,element);hits++;
+      const multiplier=[1,1.08,1.22,1.45,1.8][combo-1];damage(target.id,weaponDamage*multiplier);hits++;
     }
     return hits;
   }
@@ -104,5 +102,5 @@
     for(let i=0;i<count;i++){const tri=vertices.slice(i*9,i*9+9).map(number),a=tri.slice(0,3),b=tri.slice(3,6),c=tri.slice(6,9),ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]],nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0],len=Math.hypot(nx,ny,nz);if(len<1e-8||Math.abs(ny/len)<slope)continue;const id='navtri_'+nodes.length;const p={id,x:(a[0]+b[0]+c[0])/3,y:(a[1]+b[1]+c[1])/3,z:(a[2]+b[2]+c[2])/3,links:new Set()};nodes.push(p);navNodes.set(id,p);const verts=[a,b,c];for(let e=0;e<3;e++){const v1=verts[e],v2=verts[(e+1)%3],k1=v1.map(v=>Math.round(v*1000)).join(','),k2=v2.map(v=>Math.round(v*1000)).join(','),key=[k1,k2].sort().join('|');if(edgeMap.has(key)){const other=edgeMap.get(key);p.links.add(other.id);other.links.add(p.id);}else edgeMap.set(key,p);}}
     return nodes.length;}
   function resetTransient(){attackTimes.clear();weaponCombos.clear();}
-  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,defineItem,equipItem,useItem,getEquipment,getInventorySnapshot,questDefine,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,setElement,weaponAttack,comboCount,enemyAI,getAIState,openInventory,openQuestLog,closeUI,showDialogue,chooseDialogue,getDialogueChoice,getUIState,uiAction,navAddNode,navConnect,navBuildGrid,navBuildFromTriangles,navBuildFromTerrain,defineWeapon,navBlock,navNext,navClear,resetTransient,version:'2.0.0'};
+  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,defineItem,equipItem,useItem,getEquipment,getInventorySnapshot,questDefine,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,weaponAttack,comboCount,enemyAI,getAIState,openInventory,openQuestLog,closeUI,showDialogue,chooseDialogue,getDialogueChoice,getUIState,uiAction,navAddNode,navConnect,navBuildGrid,navBuildFromTriangles,navBuildFromTerrain,defineWeapon,navBlock,navNext,navClear,resetTransient,version:'2.0.0'};
 })();
