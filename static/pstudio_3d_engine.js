@@ -62,6 +62,8 @@
         if(isDoubleTap){
           lastObjectTap=null;
           window.PStudioSceneInteraction?.toggleManipulation?.(ownerId);
+          refreshSelectionOutline();
+          if(renderer&&scene&&camera)renderer.render(scene,camera);
           pointerMode='double-tap';dragInfo=null;
         }else{
           const enabled=window.PStudioSceneInteraction?.isManipulationEnabled?.(ownerId)!==false;
@@ -201,7 +203,9 @@
 
   function refreshSelectionOutline() {
     if (!selectionGroup || !window.THREE) return;
-    if (!selectedOwnerId || !primitiveGroup) {
+    const canManipulate = selectedOwnerId
+      && window.PStudioSceneInteraction?.isManipulationEnabled?.(selectedOwnerId) !== false;
+    if (!selectedOwnerId || !primitiveGroup || !canManipulate) {
       if(selectionGroup.children.length)disposeGroup(selectionGroup);
       selectionSignature='';
       return;
