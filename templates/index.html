@@ -741,7 +741,7 @@ function showEntryMenu(event,kind,name){
  add(locked?'ロック解除':'ロック',()=>toggleEntryLock(kind,name));
  add('削除',()=>kind==='file'?deleteProjectFile(name):deleteProjectAsset(name),{danger:true,disabled:locked||running});
  document.getElementById('file-context-menu-root').appendChild(menu);activeFileContextMenu=menu;
- const trigger=event.currentTarget,rect=trigger.getBoundingClientRect();const left=Math.min(rect.right-8,window.innerWidth-178);const top=Math.min(rect.bottom,window.innerHeight-150);
+ const trigger=event.currentTarget,rect=trigger.getBoundingClientRect();const menuWidth=window.matchMedia('(max-width:700px)').matches?198:178;const left=Math.min(rect.right-8,window.innerWidth-menuWidth);const top=Math.min(rect.bottom,window.innerHeight-150);
  menu.style.left=Math.max(8,left)+'px';menu.style.top=Math.max(8,top)+'px';
  activeFileContextOutsideHandler=e=>{if(!menu.contains(e.target)&&!trigger.contains(e.target))closeFileContextMenu();};
  setTimeout(()=>{if(activeFileContextMenu===menu)document.addEventListener('pointerdown',activeFileContextOutsideHandler);},0);
@@ -828,8 +828,17 @@ async function fileAsDataURL(file){
   };reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
  });
 }
+async function validateGLBFile(file){
+ const header=await file.slice(0,12).arrayBuffer();
+ if(header.byteLength!==12)throw new Error('GLBヘッダーが不足しています');
+ const view=new DataView(header);
+ if(view.getUint32(0,true)!==0x46546c67)throw new Error('GLBマジック番号が正しくありません');
+ if(view.getUint32(4,true)!==2)throw new Error('GLB 2.0形式のみ対応しています');
+ if(view.getUint32(8,true)>file.size||view.getUint32(8,true)<12)throw new Error('GLBファイル長が不正です');
+}
 async function importGLTFFile(file,allFiles){
  const json=JSON.parse(await file.text());
+ if(!json.asset||!String(json.asset.version||'').startsWith('2.'))throw new Error('glTF 2.0形式のみ対応しています');
  const byName=new Map(allFiles.map(f=>[f.name.toLowerCase(),f]));
  const dependencies=new Set();
  const embed=async entry=>{
@@ -859,6 +868,7 @@ async function importAssets(files){
   if(existing?.locked){toast(file.name+' はロックされています');continue;}
   if(file.size>30*1024*1024){toast(file.name+' は30 MBを超えています');continue;}
   try{
+   await validateGLBFile(file);
    await window.PStudioAssetStore.put(file.name,file);
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
    projectAssets.push({name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});
