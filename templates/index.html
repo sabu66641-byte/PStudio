@@ -739,7 +739,8 @@ function showEntryMenu(event,kind,name){
  document.getElementById('file-context-menu-root').appendChild(menu);activeFileContextMenu=menu;
  const rect=event.currentTarget.getBoundingClientRect();const left=Math.min(rect.right-8,window.innerWidth-178);const top=Math.min(rect.bottom,window.innerHeight-150);
  menu.style.left=Math.max(8,left)+'px';menu.style.top=Math.max(8,top)+'px';
- setTimeout(()=>document.addEventListener('pointerdown',closeFileContextMenu,{once:true}),0);
+ const outside=e=>{if(menu.contains(e.target)){document.addEventListener('pointerdown',outside,{once:true});return;}closeFileContextMenu();};
+ setTimeout(()=>document.addEventListener('pointerdown',outside,{once:true}),0);
 }
 function toggleEntryLock(kind,name){
  const entry=kind==='file'?projectFiles[name]:projectAssets.find(a=>a.name===name);if(!entry)return;
@@ -766,7 +767,7 @@ function deleteProjectFile(name){
  const file=projectFiles[name];if(!file||file.locked||window.PStudioEngine?.isRunning())return;
  if(file.type==='ps'&&Object.values(projectFiles).filter(f=>f.type==='ps').length<=1){toast('最後のScriptファイルは削除できません');return;}
  if(!confirm('「'+name+'」を削除しますか？'))return;
- if(activeProjectFile===name&&file.type==='ps')file.content=codeEditor.value;
+ if(activeProjectFile===name&&file.type==='ps'){file.content=codeEditor.value;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');}
  delete projectFiles[name];sceneObjects.forEach(o=>{if(o.script===name)o.script='';});
  if(activeProjectFile===name){
   const next=Object.keys(projectFiles).find(k=>projectFiles[k].type==='ps')||Object.keys(projectFiles)[0];
@@ -800,6 +801,7 @@ async function renameProjectAsset(oldName){
 }
 async function deleteProjectAsset(name){
  const asset=projectAssets.find(a=>a.name===name);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
+ if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
  const warning=refs?'\\n\\n'+refs+'個のScriptにこのモデル名が含まれています。参照は自動では書き換えません。':'';
  if(!confirm('アセット「'+name+'」を削除しますか？'+warning))return;
