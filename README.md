@@ -74,8 +74,8 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - Game scripts execute in the browser runtime. `input()` and Discord side-effect functions are intentionally unavailable in game callbacks. Use the normal Run path for those workflows.
 - The browser runtime provides the existing 2D path, a persistent 3D primitive renderer, basic 2D/3D collision callbacks, a fixed-step capsule character controller, GLB model loading and glTF animation playback.
 - The custom physics module uses a 1/60-second fixed simulation step with a bounded accumulator, gravity, force/impulse, velocity, ground contact, jump buffering and a short coyote-time window.
-- Character control includes normalized X/Z movement, ground acceleration, configurable air control, vertical jump speed and grounded state.
-- Static world collision currently supports horizontal `draw_plane` surfaces and axis-aligned bounding approximations for box-like primitives. It is not a general rigid-body solver: dynamic body-to-body response, arbitrary triangle-mesh collision, sloped terrain, stairs/step climbing, joints and continuous collision detection are not implemented.
+- Character control includes normalized X/Z movement, ground acceleration, configurable air control, vertical jump speed and grounded state. Touch devices also show a virtual movement joystick and jump button while a 3D game is running.
+- Static world collision currently supports finite horizontal `draw_plane` surfaces and axis-aligned bounding approximations for boxes, cylinders, cones and capsules. Rotated boxes use rotation-aware AABB extents. This is not a general rigid-body solver: dynamic body-to-body response, arbitrary triangle-mesh collision, sloped terrain, stairs/step climbing, joints and continuous collision detection are not implemented.
 - Import binary glTF `.glb` files through ASSETS. Model binaries are stored in IndexedDB (up to 30 MB per imported model), separate from localStorage project metadata. `.gltf` files with external sidecar resources are not supported in this build.
 - `load_model(name, x, y, z, scale)` instantiates an imported model. `play_animation(name)` loops a matching animation clip; `play_animation_once(name)` plays it once. Clip names come from the GLB file.
 - This is a game-development foundation, not a finished large-world action-RPG engine. Terrain streaming, robust mesh physics, navigation, advanced animation blending, particles, audio mixing, combat systems and save data are future work.
@@ -157,7 +157,7 @@ The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone s
 
 ## 3D RPG Starter Example
 
-Attach `examples/3d_rpg/world.ps` to a world Game Object and `examples/3d_rpg/player_controller.ps` to a player Game Object. Import a rigged `Traveler.glb` with animation clips whose names include Idle, Run and Jump.
+Attach `examples/3d_rpg/world.ps` to a world Game Object and `examples/3d_rpg/player_controller.ps` to a player Game Object. Import a rigged `Traveler.glb` with animation clips whose names include Idle, Walk, Run, Jump and Attack. On desktop, use WASD or arrow keys and Space to jump; press F to attack. On touch devices, use the on-screen joystick and JUMP button; the remaining 3D view area can be dragged to orbit the camera.
 
 ```ps
 func start()
@@ -171,10 +171,18 @@ func update(dt)
     if was_key_pressed("space")
         jump(7.5)
 
-    if not is_grounded()
+    if was_key_pressed("f")
+        play_animation_once("Attack")
+        attack_timer = 0.65
+
+    if attack_timer > 0
+        attack_timer -= dt
+    elif not is_grounded()
         play_animation("Jump")
-    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 1
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 16
         play_animation("Run")
+    elif get_velocity_x() ** 2 + get_velocity_z() ** 2 > 0.25
+        play_animation("Walk")
     else
         play_animation("Idle")
 
