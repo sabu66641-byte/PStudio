@@ -152,6 +152,7 @@
     qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
     if(renderer){
       renderer.setPixelRatio(Math.min(Math.max(1,Number(window.devicePixelRatio)||1),profile.pixelRatio));
+      composer?.setPixelRatio?.(renderer.getPixelRatio());
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
@@ -181,7 +182,7 @@
     camera=new T.PerspectiveCamera(55,16/9,0.1,1600);camera.position.set(6,5,8);camera.lookAt(0,0,0);
     const FX=window.PStudioPostFX;
     if(FX?.EffectComposer&&FX?.RenderPass&&FX?.OutputPass){
-      composer=new FX.EffectComposer(renderer);composer.addPass(new FX.RenderPass(scene,camera));
+      composer=new FX.EffectComposer(renderer);composer.setPixelRatio?.(renderer.getPixelRatio());composer.addPass(new FX.RenderPass(scene,camera));
       if(FX.GTAOPass){gtaoPass=new FX.GTAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));if(FX.GTAOPass.OUTPUT?.Denoise!==undefined)gtaoPass.output=FX.GTAOPass.OUTPUT.Denoise;gtaoPass.enabled=false;composer.addPass(gtaoPass);ssaoPass=gtaoPass;}
       else if(FX.SSAOPass){ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);}
       if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
@@ -214,7 +215,7 @@
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
     if (width !== lastSize.width || height !== lastSize.height) {
-      renderer.setSize(width, height, false);composer?.setSize(width,height);ssaoPass?.setSize(width,height);
+      renderer.setSize(width, height, false);composer?.setSize(width,height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       lastSize = { width, height };
