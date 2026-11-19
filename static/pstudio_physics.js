@@ -49,6 +49,9 @@
       coyoteTime: 0,
       jumpBuffer: 0,
       jumpSpeed: 0,
+      jumped: false,
+      landed: false,
+      airTime: 0,
       controller: null,
       input: [0, 0],
       friction: 8
@@ -84,8 +87,10 @@
   function beginFrame() {
     for (const body of bodies.values()) {
       body.force = [0, 0, 0];
-      // Movement input is sampled per rendered frame; never retain stale input.
+      // Movement input and transition flags are sampled per rendered frame.
       body.input = [0, 0];
+      body.jumped = false;
+      body.landed = false;
     }
   }
 
@@ -257,6 +262,8 @@
     body.grounded = false;
     body.coyoteTime = 0;
     body.jumpBuffer = 0;
+    body.airTime = 0;
+    body.jumped = true;
   }
 
   function simulateBody(body, dt, colliders) {
@@ -283,14 +290,20 @@
     }
 
     solveWorld(body, colliders, oldPosition);
+    if (!wasGrounded && body.grounded && body.airTime >= 0.08) {
+      body.landed = true;
+    }
     if (body.grounded) {
       body.coyoteTime = 0.12;
+      body.airTime = 0;
       if (!controller) {
         const friction = Math.exp(-body.friction * dt);
         body.velocity[0] *= friction;
         body.velocity[2] *= friction;
       }
       applyBufferedJump(body);
+    } else {
+      body.airTime += dt;
     }
   }
 
@@ -337,7 +350,15 @@
         dx: renderPosition[0] - old[0],
         dy: renderPosition[1] - old[1],
         dz: renderPosition[2] - old[2],
-        grounded: body.grounded
+        velocityX: body.velocity[0],
+        velocityY: body.velocity[1],
+        velocityZ: body.velocity[2],
+        horizontalSpeed: Math.hypot(body.velocity[0], body.velocity[2]),
+        grounded: body.grounded,
+        controlled: !!body.controller,
+        jumped: body.jumped,
+        landed: body.landed,
+        airTime: body.airTime
       });
     }
     return result;
