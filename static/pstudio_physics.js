@@ -78,6 +78,10 @@
     const b = requireBody(id);
     b.gravity = [finite(x), finite(y), finite(z)];
   }
+  function beginFrame() {
+    for (const body of bodies.values()) body.force = [0, 0, 0];
+  }
+
   function applyForce(id, x, y, z) {
     const b = requireBody(id);
     b.force[0] += finite(x);
@@ -291,7 +295,9 @@
       accumulator -= FIXED_STEP;
       steps++;
     }
-    for (const body of bodies.values()) body.force = [0, 0, 0];
+    if (steps > 0) {
+      for (const body of bodies.values()) body.force = [0, 0, 0];
+    }
     const result = new Map();
     for (const [id, body] of bodies) {
       const old = before.get(id) || body.position;
@@ -313,7 +319,7 @@
 
   window.PStudioPhysics = {
     createBody, getBody, getPosition, setPosition, getVelocity, setVelocity,
-    setGravity, applyForce, applyImpulse, configureController,
+    setGravity, beginFrame, applyForce, applyImpulse, configureController,
     moveCharacter, jump, isGrounded, step, clear,
     version: '1.0.0'
   };
