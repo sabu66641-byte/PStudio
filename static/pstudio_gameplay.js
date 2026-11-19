@@ -53,7 +53,7 @@
   function navBuildGrid(x,z,width,depth,cell){const step=Math.max(0.5,number(cell,2)),cols=Math.max(1,Math.min(50,Math.floor(number(width)/step))),rows=Math.max(1,Math.min(50,Math.floor(number(depth)/step)));if(cols*rows>2500)return 0;navClear();for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;navAddNode(id,number(x)+(ix/cols)*number(width),0,number(z)+(iz/rows)*number(depth));}for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;if(ix<cols)navConnect(id,'grid_'+(ix+1)+'_'+iz);if(iz<rows)navConnect(id,'grid_'+ix+'_'+(iz+1));}return navNodes.size;}
   function navBlock(id,blocked=true){if(!navNodes.has(String(id)))return false;if(blocked)blockedNavNodes.add(String(id));else blockedNavNodes.delete(String(id));return true;}
   function navNext(start,goal){
-    start=String(start);goal=String(goal);if(!navNodes.has(start)||!navNodes.has(goal))return '';
+    start=String(start);goal=String(goal);if(!navNodes.has(start)||!navNodes.has(goal)||blockedNavNodes.has(goal))return '';
     const queue=[start],previous=new Map([[start,null]]);
     while(queue.length){const id=queue.shift();if(id===goal)break;for(const next of navNodes.get(id).links)if(!blockedNavNodes.has(next)&&!previous.has(next)){previous.set(next,id);queue.push(next);}}
     if(!previous.has(goal))return '';let step=goal;while(previous.get(step)!==start&&previous.get(step)!==null)step=previous.get(step);return step===start?'':step;
