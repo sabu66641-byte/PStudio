@@ -160,6 +160,8 @@ The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone s
 Attach `examples/3d_rpg/world.ps` to a world Game Object and `examples/3d_rpg/player_controller.ps` to a player Game Object. Import a rigged `Traveler.glb` with animation clips whose names include Idle, Walk, Run, Jump and Attack. On desktop, use WASD or arrow keys and Space to jump; press F to attack. On touch devices, use the on-screen joystick and JUMP button; the remaining 3D view area can be dragged to orbit the camera.
 
 ```ps
+attack_timer = 0
+
 func start()
     physics_body(0, 2.4, 0, 0.38, 1.8, 1)
     set_gravity(0, -18, 0)
