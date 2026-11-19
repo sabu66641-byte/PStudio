@@ -13,6 +13,8 @@
   let lastSize = { width: 0, height: 0 };
   let orbitYaw = 0, orbitPitch = 0, zoom = 1, pointerMode = null, pointerStart = null, dragInfo = null;
   let raycaster = null, pointerNdc = null, controlsReady = false;
+  const activePointers = new Map();
+  let pinchDistance = 0;
 
   function setupControls() {
     if (controlsReady) return;
@@ -21,6 +23,8 @@
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', e => {
       if (!renderer || !camera) return;
+      activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pointerMode='pinch';dragInfo=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
       const rect=canvas.getBoundingClientRect();
       pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
       raycaster.setFromCamera(pointerNdc,camera);
@@ -38,7 +42,9 @@
     });
     canvas.addEventListener('pointermove',e=>{
       if(!pointerMode||!renderer)return;
-      if(pointerMode==='orbit'){
+      if(activePointers.has(e.pointerId))activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);if(pinchDistance>0)zoom=Math.max(0.25,Math.min(4,zoom*(pinchDistance/Math.max(1,distance))));pinchDistance=distance;}
+      else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
         orbitYaw+=dx*0.008;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.008));pointerStart={x:e.clientX,y:e.clientY};
       }else if(pointerMode==='object'&&dragInfo){
@@ -48,7 +54,7 @@
       }
       e.preventDefault();
     });
-    const end=()=>{pointerMode=null;dragInfo=null;pointerStart=null;};
+    const end=e=>{activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;}};
     canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
     canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.001)));e.preventDefault();},{passive:false});
   }
