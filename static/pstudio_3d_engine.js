@@ -633,7 +633,7 @@
           if(light.target){light.target.position.set(Number(d.targetX)||0,Number(d.targetY)||0,Number(d.targetZ)||0);light.target.updateMatrixWorld();}
           usedLights.add(key);continue;
         }
-        if (d.type==='material') { ownerMaterial={roughness:Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:Math.max(0,Math.min(1,Number(d.metalness)||0))}; continue; }
+        if (d.type==='material') { ownerMaterial=Object.assign(ownerMaterial||{},{roughness:d.roughness===undefined?(ownerMaterial?.roughness??0.72):Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:d.metalness===undefined?(ownerMaterial?.metalness??0.04):Math.max(0,Math.min(1,Number(d.metalness)||0)),shader:d.shader||ownerMaterial?.shader||'standard'}); continue; }
         if (d.type==='animation') continue;
         if (d.type==='model') {
           let instance=modelInstances.get(key);
@@ -713,15 +713,17 @@
         const signature=geometrySignature(d);
         if(!signature) continue;
         let mesh=meshCache.get(key);
-        if(!mesh||mesh.userData.signature!==signature){
+        const shaderMode=ownerMaterial?.shader||'standard';
+        if(!mesh||mesh.userData.signature!==signature||mesh.userData.shader!==shaderMode){
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
-          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
+          const material=d.type==='water'?new T.MeshPhysicalMaterial({color:d.color||'#3b82f6',roughness:0.12,metalness:0.25,transparent:true,opacity:Number(d.opacity)||0.65,clearcoat:1,clearcoatRoughness:0.08,side:T.DoubleSide}):shaderMode==='toon'?new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='unlit'?new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide}):shaderMode==='normal'?new T.MeshNormalMaterial({side:T.DoubleSide}):new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
           mesh=new T.Mesh(geometry,material);
           mesh.castShadow = d.type !== 'plane';
           mesh.receiveShadow = true;
           mesh.userData.signature=signature;
+          mesh.userData.shader=shaderMode;
           meshCache.set(key,mesh);
           primitiveGroup.add(mesh);
         }
