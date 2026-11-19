@@ -76,7 +76,7 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - The custom physics module uses a 1/60-second fixed simulation step with a bounded accumulator, gravity, force/impulse, velocity, ground contact, jump buffering and a short coyote-time window.
 - Character control includes normalized X/Z movement, ground acceleration, configurable air control, vertical jump speed and grounded state. Touch devices also show a virtual movement joystick and jump button while a 3D game is running.
 - Static world collision currently supports finite horizontal `draw_plane` surfaces and axis-aligned bounding approximations for boxes, cylinders, cones and capsules. Rotated boxes use rotation-aware AABB extents. This is not a general rigid-body solver: dynamic body-to-body response, arbitrary triangle-mesh collision, sloped terrain, stairs/step climbing, joints and continuous collision detection are not implemented.
-- Import binary glTF `.glb` files through ASSETS. Model binaries are stored in IndexedDB (up to 30 MB per imported model), separate from localStorage project metadata. `.gltf` files with external sidecar resources are not supported in this build.
+- Import binary glTF `.glb` or JSON glTF `.gltf` files through ASSETS. For `.gltf`, select the model and its referenced `.bin` / texture files together; PStudio embeds relative resources as data URIs and stores the bundled model in IndexedDB (30 MB combined limit). Project metadata remains in localStorage.
 - `load_model(name, x, y, z, scale)` instantiates an imported model. `play_animation(name)` loops a matching animation clip; `play_animation_once(name)` plays it once. Clip names come from the GLB file.
 - This is a game-development foundation, not a finished large-world action-RPG engine. Terrain streaming, robust mesh physics, navigation, advanced animation blending, particles, audio mixing, combat systems and save data are future work.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
@@ -141,9 +141,15 @@ func update(dt)
 
 The character body is a vertical capsule. The physics step is fixed at 60 Hz and capped at eight substeps per rendered frame. The controller uses semi-implicit Euler integration, ground/air acceleration, a 0.12-second jump buffer and 0.12-second coyote time. It currently collides against horizontal planes and primitive AABB approximations. It is intentionally not described as production-grade general-purpose physics.
 
+## Project File Management
+
+Each script, scene and imported asset has a `⋯` menu in the Project explorer. It supports rename, lock/unlock and delete. Locked entries cannot be renamed or deleted from the menu. The final remaining ps script is protected so the project always retains an editable script. Renaming a script updates scene-object script assignments; renaming a model updates exact filename references in ps scripts. Deleting a model warns when scripts still refer to it.
+
+Image/audio assets remain in the local project metadata; model binaries remain in IndexedDB. Browser storage is device-local, so export/backup support is still recommended before relying on it as the only copy.
+
 ## GLB Model and Animation API
 
-Import a binary glTF `.glb` model in the ASSETS area, then refer to its exact filename from a game script:
+Import a binary glTF `.glb` or JSON glTF `.gltf` model in the ASSETS area, then refer to its exact filename from a game script. For `.gltf`, select all referenced local `.bin` and texture files in the same import operation:
 
 | Function | Meaning |
 |---|---|
@@ -153,7 +159,7 @@ Import a binary glTF `.glb` model in the ASSETS area, then refer to its exact fi
 | `stop_animation()` | Stop the current model animation |
 | `set_animation_speed(speed)` | Change animation playback speed |
 
-The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files are stored as binary Blobs in IndexedDB, not embedded into the project JSON. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Standard embedded GLB resources are supported; external `.gltf` sidecar files and compressed assets requiring separately configured decoders are not included in this build.
+The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Compressed texture formats requiring separately configured decoders are not included in this build.
 
 ## 3D RPG Starter Example
 
