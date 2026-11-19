@@ -623,14 +623,17 @@
                 instance.lastLandSequence=landSequence;
               }else{
                 const speed=Math.max(0,Number(locomotion.speed)||0);
+                const firstAvailable=(...names)=>names.find(name=>typeof name==='string'&&name.trim().length>0)||'';
                 if(!locomotion.grounded){
-                  animState.clipName=(Number(locomotion.velocityY)||0)>0.12?locomotion.jump:locomotion.fall;
+                  animState.clipName=(Number(locomotion.velocityY)||0)>0.12
+                    ?firstAvailable(locomotion.jump,locomotion.fall,locomotion.idle)
+                    :firstAvailable(locomotion.fall,locomotion.jump,locomotion.idle);
                 }else if(speed>3.8){
-                  animState.clipName=locomotion.run;
+                  animState.clipName=firstAvailable(locomotion.run,locomotion.walk,locomotion.idle);
                 }else if(speed>0.18){
-                  animState.clipName=locomotion.walk;
+                  animState.clipName=firstAvailable(locomotion.walk,locomotion.run,locomotion.idle);
                 }else{
-                  animState.clipName=locomotion.idle;
+                  animState.clipName=firstAvailable(locomotion.idle,locomotion.walk,locomotion.run);
                 }
                 animState.loop=true;
               }
