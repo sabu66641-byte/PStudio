@@ -806,7 +806,7 @@ async function renameProjectAsset(oldName){
    if(projectFiles[key].type==='ps')projectFiles[key].content=replaceQuotedAssetReference(projectFiles[key].content,oldName,next);
   }
   if(projectFiles[activeProjectFile]?.type==='ps'){codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');document.getElementById('save-state').textContent='Saved locally';}
-  persistProject();renderProjectTree();renderGamePreview();toast('Renamed asset: '+next);
+  persistProject();renderProjectTree();renderGamePreview();if(asset.kind==='model'&&workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Renamed asset: '+next);
  }catch(error){toast('Rename failed: '+error.message);}
 }
 async function deleteProjectAsset(name){
@@ -821,7 +821,7 @@ async function deleteProjectAsset(name){
   projectAssets=projectAssets.filter(a=>a.name!==name);
   if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});imageCache.delete(name);}
   if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===name)o.model='';});
-  persistProject();renderProjectTree();renderGamePreview();toast('Deleted asset: '+name);
+  persistProject();renderProjectTree();renderGamePreview();if(asset.kind==='model'&&workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Deleted asset: '+name);
  }catch(error){toast('Delete failed: '+error.message);}
 }
 
