@@ -237,3 +237,8 @@ Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory
 
 
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
+
+
+## Custom GLSL Shader Editor
+
+Select a Scene object and use the **Shader Editor · GLSL** section in the Inspector to edit its fragment shader. PStudio supplies a fixed vertex shader and exposes `uniform vec3 uColor` plus `varying vec2 vUv` to the fragment source. The editor stores the shader with the scene object and applies it to the 3D preview/runtime. This is a text-based fragment editor with a small fixed interface, not a node-based shader graph or a full material authoring pipeline. Shader compilation still depends on the browser's WebGL implementation.
