@@ -44,7 +44,7 @@
       }else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
         const point=new window.THREE.Vector3();
-        if(raycaster.ray.intersectPlane(dragInfo.plane,point)){const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));dragInfo.mesh.position.copy(pos);window.PStudioSceneInteraction?.move?.(dragInfo.ownerId,pos.x,pos.y,pos.z);}
+        if(raycaster.ray.intersectPlane(dragInfo.plane,point)){const pos=dragInfo.startPosition.clone().add(point.sub(dragInfo.startPoint));dragInfo.mesh.position.copy(pos);window.PStudioSceneInteraction?.moveWorld?.(dragInfo.ownerId,pos.x,pos.y,pos.z);}
       }
       e.preventDefault();
     });
