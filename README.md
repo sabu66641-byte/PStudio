@@ -141,6 +141,12 @@ func update(dt)
 
 The character body is a vertical capsule. The physics step is fixed at 60 Hz and capped at eight substeps per rendered frame. The controller uses semi-implicit Euler integration, ground/air acceleration, a 0.12-second jump buffer and 0.12-second coyote time. It currently collides against horizontal planes and primitive AABB approximations. It is intentionally not described as production-grade general-purpose physics.
 
+## Scene model placement and rendering quality
+
+Imported model assets can be added directly to the current Scene from the asset row's `⋯` menu using **シーンに追加**. The new Game Object stores the model asset name and model scale in the scene file; selecting it exposes its scale in the Inspector. The Scene preview switches to 3D automatically. Model-only game scripts also select the 3D renderer in AUTO mode.
+
+The 3D renderer enables directional shadow mapping with soft PCF filtering, shadow casting for model and primitive meshes, shadow receiving for scene surfaces, ACES filmic tone mapping and sRGB output. These settings improve depth and material readability, but are not physically based global illumination and do not make the renderer equivalent to a high-end AAA production pipeline. Shadow quality and frame rate depend on the device GPU and browser.
+
 ## Project File Management
 
 Each script, scene and imported asset has a `⋯` menu in the Project explorer. It supports rename, lock/unlock and delete. Locked entries cannot be renamed or deleted from the menu. The final remaining ps script is protected so the project always retains an editable script. Renaming a script updates scene-object script assignments; renaming a model updates exact filename references in ps scripts. Deleting a model warns when scripts still refer to it.
