@@ -1,4 +1,4 @@
-# PStudio Game Engine 1.0.0
+# PStudio Game Engine 2.0.0
 
 PStudio is an indentation-based `ps` IDE with two separate execution paths:
 
@@ -72,7 +72,9 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - Existing normal ps execution, C++17 generation, Discord routes, editor, local project storage, asset import, scene serialization and language UI are retained.
 - Game APIs are opt-in: they are accepted by `/game/prepare`, but are not added to normal C++ execution. This prevents game-only calls from generating invalid C++.
 - Game scripts execute in the browser runtime. `input()` and Discord side-effect functions are intentionally unavailable in game callbacks. Use the normal Run path for those workflows.
-- The runtime currently provides frame lifecycle, script state per object, keyboard/pointer input, drawing, and collision callbacks. It is not yet a rigid-body physics solver: no gravity, mass, forces, joints, particle system, animation timeline, audio mixer, or 3D renderer is included in this version.
+- The browser runtime provides frame lifecycle, per-object script state, keyboard/pointer input, 2D drawing, 3D primitive rendering, a persistent 3D mesh cache, basic 2D/3D collision callbacks, and simple 3D environment controls.
+- The 3D renderer supports cubes, boxes, spheres, planes, cylinders, cones and capsules. Environment controls include background color, distance fog and one configurable directional light.
+- It is not yet a full action-RPG engine: rigid-body physics, gravity, player character controller, terrain streaming, skeletal model import, animation blending, navigation, particles, audio mixing, combat and save systems are future work.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
 
 ## Validation performed for this build
@@ -85,3 +87,34 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - Existing generated C++17 sample compiled with `g++` and printed the expected output.
 
 A full graphical browser session and deployment-specific Flask/Discord integration were not available in this environment, so those still need a final smoke test after deployment.
+
+## PStudio 2.0 3D API
+
+| Function | Meaning |
+|---|---|
+| `draw_cube(x, y, z, size)` | Draw a cube |
+| `draw_box(x, y, z, width, height, depth)` | Draw a rectangular box |
+| `draw_sphere(x, y, z, radius)` | Draw a sphere |
+| `draw_plane(x, y, z, width, depth)` | Draw a horizontal ground plane |
+| `draw_cylinder(x, y, z, radius, height)` | Draw a cylinder |
+| `draw_cone(x, y, z, radius, height)` | Draw a cone |
+| `draw_capsule(x, y, z, radius, height)` | Draw a capsule-shaped object |
+| `set_background(color)` | Set the 3D scene background color |
+| `set_fog(color, near, far)` | Configure distance fog |
+| `set_light(x, y, z, intensity)` | Set the directional light position and intensity |
+
+3D geometry is cached between frames when its owner and draw-call order remain stable. Geometry is rebuilt only when its shape or dimensions change. This reduces recurring allocation and disposal compared with rebuilding every mesh on every frame. It does not guarantee a particular frame rate; performance still depends on device GPU, geometry count, resolution and browser support.
+
+Example:
+
+```ps
+func update(dt)
+    set_background("#83b8e8")
+    set_fog("#83b8e8", 18, 60)
+    set_light(5, 10, 4, 2.4)
+    draw_plane(0, -0.5, 0, 40, 40)
+    draw_box(0, 1, 0, 1, 2, 1)
+    draw_cylinder(3, 1, 0, 0.5, 2)
+    draw_cone(-3, 1, 0, 0.7, 2)
+    draw_capsule(0, 1, 3, 0.4, 2)
+```
