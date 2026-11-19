@@ -474,8 +474,9 @@
       }
 
       const transforms=window.PStudioPhysics?.step?.(dt,commands)||new Map();
+      const ownersById=new Map((sceneObjects||[]).map(item=>[item.id,item]));
       for(const [id,transform] of transforms){
-        const owner=(sceneObjects||[]).find(item=>item.id===id);
+        const owner=ownersById.get(id);
         const draws=commands.get(id)||[];
 
         // Rotate a controlled character toward its actual world-space travel direction.
