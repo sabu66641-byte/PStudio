@@ -50,7 +50,7 @@
       const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId);
       pointerStart={x:e.clientX,y:e.clientY};
       if(hit){
-        const mesh=hit.object,ownerId=mesh.userData.ownerId;
+        const mesh=hit.object.userData.modelRoot || hit.object,ownerId=mesh.userData.ownerId;
         window.PStudioSceneInteraction?.select?.(ownerId);
         // Drag on a camera-facing plane so horizontal and vertical finger movement
         // both translate the object naturally in the editor view.
@@ -280,6 +280,7 @@
     clone.userData.ownerId=ownerId;
     clone.traverse(object=>{
       object.userData.ownerId=ownerId;
+      object.userData.modelRoot=clone;
       if(object.isMesh && object.material){
         object.castShadow=true;
         object.receiveShadow=true;
