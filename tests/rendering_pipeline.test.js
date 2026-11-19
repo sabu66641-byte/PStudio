@@ -67,3 +67,5 @@ test('primitive cache uses the same mesh object for caching and rendering', () =
 test('spatial irradiance volume blends nearby probes',()=>{for(const x of ['bakeLightProbeVolume','updateProbeVolumeBlend','camera-local-spatial-irradiance-volume','probeBlendCount'])assert.ok(renderer.includes(x));});
 test('large-world culling and chunk hysteresis are exposed',()=>{for(const x of ['registerWorldChunk','assignObjectToChunk','unregisterWorldChunk','maxDrawDistance','unloadDistance','updateWorldVisibility','preservedOwners','instanceSources'])assert.ok(renderer.includes(x));});
 test('directional shadow follows camera with texel snapping',()=>{for(const x of ['updateDirectionalShadowAnchor','Math.round(target.x/texel)*texel','scene.add(keyLight,keyLight.target)'])assert.ok(renderer.includes(x));});
+
+test('large geometry bounds prevent premature distance culling',()=>{assert.ok(renderer.includes('isWithinWorldDrawDistance'));assert.ok(renderer.includes('computeBoundingSphere'));assert.ok(renderer.includes('pstudioBoundsRadius'));});
