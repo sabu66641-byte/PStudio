@@ -657,6 +657,33 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);
     }
   }
+  function bakeEnvironmentGI(options={}){
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    const T=window.THREE,bounds=new T.Box3();
+    if(modelGroup){
+      modelGroup.updateMatrixWorld(true);
+      modelGroup.traverse(object=>{
+        if(!object.isMesh||!object.geometry)return;
+        const name=String(object.name||'');
+        if(object.userData?.pstudioWaterSurface||/(?:water|waterfall|cascade|foam|spray|sky|cloud|atmosphere|mist|cirrus)/i.test(name))return;
+        const objectBounds=new T.Box3().setFromObject(object);
+        if(!objectBounds.isEmpty()&&[objectBounds.min.x,objectBounds.min.y,objectBounds.min.z,objectBounds.max.x,objectBounds.max.y,objectBounds.max.z].every(Number.isFinite))bounds.union(objectBounds);
+      });
+    }
+    if(bounds.isEmpty()){bounds.min.set(-12,0,-12);bounds.max.set(12,8,12);}
+    const min=options.min||{x:bounds.min.x-1,y:bounds.min.y-0.5,z:bounds.min.z-1};
+    const max=options.max||{x:bounds.max.x+1,y:Math.max(bounds.max.y+0.5,min.y+2),z:bounds.max.z+1};
+    return bakeLightProbeVolume({
+      ...options,
+      min,max,
+      xCount:options.xCount??4,
+      yCount:options.yCount??2,
+      zCount:options.zCount??4,
+      resolution:options.resolution??(qualityPreset==='ultra'?128:96),
+      bounces:options.bounces??(qualityPreset==='ultra'?3:2),
+      bounceStrength:options.bounceStrength??0.42
+    });
+  }
   function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm)return;if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
@@ -1996,7 +2023,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     loadEnvironmentHDR,
     bakeLightProbe,
     clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed)drawFrame();return changed;},
-    bakeLightProbeVolume,bakeEnvironmentGI:options=>bakeLightProbeVolume({...options,resolution:options?.resolution??(qualityPreset==='ultra'?128:96),bounces:options?.bounces??(qualityPreset==='ultra'?3:2),bounceStrength:options?.bounceStrength??0.42}),bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
     getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
