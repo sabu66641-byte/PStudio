@@ -1006,7 +1006,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function applyPendingLightmaps(){
     if(!pendingLightmaps.size)return{applied:0,skipped:0,pending:0};
     const byId=new Map(lightmapTargets().map(t=>[t.id,t.object]));let applied=0,skipped=0;
-    for(const [id,record] of [...pendingLightmaps]){const object=byId.get(id);if(!object)continue;if(installLightmap(object,record)){pendingLightmaps.delete(id);applied++;}else{pendingLightmaps.delete(id);skipped++;console.warn('[PStudio] Skipped incompatible lightmap:',id);}}
+    for(const [id,record] of [...pendingLightmaps]){const object=byId.get(id);if(!object)continue;try{if(installLightmap(object,record)){pendingLightmaps.delete(id);applied++;}else{pendingLightmaps.delete(id);skipped++;console.warn('[PStudio] Skipped incompatible lightmap:',id);}}catch(error){pendingLightmaps.delete(id);skipped++;console.warn('[PStudio] Could not apply lightmap:',id,error);}}
     return{applied,skipped,pending:pendingLightmaps.size};
   }
   function clearObjectLightmap(object){
