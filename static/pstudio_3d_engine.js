@@ -972,7 +972,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function lightmapMatrixMatches(object,stored){
     if(!Array.isArray(stored)||stored.length!==16)return true;
-    object.updateMatrixWorld(true);const current=object.matrixWorld.elements;
+    if(object.updateWorldMatrix)object.updateWorldMatrix(true,false);else object.updateMatrixWorld(true);const current=object.matrixWorld.elements;
     for(let i=0;i<16;i++)if(Math.abs(current[i]-Number(stored[i]))>1e-4)return false;
     return true;
   }
@@ -1009,7 +1009,14 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function clearLightmaps(){let count=0;for(const {object} of lightmapTargets())if(clearObjectLightmap(object))count++;pendingLightmaps.clear();if(renderer&&scene)drawFrame();return{cleared:count};}
   async function saveLightmaps(name='default'){
     const key=String(name||'default').trim();if(!key||key.length>128)throw new TypeError('Invalid lightmap name.');
-    const records=[];for(const {id,object} of lightmapTargets()){const t=object.userData.pstudioLightmapTexture,g=object.geometry;if(t?.image?.data&&g?.attributes?.uv2)object.updateMatrixWorld(true);const sourceGeometry=object.userData.pstudioLightmapOriginalGeometry||g;records.push({id,width:t.image.width,height:t.image.height,vertexCount:g.attributes.position.count,fingerprint:lightmapGeometryFingerprint(sourceGeometry),matrixWorld:Array.from(object.matrixWorld.elements),pixelType:t.type===window.THREE.HalfFloatType?'half':'float',uv2:new Float32Array(g.attributes.uv2.array),pixels:t.type===window.THREE.HalfFloatType?new Uint16Array(t.image.data):new Float32Array(t.image.data)});}
+    const records=[];for(const {id,object} of lightmapTargets()){
+      const t=object.userData.pstudioLightmapTexture,g=object.geometry;
+      if(t?.image?.data&&g?.attributes?.uv2){
+        if(object.updateWorldMatrix)object.updateWorldMatrix(true,false);else object.updateMatrixWorld(true);
+        const sourceGeometry=object.userData.pstudioLightmapOriginalGeometry||g;
+        records.push({id,width:t.image.width,height:t.image.height,vertexCount:g.attributes.position.count,fingerprint:lightmapGeometryFingerprint(sourceGeometry),matrixWorld:Array.from(object.matrixWorld.elements),pixelType:t.type===window.THREE.HalfFloatType?'half':'float',uv2:new Float32Array(g.attributes.uv2.array),pixels:t.type===window.THREE.HalfFloatType?new Uint16Array(t.image.data):new Float32Array(t.image.data)});
+      }
+    }
     if(!records.length)throw new Error('No baked lightmaps to save.');const db=await openLightmapDatabase();
     await new Promise((resolve,reject)=>{const tx=db.transaction('lightmaps','readwrite');tx.objectStore('lightmaps').put({name:key,schema:1,records,updatedAt:Date.now()});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Lightmap save failed.'));tx.onabort=()=>reject(tx.error||new Error('Lightmap save aborted.'));});
     return{name:key,meshes:records.length};
