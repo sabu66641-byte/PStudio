@@ -1568,6 +1568,10 @@ try {
   catch (error) { console.warn('[PStudio] Screen-space reflections unavailable.', error); }
   try { postFX.LightProbeGenerator = (await import('three/addons/lights/LightProbeGenerator.js')).LightProbeGenerator; }
   catch (error) { console.warn('[PStudio] Light probe baking unavailable.', error); }
+  try { window.PStudioCSM = (await import('three/addons/csm/CSM.js')).CSM; }
+  catch (error) { console.warn('[PStudio] Cascaded shadow maps unavailable; single-cascade fallback will be used.', error); }
+  try { window.PStudioSimplifyModifier = (await import('three/addons/modifiers/SimplifyModifier.js')).SimplifyModifier; }
+  catch (error) { console.warn('[PStudio] Automatic mesh LOD generation unavailable; source meshes will be retained.', error); }
   try { window.PStudioHDRLoader = (await import('three/addons/loaders/RGBELoader.js')).RGBELoader; }
   catch (error) { console.warn('[PStudio] HDR environment loading unavailable.', error); }
   window.PStudioPostFX = postFX;
