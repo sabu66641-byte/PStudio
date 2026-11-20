@@ -85,6 +85,11 @@ def run_process_bounded(args, *, input_text=None, timeout=30,
     writer.join(timeout=2)
     for thread in readers:
         thread.join(timeout=2)
+    for stream in (process.stdin, process.stdout, process.stderr):
+        try:
+            stream.close()
+        except OSError:
+            pass
 
     stdout_text = bytes(buffers["stdout"]).decode("utf-8", errors="replace")
     stderr_text = bytes(buffers["stderr"]).decode("utf-8", errors="replace")
