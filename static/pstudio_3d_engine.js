@@ -1522,7 +1522,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         object.receiveShadow=true;
         const cloneMaterial=material=>{
           const windRole=String(object.userData?.pstudioWindPart||'');
-          const cacheKey=windRole ? (material.uuid+'|pstudio-wind-role:'+windRole) : material;
+          const waterDetailRole=String(object.userData?.pstudioWaterDetail||'');
+          const roleKey=[windRole?'wind:'+windRole:'',waterDetailRole?'water-detail:'+waterDetailRole:''].filter(Boolean).join('|');
+          const cacheKey=roleKey ? (material.uuid+'|pstudio-role:'+roleKey) : material;
           let copy=materialClones.get(cacheKey);
           if(copy)return copy;
           copy=material.clone();setupLightingMaterial(copy);
