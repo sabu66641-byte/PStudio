@@ -101,16 +101,14 @@
       release() {
         if (released) return false;
         released = true;
-        release(type, key);
-        return true;
+        return release(type, key);
       }
     });
   }
 
   function release(type, key) {
     const record = records.get(makeId(type, key));
-    if (!record) return false;
-    if (record.refCount <= 0) throw new Error('Resource reference count underflow: ' + type + '/' + key);
+    if (!record || record.refCount <= 0) return false;
     record.refCount--;
     record.lastUsed = ++sequence;
     emit('release', { type: record.type, key: record.key, refCount: record.refCount });
