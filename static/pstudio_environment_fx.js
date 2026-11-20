@@ -214,8 +214,11 @@
     if(!material || material.userData.pstudioTriplanarHQ || !material.map)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
     const name=String(object?.name||'');
-    const scaleValue=/meadow|grass|groundcover|terrace/i.test(name)?0.115:0.082;
-    const u={scale:{value:scaleValue},sharpness:{value:4.0},normalWeight:{value:0.72}};
+    const authoredScale=Number(material.userData?.pstudioTriplanarScale);
+    const scaleValue=Number.isFinite(authoredScale)&&authoredScale>0?Math.max(.005,Math.min(.5,authoredScale)):(/meadow|grass|groundcover|terrace/i.test(name)?0.115:0.082);
+    const authoredSharpness=Number(material.userData?.pstudioTriplanarSharpness);
+    const authoredNormalWeight=Number(material.userData?.pstudioTriplanarNormalWeight);
+    const u={scale:{value:scaleValue},sharpness:{value:Number.isFinite(authoredSharpness)?Math.max(1,Math.min(12,authoredSharpness)):4.0},normalWeight:{value:Number.isFinite(authoredNormalWeight)?Math.max(0,Math.min(1,authoredNormalWeight)):.72}};
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
