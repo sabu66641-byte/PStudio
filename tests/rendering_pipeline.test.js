@@ -135,3 +135,9 @@ test('inactive script owners retain prior render commands for seamless resume',(
 test('saved lightmaps validate source geometry and bake-time world transforms',()=>{
   for(const token of ['lightmapGeometryFingerprint','lightmapMatrixMatches','pstudioLightmapBakedMatrix','fingerprint','matrixWorld'])assert.ok(renderer.includes(token),token);
 });
+
+test('saved indexed meshes rebuild the same non-indexed UV2 geometry on load',()=>{
+  assert.ok(renderer.includes('sourceGeometry.index?sourceGeometry.toNonIndexed():sourceGeometry.clone()'));
+  assert.ok(renderer.includes('position.count!==record.vertexCount'));
+  assert.ok(renderer.includes('pstudioLightmapOriginalGeometryOwned'));
+});
