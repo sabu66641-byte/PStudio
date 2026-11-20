@@ -373,3 +373,9 @@ test('low-memory devices disable hardware MSAA and receive conservative quality 
   assert.ok(renderer.includes('if(memory<=2)return \'mobile\''));
   assert.ok(renderer.includes('pixelRatio:0.8'));
 });
+
+
+test('large GLB memory preflight checks both total runtime and JavaScript heap budgets',()=>{
+  for(const token of ['function modelRuntimeBudgetBytes()','function modelCpuHeapBudgetBytes()','metadata?.estimatedCpuBytes','const safeBudget=modelRuntimeBudgetBytes(),cpuBudget=modelCpuHeapBudgetBytes()','CPU側'])assert.ok(renderer.includes(token),token);
+  assert.ok(html.includes('estimatedCpuBytes:inspection.estimatedCpuBytes'));
+});
