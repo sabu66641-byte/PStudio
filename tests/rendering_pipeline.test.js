@@ -177,7 +177,7 @@ test('renderer exposes volumetric fog and static-scene temporal AA controls',()=
   for(const token of ['setVolumetricFog','volumetricFogPass','setTemporalAA','TAARenderPass','SMAAPass'])assert.ok(renderer.includes(token),token);
 });
 test('imported named foliage meshes can be combined into owner-preserving GPU instance batches',()=>{
-  for(const token of ['buildFoliageInstanceBatches','PStudio_GPU_Instances_Foliage_Level','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
+  for(const token of ['buildFoliageInstanceBatches','PStudio_GPU_Instances_','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -208,8 +208,8 @@ test('water and caustics world positions do not depend on optional worldPosition
 
 
 test('generated foliage instance batches are excluded from authored mesh LOD node collection',()=>{
-  assert.ok(renderer.includes('PStudio_GPU_Instances_Foliage_Level'));
-  assert.ok(!renderer.includes("batch.name='PStudio_GPU_Instances_Foliage_Level'+level"));
+  assert.ok(renderer.includes('PStudio_GPU_Instances_'));
+  assert.ok(!renderer.includes("batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level"));
 });
 
 
@@ -265,4 +265,12 @@ test('GTAO output uses the scene composite mode rather than the AO-only debug vi
 });
 test('high-detail asset loads receive device-aware CPU and GPU resource budgets',()=>{
   for(const token of ['window.navigator?.deviceMemory','PStudioResources?.setBudget?.(\'gpu\'','PStudioResources?.setBudget?.(\'cpu\''])assert.ok(renderer.includes(token),token);
+});
+
+
+test('GLB spatial chunks preserve child transforms and stream detail by GPU-aware distance',()=>{
+  for(const token of ['buildModelStreamingChunks','pstudioStreamingConfig','chunk.attach(child)','pstudioStreamChunkId','pstudioStreamLoadDistance','updateModelStreamingChunks','activeModelStreamChunks'])assert.ok(renderer.includes(token),token);
+});
+test('chunk-local GPU instance batches retain animated tree transforms but do not update static architecture every frame',()=>{
+  for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
 });
