@@ -211,3 +211,14 @@ test('generated foliage instance batches are excluded from authored mesh LOD nod
   assert.ok(renderer.includes('PStudio_Foliage_GPU_Instances_Level'));
   assert.ok(!renderer.includes("batch.name='PStudio_Foliage_GPU_Instances_LOD'"));
 });
+
+
+test('water uses opaque scene depth to derive water thickness and shoreline foam',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const engine=renderer;
+  for(const token of ['uPStudioSceneDepth','uPStudioWaterViewport','uPStudioSceneDepthValid','waterThickness','shorelineFoam','setSceneDepthTexture'])assert.ok(fx.includes(token),token);
+  for(const token of ['renderWaterDepthPrepass','waterDepthTarget','MeshDepthMaterial','pstudioWaterSurface','setSceneDepthTexture?.(waterDepthTarget.depthTexture'])assert.ok(engine.includes(token),token);
+});
+test('water depth prepass restores scene visibility, override material and render target after rendering',()=>{
+  for(const token of ['previousOverride','previousTarget','for(const object of hidden)object.visible=true','scene.overrideMaterial=previousOverride','renderer.setRenderTarget(previousTarget)'])assert.ok(renderer.includes(token),token);
+});
