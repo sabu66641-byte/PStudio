@@ -40,6 +40,19 @@ class RequestLimitRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.get_json()["success"], False)
 
+    def test_run_returns_503_when_all_execution_slots_are_busy(self):
+        acquired = 0
+        try:
+            for _ in range(pstudio_app.MAX_CONCURRENT_PS_RUNS):
+                self.assertTrue(pstudio_app.ps_run_semaphore.acquire(blocking=False))
+                acquired += 1
+            response = self.client.post("/run", json={"code": 'ps "ok"'})
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("実行枠", response.get_json()["error"])
+        finally:
+            for _ in range(acquired):
+                pstudio_app.ps_run_semaphore.release()
+
 
 if __name__ == "__main__":
     unittest.main()
