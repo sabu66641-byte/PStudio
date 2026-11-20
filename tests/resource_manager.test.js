@@ -103,7 +103,7 @@ test('clear skips retained resources unless force is explicit', () => {
   assert.notEqual(api.get('model', 'held'), null);
   assert.equal(api.clear({ force: true }), 1);
   assert.equal(api.stats().resourceCount, 0);
-  lease.release();
+  assert.equal(lease.release(), false);
 });
 
 test('failed loads are not cached and can be retried', async () => {
