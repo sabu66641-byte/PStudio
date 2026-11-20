@@ -359,7 +359,7 @@ test('large GLB loading uses an object URL and progress events instead of an app
   assert.ok(!renderer.includes("const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer()"));
 });
 test('large model loading checks estimated runtime memory against device memory before decoding',()=>{
-  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のGLBは保存済みです'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のGLBはIndexedDBに保存済みです'])assert.ok(renderer.includes(token),token);
 });
 test('failed model loading clears pending promises so the same model can be retried',()=>{
   assert.ok(renderer.includes('if(modelPromises.get(name)===promise)modelPromises.delete(name)'));
