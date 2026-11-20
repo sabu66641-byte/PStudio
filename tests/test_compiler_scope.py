@@ -109,6 +109,17 @@ class CompilerScopeRegressionTests(unittest.TestCase):
         )
         self.assertEqual(output, ["1.5"])
 
+    def test_boolean_array_loop_variable_uses_value_type_after_loop(self):
+        output = self.compile_and_run(
+            'for flag in [true, false]\n'
+            '    last = flag\n'
+            'if last\n'
+            '    ps "true"\n'
+            'else\n'
+            '    ps "false"\n'
+        )
+        self.assertEqual(output, ["false"])
+
 
 if __name__ == "__main__":
     unittest.main()
