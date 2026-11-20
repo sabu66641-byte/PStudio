@@ -1400,7 +1400,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(!instance?.streamChunks?.length||!camera)return;
     const T=window.THREE;
     instance.root.updateMatrixWorld(true);
-    const factor=qualityPreset==='mobile'?.72:qualityPreset==='balanced'?.86:(adaptiveQualityEnabled?[.72,.86,1.0][adaptiveQualityLevel]:1.0);
+    const factor=qualityPreset==='mobile' ? 0.72 : qualityPreset==='balanced' ? 0.86 : (adaptiveQualityEnabled ? [0.72,0.86,1.0][adaptiveQualityLevel] : 1.0);
     const cameraPosition=camera.position;
     for(const chunk of instance.streamChunks){
       const center=chunk.getWorldPosition(new T.Vector3());
