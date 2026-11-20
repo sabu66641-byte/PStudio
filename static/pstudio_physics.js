@@ -58,13 +58,21 @@
       friction: 8,
       stepHeight: 0.35,
       maxSlope: Math.cos(50 * Math.PI / 180),
-      groundPlatformId: null
+      groundPlatformId: null,
+      active: true
     };
     bodies.set(id, body);
     return body;
   }
 
   function getBody(id) { return bodies.get(id) || null; }
+  function setActive(id, active) {
+    const body=bodies.get(id);if(!body)return false;
+    const next=!!active;if(body.active===next)return true;body.active=next;
+    if(!next){body.input=[0,0];body.force=[0,0,0];body.pendingForce=[0,0,0];}
+    else body.previousPosition=body.position.slice();
+    return true;
+  }
   function getPosition(id) {
     const b = bodies.get(id);
     return b ? { x: b.position[0], y: b.position[1], z: b.position[2] } : null;
@@ -387,7 +395,7 @@
   }
 
   function resolveBodyPairs() {
-    const list=[...bodies.values()];
+    const list=[...bodies.values()].filter(body=>body.active!==false);
     for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
       const a=list[i],b=list[j],lowA=a.position[1]-a.height/2,highA=a.position[1]+a.height/2,lowB=b.position[1]-b.height/2,highB=b.position[1]+b.height/2;
       if(Math.min(highA,highB)-Math.max(lowA,lowB)<=0)continue;
@@ -409,17 +417,20 @@
     let steps = 0;
     if (accumulator + 1e-9 >= FIXED_STEP) {
       for (const body of bodies.values()) {
+        if(body.active===false)continue;
         const hasCurrentForce = body.force.some(value => Math.abs(value) > 1e-12);
         if (hasCurrentForce) body.pendingForce = body.force.slice();
         else body.force = body.pendingForce.slice();
       }
     } else {
       for (const body of bodies.values()) {
+        if(body.active===false)continue;
         if (body.force.some(value => Math.abs(value) > 1e-12)) body.pendingForce = body.force.slice();
       }
     }
     while (accumulator + 1e-9 >= FIXED_STEP && steps < MAX_SUBSTEPS) {
       for (const body of bodies.values()) {
+        if(body.active===false)continue;
         body.previousPosition = body.position.slice();
         simulateBody(body, FIXED_STEP, colliders);
       }
@@ -429,6 +440,7 @@
     }
     if (steps > 0) {
       for (const body of bodies.values()) {
+        if(body.active===false)continue;
         body.force = [0, 0, 0];
         body.pendingForce = [0, 0, 0];
       }
@@ -466,7 +478,7 @@
   }
 
   window.PStudioPhysics = {
-    createBody, getBody, getPosition, setPosition, getVelocity, setVelocity,
+    createBody, getBody, setActive, getPosition, setPosition, getVelocity, setVelocity,
     setGravity, beginFrame, applyForce, applyImpulse, configureController,
     setStepHeight, setMaxSlope, moveCharacter, jump, isGrounded, step, clear,
     version: '1.0.0'
