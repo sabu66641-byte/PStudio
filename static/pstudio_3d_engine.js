@@ -1476,6 +1476,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       ? window.PStudioSkeletonUtils.clone(asset.scene)
       : asset.scene.clone(true);
     const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
+    // GLTFLoader places node extras on the matching Object3D, which may be a child of the scene wrapper.
+    clone.traverse(object=>{
+      const extras=object.userData||{};
+      if(extras.pstudioAutoPlayAnimation&&!clone.userData.pstudioAutoPlayAnimation)clone.userData.pstudioAutoPlayAnimation=extras.pstudioAutoPlayAnimation;
+      if(extras.pstudioStreamingConfig&&!clone.userData.pstudioStreamingConfig)clone.userData.pstudioStreamingConfig=extras.pstudioStreamingConfig;
+      if(extras.pstudioEnvironmentQuality&&!clone.userData.pstudioEnvironmentQuality)clone.userData.pstudioEnvironmentQuality=extras.pstudioEnvironmentQuality;
+    });
     clone.userData.ownerId=ownerId;
     clone.traverse(object=>{
       object.userData.ownerId=ownerId;
