@@ -37,6 +37,8 @@ from urllib.request import Request, urlopen
 
 API_BASE = "https://discord.com/api/v10"
 GATEWAY_BASE = "wss://gateway.discord.gg/?v=10&encoding=json"
+DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_ERROR_RESPONSE_BYTES = 64 * 1024
 
 
 class DiscordError(Exception):
@@ -194,7 +196,10 @@ class DiscordClient:
         data: Any = None,
         query: Optional[dict[str, Any]] = None,
         timeout: float = 15.0,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> Any:
+        if isinstance(max_response_bytes, bool) or not isinstance(max_response_bytes, int) or max_response_bytes <= 0:
+            raise DiscordError("max_response_bytesは1以上の整数で指定してください。")
         if not endpoint.startswith("/"):
             endpoint = "/" + endpoint
 
@@ -227,12 +232,21 @@ class DiscordClient:
 
             try:
                 with urlopen(req, timeout=timeout) as response:
-                    raw = response.read()
+                    raw = response.read(max_response_bytes + 1)
+                    if len(raw) > max_response_bytes:
+                        raise DiscordError(
+                            f"Discord API response exceeded the configured limit ({max_response_bytes} bytes)."
+                        )
                     return self._decode_response(raw)
 
             except HTTPError as exc:
-                raw = exc.read()
-                payload = self._decode_response(raw)
+                raw = exc.read(MAX_ERROR_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_ERROR_RESPONSE_BYTES:
+                    payload = {
+                        "message": f"Discord error response exceeded {MAX_ERROR_RESPONSE_BYTES} bytes."
+                    }
+                else:
+                    payload = self._decode_response(raw)
 
                 if exc.code == 429 and attempt < 3:
                     retry_after = self._extract_retry_after(payload)
