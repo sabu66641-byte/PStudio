@@ -291,3 +291,19 @@ test('tree trunk, branch and leaf tracks are all preserved by the animation-awar
 test('static architectural instance transforms are not recomputed every animation frame',()=>{
   assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
 });
+
+
+test('cloud and atmospheric depth consumers trigger scene depth capture even without water',()=>{
+  assert.ok(renderer.includes('const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled'));
+  assert.ok(renderer.includes('if(!waterDepthTarget||!waterDepthMaterial||!needsDepth)'));
+});
+test('static modular architecture GPU batches contribute to opaque scene depth',()=>{
+  assert.ok(renderer.includes('object.userData?.pstudioFoliageLOD!==undefined'));
+  assert.ok(!renderer.includes('object.userData?.pstudioInstanceBatch||transparent'));
+  assert.ok(renderer.includes('PStudio_GPU_Instances_Architecture_Static'));
+});
+test('streaming chunks are constructed from top-level world children for this GLB hierarchy',()=>{
+  assert.ok(renderer.includes('for(const child of [...root.children])'));
+  assert.ok(renderer.includes('/^PStudioInstance_/i.test(name)'));
+  assert.ok(renderer.includes('/(?:^|[_ -])Wind[_ -]?Tree/i.test(name)'));
+});
