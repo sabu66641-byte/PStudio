@@ -255,8 +255,8 @@
       group.remove(child);
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
-        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-        else child.material.dispose();
+        const materials=Array.isArray(child.material)?child.material:[child.material];
+        for(const material of materials){window.PStudioEnvironmentFX?.releaseMaterial?.(material);material?.dispose?.();}
       }
     }
   }
@@ -946,12 +946,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     if (mesh.parent) mesh.parent.remove(mesh);
     if(mesh.userData?.pstudioLightmapOriginalMaterial){const originals=Array.isArray(mesh.userData.pstudioLightmapOriginalMaterial)?mesh.userData.pstudioLightmapOriginalMaterial:[mesh.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
-    if (mesh.material) { waterMaterials.delete(mesh.material); for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))window.PStudioEnvironmentFX?.releaseMaterial?.(material); }
+    if (mesh.material) {
+      const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+      for(const material of materials){waterMaterials.delete(material);window.PStudioEnvironmentFX?.releaseMaterial?.(material);material?.dispose?.();}
+      mesh.material=null;
+    }
     mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
     const lods=mesh.userData.pstudioAutoLOD||[];
     if(lods.length){for(const level of lods)if(level.owned){level.geometry.userData.pstudioBVHDisposed=true;level.geometry.userData.pstudioBVHToken=(level.geometry.userData.pstudioBVHToken||0)+1;level.geometry.disposeBoundsTree?.();level.geometry.dispose?.();}if(!lightmapped&&!mesh.userData.pstudioLightmapOriginalGeometryOwned){lods[0]?.geometry?.disposeBoundsTree?.();lods[0]?.geometry?.dispose?.();}}
     else if(!lightmapped)currentGeometry?.dispose?.();
-    if (mesh.material) mesh.material.dispose();
     mesh.getRenderTarget?.()?.dispose?.();
   }
 
