@@ -1389,6 +1389,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       chunk.userData.pstudioStreamRadius=cellSize*.74;
       chunk.userData.pstudioStreamLoadDistance=loadDistance;
       chunk.userData.pstudioStreamUnloadDistance=unloadDistance;
+      chunk.userData.pstudioStreamActive=false;chunk.visible=false;
       root.add(chunk);root.updateMatrixWorld(true);
       for(const child of group.children)chunk.attach(child);
       chunks.push(chunk);
@@ -1461,7 +1462,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
     const matrix=new T.Matrix4();
     for(const entry of instance.foliageBatches){
-      if(!entry.isTree)continue;
+      if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue;
       const batch=entry.mesh,parent=entry.parent||root;parent.updateWorldMatrix(true,true);
       const inverseParent=parent.matrixWorld.clone().invert();
       for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseParent,source.matrixWorld);batch.setMatrixAt(i,matrix);}
