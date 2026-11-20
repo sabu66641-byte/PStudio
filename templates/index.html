@@ -89,6 +89,8 @@
   .tool-btn { white-space: nowrap; }
   .inspector-section { min-width: 160px; }
 }
+
+#page-about .about-localized{white-space:normal;line-height:1.8;}
 </style>
 </head>
 <body>
@@ -105,7 +107,7 @@
     <button id="menu-syntax" onclick="showPage('syntax')">Language Guide</button>
     <button id="menu-about" onclick="showPage('about')">About ps</button>
   </nav>
-  <span class="project-label"><span class="status-dot"></span>Workspace / main.ps</span><span class="header-spacer"></span><div class="project-backup-wrap"><button type="button" class="header-action project-backup-trigger" id="project-backup-trigger" onclick="toggleProjectBackupMenu()" aria-expanded="false">Backup <span aria-hidden="true">⌄</span></button><div class="project-backup-menu" id="project-backup-menu" hidden><button type="button" onclick="closeProjectBackupMenu();exportProjectBackup()">プロジェクトを書き出す (.pstudio)</button><button type="button" onclick="closeProjectBackupMenu();document.getElementById(&quot;pstudio-import-input&quot;).click()">バックアップを読み込む</button></div></div><input id="pstudio-import-input" class="asset-hidden" type="file" accept=".pstudio,application/json" onchange="importProjectBackup(this.files?.[0]);this.value=&quot;&quot;"><label class="visually-hidden" for="global-language">Interface language</label><div class="language-picker"><button type="button" id="language-picker-trigger" class="language-picker-trigger" onclick="toggleLanguagePicker()" aria-expanded="false"><span class="language-picker-globe">◎</span><span id="language-picker-label">日本語</span><span class="language-picker-chevron">⌄</span></button><div id="language-picker-menu" class="language-picker-menu" hidden><button type="button" data-language="ja" onclick="chooseLanguage('ja')">日本語 <span>Japanese</span></button><button type="button" data-language="en" onclick="chooseLanguage('en')">English <span>英語</span></button><button type="button" data-language="zh" onclick="chooseLanguage('zh')">中文 <span>Chinese</span></button><button type="button" data-language="es" onclick="chooseLanguage('es')">Español <span>Spanish</span></button><button type="button" data-language="fr" onclick="chooseLanguage('fr')">Français <span>French</span></button></div></div><select id="global-language" class="visually-hidden" aria-hidden="true" tabindex="-1"><option value="ja">日本語</option><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option><option value="fr">Français</option></select>
+  <span class="project-label"><span class="status-dot"></span>Workspace / main.ps</span><span class="header-spacer"></span><div class="project-backup-wrap"><button type="button" class="header-action project-backup-trigger" id="project-backup-trigger" onclick="toggleProjectBackupMenu()" aria-expanded="false">Backup <span aria-hidden="true">⌄</span></button><div class="project-backup-menu" id="project-backup-menu" hidden><button type="button" onclick="closeProjectBackupMenu();exportProjectBackup()">プロジェクトを書き出す (.pstudio)</button><button type="button" onclick="closeProjectBackupMenu();document.getElementById(&quot;pstudio-import-input&quot;).click()">バックアップを読み込む</button></div></div><input id="pstudio-import-input" class="asset-hidden" type="file" accept=".pstudio,application/json" onchange="importProjectBackup(this.files?.[0]);this.value=&quot;&quot;"><label class="visually-hidden" for="global-language">Interface language</label><div class="language-picker"><button type="button" id="language-picker-trigger" class="language-picker-trigger" onclick="toggleLanguagePicker()" aria-expanded="false"><span class="language-picker-globe">◎</span><span id="language-picker-label">日本語</span><span class="language-picker-chevron">⌄</span></button><div id="language-picker-menu" class="language-picker-menu" hidden><button type="button" data-language="ja" >日本語 <span>Japanese</span></button><button type="button" data-language="en" >English <span>英語</span></button><button type="button" data-language="zh" >中文 <span>Chinese</span></button><button type="button" data-language="es" >Español <span>Spanish</span></button><button type="button" data-language="fr" >Français <span>French</span></button></div></div><select id="global-language" class="visually-hidden" aria-hidden="true" tabindex="-1"><option value="ja">日本語</option><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option><option value="fr">Français</option></select>
   <button class="header-action" onclick="saveCode(true)" title="Save locally">Save</button>
   <button class="header-action primary" id="header-run" onclick="runCode()">▶ Run</button>
   <button class="mobile-menu" onclick="toggleMobileNav()" aria-expanded="false" aria-controls="mobile-nav">Menu</button>
@@ -327,13 +329,7 @@ hello()</pre>
                 </h2>
 
 
-                <p id="about-intro">
-                    psは、シンプルで書きやすい文法を目指して作られた
-                    プログラミング言語です。
-
-                    psで書かれたコードはC++へ変換され、
-                    コンパイル・実行されます。
-                </p>
+                <p id="about-intro" class="about-localized">psは、できるだけシンプルで読みやすいコードを書けるように開発しているプログラミング言語です。Pythonのような書きやすさを大切にしながら、psのコードをC++へ変換して実行します。</p>
 
             </div>
 
@@ -374,11 +370,11 @@ hello()</pre>
 
             <div class="about-box">
                 <h2>目的</h2>
-                <p id="about-goal"></p>
+                <p id="about-goal" class="about-localized">複雑な記号をできるだけ減らし、コードの意味や処理の流れが自然に分かること。書きやすさだけでなく、実行したときの性能も大切にしています。</p>
             </div>
             <div class="about-box">
                 <h2>開発について</h2>
-                <p id="about-vision"></p>
+                <p id="about-vision" class="about-localized">psとPStudioは、少しずつ機能を追加しながら開発しています。新しい機能だけでなく、今ある機能も見直し、使いやすさや安定性を改善していきます。</p>
             </div>
 
         </section>
@@ -1214,6 +1210,359 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             }
         };
 
+        const uiFallbackTranslations = {
+        "ja": {
+                "PS DEVELOPMENT ENVIRONMENT": "PS 開発環境",
+                "Editor": "エディター",
+                "Examples": "サンプル",
+                "Language Guide": "言語ガイド",
+                "About ps": "psについて",
+                "Workspace / main.ps": "ワークスペース / main.ps",
+                "Backup": "バックアップ",
+                "Save": "保存",
+                "Run": "実行",
+                "Menu": "メニュー",
+                "PROJECT": "プロジェクト",
+                "GAME PROJECT": "ゲームプロジェクト",
+                "WORKSPACE": "ワークスペース",
+                "＋ Script": "＋ スクリプト",
+                "＋ Scene": "＋ シーン",
+                "＋ Asset": "＋ アセット",
+                "ASSETS": "アセット",
+                "EDITOR": "エディター",
+                "GAME / SCENE": "ゲーム / シーン",
+                "Saved locally": "ローカルに保存済み",
+                "Clear": "クリア",
+                "Compile": "コンパイル",
+                "SCENE VIEW": "シーンビュー",
+                "VIEW": "表示",
+                "AUTO": "自動",
+                "Object": "オブジェクト",
+                "Refresh": "更新",
+                "Play": "再生",
+                "Stop": "停止",
+                "INSPECTOR": "インスペクター",
+                "SETTINGS": "設定",
+                "GAME OBJECT": "ゲームオブジェクト",
+                "Name": "名前",
+                "3D Model": "3Dモデル",
+                "Model Scale": "モデル倍率",
+                "Roughness": "粗さ",
+                "Metalness": "金属度",
+                "Material color": "マテリアル色",
+                "Apply GLB Material": "GLBマテリアルを適用",
+                "Position X": "位置 X",
+                "Position Y": "位置 Y",
+                "Position Z": "位置 Z",
+                "Rotation X (°)": "回転 X (°)",
+                "Rotation Y (°)": "回転 Y (°)",
+                "Rotation Z (°)": "回転 Z (°)",
+                "Width": "幅",
+                "Height": "高さ",
+                "Sprite asset": "スプライトアセット",
+                "Attached ps script": "関連付けるpsスクリプト",
+                "Enable Collider (GLB mesh)": "コライダーを有効化（GLBメッシュ）",
+                "Bloom": "ブルーム",
+                "Bloom strength": "ブルーム強度",
+                "Enable Particle Emitter": "パーティクル発生器を有効化",
+                "Particles / second": "毎秒のパーティクル数",
+                "Particle color": "パーティクル色",
+                "Particle speed": "パーティクル速度",
+                "Lifetime (seconds)": "寿命（秒）",
+                "Max particles": "最大パーティクル数",
+                "Delete Object": "オブジェクトを削除",
+                "Font size": "フォントサイズ",
+                "Tab size": "タブ幅",
+                "Soft wrap": "右端で折り返す",
+                "Show line numbers": "行番号を表示",
+                "EXECUTION": "実行設定",
+                "Input mode": "入力モード",
+                "No stdin": "標準入力なし",
+                "Use stdin": "標準入力を使用",
+                "LANGUAGE": "言語",
+                "GAME SCRIPT API": "ゲームスクリプトAPI",
+                "OUTPUT": "出力",
+                "STDIN": "標準入力",
+                "Copy": "コピー",
+                "Movement joystick": "移動スティック",
+                "JUMP": "ジャンプ",
+                "Development": "開発について",
+                "Goal": "目的",
+                "Features": "特徴",
+                "What is ps?": "psとは",
+                "Conditional Branching": "条件分岐",
+                "Functions": "関数",
+                "Comments": "コメント",
+                "Supported": "対応",
+                "Not currently supported": "現在未対応"
+        },
+        "en": {
+                "PS DEVELOPMENT ENVIRONMENT": "PS DEVELOPMENT ENVIRONMENT",
+                "Editor": "Editor",
+                "Examples": "Examples",
+                "Language Guide": "Language Guide",
+                "About ps": "About ps",
+                "PROJECT": "PROJECT",
+                "WORKSPACE": "WORKSPACE",
+                "ASSETS": "ASSETS",
+                "EDITOR": "EDITOR",
+                "GAME / SCENE": "GAME / SCENE",
+                "Saved locally": "Saved locally",
+                "Clear": "Clear",
+                "Compile": "Compile",
+                "SCENE VIEW": "SCENE VIEW",
+                "VIEW": "VIEW",
+                "AUTO": "AUTO",
+                "Object": "Object",
+                "Refresh": "Refresh",
+                "Play": "Play",
+                "Stop": "Stop",
+                "INSPECTOR": "INSPECTOR",
+                "SETTINGS": "SETTINGS",
+                "GAME OBJECT": "GAME OBJECT",
+                "OUTPUT": "OUTPUT",
+                "STDIN": "STDIN",
+                "Development": "Development",
+                "Goal": "Goal",
+                "Features": "Features",
+                "What is ps?": "What is ps?"
+        },
+        "zh": {
+                "PS DEVELOPMENT ENVIRONMENT": "PS 开发环境",
+                "Editor": "编辑器",
+                "Examples": "示例",
+                "Language Guide": "语言指南",
+                "About ps": "关于 ps",
+                "Workspace / main.ps": "工作区 / main.ps",
+                "Backup": "备份",
+                "Save": "保存",
+                "Run": "运行",
+                "Menu": "菜单",
+                "PROJECT": "项目",
+                "GAME PROJECT": "游戏项目",
+                "WORKSPACE": "工作区",
+                "＋ Script": "＋ 脚本",
+                "＋ Scene": "＋ 场景",
+                "＋ Asset": "＋ 资源",
+                "ASSETS": "资源",
+                "EDITOR": "编辑器",
+                "GAME / SCENE": "游戏 / 场景",
+                "Saved locally": "已保存到本地",
+                "Clear": "清空",
+                "Compile": "编译",
+                "SCENE VIEW": "场景视图",
+                "VIEW": "视图",
+                "AUTO": "自动",
+                "Object": "对象",
+                "Refresh": "刷新",
+                "Play": "运行",
+                "Stop": "停止",
+                "INSPECTOR": "检查器",
+                "SETTINGS": "设置",
+                "GAME OBJECT": "游戏对象",
+                "Name": "名称",
+                "3D Model": "3D 模型",
+                "Model Scale": "模型缩放",
+                "Roughness": "粗糙度",
+                "Metalness": "金属度",
+                "Material color": "材质颜色",
+                "Apply GLB Material": "应用 GLB 材质",
+                "Position X": "位置 X",
+                "Position Y": "位置 Y",
+                "Position Z": "位置 Z",
+                "Rotation X (°)": "旋转 X (°)",
+                "Rotation Y (°)": "旋转 Y (°)",
+                "Rotation Z (°)": "旋转 Z (°)",
+                "Width": "宽度",
+                "Height": "高度",
+                "Sprite asset": "精灵资源",
+                "Attached ps script": "关联的 ps 脚本",
+                "Enable Collider (GLB mesh)": "启用碰撞体（GLB 网格）",
+                "Bloom": "泛光",
+                "Bloom strength": "泛光强度",
+                "Enable Particle Emitter": "启用粒子发射器",
+                "Particles / second": "每秒粒子数",
+                "Particle color": "粒子颜色",
+                "Particle speed": "粒子速度",
+                "Lifetime (seconds)": "生命周期（秒）",
+                "Max particles": "最大粒子数",
+                "Delete Object": "删除对象",
+                "Font size": "字体大小",
+                "Tab size": "缩进宽度",
+                "Soft wrap": "自动换行",
+                "Show line numbers": "显示行号",
+                "EXECUTION": "执行设置",
+                "Input mode": "输入模式",
+                "No stdin": "无标准输入",
+                "Use stdin": "使用标准输入",
+                "LANGUAGE": "语言",
+                "GAME SCRIPT API": "游戏脚本 API",
+                "OUTPUT": "输出",
+                "STDIN": "标准输入",
+                "Copy": "复制",
+                "Development": "开发说明",
+                "Goal": "目标",
+                "Features": "特点",
+                "What is ps?": "什么是 ps？"
+        },
+        "es": {
+                "PS DEVELOPMENT ENVIRONMENT": "ENTORNO DE DESARROLLO PS",
+                "Editor": "Editor",
+                "Examples": "Ejemplos",
+                "Language Guide": "Guía del lenguaje",
+                "About ps": "Acerca de ps",
+                "Workspace / main.ps": "Espacio de trabajo / main.ps",
+                "Backup": "Copia de seguridad",
+                "Save": "Guardar",
+                "Run": "Ejecutar",
+                "Menu": "Menú",
+                "PROJECT": "PROYECTO",
+                "GAME PROJECT": "PROYECTO DE JUEGO",
+                "WORKSPACE": "ESPACIO DE TRABAJO",
+                "＋ Script": "＋ Script",
+                "＋ Scene": "＋ Escena",
+                "＋ Asset": "＋ Recurso",
+                "ASSETS": "RECURSOS",
+                "EDITOR": "EDITOR",
+                "GAME / SCENE": "JUEGO / ESCENA",
+                "Saved locally": "Guardado localmente",
+                "Clear": "Limpiar",
+                "Compile": "Compilar",
+                "SCENE VIEW": "VISTA DE ESCENA",
+                "VIEW": "VISTA",
+                "AUTO": "AUTO",
+                "Object": "Objeto",
+                "Refresh": "Actualizar",
+                "Play": "Iniciar",
+                "Stop": "Detener",
+                "INSPECTOR": "INSPECTOR",
+                "SETTINGS": "AJUSTES",
+                "GAME OBJECT": "OBJETO DEL JUEGO",
+                "Name": "Nombre",
+                "3D Model": "Modelo 3D",
+                "Model Scale": "Escala del modelo",
+                "Roughness": "Rugosidad",
+                "Metalness": "Metalidad",
+                "Material color": "Color del material",
+                "Apply GLB Material": "Aplicar material GLB",
+                "Position X": "Posición X",
+                "Position Y": "Posición Y",
+                "Position Z": "Posición Z",
+                "Rotation X (°)": "Rotación X (°)",
+                "Rotation Y (°)": "Rotación Y (°)",
+                "Rotation Z (°)": "Rotación Z (°)",
+                "Width": "Ancho",
+                "Height": "Alto",
+                "Sprite asset": "Recurso de sprite",
+                "Attached ps script": "Script ps asociado",
+                "Enable Collider (GLB mesh)": "Activar colisionador (malla GLB)",
+                "Bloom": "Resplandor",
+                "Bloom strength": "Intensidad del resplandor",
+                "Enable Particle Emitter": "Activar emisor de partículas",
+                "Particles / second": "Partículas por segundo",
+                "Particle color": "Color de partículas",
+                "Particle speed": "Velocidad de partículas",
+                "Lifetime (seconds)": "Duración (segundos)",
+                "Max particles": "Máximo de partículas",
+                "Delete Object": "Eliminar objeto",
+                "Font size": "Tamaño de fuente",
+                "Tab size": "Tamaño de tabulación",
+                "Soft wrap": "Ajuste de línea",
+                "Show line numbers": "Mostrar números de línea",
+                "EXECUTION": "EJECUCIÓN",
+                "Input mode": "Modo de entrada",
+                "No stdin": "Sin entrada estándar",
+                "Use stdin": "Usar entrada estándar",
+                "LANGUAGE": "IDIOMA",
+                "GAME SCRIPT API": "API DE SCRIPT DEL JUEGO",
+                "OUTPUT": "SALIDA",
+                "STDIN": "ENTRADA ESTÁNDAR",
+                "Copy": "Copiar",
+                "Development": "Desarrollo",
+                "Goal": "Objetivo",
+                "Features": "Características",
+                "What is ps?": "¿Qué es ps?"
+        },
+        "fr": {
+                "PS DEVELOPMENT ENVIRONMENT": "ENVIRONNEMENT DE DÉVELOPPEMENT PS",
+                "Editor": "Éditeur",
+                "Examples": "Exemples",
+                "Language Guide": "Guide du langage",
+                "About ps": "À propos de ps",
+                "Workspace / main.ps": "Espace de travail / main.ps",
+                "Backup": "Sauvegarde",
+                "Save": "Enregistrer",
+                "Run": "Exécuter",
+                "Menu": "Menu",
+                "PROJECT": "PROJET",
+                "GAME PROJECT": "PROJET DE JEU",
+                "WORKSPACE": "ESPACE DE TRAVAIL",
+                "＋ Script": "＋ Script",
+                "＋ Scene": "＋ Scène",
+                "＋ Asset": "＋ Ressource",
+                "ASSETS": "RESSOURCES",
+                "EDITOR": "ÉDITEUR",
+                "GAME / SCENE": "JEU / SCÈNE",
+                "Saved locally": "Enregistré localement",
+                "Clear": "Effacer",
+                "Compile": "Compiler",
+                "SCENE VIEW": "VUE DE LA SCÈNE",
+                "VIEW": "VUE",
+                "AUTO": "AUTO",
+                "Object": "Objet",
+                "Refresh": "Actualiser",
+                "Play": "Jouer",
+                "Stop": "Arrêter",
+                "INSPECTOR": "INSPECTEUR",
+                "SETTINGS": "PARAMÈTRES",
+                "GAME OBJECT": "OBJET DU JEU",
+                "Name": "Nom",
+                "3D Model": "Modèle 3D",
+                "Model Scale": "Échelle du modèle",
+                "Roughness": "Rugosité",
+                "Metalness": "Métallicité",
+                "Material color": "Couleur du matériau",
+                "Apply GLB Material": "Appliquer le matériau GLB",
+                "Position X": "Position X",
+                "Position Y": "Position Y",
+                "Position Z": "Position Z",
+                "Rotation X (°)": "Rotation X (°)",
+                "Rotation Y (°)": "Rotation Y (°)",
+                "Rotation Z (°)": "Rotation Z (°)",
+                "Width": "Largeur",
+                "Height": "Hauteur",
+                "Sprite asset": "Ressource sprite",
+                "Attached ps script": "Script ps associé",
+                "Enable Collider (GLB mesh)": "Activer le collider (maillage GLB)",
+                "Bloom": "Bloom",
+                "Bloom strength": "Intensité du bloom",
+                "Enable Particle Emitter": "Activer l’émetteur de particules",
+                "Particles / second": "Particules par seconde",
+                "Particle color": "Couleur des particules",
+                "Particle speed": "Vitesse des particules",
+                "Lifetime (seconds)": "Durée de vie (secondes)",
+                "Max particles": "Nombre maximal de particules",
+                "Delete Object": "Supprimer l’objet",
+                "Font size": "Taille de police",
+                "Tab size": "Taille de tabulation",
+                "Soft wrap": "Retour automatique à la ligne",
+                "Show line numbers": "Afficher les numéros de ligne",
+                "EXECUTION": "EXÉCUTION",
+                "Input mode": "Mode d’entrée",
+                "No stdin": "Aucune entrée standard",
+                "Use stdin": "Utiliser l’entrée standard",
+                "LANGUAGE": "LANGUE",
+                "GAME SCRIPT API": "API DE SCRIPT DU JEU",
+                "OUTPUT": "SORTIE",
+                "STDIN": "ENTRÉE STANDARD",
+                "Copy": "Copier",
+                "Development": "Développement",
+                "Goal": "Objectif",
+                "Features": "Fonctionnalités",
+                "What is ps?": "Qu’est-ce que ps ?"
+        }
+};
+
         const translations = {
             en: {
                 "▶ 実行": "▶ Run",
@@ -1430,32 +1779,32 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         };
 
         const aboutTranslations = {
-            ja: {
-                intro: "psは、読みやすく、書きやすいコードを目指して開発しているプログラミング言語です。\\n\\nPythonのように自然に読める書き方と、C++によるコンパイルを組み合わせ、書きやすさと実行性能の両立を目指しています。",
-                goal: "複雑な記号や決まりごとに意識を取られず、作りたいものの仕組みに集中できること。\\n\\npsではインデントを中心にコードの構造を表し、できるだけ直感的に読める書き方を大切にしています。",
-                vision: "最初から何もかも完成している必要はありません。小さな機能を一つずつ作り、動かし、確かめ、積み重ねていく。その先に、もっと大きなものを作れる環境が生まれると考えています。\\n\\npsもPStudioも、まだ開発の途中です。だからこそ、これから変わり、成長していける余地があります。特定のジャンルだけに限らず、2Dから3D、アクションからオープンワールドまで、作りたいゲームを形にできる環境を目指して開発を続けています。"
-            },
-            en: {
-                intro: "ps is a programming language in development, built around code that is easy to read and write.\\n\\nIt combines a natural, Python-like writing style with compilation to C++, aiming to balance ease of use and execution performance.",
-                goal: "The goal is to let programmers focus on what they want to build instead of getting caught up in complicated symbols and rules.\\n\\nps uses indentation to express code structure and values a style that feels clear and intuitive.",
-                vision: "A project does not have to be complete from the very beginning. Build one small feature, run it, check it, and keep adding to it. That steady work is what makes larger ideas possible.\\n\\nps and PStudio are still being developed. That means there is room to change, improve, and grow. The aim is not to limit creation to one genre, but to provide an environment for building many kinds of games, from 2D to 3D, from action games to open worlds."
-            },
-            zh: {
-                intro: "ps 是一门仍在开发中的编程语言，目标是让代码更容易阅读和编写。\\n\\n它结合了类似 Python 的自然书写方式与 C++ 编译，追求易用性和运行性能之间的平衡。",
-                goal: "编程时不必把注意力浪费在复杂符号和繁琐规则上，而是专注于自己想创造的内容。\\n\\nps 主要通过缩进表达代码结构，重视直观、易读的书写方式。",
-                vision: "项目不必从一开始就全部完成。先实现一个小功能，运行它、确认它，再一点点积累。正是这样的持续开发，让更大的想法逐渐成为可能。\\n\\nps 和 PStudio 仍在开发之中，也因此拥有继续改变和成长的空间。我们的目标不是局限于某一种游戏类型，而是打造能够创作各种游戏的环境，从 2D 到 3D，从动作游戏到开放世界。"
-            },
-            es: {
-                intro: "ps es un lenguaje de programación en desarrollo, creado para que el código sea fácil de leer y escribir.\\n\\nCombina una escritura natural, similar a Python, con la compilación a C++, buscando equilibrar facilidad de uso y rendimiento.",
-                goal: "La idea es que quien programa pueda concentrarse en lo que quiere crear, sin distraerse con símbolos y reglas complicadas.\\n\\nps utiliza la indentación para expresar la estructura del código y prioriza una forma de escribir clara e intuitiva.",
-                vision: "Un proyecto no tiene que estar completo desde el primer día. Se construye una pequeña función, se ejecuta, se comprueba y se sigue avanzando paso a paso. Así es como las ideas grandes llegan a hacerse realidad.\\n\\nps y PStudio siguen en desarrollo. Por eso todavía tienen espacio para cambiar, mejorar y crecer. El objetivo no es limitarse a un solo género, sino ofrecer un entorno para crear muchos tipos de juegos, desde 2D hasta 3D, desde acción hasta mundos abiertos."
-            },
-            fr: {
-                intro: "ps est un langage de programmation en cours de développement, conçu pour rendre le code facile à lire et à écrire.\\n\\nIl associe une écriture naturelle, proche de Python, à la compilation en C++, afin de concilier simplicité d'utilisation et performances.",
-                goal: "L'objectif est de permettre aux développeurs de se concentrer sur ce qu'ils veulent créer, sans être freinés par des symboles et des règles complexes.\\n\\nps utilise l'indentation pour structurer le code et privilégie une écriture claire et intuitive.",
-                vision: "Un projet n'a pas besoin d'être entièrement terminé dès le départ. On crée une petite fonctionnalité, on la teste, on la vérifie, puis on avance étape par étape. C'est ainsi que les grandes idées prennent forme.\\n\\nps et PStudio sont encore en développement. Ils ont donc toute la place nécessaire pour évoluer, s'améliorer et grandir. L'objectif n'est pas de se limiter à un seul genre, mais de proposer un environnement permettant de créer de nombreux jeux, de la 2D à la 3D, de l'action aux mondes ouverts."
-            }
-        };
+        "ja": {
+                "intro": "psは、できるだけシンプルで読みやすいコードを書けるように開発しているプログラミング言語です。Pythonのような書きやすさを大切にしながら、psのコードをC++へ変換して実行します。",
+                "goal": "複雑な記号をできるだけ減らし、コードの意味や処理の流れが自然に分かること。書きやすさだけでなく、実行したときの性能も大切にしています。",
+                "vision": "psとPStudioは、少しずつ機能を追加しながら開発しています。新しい機能だけでなく、今ある機能も見直し、使いやすさや安定性を改善していきます。"
+        },
+        "en": {
+                "intro": "ps is a programming language being developed to make code simple to write and easy to read. It values the approachable style of Python and translates ps code into C++ for execution.",
+                "goal": "The aim is to reduce unnecessary symbols and make the meaning and flow of code easy to follow. Ease of writing matters, as does performance when a program runs.",
+                "vision": "ps and PStudio are being developed step by step. Along with adding features, existing parts are reviewed and improved to make them easier to use and more reliable."
+        },
+        "zh": {
+                "intro": "ps 是一门正在开发中的编程语言，目标是让代码更简洁、更容易阅读。它重视类似 Python 的易写风格，并将 ps 代码转换为 C++ 后执行。",
+                "goal": "尽可能减少不必要的符号，让代码含义和处理流程更容易理解。除了易于编写，也重视程序运行时的性能。",
+                "vision": "ps 和 PStudio 正在逐步开发。除了增加新功能，也会持续检查和改进现有功能，让它们更容易使用、更加稳定。"
+        },
+        "es": {
+                "intro": "ps es un lenguaje de programación en desarrollo para que el código sea sencillo de escribir y fácil de leer. Da importancia a la claridad de Python y convierte el código ps a C++ para ejecutarlo.",
+                "goal": "La idea es reducir los símbolos innecesarios y hacer que el significado y el flujo del código sean fáciles de seguir. Importan tanto la facilidad de escritura como el rendimiento al ejecutar los programas.",
+                "vision": "ps y PStudio se desarrollan paso a paso. Además de añadir funciones, se revisan y mejoran las que ya existen para que sean más fáciles de usar y más estables."
+        },
+        "fr": {
+                "intro": "ps est un langage de programmation en cours de développement, conçu pour écrire du code simple et facile à lire. Il privilégie une écriture accessible, proche de Python, et convertit le code ps en C++ pour l’exécuter.",
+                "goal": "L’objectif est de réduire les symboles inutiles et de rendre le sens ainsi que le déroulement du code faciles à comprendre. La simplicité d’écriture compte, tout comme les performances à l’exécution.",
+                "vision": "ps et PStudio sont développés progressivement. En plus d’ajouter des fonctionnalités, les éléments existants sont revus et améliorés afin d’être plus simples à utiliser et plus fiables."
+        }
+};
 
         const runtimeMessages = {
             ja: {
@@ -1516,6 +1865,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         };
 
         const originalTextNodes = new WeakMap();
+        const originalAttributes = new WeakMap();
 
         function getTranslatableTextNodes(root = document.body) {
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1523,7 +1873,9 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                     const parent = node.parentElement;
                     if (!parent) return NodeFilter.FILTER_REJECT;
                     if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) ||
-                        parent.closest(".code-editor, #output, #stdin-panel, .file-label, .asset-name, .file-icon, .game-stage, .game-status, .language-options, .language-picker-menu, .project-backup-menu")) return NodeFilter.FILTER_REJECT;
+                        parent.closest(".about-localized, .code-editor, #output, #stdin-panel, .file-label, .asset-name, .file-icon, .game-stage, .game-status, .language-options, .language-picker-menu, .project-backup-menu")) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
                     return NodeFilter.FILTER_ACCEPT;
                 }
             });
@@ -1532,31 +1884,43 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             return nodes;
         }
 
+        function getTextTranslation(original, language) {
+            const dictionaries = [
+                translations[language] || {},
+                uiTranslations[language] || {},
+                uiFallbackTranslations[language] || {}
+            ];
+            for (const dictionary of dictionaries) {
+                if (Object.prototype.hasOwnProperty.call(dictionary, original)) return dictionary[original];
+            }
+            return undefined;
+        }
+
         function translateTextNode(node, language = currentLanguage) {
-            if (!node || !node.parentElement) return;
+            if (!node || !node.parentElement || node.parentElement.closest(".about-localized")) return;
             if (!originalTextNodes.has(node)) originalTextNodes.set(node, node.nodeValue);
             const original = originalTextNodes.get(node);
             const trimmed = original.trim();
             if (!trimmed) return;
-            const prefix = original.match(/^\\s*/)[0];
-            const suffix = original.match(/\\s*$/)[0];
-            const translated = (translations[language] || {})[trimmed] ?? (uiTranslations[language] || {})[trimmed];
-            if (translated !== undefined) node.nodeValue = prefix + translated + suffix;
-            else if (language === "ja") node.nodeValue = original;
+            const prefix = original.match(/^\s*/)[0];
+            const suffix = original.match(/\s*$/)[0];
+            const translated = getTextTranslation(trimmed, language);
+            node.nodeValue = translated === undefined ? original : prefix + translated + suffix;
         }
 
-        const originalAttributes = new WeakMap();
         function translateElementAttributes(element, language = currentLanguage) {
             if (!element || element.nodeType !== 1) return;
             let originals = originalAttributes.get(element);
-            if (!originals) { originals = {}; originalAttributes.set(element, originals); }
+            if (!originals) {
+                originals = {};
+                originalAttributes.set(element, originals);
+            }
             for (const attribute of ["placeholder", "title", "aria-label"]) {
                 if (!element.hasAttribute(attribute)) continue;
                 if (!(attribute in originals)) originals[attribute] = element.getAttribute(attribute);
                 const original = originals[attribute];
-                const translated = (translations[language] || {})[original] ?? (uiTranslations[language] || {})[original];
-                if (translated !== undefined) element.setAttribute(attribute, translated);
-                else if (language === "ja") element.setAttribute(attribute, original);
+                const translated = getTextTranslation(original, language);
+                element.setAttribute(attribute, translated === undefined ? original : translated);
             }
         }
 
@@ -1566,49 +1930,50 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             getTranslatableTextNodes(root).forEach(node => translateTextNode(node, language));
             if (root.querySelectorAll) root.querySelectorAll("*").forEach(element => translateElementAttributes(element, language));
         }
-
         function toggleLanguageMenu() {
             document.getElementById("language-options").classList.toggle("open");
             document.getElementById("language-toggle").classList.toggle("open");
         }
 
         function setLanguage(language) {
-            if (!translations[language] && language !== "ja") return;
-
-            const dictionary = translations[language] || {};
-
-            translateSubtree(document.body, language);
-
-            const aboutIntro = document.getElementById("about-intro");
-            const aboutGoal = document.getElementById("about-goal");
-            if (aboutIntro) aboutIntro.textContent = aboutTranslations[language].intro;
-            if (aboutGoal) aboutGoal.textContent = aboutTranslations[language].goal;
-            const aboutVision = document.getElementById("about-vision");
-            if (aboutVision) aboutVision.textContent = aboutTranslations[language].vision;
-
-            ["ja", "en", "zh", "es", "fr"].forEach(code => {
-                document.getElementById("lang-" + code).classList.toggle("active", language === code);
-            });
+            const supported = ["ja", "en", "zh", "es", "fr"];
+            if (!supported.includes(language)) return false;
 
             currentLanguage = language;
+            translateSubtree(document.body, language);
+
+            const about = aboutTranslations[language];
+            for (const [id, key] of [["about-intro", "intro"], ["about-goal", "goal"], ["about-vision", "vision"]]) {
+                const element = document.getElementById(id);
+                if (element) element.textContent = about[key];
+            }
+
+            for (const code of supported) {
+                const oldOption = document.getElementById("lang-" + code);
+                if (oldOption) oldOption.classList.toggle("active", language === code);
+            }
+            const label = document.getElementById("language-picker-label");
+            if (label) label.textContent = languageNames[language];
+            document.querySelectorAll("#language-picker-menu [data-language]").forEach(option => {
+                option.classList.toggle("active", option.dataset.language === language);
+                option.setAttribute("aria-pressed", String(option.dataset.language === language));
+            });
+
             const globalLanguage = document.getElementById("global-language");
             if (globalLanguage) globalLanguage.value = language;
-            const languageLabel=document.getElementById("language-picker-label");
-            if(languageLabel)languageLabel.textContent=({ja:"日本語",en:"English",zh:"中文",es:"Español",fr:"Français"})[language]||"日本語";
-            document.querySelectorAll("#language-picker-menu [data-language]").forEach(button=>button.classList.toggle("active",button.dataset.language===language));
             document.documentElement.lang = language === "zh" ? "zh-Hans" : language;
-            document.title = language === "ja"
-                ? "ps - プログラミング言語"
-                : language === "en"
-                ? "ps - Programming Language"
-                : language === "zh"
-                ? "ps - 编程语言"
-                : language === "es"
-                ? "ps - Lenguaje de programación"
-                : "ps - Langage de programmation";
-
+            const titles = {
+                ja: "PStudio — ps 開発環境",
+                en: "PStudio — ps Development Environment",
+                zh: "PStudio — ps 开发环境",
+                es: "PStudio — Entorno de desarrollo ps",
+                fr: "PStudio — Environnement de développement ps"
+            };
+            document.title = titles[language];
             try { localStorage.setItem("pstudio-language", language); } catch (_) {}
+            closeLanguagePicker();
             closeMenu();
+            return true;
         }
 
         function getRuntimeMessages() {
@@ -1618,14 +1983,30 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         window.addEventListener("DOMContentLoaded", () => {
             let savedLanguage = null;
             try { savedLanguage = localStorage.getItem("pstudio-language"); } catch (_) {}
-            if (["ja", "en", "zh", "es", "fr"].includes(savedLanguage)) setLanguage(savedLanguage);
-            const languageObserver = new MutationObserver(records => {
-                for (const record of records) for (const node of record.addedNodes) {
-                    if (node.nodeType === Node.TEXT_NODE) translateTextNode(node, currentLanguage);
-                    else if (node.nodeType === Node.ELEMENT_NODE) translateSubtree(node, currentLanguage);
+            setLanguage(["ja", "en", "zh", "es", "fr"].includes(savedLanguage) ? savedLanguage : "ja");
+
+            const menu = document.getElementById("language-picker-menu");
+            if (menu) {
+                menu.addEventListener("click", event => {
+                    const option = event.target.closest("[data-language]");
+                    if (!option) return;
+                    event.preventDefault();
+                    setLanguage(option.dataset.language);
+                });
+            }
+
+            const observer = new MutationObserver(records => {
+                for (const record of records) {
+                    for (const node of record.addedNodes) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            if (!node.parentElement?.closest(".about-localized")) translateTextNode(node, currentLanguage);
+                        } else if (node.nodeType === Node.ELEMENT_NODE && !node.matches(".about-localized") && !node.closest(".about-localized")) {
+                            translateSubtree(node, currentLanguage);
+                        }
+                    }
                 }
             });
-            languageObserver.observe(document.body, { childList: true, subtree: true });
+            observer.observe(document.body, { childList: true, subtree: true });
         });
 
 
