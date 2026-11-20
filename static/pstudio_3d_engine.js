@@ -1740,6 +1740,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           mesh.castShadow=d.type!=='plane'&&d.type!=='water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
+          if(d.type==='water'){
+            mesh.userData.pstudioWaterSurface=true;
+            geometry.computeBoundingBox?.();
+            const bounds=geometry.boundingBox,waterUniforms=material.userData?.pstudioWaterHQ;
+            if(bounds&&waterUniforms?.bounds)waterUniforms.bounds.value.set(bounds.min.x,bounds.min.z,Math.max(.001,bounds.max.x-bounds.min.x),Math.max(.001,bounds.max.z-bounds.min.z));
+          }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
