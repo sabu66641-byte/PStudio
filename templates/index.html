@@ -2195,6 +2195,12 @@ try {
   catch (error) { console.warn('[PStudio] OutputPass unavailable:', error); }
   try { postFX.GTAOPass = (await import('three/addons/postprocessing/GTAOPass.js')).GTAOPass; }
   catch (error) { console.warn('[PStudio] GTAO unavailable; SSAO fallback will be used.', error); }
+  try { postFX.TAARenderPass = (await import('three/addons/postprocessing/TAARenderPass.js')).TAARenderPass; }
+  catch (error) { console.warn('[PStudio] Temporal AA unavailable; spatial AA fallback will be used.', error); }
+  try { postFX.SMAAPass = (await import('three/addons/postprocessing/SMAAPass.js')).SMAAPass; }
+  catch (error) { console.warn('[PStudio] SMAA unavailable.', error); }
+  try { postFX.ShaderPass = (await import('three/addons/postprocessing/ShaderPass.js')).ShaderPass; }
+  catch (error) { console.warn('[PStudio] Custom post-processing passes unavailable.', error); }
   try { postFX.SSRPass = (await import('three/addons/postprocessing/SSRPass.js')).SSRPass; }
   catch (error) { console.warn('[PStudio] Screen-space reflections unavailable.', error); }
   try { postFX.LightProbeGenerator = (await import('three/addons/lights/LightProbeGenerator.js')).LightProbeGenerator; }
@@ -2239,6 +2245,7 @@ try {
 <script src="/static/pstudio_physics.js"></script>
 <script src="/static/pstudio_gameplay.js"></script>
 <script src="/static/pstudio_game_ui.js"></script>
+<script src="/static/pstudio_environment_fx.js"></script>
 <script src="/static/pstudio_3d_engine.js"></script>
 <script src="/static/pstudio_engine.js"></script>
 <script src="/static/pstudio_modules.js"></script>
