@@ -52,7 +52,7 @@
         'transformed.y+=uPStudioWaterAmplitude*(.53*w1+.29*w2+.12*w3);'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <worldpos_vertex>',[
-        'vPStudioWaterWorld=worldPosition.xyz;','vPStudioWaterLocal=position;','vPStudioWaterUV=uv;'
+        'vPStudioWaterWorld=(modelMatrix*vec4(transformed,1.0)).xyz;','vPStudioWaterLocal=position;','vPStudioWaterUV=uv;'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform vec4 uPStudioWaterBounds;',
@@ -125,7 +125,7 @@
       if(old)old.call(this,shader,renderer);
       shader.uniforms.uPStudioCausticTime=u.time;shader.uniforms.uPStudioCausticStrength=u.strength;
       shader.vertexShader=addAfter(shader.vertexShader,'#include <common>','varying vec3 vPStudioCausticWorld;');
-      shader.vertexShader=addAfter(shader.vertexShader,'#include <worldpos_vertex>','vPStudioCausticWorld=worldPosition.xyz;');
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <worldpos_vertex>','vPStudioCausticWorld=(modelMatrix*vec4(transformed,1.0)).xyz;');
       shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>','varying vec3 vPStudioCausticWorld;uniform float uPStudioCausticTime;uniform float uPStudioCausticStrength;');
       shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>',[
         'vec2 cuv=vPStudioCausticWorld.xz*.29;',
@@ -140,34 +140,57 @@
   }
 
   function configureParallax(material) {
-    if(!material || material.userData.pstudioParallaxHQ || !material.normalMap)return material;
+    if(!material || material.userData.pstudioParallaxHQ || !material.normalMap || !material.map)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
     const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
-    const scale={value:Math.max(0,Math.min(.045,Number(material.userData.pstudioParallaxScale)||.018))};
+    const scale={value:Math.max(0,Math.min(.035,Number(material.userData.pstudioParallaxScale)||.012))};
     material.onBeforeCompile=function(shader,renderer){
       if(previousCompile)previousCompile.call(this,shader,renderer);
       shader.uniforms.uPStudioParallaxScale=scale;
-      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>','uniform float uPStudioParallaxScale;');
-      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',[
-        '#if defined(USE_MAP) && defined(USE_NORMALMAP)',
-        'vec3 pViewDir=normalize(vViewPosition);',
-        'vec2 pViewOffset=(pViewDir.xy/max(abs(pViewDir.z),.16))*uPStudioParallaxScale;',
-        'vec2 pUV=vMapUv;',
-        'float pLayerDepth=0.0;',
-        'const float pLayers=8.0;',
-        'vec2 pStep=pViewOffset/pLayers;',
-        'for(int pI=0;pI<8;pI++){',
-        'float pHeight=texture2D(normalMap,vNormalMapUv+(pUV-vMapUv)).a;',
-        'if(pLayerDepth>=(1.0-pHeight))break;',
-        'pUV-=pStep;pLayerDepth+=1.0/pLayers;',
-        '}',
-        'vMapUv=pUV;',
-        '#endif',
-        '#include <map_fragment>'
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <common>','varying vec3 vPStudioParallaxViewPosition;');
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <project_vertex>','vPStudioParallaxViewPosition=-mvPosition.xyz;');
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
+        'uniform float uPStudioParallaxScale;',
+        'varying vec3 vPStudioParallaxViewPosition;'
       ].join('\n'));
+      const mapChunk=[
+        '#ifdef USE_MAP',
+        'vec2 pStudioParallaxUv=vMapUv;',
+        '#ifdef USE_NORMALMAP',
+        'vec3 pStudioN=normalize(vNormal);',
+        'vec3 pStudioDp1=dFdx(vPStudioParallaxViewPosition);',
+        'vec3 pStudioDp2=dFdy(vPStudioParallaxViewPosition);',
+        'vec2 pStudioDu1=dFdx(vMapUv);',
+        'vec2 pStudioDu2=dFdy(vMapUv);',
+        'vec3 pStudioDp2perp=cross(pStudioDp2,pStudioN);',
+        'vec3 pStudioDp1perp=cross(pStudioN,pStudioDp1);',
+        'vec3 pStudioT=pStudioDp2perp*pStudioDu1.x+pStudioDp1perp*pStudioDu2.x;',
+        'vec3 pStudioB=pStudioDp2perp*pStudioDu1.y+pStudioDp1perp*pStudioDu2.y;',
+        'float pStudioInvMax=inversesqrt(max(dot(pStudioT,pStudioT),dot(pStudioB,pStudioB))+1e-8);',
+        'mat3 pStudioTBN=mat3(pStudioT*pStudioInvMax,pStudioB*pStudioInvMax,pStudioN);',
+        'vec3 pStudioViewTS=normalize(transpose(pStudioTBN)*normalize(-vPStudioParallaxViewPosition));',
+        'vec2 pStudioOffset=(pStudioViewTS.xy/max(abs(pStudioViewTS.z),.18))*uPStudioParallaxScale;',
+        'float pStudioLayer=0.0;',
+        'const float pStudioLayers=8.0;',
+        'vec2 pStudioStep=pStudioOffset/pStudioLayers;',
+        'for(int pStudioI=0;pStudioI<8;pStudioI++){',
+        'float pStudioHeight=texture2D(normalMap,vNormalMapUv+(pStudioParallaxUv-vMapUv)).a;',
+        'if(pStudioLayer>=(1.0-pStudioHeight))break;',
+        'pStudioParallaxUv-=pStudioStep;',
+        'pStudioLayer+=1.0/pStudioLayers;',
+        '}',
+        '#endif',
+        'vec4 sampledDiffuseColor=texture2D(map,pStudioParallaxUv);',
+        '#ifdef DECODE_VIDEO_TEXTURE',
+        'sampledDiffuseColor=sRGBTransferEOTF(sampledDiffuseColor);',
+        '#endif',
+        'diffuseColor*=sampledDiffuseColor;',
+        '#endif'
+      ].join('\n');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',mapChunk);
     };
-    material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v1-'+(previousKey?previousKey():'');
-    material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha'};
+    material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v2-'+(previousKey?previousKey():'');
+    material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha',steps:8};
     parallaxMaterials.add(material);
     return material;
   }
