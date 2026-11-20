@@ -274,3 +274,20 @@ test('GLB spatial chunks preserve child transforms and stream detail by GPU-awar
 test('chunk-local GPU instance batches retain animated tree transforms but do not update static architecture every frame',()=>{
   for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
 });
+
+
+test('GLB metadata is inherited from nested glTF scene nodes before autoplay and streaming setup',()=>{
+  assert.ok(renderer.includes('extras.pstudioAutoPlayAnimation'));
+  assert.ok(renderer.includes('extras.pstudioStreamingConfig'));
+  assert.ok(renderer.includes('clone.userData.pstudioAutoPlayAnimation=extras.pstudioAutoPlayAnimation'));
+  assert.ok(renderer.includes('clone.userData.pstudioStreamingConfig=extras.pstudioStreamingConfig'));
+});
+test('streamed chunks are initially unloaded and retain hysteresis while their local children keep transforms',()=>{
+  for(const token of ['pstudioStreamActive=false','chunk.visible=false','chunk.attach(child)','pstudioStreamUnloadDistance','const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance'])assert.ok(renderer.includes(token),token);
+});
+test('tree trunk, branch and leaf tracks are all preserved by the animation-aware instancer',()=>{
+  for(const token of ["pstudioWindPart==='trunk'","pstudioWindPart==='branch'","pstudioWindPart==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
+});
+test('static architectural instance transforms are not recomputed every animation frame',()=>{
+  assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
+});
