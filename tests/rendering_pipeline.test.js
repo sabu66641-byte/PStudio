@@ -64,8 +64,28 @@ test('primitive cache uses the same mesh object for caching and rendering', () =
   assert.ok(!block.includes('let mesh;'));
 });
 
-test('spatial irradiance volume blends nearby probes',()=>{for(const x of ['bakeLightProbeVolume','updateProbeVolumeBlend','camera-local-spatial-irradiance-volume','probeBlendCount'])assert.ok(renderer.includes(x));});
-test('large-world culling and chunk hysteresis are exposed',()=>{for(const x of ['registerWorldChunk','assignObjectToChunk','unregisterWorldChunk','maxDrawDistance','unloadDistance','updateWorldVisibility','preservedOwners','instanceSources'])assert.ok(renderer.includes(x));});
-test('directional shadow follows camera with texel snapping',()=>{for(const x of ['updateDirectionalShadowAnchor','Math.round(target.x/texel)*texel','scene.add(keyLight,keyLight.target)'])assert.ok(renderer.includes(x));});
+test('object-local SH GI blends probes and supports iterative diffuse bounce capture',()=>{
+  for(const x of ['bakeLightProbeVolume','object-local-spatial-spherical-harmonics','pstudio-object-sh-v1','pstudioEvaluateSH','updateObjectProbeUniforms','bounces','bounceStrength'])assert.ok(renderer.includes(x),x);
+});
+test('three-cascade shadows load the version-aligned CSM addon with fallback',()=>{
+  assert.ok(html.includes('three/addons/csm/CSM.js'));
+  for(const x of ['window.PStudioCSM','cascades:3','csm.setupMaterial','csm.update()'])assert.ok(renderer.includes(x),x);
+});
+test('adaptive rendering adjusts resolution, effects and shadow quality',()=>{
+  for(const x of ['applyAdaptiveQuality','adaptiveFrameEMA','adaptiveSlowFrames','setAdaptiveQuality','render.quality.adapted','timingSource'])assert.ok(renderer.includes(x),x);
+});
+test('automatic LOD supports static imported and general meshes',()=>{
+  assert.ok(html.includes('three/addons/modifiers/SimplifyModifier.js'));
+  for(const x of ['scheduleAutoLOD','pstudioAutoLOD','pstudioAutoLODGenerating','render.lod.generated','applyAutoLOD'])assert.ok(renderer.includes(x),x);
+});
+test('occlusion culling checks scene meshes and instanced sources incrementally',()=>{
+  for(const x of ['updateOcclusionVisibility','occlusionRaycaster','pstudioOccluded','setOcclusionCulling','instanceSources'])assert.ok(renderer.includes(x),x);
+});
+test('world chunks asynchronously load model assets and release runtime resources',()=>{
+  for(const x of ['beginWorldChunkLoad','endWorldChunkLoad','purgeWorldChunkRuntime','chunk.assets','PStudioResources?.trim?.(\'gpu\')','loadingChunks'])assert.ok(renderer.includes(x),x);
+});
+test('large-world culling retains geometry bounds and chunk assignments',()=>{
+  for(const x of ['registerWorldChunk','assignObjectToChunk','unregisterWorldChunk','maxDrawDistance','unloadDistance','isWithinWorldDrawDistance','pstudioBoundsRadius'])assert.ok(renderer.includes(x),x);
+});
 
 test('large geometry bounds prevent premature distance culling',()=>{assert.ok(renderer.includes('isWithinWorldDrawDistance'));assert.ok(renderer.includes('computeBoundingSphere'));assert.ok(renderer.includes('pstudioBoundsRadius'));});
