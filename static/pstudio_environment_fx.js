@@ -298,7 +298,7 @@
       const tag=name+' '+String(m.name||'');
       if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
-      else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'){out.push(m);}
+      else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk'){out.push(m);}
       else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);out.push(c);}
       else if(/leaf|foliage|canopy|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
