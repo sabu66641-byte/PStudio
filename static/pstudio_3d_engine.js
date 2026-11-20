@@ -475,39 +475,37 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     renderer.shadowMap.autoUpdate=true;
     if(previousSingle)scene.remove(previousSingle);
     const capture=async(position,sources,includeDirect,probeIntensity)=>{
-      const temporary=[],hiddenLights=[],environmentBefore=scene.environment,backgroundBefore=scene.background;
-      if(sources.length){
-        const nearest=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,4);
-        let sum=0;for(const entry of nearest){entry.weight=1/Math.max(1,entry.d);sum+=entry.weight;}
-        for(const entry of nearest){
-          const light=entry.item.light;
-          light.intensity=entry.item.baseIntensity*bounceStrength*entry.weight/Math.max(1e-8,sum);
-          light.userData.pstudioBounceSource=true;scene.add(light);temporary.push(light);
-        }
-      }
-      if(!includeDirect){
-        scene.environment=null;scene.background=null;
-        scene.traverse(object=>{
-          if(object.isLight&&!object.userData?.pstudioBounceSource){hiddenLights.push([object,object.visible]);object.visible=false;}
-        });
-      }
       const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
-      const cube=new T.CubeCamera(0.1,Math.max(50,Number(o.far)||500),target);
-      cube.position.copy(position);
+      let cube=null;
+      const temporary=[],hiddenLights=[],environmentBefore=scene.environment,backgroundBefore=scene.background;
+      const clearColorBefore=renderer.getClearColor(new T.Color()).clone(),clearAlphaBefore=renderer.getClearAlpha();
       try{
+        cube=new T.CubeCamera(0.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
+        if(sources.length){
+          const nearest=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((x,y)=>x.d-y.d).slice(0,4);
+          let sum=0;for(const entry of nearest){entry.weight=1/Math.max(1,entry.d);sum+=entry.weight;}
+          for(const entry of nearest){
+            const light=entry.item.light;light.intensity=entry.item.baseIntensity*bounceStrength*entry.weight/Math.max(1e-8,sum);
+            light.userData.pstudioBounceSource=true;scene.add(light);temporary.push(light);
+          }
+        }
+        if(!includeDirect){
+          scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);
+          scene.traverse(object=>{if(object.isLight&&!object.userData?.pstudioBounceSource){hiddenLights.push([object,object.visible]);object.visible=false;}});
+        }
         scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
         const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);
         const item={position:position.clone(),light,baseIntensity:probeIntensity};allocated.add(item);return item;
       }finally{
-        scene.remove(cube);target.dispose();
+        if(cube)scene.remove(cube);target.dispose();
         for(const light of temporary){scene.remove(light);delete light.userData.pstudioBounceSource;}
         for(const [light,visible] of hiddenLights)light.visible=visible;
-        scene.environment=environmentBefore;scene.background=backgroundBefore;
+        scene.environment=environmentBefore;scene.background=backgroundBefore;renderer.setClearColor(clearColorBefore,clearAlphaBefore);
       }
     };
     try{
       // Pass 0 captures the scene's direct and environment illumination.
-      for(const position of positions){directProbes.push(await capture(position,[],true,intensity));await new Promise(resolve=>requestAnimationFrame(resolve));}
+      for(const position of positions){const direct=await capture(position,[],true,1);for(const coefficient of direct.light.sh.coefficients)coefficient.multiplyScalar(intensity);directProbes.push(direct);await new Promise(resolve=>requestAnimationFrame(resolve));}
       finalProbes=directProbes;sourceProbes=directProbes;
       // Subsequent passes disable direct emitters and feed only the previous
       // bounce field back through the scene's materials.
