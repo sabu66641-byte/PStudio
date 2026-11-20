@@ -535,3 +535,41 @@ When a chunk leaves its unload radius, assigned render meshes and model instance
 ### Adaptive quality
 
 The `auto` preset now prefers asynchronous WebGL GPU timer queries through `EXT_disjoint_timer_query_webgl2` when the device supports them, and falls back to smoothed CPU render-submission time when the extension is unavailable or disjoint. It gradually adjusts pixel ratio, screen-space AO/reflections and shadow-map resolution. Manual `mobile`, `balanced`, `high` and `ultra` presets remain available. GPU timer queries measure submitted GPU work duration, not a device-wide utilization percentage. Adaptive changes and the active timing source are exposed through `getQualityPreset()` and renderer statistics.
+
+## Rendering Engine 1.8 — UV Lightmaps, BVH Occlusion and Chunk Lifecycle
+
+
+### UV lightmap workflow
+
+Bake the spatial probe volume first, then generate and apply a lightmap atlas to currently loaded meshes. Use `ownerIds` to limit the bake to known static scene objects:
+
+```js
+await PStudio3D.bakeLightProbeVolume({
+  min: { x: -40, y: 0, z: -40 },
+  max: { x: 40, y: 16, z: 40 },
+  xCount: 3, yCount: 2, zCount: 3,
+  resolution: 64, bounces: 2, bounceStrength: 0.3
+});
+const result = await PStudio3D.bakeUVLightmaps({
+  resolution: 512,
+  ownerIds: ['building-01', 'ground-01']
+});
+console.log(result);
+await PStudio3D.saveLightmaps('world-lighting');
+```
+
+After scene objects and model assets load in a later session, call `await PStudio3D.loadLightmaps('world-lighting')`. Mesh identifiers use scene-object command order and model hierarchy paths; changing topology or command order can invalidate a saved entry. Lightmap data is stored in that browser's IndexedDB, so include it in a project backup workflow before moving devices.
+
+### Audio and streamed-owner lifecycle
+
+```ps
+func start()
+    play_sound("forest_ambience.ogg", 0.65, true)
+
+func update(dt)
+    if dt > 0
+        set_sound_volume("forest_ambience.ogg", 0.65)
+```
+
+The audio asset must already be imported into the project. `play_sound(name, volume, loop)` plays it for the calling Game Object; `stop_sound(name)` stops that owner's sound and `set_sound_volume(name, volume)` changes its volume. Browser autoplay restrictions can still prevent playback until the user interacts with the page.
+
