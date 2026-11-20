@@ -1293,7 +1293,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const sources=group.sources,level=group.level;
       if(sources.length<4)continue;
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_Foliage_GPU_Instances_LOD'+level;batch.castShadow=true;batch.receiveShadow=true;
+      batch.name='PStudio_Foliage_GPU_Instances_Level'+level;batch.castShadow=true;batch.receiveShadow=true;
       batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
       batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
