@@ -995,15 +995,29 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     pendingLightmaps.clear();for(const item of data.records)pendingLightmaps.set(item.id,item);applyPendingLightmaps();if(renderer&&scene)drawFrame();
     return{name:key,meshes:data.records.length,applied:data.records.length-pendingLightmaps.size,pending:pendingLightmaps.size};
   }
-  function evaluateProbeSH(position,normal){
-    const volume=bakedLightProbeVolume;if(!volume?.length)return new window.THREE.Vector3();
-    const near=volume.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,4);let sum=0;for(const e of near){e.w=1/Math.max(.25,e.d);sum+=e.w;}
-    const out=new window.THREE.Vector3(),x=normal.x,y=normal.y,z=normal.z;
-    for(const e of near){const c=e.item.light.sh.coefficients,w=e.w/Math.max(1e-8,sum)*e.item.baseIntensity;out.addScaledVector(c[0],.886227*w).addScaledVector(c[1],1.023327*y*w).addScaledVector(c[2],1.023327*z*w).addScaledVector(c[3],1.023327*x*w).addScaledVector(c[4],.858086*x*y*w).addScaledVector(c[5],.858086*y*z*w).addScaledVector(c[6],.247708*(3*z*z-1)*w).addScaledVector(c[7],.858086*x*z*w).addScaledVector(c[8],.429043*(x*x-y*y)*w);}
-    return out.set(Math.max(0,out.x),Math.max(0,out.y),Math.max(0,out.z));
+  function addProbeSH(item,weight,normal,target){
+    const c=item.light.sh.coefficients,w=weight*item.baseIntensity,x=normal.x,y=normal.y,z=normal.z;
+    target.x+=c[0].x*.886227*w+c[1].x*1.023327*y*w+c[2].x*1.023327*z*w+c[3].x*1.023327*x*w+c[4].x*.858086*x*y*w+c[5].x*.858086*y*z*w+c[6].x*.247708*(3*z*z-1)*w+c[7].x*.858086*x*z*w+c[8].x*.429043*(x*x-y*y)*w;
+    target.y+=c[0].y*.886227*w+c[1].y*1.023327*y*w+c[2].y*1.023327*z*w+c[3].y*1.023327*x*w+c[4].y*.858086*x*y*w+c[5].y*.858086*y*z*w+c[6].y*.247708*(3*z*z-1)*w+c[7].y*.858086*x*z*w+c[8].y*.429043*(x*x-y*y)*w;
+    target.z+=c[0].z*.886227*w+c[1].z*1.023327*y*w+c[2].z*1.023327*z*w+c[3].z*1.023327*x*w+c[4].z*.858086*x*y*w+c[5].z*.858086*y*z*w+c[6].z*.247708*(3*z*z-1)*w+c[7].z*.858086*x*z*w+c[8].z*.429043*(x*x-y*y)*w;
   }
+  function evaluateProbeSH(position,normal,target=new window.THREE.Vector3()){
+    const volume=bakedLightProbeVolume;target.set(0,0,0);if(!volume?.length)return target;
+    let p0=null,p1=null,p2=null,p3=null,d0=Infinity,d1=Infinity,d2=Infinity,d3=Infinity;
+    for(const item of volume){const d=item.position.distanceToSquared(position);
+      if(d<d0){p3=p2;d3=d2;p2=p1;d2=d1;p1=p0;d1=d0;p0=item;d0=d;}
+      else if(d<d1){p3=p2;d3=d2;p2=p1;d2=d1;p1=item;d1=d;}
+      else if(d<d2){p3=p2;d3=d2;p2=item;d2=d;}
+      else if(d<d3){p3=item;d3=d;}
+    }
+    const w0=p0?1/Math.max(.25,d0):0,w1=p1?1/Math.max(.25,d1):0,w2=p2?1/Math.max(.25,d2):0,w3=p3?1/Math.max(.25,d3):0,sum=w0+w1+w2+w3;
+    if(sum<=0)return target;
+    if(p0)addProbeSH(p0,w0/sum,normal,target);if(p1)addProbeSH(p1,w1/sum,normal,target);if(p2)addProbeSH(p2,w2/sum,normal,target);if(p3)addProbeSH(p3,w3/sum,normal,target);
+    return target.set(Math.max(0,target.x),Math.max(0,target.y),Math.max(0,target.z));
+  }
+  const halfFloatScratch=new Float32Array(1),halfUintScratch=new Uint32Array(halfFloatScratch.buffer);
   function floatToHalf(value){
-    const f=new Float32Array(1),u=new Uint32Array(f.buffer);f[0]=value;const bits=u[0],sign=(bits>>>16)&0x8000,exp=(bits>>>23)&0xff,mantissa=bits&0x7fffff;
+    halfFloatScratch[0]=value;const bits=halfUintScratch[0],sign=(bits>>>16)&0x8000,exp=(bits>>>23)&0xff,mantissa=bits&0x7fffff;
     if(exp===255)return sign|(mantissa?0x7e00:0x7c00);
     let halfExp=exp-127+15;
     if(halfExp>=31)return sign|0x7bff;
@@ -1023,9 +1037,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const T=window.THREE,p=g.attributes.position,n=g.attributes.normal;object.updateMatrixWorld(true);const nm=new T.Matrix3().getNormalMatrix(object.matrixWorld),wp=[],wn=[];
     for(let i=0;i<p.count;i++){wp.push(new T.Vector3().fromBufferAttribute(p,i).applyMatrix4(object.matrixWorld));wn.push(new T.Vector3().fromBufferAttribute(n,i).applyMatrix3(nm).normalize());}
     const data=new Float32Array(resolution*resolution*4),cell=resolution/info.grid,pad=Math.max(2,Math.ceil(resolution*.025/info.grid)),usable=Math.max(1,cell-2*pad);
+    const point=new T.Vector3(),normal=new T.Vector3(),light=new T.Vector3();
     for(let tri=0;tri<info.triangles;tri++){const col=tri%info.grid,row=Math.floor(tri/info.grid),x0=Math.ceil(col*cell+pad),y0=Math.ceil(row*cell+pad),x1=Math.floor((col+1)*cell-pad),y1=Math.floor((row+1)*cell-pad),a=wp[tri*3],b=wp[tri*3+1],c=wp[tri*3+2],na=wn[tri*3],nb=wn[tri*3+1],nc=wn[tri*3+2];
       for(let y=y0;y<y1;y++){
-        for(let x=x0;x<x1;x++){const wb=(x+.5-(col*cell+pad))/usable,wc=(y+.5-(row*cell+pad))/usable,wa=1-wb-wc;if(wa<0||wb<0||wc<0)continue;const point=a.clone().multiplyScalar(wa).addScaledVector(b,wb).addScaledVector(c,wc),normal=na.clone().multiplyScalar(wa).addScaledVector(nb,wb).addScaledVector(nc,wc).normalize(),light=evaluateProbeSH(point,normal),k=(y*resolution+x)*4;data[k]=light.x;data[k+1]=light.y;data[k+2]=light.z;data[k+3]=1;}
+        for(let x=x0;x<x1;x++){const wb=(x+.5-(col*cell+pad))/usable,wc=(y+.5-(row*cell+pad))/usable,wa=1-wb-wc;if(wa<0||wb<0||wc<0)continue;
+          point.set(a.x*wa+b.x*wb+c.x*wc,a.y*wa+b.y*wb+c.y*wc,a.z*wa+b.z*wb+c.z*wc);
+          normal.set(na.x*wa+nb.x*wb+nc.x*wc,na.y*wa+nb.y*wb+nc.y*wc,na.z*wa+nb.z*wb+nc.z*wc).normalize();
+          evaluateProbeSH(point,normal,light);const k=(y*resolution+x)*4;data[k]=light.x;data[k+1]=light.y;data[k+2]=light.z;data[k+3]=1;}
         if((y-y0+1)%24===0)await new Promise(resolve=>requestAnimationFrame(resolve));
       }
       if((tri+1)%16===0)await new Promise(resolve=>requestAnimationFrame(resolve));
