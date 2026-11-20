@@ -19,10 +19,16 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
 - `static/pstudio_modules.js` — dependency-aware module registry.
 - `static/pstudio_ecs.js` — entity-component-system storage and scheduler.
-- `discord_runtime.py` — original Discord runtime dependency.
-- `network.py` — existing network runtime module, included unchanged.
-- `examples/` — a small player/enemy scene example.
-- `backup/` — untouched copies of the original uploaded `app.py` and PStudio HTML for rollback.
+- `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
+- `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
+- `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
+- `static/pstudio_assets.js` — IndexedDB storage for binary model assets.
+- `discord_runtime.py` — Discord REST/Gateway runtime used by the normal server-side ps path.
+- `network.py` — standalone HTTP/HTTPS helper module. It is not currently exposed as a browser game-script API.
+- `tests/` — Python compiler/server tests and Node.js subsystem/regression suites.
+- `.github/workflows/ci.yml` — CI for Python, actual C++17 compile/run regression tests, and Node.js tests.
+- `examples/` — player/enemy and 3D RPG starter scripts.
+- `archive/` — explicitly unloaded experimental references; not part of PStudio Core.
 
 ## Core Infrastructure 1.0
 
@@ -30,7 +36,7 @@ The game runtime does not send a request to the server every frame. Scripts are 
 - Platform facade (PStudioPlatform): capability detection, monotonic clock, frame/task scheduling, viewport and guarded storage. The memory fallback is non-persistent.
 - Job queue (PStudioJobs): priority scheduling, bounded cooperative async concurrency, cancellation, progress, pause/resume. This is not a Web Worker pool; synchronous CPU-heavy work still blocks the main thread.
 - Module, ECS and resource lifecycle notifications are bridged to the shared event bus without removing their existing listener APIs.
-- Automated tests cover these services and a source-level legacy runtime regression smoke test.
+- Automated regression tests cover these services, the rendering pipeline, localization, model-viewer controls, physics collider caching, server input limits and legacy runtime behavior.
 
 Example:
 
@@ -43,13 +49,14 @@ const job = PStudioJobs.submit(async ({ progress, yield: next }) => {
 });
 ```
 
-Run from the repository root:
+Run the complete test suites from the repository root:
 
 ```bash
-node --test tests/event_system.test.js tests/platform.test.js tests/job_system.test.js tests/core_regression.test.js
+python -m unittest discover -s tests -p "test_*.py" -v
+node --test tests/*.test.js
 ```
 
-These are headless source tests, not a substitute for browser, Android, WebGL, IndexedDB or deployed-site smoke tests.
+The GitHub Actions workflow runs both commands on pushes to `main` and pull requests. Python tests include actual C++17 compilation and execution when `g++` is available. These automated tests do not replace browser, Android, WebGL, IndexedDB or deployed-site smoke tests.
 
 ## Run locally
 
@@ -112,7 +119,7 @@ The selected object's **Enable Collider** checkbox is stored in the scene file. 
 - Static world collision supports finite `draw_plane` surfaces, triangle colliders, generated terrain and imported GLB triangle colliders (when **Enable Collider** is selected; extraction is capped at 4,000 sampled triangles per model). Capsule contacts support walkable triangle slopes, step climbing, translating/yaw-orienting platforms, swept capsule-vs-expanded-AABB collision and up to 256 adaptive substeps for other contacts. This is still a character-focused solver, not a general rigid-body engine. Extreme-speed tunnelling through arbitrary triangles, collision against animated/skinned mesh deformation, rotation-induced contact on tilted platforms, joints and full continuous collision detection are not guaranteed.
 - Import binary glTF `.glb` or JSON glTF `.gltf` files through ASSETS. For `.gltf`, select the model and its referenced `.bin` / texture files together; PStudio embeds relative resources as data URIs and stores the bundled model in IndexedDB (30 MB combined limit). Project metadata remains in localStorage.
 - `load_model(name, x, y, z, scale)` instantiates an imported model. `play_animation(name)` loops a matching animation clip; `play_animation_once(name)` plays it once. Clip names come from the GLB file.
-- This is a game-development foundation, not a finished large-world action-RPG engine. The current runtime includes PMREM-filtered environment lighting, optional Bloom/SSAO post-processing, planar Reflector water, primitive GLSL shader nodes, named GLB material overrides, terrain collision, triangle-derived navigation, moving/rotating platform carry, adaptive swept collision, persistent particle emitters, animation layers, CCD-style bone IK, generic weapon attacks and combo chains, a small enemy state machine, equipment/consumable inventory, quest prerequisites/rewards, dialogue choices and DOM-based game UI. Still missing are true multi-bounce real-time global illumination, HDR lighting capture, a free-form drag-and-drop shader graph, water refraction/wave simulation, fully general CCD for arbitrary deforming meshes, dynamic NavMesh updates, motion-capture-grade IK/retargeting, tactical squad AI, complex hitbox animation events, multiplayer, audio mixing, save/load of live gameplay state and a standalone build/export pipeline.
+- This is a game-development foundation, not a finished large-world action-RPG engine. The current renderer includes PMREM-filtered HDR image-based lighting, a single global diffuse probe, spatial SH probe volumes with approximate iterative diffuse-bounce capture, UV2 lightmap baking from probe irradiance, optional Bloom/GTAO/SSAO/SSR, transmissive animated water, GPU-driven particle rendering, instancing, cascaded-shadow maps with fallback, automatic LOD and CPU BVH-accelerated occlusion raycasts. The runtime also includes terrain collision, triangle-derived static navigation, moving/rotating platform carry, adaptive swept capsule collision, persistent particle emitters, animation layers, CCD-style bone IK, generic combat/combo helpers, a small enemy state machine, equipment/consumable inventory, quest prerequisites/rewards, dialogue choices and DOM-based game UI. The renderer does not provide physically complete real-time multi-bounce GI or path tracing; probe bounces are a spatial-SH approximation. Water does not yet provide a full fluid simulation, shore foam or volumetric caustics. Other future work includes general CCD for arbitrary deforming meshes, dynamic NavMesh updates, motion-capture-grade IK/retargeting, tactical squad AI, complex animation-authored hitboxes, multiplayer, a full audio mixer, live gameplay save/load and a standalone build/export pipeline.
 - Browser local storage is still the project persistence layer; large base64 assets can exceed browser storage quotas.
 
 ## Module System 1.0
@@ -224,9 +231,10 @@ Use the **Backup** menu in the application header to export or restore a portabl
 - ECS harness checks for sparse component removal, system priority, deferred structural changes, bidirectional Scene Object synchronization and stale-entity cleanup.
 - Resource manager harness checks for LRU budget trimming, CPU/GPU accounting, concurrent-load deduplication, reference protection and disposal.
 - Rendering source/V8 checks: renderer syntax, addon import-map/module syntax, water/HDR/probe APIs, GPU-particle shader attributes, instancing/selection mapping and primitive mesh-cache consistency.
-- A Node rendering regression suite was added at `tests/rendering_pipeline.test.js`; the Node test runner still needs to be run in a Node-enabled checkout.
-- Core infrastructure V8 harness checks for event priority/once/async dispatch, job execution, module/ECS/resource event bridges, script load order and inline-script/import-map syntax.
-- Node test-runner files were added for the event, platform, job and core regression suites; the Node test runner itself still needs to be run in a Node-enabled checkout.
+- Node.js regression suites run under Node 24 in the GitHub Actions workflow, including rendering, ECS, events, jobs, modules, platform, resources, localization and model-viewer behavior.
+- Python regression suites run under Python 3.12 and compile/execute generated C++17 programs with `g++` for variable-scope, loop, function, division and modulo behavior.
+- Server tests cover request-size limits and bounded child-process output/timeout handling.
+- The automated suites are source/runtime tests in CI; they do not run a real browser, Android device, WebGL driver or Render deployment.
 - Runtime harness tests for `start()`, `update(dt)`, persistent per-object state, drawing commands, Stop, and collision-enter de-duplication/re-entry.
 - Existing generated C++17 sample compiled with `g++` and printed the expected output.
 
@@ -384,7 +392,7 @@ The 3D renderer uses Three.js r160 with ACES filmic tone mapping, sRGB output, P
 | `high` | 2.0 | 3072² VSM | GTAO + SSR |
 | `ultra` | 2.0 | 4096² VSM | GTAO + SSR |
 
-`auto` selects balanced settings on touch/narrow screens and high settings otherwise. VSM provides soft filtered directional shadows; balanced/mobile use PCF soft shadows. GTAO is preferred when its addon loads, with SSAO as a fallback. Screen-space reflections are optional and enabled by high/ultra presets. Bloom remains opt-in through `set_postprocessing(...)`; it is not forced onto every scene.
+`auto` prefers the mobile profile on touch devices, balanced on narrow non-touch windows, and high on wider desktop layouts. VSM provides soft filtered directional shadows; balanced/mobile use PCF soft shadows. GTAO is preferred when its addon loads, with SSAO as a fallback. Screen-space reflections are optional and enabled by high/ultra presets. Bloom remains opt-in through `set_postprocessing(...)`; it is not forced onto every scene.
 
 ### HDR environments and diffuse light baking
 
