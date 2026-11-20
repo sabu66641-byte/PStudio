@@ -262,8 +262,9 @@
   }
   function beginGpuTimerQuery(){
     if(!gpuTimerGl||!gpuTimerExtension)return null;
-    try{const query=gpuTimerGl.createQuery();if(!query)return null;gpuTimerGl.beginQuery(gpuTimerExtension.TIME_ELAPSED_EXT,query);return query;}
-    catch(error){gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query start failed; CPU timing fallback will be used.',error);return null;}
+    let query=null;
+    try{query=gpuTimerGl.createQuery();if(!query)return null;gpuTimerGl.beginQuery(gpuTimerExtension.TIME_ELAPSED_EXT,query);return query;}
+    catch(error){if(query){try{gpuTimerGl.deleteQuery(query);}catch(_){}}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query start failed; CPU timing fallback will be used.',error);return null;}
   }
   function endGpuTimerQuery(query){
     if(!query||!gpuTimerGl||!gpuTimerExtension)return;
@@ -292,7 +293,7 @@
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
-      const hasRecentGpuSample=lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+      const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
     }
