@@ -24,7 +24,7 @@ test('resolves and activates dependencies before dependents', async () => {
   api.register({ id: 'test.render', dependencies: ['test.base'], activate: () => order.push('render') });
   await api.enable('test.render');
   assert.deepEqual(order, ['base', 'render']);
-  assert.deepEqual(api.resolveOrder(['test.render']).map(item => item.id), ['test.base', 'test.render']);
+  assert.deepEqual(Array.from(api.resolveOrder(['test.render']), item => item.id), ['test.base', 'test.render']);
 });
 
 test('blocks disabling dependencies with active dependents; cascade disables in reverse order', async () => {
