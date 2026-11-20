@@ -57,6 +57,7 @@ test('staged GLB validator accepts a valid file and reports useful resource esti
   assert.equal(info.meshCount, 1);
   assert.equal(info.triangleCount, 1);
   assert.ok(info.estimatedRuntimeBytes > blob.size);
+  assert.ok(info.estimatedCpuBytes > blob.size);
 });
 
 test('staged GLB validation reads only the header and JSON, not the full BIN payload', async () => {
