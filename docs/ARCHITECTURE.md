@@ -22,6 +22,9 @@ Core engine systems belong in PStudio. Game-specific experiments and reference r
 4. `generate_cpp()` emits C++17.
 5. `/run` compiles with `g++ -std=c++17` and executes a temporary binary.
 6. `/compile` returns generated C++ without executing it.
+- Branch/loop-assigned variables are hoisted into their owning C++ function scope using checked optional storage; an unset value raises a runtime error rather than becoming an invalid out-of-scope reference.
+- C++ range-loop variable types use iterator `value_type`, including proxy iterators such as `std::vector<bool>`.
+- ps division uses floating-point semantics in both the C++ and Discord interpreter paths; prefix increment/decrement update their target in the Discord interpreter.
 
 The normal ps path and the browser game-script path are intentionally distinct. Do not add game-only APIs to normal C++ generation without defining their C++ semantics.
 
@@ -121,6 +124,7 @@ Current limits in `app.py`:
 - Discord send message: 2,000 characters.
 - Discord REST success response: 16 MiB by default (configurable per request); Discord error response: 64 KiB.
 - Discord interpreter: 100,000 AST/loop steps per top-level execution and 1 MiB accumulated output.
+- The Discord interpreter step budget is shared across nested function calls and resets for each top-level run/event callback.
 
 These measures bound inputs, runtime duration, captured output and in-process concurrency. They do **not** create an operating-system sandbox, memory cgroup, syscall filter, or network isolation for generated binaries.
 
