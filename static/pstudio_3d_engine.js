@@ -960,11 +960,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     object.material=Array.isArray(original)?original.map(clone):clone(original);
   }
   function installLightmap(object,record){
-    const p=object.geometry?.attributes?.position;if(!p||p.count!==record.vertexCount||record.uv2.length!==p.count*2)return false;
+    const p=object.geometry?.attributes?.position;
+    if(!p||p.count!==record.vertexCount||record.uv2.length!==p.count*2||!Number.isInteger(record.width)||!Number.isInteger(record.height)||record.width<1||record.height<1||record.width>2048||record.height>2048||record.pixels.length!==record.width*record.height*4)return false;
     if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=object.geometry;object.userData.pstudioLightmapOriginalGeometryOwned=String(record.id).startsWith('primitive:');}
     if(!object.userData.pstudioLightmapGeometry){object.geometry=object.geometry.clone();object.userData.pstudioLightmapGeometry=true;}
     object.geometry.setAttribute('uv2',new window.THREE.BufferAttribute(new Float32Array(record.uv2),2));
-    const texture=new window.THREE.DataTexture(new Float32Array(record.pixels),record.width,record.height,window.THREE.RGBAFormat,window.THREE.FloatType);
+    const half=record.pixelType==='half';
+    const texture=new window.THREE.DataTexture(half?new Uint16Array(record.pixels):new Float32Array(record.pixels),record.width,record.height,window.THREE.RGBAFormat,half?window.THREE.HalfFloatType:window.THREE.FloatType);
     texture.name='PStudioLightmap:'+record.id;texture.magFilter=window.THREE.NearestFilter;texture.minFilter=window.THREE.NearestFilter;texture.generateMipmaps=false;texture.flipY=false;texture.needsUpdate=true;
     object.userData.pstudioLightmapTexture?.dispose?.();object.userData.pstudioLightmapTexture=texture;cloneLightmapMaterial(object,texture);object.userData.pstudioLightmapId=record.id;return true;
   }
@@ -982,7 +984,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function clearLightmaps(){let count=0;for(const {object} of lightmapTargets())if(clearObjectLightmap(object))count++;pendingLightmaps.clear();if(renderer&&scene)drawFrame();return{cleared:count};}
   async function saveLightmaps(name='default'){
     const key=String(name||'default').trim();if(!key||key.length>128)throw new TypeError('Invalid lightmap name.');
-    const records=[];for(const {id,object} of lightmapTargets()){const t=object.userData.pstudioLightmapTexture,g=object.geometry;if(t?.image?.data&&g?.attributes?.uv2)records.push({id,width:t.image.width,height:t.image.height,vertexCount:g.attributes.position.count,uv2:new Float32Array(g.attributes.uv2.array),pixels:new Float32Array(t.image.data)});}
+    const records=[];for(const {id,object} of lightmapTargets()){const t=object.userData.pstudioLightmapTexture,g=object.geometry;if(t?.image?.data&&g?.attributes?.uv2)records.push({id,width:t.image.width,height:t.image.height,vertexCount:g.attributes.position.count,pixelType:t.type===window.THREE.HalfFloatType?'half':'float',uv2:new Float32Array(g.attributes.uv2.array),pixels:t.type===window.THREE.HalfFloatType?new Uint16Array(t.image.data):new Float32Array(t.image.data)});}
     if(!records.length)throw new Error('No baked lightmaps to save.');const db=await openLightmapDatabase();
     await new Promise((resolve,reject)=>{const tx=db.transaction('lightmaps','readwrite');tx.objectStore('lightmaps').put({name:key,schema:1,records,updatedAt:Date.now()});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Lightmap save failed.'));tx.onabort=()=>reject(tx.error||new Error('Lightmap save aborted.'));});
     return{name:key,meshes:records.length};
@@ -1000,6 +1002,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const e of near){const c=e.item.light.sh.coefficients,w=e.w/Math.max(1e-8,sum)*e.item.baseIntensity;out.addScaledVector(c[0],.886227*w).addScaledVector(c[1],1.023327*y*w).addScaledVector(c[2],1.023327*z*w).addScaledVector(c[3],1.023327*x*w).addScaledVector(c[4],.858086*x*y*w).addScaledVector(c[5],.858086*y*z*w).addScaledVector(c[6],.247708*(3*z*z-1)*w).addScaledVector(c[7],.858086*x*z*w).addScaledVector(c[8],.429043*(x*x-y*y)*w);}
     return out.set(Math.max(0,out.x),Math.max(0,out.y),Math.max(0,out.z));
   }
+  function floatToHalf(value){
+    const f=new Float32Array(1),u=new Uint32Array(f.buffer);f[0]=value;const bits=u[0],sign=(bits>>>16)&0x8000,exp=(bits>>>23)&0xff,mantissa=bits&0x7fffff;
+    if(exp===255)return sign|(mantissa?0x7e00:0x7c00);
+    let halfExp=exp-127+15;
+    if(halfExp>=31)return sign|0x7bff;
+    if(halfExp<=0){if(halfExp<-10)return sign;const m=(mantissa|0x800000)>>(1-halfExp);return sign|((m+0x1000)>>13);}
+    return sign|(halfExp<<10)|((mantissa+0x1000)>>13);
+  }
+  function packHalfFloat(values){const packed=new Uint16Array(values.length);for(let i=0;i<values.length;i++)packed[i]=floatToHalf(values[i]);return packed;}
   function createLightmapUVGeometry(source,resolution){
     const T=window.THREE,g=source.index?source.toNonIndexed():source.clone(),p=g.attributes.position;
     if(!p||p.count<3||p.count%3!==0){g.dispose();throw new Error('Invalid triangle mesh topology.');}if(!g.attributes.normal)g.computeVertexNormals();
@@ -1021,19 +1032,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!ensureRenderer())throw new Error('3D renderer unavailable.');if(!bakedLightProbeVolume?.length)throw new Error('Run bakeLightProbeVolume() before baking UV lightmaps.');
     const T=window.THREE,resolution=Math.max(128,Math.min(2048,Math.floor(Number(options.resolution)||512))),ownerFilter=Array.isArray(options.ownerIds)?new Set(options.ownerIds.map(String)):null,targets=lightmapTargets().filter(({object})=>!object.isSkinnedMesh&&!object.isInstancedMesh&&object.geometry?.attributes?.position&&(!ownerFilter||ownerFilter.has(String(object.userData.ownerId))));
     if(!targets.length)throw new Error('No eligible static meshes.');const baked=[],failed=[];
-    for(const {id,object} of targets){let working=null;try{
+    for(const {id,object} of targets){if(allocatedBytes+perTextureBytes>budget){failed.push({id,error:'Lightmap memory budget exceeded; reduce resolution or increase maxBytes.'});continue;}let working=null;try{
       const source=object.userData.pstudioLightmapOriginalGeometry||object.geometry,info=createLightmapUVGeometry(source,resolution);working=info.geometry;
       const pixels=await bakeLightmapPixels(object,working,info,resolution),oldGeometry=object.geometry;
       if(object.userData.pstudioAutoLOD?.length){object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD)if(level.owned)level.geometry.dispose?.();object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;}
       if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=oldGeometry;object.userData.pstudioLightmapOriginalGeometryOwned=id.startsWith('primitive:');}
       object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;
       if(oldGeometry!==object.userData.pstudioLightmapOriginalGeometry&&oldGeometry!==object.geometry)oldGeometry.dispose?.();
-      object.userData.pstudioLightmapTexture?.dispose?.();const texture=new T.DataTexture(pixels,resolution,resolution,T.RGBAFormat,T.FloatType);
+      object.userData.pstudioLightmapTexture?.dispose?.();const packedPixels=packHalfFloat(pixels),texture=new T.DataTexture(packedPixels,resolution,resolution,T.RGBAFormat,T.HalfFloatType);
       texture.name='PStudioLightmap:'+id;texture.magFilter=T.NearestFilter;texture.minFilter=T.NearestFilter;texture.generateMipmaps=false;texture.flipY=false;texture.needsUpdate=true;
-      object.userData.pstudioLightmapTexture=texture;cloneLightmapMaterial(object,texture);object.userData.pstudioLightmapId=id;baked.push(id);
+      object.userData.pstudioLightmapTexture=texture;cloneLightmapMaterial(object,texture);object.userData.pstudioLightmapId=id;baked.push(id);allocatedBytes+=perTextureBytes;
     }catch(error){working?.dispose?.();failed.push({id,error:String(error?.message||error)});}
     if((baked.length+failed.length)%4===0)await new Promise(resolve=>requestAnimationFrame(resolve));}
-    if(renderer&&scene)drawFrame();return{baked:baked.length,failed,meshes:baked,resolution,format:'linear-float-rgba',uvLayout:'non-overlapping-per-triangle-atlas',lighting:'spatial-sh-probe-irradiance'};
+    if(renderer&&scene)drawFrame();return{baked:baked.length,failed,meshes:baked,resolution,allocatedBytes,budgetBytes:budget,format:'linear-half-float-rgba',uvLayout:'non-overlapping-per-triangle-atlas',lighting:'spatial-sh-probe-irradiance'};
   }
   function scheduleGeometryBVH(geometry){
     if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled)return false;
