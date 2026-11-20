@@ -145,7 +145,7 @@ test('saved indexed meshes rebuild the same non-indexed UV2 geometry on load',()
 
 test('GLTF instance rendering reuses mesh references and avoids unchanged material traversals',()=>{
   const materialStart=renderer.indexOf('function applyModelMaterial(instance, state)');
-  const materialEnd=renderer.indexOf('function removeModelInstance(key)',materialStart);
+  const materialEnd=renderer.indexOf('function updateModelIK(instance, ik)',materialStart);
   assert.ok(materialStart>=0&&materialEnd>materialStart);
   const materialBlock=renderer.slice(materialStart,materialEnd);
   assert.ok(materialBlock.includes('materialStateSignature'));
