@@ -53,18 +53,18 @@
   .brand { min-width: 118px; gap: 7px; }
   .brand-caption { display: none; }
   .top-nav { gap: 1px; min-width: 0; }
-  .top-nav button { padding-inline: 7px; font-size: 11px; white-space: nowrap; }
+  .top-nav button { padding-inline: 7px; white-space: nowrap; }
   .header-action { padding-inline: 8px; font-size: 11px; white-space: nowrap; }
   .language-picker-trigger { min-width: 88px; }
   .ide-shell { grid-template-columns: 168px minmax(0,1fr); grid-template-rows: minmax(320px,1fr) 170px 190px; }
   .explorer-content { min-width: 0; }
   .inspector-content { grid-template-columns: repeat(3,minmax(0,1fr)); min-width: 0; }
   .inspector-section { min-width: 0; overflow-wrap: anywhere; }
-  .setting-row { align-items: flex-start; flex-wrap: wrap; font-size: 12px; }
+  .setting-row { align-items: flex-start; flex-wrap: wrap; }
   .setting-row select,.setting-row input { max-width: 100%; }
-  .panel-heading,.tree-group,.tree-folder,.inspector-title { font-size: 11px; }
-  .tree-file { font-size: 12px; min-width: 0; }
-  .project-tools button { font-size: 11px; }
+  .panel-heading,.tree-group,.tree-folder,.inspector-title { letter-spacing: normal; }
+  .tree-file { min-width: 0; }
+  .project-tools button { white-space: normal; }
 }
 @media (max-width: 700px) {
   .app-header { overflow-x: auto; }
@@ -82,11 +82,11 @@
 @media (max-width: 420px) {
   .brand { min-width: 82px; }
   .brand-mark { display: none; }
-  .brand-name { font-size: 13px; }
+  .brand-name { letter-spacing: normal; }
   .project-backup-trigger { min-width: 0; }
   .language-picker-trigger { min-width: 78px; }
   .header-action.primary { padding-inline: 7px; }
-  .tool-btn { font-size: 10px; }
+  .tool-btn { white-space: nowrap; }
   .inspector-section { min-width: 160px; }
 }
 </style>
@@ -373,21 +373,12 @@ hello()</pre>
 
 
             <div class="about-box">
-
-                <h2>
-                    目的
-                </h2>
-
-
-                <p id="about-goal">
-                    psは、プログラムを書く際の分かりやすさと
-                    シンプルな記述を重視しています。
-
-                    複雑な記号をできるだけ減らして尚且つC++並の処理速度を実現させ、
-                    コードの構造を直感的に分かりやすくすることを
-                    目指しています。
-                </p>
-
+                <h2>目的</h2>
+                <p id="about-goal"></p>
+            </div>
+            <div class="about-box">
+                <h2>開発について</h2>
+                <p id="about-vision"></p>
             </div>
 
         </section>
@@ -1436,21 +1427,30 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         };
 
         const aboutTranslations = {
+            ja: {
+                intro: "psは、読みやすく、書きやすいコードを目指して開発しているプログラミング言語です。\\n\\nPythonのように自然に読める書き方と、C++によるコンパイルを組み合わせ、書きやすさと実行性能の両立を目指しています。",
+                goal: "複雑な記号や決まりごとに意識を取られず、作りたいものの仕組みに集中できること。\\n\\npsではインデントを中心にコードの構造を表し、できるだけ直感的に読める書き方を大切にしています。",
+                vision: "最初から何もかも完成している必要はありません。小さな機能を一つずつ作り、動かし、確かめ、積み重ねていく。その先に、もっと大きなものを作れる環境が生まれると考えています。\\n\\npsもPStudioも、まだ開発の途中です。だからこそ、これから変わり、成長していける余地があります。特定のジャンルだけに限らず、2Dから3D、アクションからオープンワールドまで、作りたいゲームを形にできる環境を目指して開発を続けています。"
+            },
             en: {
-                intro: "ps is a programming language designed with simple, easy-to-write syntax.\n\nCode written in ps is translated into C++ and then compiled and executed.",
-                goal: "ps focuses on clarity and simple notation when writing programs.\n\nIt aims to reduce complex symbols while achieving processing speed comparable to C++, and to make code structure intuitive and easy to understand."
+                intro: "ps is a programming language in development, built around code that is easy to read and write.\\n\\nIt combines a natural, Python-like writing style with compilation to C++, aiming to balance ease of use and execution performance.",
+                goal: "The goal is to let programmers focus on what they want to build instead of getting caught up in complicated symbols and rules.\\n\\nps uses indentation to express code structure and values a style that feels clear and intuitive.",
+                vision: "A project does not have to be complete from the very beginning. Build one small feature, run it, check it, and keep adding to it. That steady work is what makes larger ideas possible.\\n\\nps and PStudio are still being developed. That means there is room to change, improve, and grow. The aim is not to limit creation to one genre, but to provide an environment for building many kinds of games, from 2D to 3D, from action games to open worlds."
             },
             zh: {
-                intro: "ps 是一种以简洁、易写的语法为目标设计的编程语言。\n\n使用 ps 编写的代码会转换为 C++，然后进行编译和执行。",
-                goal: "ps 注重编程时的清晰性和简洁的代码表达。\n\n它旨在尽量减少复杂符号，同时实现接近 C++ 的处理速度，并让代码结构更加直观、易于理解。"
+                intro: "ps 是一门仍在开发中的编程语言，目标是让代码更容易阅读和编写。\\n\\n它结合了类似 Python 的自然书写方式与 C++ 编译，追求易用性和运行性能之间的平衡。",
+                goal: "编程时不必把注意力浪费在复杂符号和繁琐规则上，而是专注于自己想创造的内容。\\n\\nps 主要通过缩进表达代码结构，重视直观、易读的书写方式。",
+                vision: "项目不必从一开始就全部完成。先实现一个小功能，运行它、确认它，再一点点积累。正是这样的持续开发，让更大的想法逐渐成为可能。\\n\\nps 和 PStudio 仍在开发之中，也因此拥有继续改变和成长的空间。我们的目标不是局限于某一种游戏类型，而是打造能够创作各种游戏的环境，从 2D 到 3D，从动作游戏到开放世界。"
             },
             es: {
-                intro: "ps es un lenguaje de programación diseñado para ofrecer una sintaxis sencilla y fácil de escribir.\n\nEl código escrito en ps se traduce a C++ y después se compila y ejecuta.",
-                goal: "ps prioriza la claridad y una escritura sencilla al programar.\n\nSu objetivo es reducir los símbolos complejos, manteniendo una velocidad de procesamiento comparable a C++, y hacer que la estructura del código sea intuitiva y fácil de entender."
+                intro: "ps es un lenguaje de programación en desarrollo, creado para que el código sea fácil de leer y escribir.\\n\\nCombina una escritura natural, similar a Python, con la compilación a C++, buscando equilibrar facilidad de uso y rendimiento.",
+                goal: "La idea es que quien programa pueda concentrarse en lo que quiere crear, sin distraerse con símbolos y reglas complicadas.\\n\\nps utiliza la indentación para expresar la estructura del código y prioriza una forma de escribir clara e intuitiva.",
+                vision: "Un proyecto no tiene que estar completo desde el primer día. Se construye una pequeña función, se ejecuta, se comprueba y se sigue avanzando paso a paso. Así es como las ideas grandes llegan a hacerse realidad.\\n\\nps y PStudio siguen en desarrollo. Por eso todavía tienen espacio para cambiar, mejorar y crecer. El objetivo no es limitarse a un solo género, sino ofrecer un entorno para crear muchos tipos de juegos, desde 2D hasta 3D, desde acción hasta mundos abiertos."
             },
             fr: {
-                intro: "ps est un langage de programmation conçu avec une syntaxe simple et facile à écrire.\n\nLe code écrit en ps est traduit en C++, puis compilé et exécuté.",
-                goal: "ps privilégie la clarté et une écriture simple lors de la programmation.\n\nSon objectif est de réduire les symboles complexes tout en offrant une vitesse de traitement comparable à celle du C++, et de rendre la structure du code intuitive et facile à comprendre."
+                intro: "ps est un langage de programmation en cours de développement, conçu pour rendre le code facile à lire et à écrire.\\n\\nIl associe une écriture naturelle, proche de Python, à la compilation en C++, afin de concilier simplicité d'utilisation et performances.",
+                goal: "L'objectif est de permettre aux développeurs de se concentrer sur ce qu'ils veulent créer, sans être freinés par des symboles et des règles complexes.\\n\\nps utilise l'indentation pour structurer le code et privilégie une écriture claire et intuitive.",
+                vision: "Un projet n'a pas besoin d'être entièrement terminé dès le départ. On crée une petite fonctionnalité, on la teste, on la vérifie, puis on avance étape par étape. C'est ainsi que les grandes idées prennent forme.\\n\\nps et PStudio sont encore en développement. Ils ont donc toute la place nécessaire pour évoluer, s'améliorer et grandir. L'objectif n'est pas de se limiter à un seul genre, mais de proposer un environnement permettant de créer de nombreux jeux, de la 2D à la 3D, de l'action aux mondes ouverts."
             }
         };
 
@@ -1514,26 +1514,54 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
 
         const originalTextNodes = new WeakMap();
 
-        function getTranslatableTextNodes() {
-            const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                {
-                    acceptNode(node) {
-                        const parent = node.parentElement;
-                        if (!parent) return NodeFilter.FILTER_REJECT;
-                        if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) ||
-                            parent.closest(".code-editor, #output, #stdin-panel, .file-label, .asset-name, .file-icon, .game-stage, .game-status, .language-options, .language-picker-menu, .project-backup-menu")) {
-                            return NodeFilter.FILTER_REJECT;
-                        }
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
+        function getTranslatableTextNodes(root = document.body) {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    const parent = node.parentElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) ||
+                        parent.closest(".code-editor, #output, #stdin-panel, .file-label, .asset-name, .file-icon, .game-stage, .game-status, .language-options, .language-picker-menu, .project-backup-menu")) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
                 }
-            );
-
+            });
             const nodes = [];
             while (walker.nextNode()) nodes.push(walker.currentNode);
             return nodes;
+        }
+
+        function translateTextNode(node, language = currentLanguage) {
+            if (!node || !node.parentElement) return;
+            if (!originalTextNodes.has(node)) originalTextNodes.set(node, node.nodeValue);
+            const original = originalTextNodes.get(node);
+            const trimmed = original.trim();
+            if (!trimmed) return;
+            const prefix = original.match(/^\\s*/)[0];
+            const suffix = original.match(/\\s*$/)[0];
+            const translated = (translations[language] || {})[trimmed] ?? (uiTranslations[language] || {})[trimmed];
+            if (translated !== undefined) node.nodeValue = prefix + translated + suffix;
+            else if (language === "ja") node.nodeValue = original;
+        }
+
+        const originalAttributes = new WeakMap();
+        function translateElementAttributes(element, language = currentLanguage) {
+            if (!element || element.nodeType !== 1) return;
+            let originals = originalAttributes.get(element);
+            if (!originals) { originals = {}; originalAttributes.set(element, originals); }
+            for (const attribute of ["placeholder", "title", "aria-label"]) {
+                if (!element.hasAttribute(attribute)) continue;
+                if (!(attribute in originals)) originals[attribute] = element.getAttribute(attribute);
+                const original = originals[attribute];
+                const translated = (translations[language] || {})[original] ?? (uiTranslations[language] || {})[original];
+                if (translated !== undefined) element.setAttribute(attribute, translated);
+                else if (language === "ja") element.setAttribute(attribute, original);
+            }
+        }
+
+        function translateSubtree(root, language = currentLanguage) {
+            if (!root) return;
+            if (root.nodeType === 1) translateElementAttributes(root, language);
+            getTranslatableTextNodes(root).forEach(node => translateTextNode(node, language));
+            if (root.querySelectorAll) root.querySelectorAll("*").forEach(element => translateElementAttributes(element, language));
         }
 
         function toggleLanguageMenu() {
@@ -1546,36 +1574,14 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
 
             const dictionary = translations[language] || {};
 
-            getTranslatableTextNodes().forEach(node => {
-                if (!originalTextNodes.has(node)) {
-                    originalTextNodes.set(node, node.nodeValue);
-                }
-
-                const original = originalTextNodes.get(node);
-                const trimmed = original.trim();
-                const prefix = original.match(/^\s*/)[0];
-                const suffix = original.match(/\s*$/)[0];
-                const translated = dictionary[trimmed] ?? (uiTranslations[language] || {})[trimmed];
-
-                if (translated !== undefined) {
-                    node.nodeValue = prefix + translated + suffix;
-                } else if (language === "ja") {
-                    node.nodeValue = original;
-                }
-            });
+            translateSubtree(document.body, language);
 
             const aboutIntro = document.getElementById("about-intro");
             const aboutGoal = document.getElementById("about-goal");
-            if (aboutIntro) {
-                aboutIntro.textContent = language === "ja"
-                    ? "psは、シンプルで書きやすい文法を目指して作られた\nプログラミング言語です。\n\npsで書かれたコードはC++へ変換され、\nコンパイル・実行されます。"
-                    : aboutTranslations[language].intro;
-            }
-            if (aboutGoal) {
-                aboutGoal.textContent = language === "ja"
-                    ? "psは、プログラムを書く際の分かりやすさと\nシンプルな記述を重視しています。\n\n複雑な記号をできるだけ減らして尚且つC++並の処理速度を実現させ、\nコードの構造を直感的に分かりやすくすることを\n目指しています。"
-                    : aboutTranslations[language].goal;
-            }
+            if (aboutIntro) aboutIntro.textContent = aboutTranslations[language].intro;
+            if (aboutGoal) aboutGoal.textContent = aboutTranslations[language].goal;
+            const aboutVision = document.getElementById("about-vision");
+            if (aboutVision) aboutVision.textContent = aboutTranslations[language].vision;
 
             ["ja", "en", "zh", "es", "fr"].forEach(code => {
                 document.getElementById("lang-" + code).classList.toggle("active", language === code);
@@ -1609,9 +1615,14 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         window.addEventListener("DOMContentLoaded", () => {
             let savedLanguage = null;
             try { savedLanguage = localStorage.getItem("pstudio-language"); } catch (_) {}
-            if (["ja", "en", "zh", "es", "fr"].includes(savedLanguage)) {
-                setLanguage(savedLanguage);
-            }
+            if (["ja", "en", "zh", "es", "fr"].includes(savedLanguage)) setLanguage(savedLanguage);
+            const languageObserver = new MutationObserver(records => {
+                for (const record of records) for (const node of record.addedNodes) {
+                    if (node.nodeType === Node.TEXT_NODE) translateTextNode(node, currentLanguage);
+                    else if (node.nodeType === Node.ELEMENT_NODE) translateSubtree(node, currentLanguage);
+                }
+            });
+            languageObserver.observe(document.body, { childList: true, subtree: true });
         });
 
 
