@@ -3,6 +3,7 @@ import re
 import subprocess
 import threading
 import tempfile
+from functools import wraps
 
 from flask import Flask, request, jsonify, render_template
 
@@ -121,6 +122,25 @@ except ImportError:
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
+
+MAX_CONCURRENT_PS_RUNS = 2
+ps_run_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_PS_RUNS)
+
+
+def limit_ps_run_concurrency(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not ps_run_semaphore.acquire(blocking=False):
+            return jsonify({
+                "success": False,
+                "error": "実行枠が埋まっています。少し待ってから再試行してください。"
+            }), 503
+        try:
+            return view(*args, **kwargs)
+        finally:
+            ps_run_semaphore.release()
+    return wrapped
+
 
 MAX_PS_SOURCE_BYTES = 512 * 1024
 MAX_PS_STDIN_BYTES = 128 * 1024
@@ -2603,6 +2623,7 @@ def compile_code():
 # ====================================================
 
 @app.route("/run", methods=["POST"])
+@limit_ps_run_concurrency
 def run_code():
     data = request.get_json(
         silent=True
