@@ -390,6 +390,56 @@
     for(const entry of hidden||[])entry.object.visible=entry.visible;
   }
 
+  let lastMemorySampleAt=0,memorySafetyApplied=false,lastMemoryPressure=0;
+  function memorySnapshot(){
+    const perfMemory=window.performance?.memory||null;
+    const used=Number(perfMemory?.usedJSHeapSize)||0;
+    const limit=Number(perfMemory?.jsHeapSizeLimit)||0;
+    const modelBytes=[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0);
+    const modelBudget=modelRuntimeBudgetBytes();
+    const heapRatio=limit>0?used/limit:0;
+    const modelRatio=modelBudget>0?modelBytes/modelBudget:0;
+    return{
+      deviceMemoryGiB:deviceMemoryGiB(),
+      usedJSHeapBytes:used||null,
+      jsHeapLimitBytes:limit||null,
+      heapPressure:heapRatio||null,
+      modelEstimateBytes:modelBytes,
+      modelBudgetBytes:modelBudget,
+      modelPressure:modelRatio,
+      rendererMemory:renderer?.info?.memory?{geometries:renderer.info.memory.geometries||0,textures:renderer.info.memory.textures||0}:null,
+      resources:window.PStudioResources?.stats?.()||null,
+      safetyMode:memorySafetyApplied
+    };
+  }
+  function sampleMemoryPressure(){
+    const now=window.performance?.now?.()??Date.now();
+    if(now-lastMemorySampleAt<2500)return;
+    lastMemorySampleAt=now;
+    const snapshot=memorySnapshot();
+    const pressure=Math.max(Number(snapshot.heapPressure)||0,Number(snapshot.modelPressure)||0);
+    lastMemoryPressure=pressure;
+    if(pressure>=.82&&!memorySafetyApplied){
+      memorySafetyApplied=true;
+      // Drop only expensive screen-space effects and render scale; never dispose retained scene assets.
+      const current=renderer?.getPixelRatio?.()||1;
+      renderer?.setPixelRatio?.(Math.max(.65,current*.82));
+      composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
+      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;
+      if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
+      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
+      const cache=window.PStudioResources?.stats?.();
+      if(cache){
+        window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
+        window.PStudioResources.trim?.('gpu',Math.floor(cache.gpuBudgetBytes*.72));
+      }
+    }else if(pressure<.62&&memorySafetyApplied){
+      memorySafetyApplied=false;
+      lastSize={width:0,height:0};
+    }
+    try{window.dispatchEvent(new CustomEvent('pstudio-memory-snapshot',{detail:{...snapshot,pressure,memorySafetyApplied}}));}catch(_){}
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     renderer.info?.reset?.();pollGpuTimerQueries();
@@ -415,6 +465,7 @@
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
+      sampleMemoryPressure();
       const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
@@ -2048,7 +2099,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
     setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass;if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base))u.uCloudBase.value=options.base;if(Number.isFinite(options.top))u.uCloudTop.value=Math.max(u.uCloudBase.value+1,options.top);if(Number.isFinite(options.density))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
-    getMemoryStats:()=>({deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,rendererMemory:renderer?.info?.memory?{geometries:renderer.info.memory.geometries||0,textures:renderer.info.memory.textures||0}:null,resourceCache:window.PStudioResources?.stats?.()||null}),
+    getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,
       triangles:renderer.info?.render?.triangles||0,
