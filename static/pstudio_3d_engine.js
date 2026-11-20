@@ -1152,23 +1152,49 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function hasNamedLODParent(object){
     let node=object;while(node){if(/(?:^|[ _-])LOD[0-9]+(?:$|[ _-])/i.test(String(node.name||'')))return true;node=node.parent;}return false;
   }
+  const autoLODQueue=[];
+  let autoLODPumpScheduled=false;
+  function scheduleAutoLODPump(){
+    if(autoLODPumpScheduled||!autoLODQueue.length)return;
+    autoLODPumpScheduled=true;
+    const pump=deadline=>{
+      autoLODPumpScheduled=false;
+      const job=autoLODQueue[0];
+      if(!job)return;
+      const {object,geometry,token,count,levels,specs,modifier}=job;
+      if(object.userData.pstudioLODToken!==token||object.geometry!==geometry){
+        if(object.userData.pstudioLODToken===token)object.userData.pstudioAutoLODGenerating=false;
+        autoLODQueue.shift();scheduleAutoLODPump();return;
+      }
+      if(deadline&&typeof deadline.timeRemaining==='function'&&deadline.timeRemaining()<8){
+        scheduleAutoLODPump();return;
+      }
+      const spec=specs[job.nextSpec++];
+      if(spec){
+        try{
+          const lod=modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));
+          if(!lod?.attributes?.position||lod.attributes.position.count>=count*0.94)lod?.dispose?.();
+          else{lod.computeBoundingSphere?.();lod.computeVertexNormals?.();levels.push({geometry:lod,distance:spec.distance,owned:true});}
+        }catch(error){console.warn('[PStudio] Automatic LOD generation skipped:',error);job.nextSpec=specs.length;}
+      }
+      if(job.nextSpec<specs.length){scheduleAutoLODPump();return;}
+      if(object.userData.pstudioLODToken===token&&object.geometry===geometry){
+        object.userData.pstudioAutoLOD=levels.length>1?levels:null;
+        object.userData.pstudioAutoLODGenerating=false;
+        try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length});}catch(_){}
+      }else for(const level of levels)if(level.owned)level.geometry.dispose?.();
+      autoLODQueue.shift();scheduleAutoLODPump();
+    };
+    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump);
+    else window.setTimeout(()=>pump(null),250);
+  }
   function scheduleAutoLOD(object,geometry){
     const Modifier=window.PStudioSimplifyModifier,pos=geometry?.attributes?.position,count=pos?.count||0;
     if(!Modifier||!geometry||count<240||count>16000||hasNamedLODParent(object)||object.isSkinnedMesh)return false;
     const token=(object.userData.pstudioLODToken||0)+1;object.userData.pstudioLODToken=token;
     object.userData.pstudioAutoLOD=[{geometry,distance:0,owned:false}];object.userData.pstudioAutoLODGenerating=true;
-    const build=()=>{
-      if(object.userData.pstudioLODToken!==token||object.geometry!==geometry){object.userData.pstudioAutoLODGenerating=false;return;}
-      const levels=[{geometry,distance:0,owned:false}],modifier=new Modifier();
-      for(const spec of [{keep:0.58,distance:worldRenderConfig.lodDistances[0]||25},{keep:0.3,distance:worldRenderConfig.lodDistances[1]||70}]){
-        try{const lod=modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));if(!lod?.attributes?.position||lod.attributes.position.count>=count*0.94){lod?.dispose?.();continue;}lod.computeBoundingSphere?.();lod.computeVertexNormals?.();levels.push({geometry:lod,distance:spec.distance,owned:true});}
-        catch(error){console.warn('[PStudio] Automatic LOD generation skipped:',error);break;}
-      }
-      if(object.userData.pstudioLODToken!==token){for(const level of levels)if(level.owned)level.geometry.dispose?.();return;}
-      object.userData.pstudioAutoLOD=levels.length>1?levels:null;object.userData.pstudioAutoLODGenerating=false;
-      try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length});}catch(_){}
-    };
-    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(build,{timeout:1200});else window.setTimeout(build,0);
+    autoLODQueue.push({object,geometry,token,count,levels:[{geometry,distance:0,owned:false}],specs:[{keep:0.58,distance:worldRenderConfig.lodDistances[0]||25},{keep:0.3,distance:worldRenderConfig.lodDistances[1]||70}],nextSpec:0,modifier:new Modifier()});
+    scheduleAutoLODPump();
     return true;
   }
   function applyAutoLOD(object,distance){
