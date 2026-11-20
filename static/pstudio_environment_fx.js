@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), foliage = new Set(), caustics = new Set();
+  const water = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -139,6 +139,39 @@
     material.userData.pstudioCausticsHQ=u;caustics.add(material);return material;
   }
 
+  function configureParallax(material) {
+    if(!material || material.userData.pstudioParallaxHQ || !material.normalMap)return material;
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+    const scale={value:Math.max(0,Math.min(.045,Number(material.userData.pstudioParallaxScale)||.018))};
+    material.onBeforeCompile=function(shader,renderer){
+      if(previousCompile)previousCompile.call(this,shader,renderer);
+      shader.uniforms.uPStudioParallaxScale=scale;
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>','uniform float uPStudioParallaxScale;');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',[
+        '#if defined(USE_MAP) && defined(USE_NORMALMAP)',
+        'vec3 pViewDir=normalize(vViewPosition);',
+        'vec2 pViewOffset=(pViewDir.xy/max(abs(pViewDir.z),.16))*uPStudioParallaxScale;',
+        'vec2 pUV=vMapUv;',
+        'float pLayerDepth=0.0;',
+        'const float pLayers=8.0;',
+        'vec2 pStep=pViewOffset/pLayers;',
+        'for(int pI=0;pI<8;pI++){',
+        'float pHeight=texture2D(normalMap,vNormalMapUv+(pUV-vMapUv)).a;',
+        'if(pLayerDepth>=(1.0-pHeight))break;',
+        'pUV-=pStep;pLayerDepth+=1.0/pLayers;',
+        '}',
+        'vMapUv=pUV;',
+        '#endif',
+        '#include <map_fragment>'
+      ].join('\\n'));
+    };
+    material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v1-'+(previousKey?previousKey():'');
+    material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha'};
+    parallaxMaterials.add(material);
+    return material;
+  }
+
   function configureObject(object) {
     if(!object?.isMesh||!object.material)return;
     const name=String(object.name||'');
@@ -149,8 +182,10 @@
       if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
       else if(LEAF.test(name)||/detailed.*foliage/i.test(m.name||'')){configureFoliage(m,object);out.push(m);}
-      else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge/i.test(tag)){
-        const c=m.clone();if('roughness'in c)c.roughness=Math.max(.56,Number(c.roughness)||.68);if('metalness'in c)c.metalness=Math.min(.08,Number(c.metalness)||0);if(c.normalScale)c.normalScale.set(.78,.78);out.push(c);
+      else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
+        const c=m.clone();
+        if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge/i.test(tag)){if('roughness'in c)c.roughness=Math.max(.56,Number(c.roughness)||.68);if('metalness'in c)c.metalness=Math.min(.08,Number(c.metalness)||0);if(c.normalScale)c.normalScale.set(.78,.78);}
+        configureParallax(c);out.push(c);
       } else out.push(m);
     }
     object.material=Array.isArray(object.material)?out:out[0];
@@ -201,7 +236,8 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,update,createVolumetricFogPass,
-    getStats:()=>({waterMaterials:water.size,foliageMaterials:foliage.size,causticMaterials:caustics.size})
+    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,update,createVolumetricFogPass,
+    releaseMaterial(material){water.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);},
+    getStats:()=>({waterMaterials:water.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size})
   };
 })();
