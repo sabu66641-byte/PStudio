@@ -509,7 +509,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       finalProbes=directProbes;sourceProbes=directProbes;
       // Subsequent passes disable direct emitters and feed only the previous
       // bounce field back through the scene's materials.
-      for(let pass=1;pass<=maxBounces;pass++){
+      for(let pass=1;pass<=maxBounces&&bounceStrength>0;pass++){
         const next=[];
         for(const position of positions){next.push(await capture(position,sourceProbes,false,1));await new Promise(resolve=>requestAnimationFrame(resolve));}
         let energy=0;
