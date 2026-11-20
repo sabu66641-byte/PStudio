@@ -458,7 +458,7 @@
     const colliders=[];
     for (const [id,draws] of commandsByObject) {
       const owner=(sceneObjects||[]).find(o=>o.id===id);
-      if (!owner) continue;
+      if (!owner||window.PStudio3D?.isOwnerChunkActive?.(id)===false) continue;
       for (const draw of draws) {
         const bounds=bounds3D(draw);
         if (bounds) colliders.push({owner,bounds});
@@ -530,13 +530,14 @@
   }
   function renderFrame() {
     const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
-    const draws=[...commands.values()].flat();
+    const activeCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
+    const draws=[...activeCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
-    else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(commands);}
+    else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(activeCommands);}
     renderHud(hudDraws);
     const status=$('game-status'); if(status&&runtime?.running){const m=status.textContent.match(/([0-9.]+) FPS/);status.textContent='RUNNING · '+(m?m[1]:'0')+' FPS · '+(sceneObjects||[]).length+' objects · VIEW '+(use3D?'3D':'2D')+' · '+draws.length+' draw calls';}
   }
@@ -556,6 +557,7 @@
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
         ecs.syncSceneObjects(sceneObjects || []);
+        for(const object of sceneObjects||[])ecs.setSceneObjectActive?.(object.id,window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false);
         ecs.update(dt, { sceneObjects: sceneObjects || [], runtime });
         ecs.applySceneObjectTransforms(sceneObjects || []);
       }
@@ -592,6 +594,7 @@
       // Scene-only render settings (models and particle emitters) remain active without scripts.
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
+        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled))continue;
         const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
         const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
@@ -605,7 +608,8 @@
       }
 
       for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
-      const transforms=window.PStudioPhysics?.step?.(dt,commands)||new Map();
+      const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
+      const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ownersById=new Map((sceneObjects||[]).map(item=>[item.id,item]));
       for(const [id,transform] of transforms){
         const owner=ownersById.get(id);
