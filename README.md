@@ -7,6 +7,10 @@ PStudio is an indentation-based `ps` IDE with two separate execution paths:
 
 The game runtime does not send a request to the server every frame. Scripts are parsed and validated once when Play is pressed; `start()` runs once per object, then `update(dt)` runs from `requestAnimationFrame`. `dt` is seconds and is clamped to 0.1 seconds to avoid large simulation jumps after a stalled frame.
 
+## Architecture reference
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execution-path separation, current implementation boundaries, server safeguards, open audit risks and change discipline.
+
 ## Included files
 
 - `app.py` — Flask app, original ps lexer/parser/validator/C++ generator/Discord endpoints, plus game AST and compile endpoints.
