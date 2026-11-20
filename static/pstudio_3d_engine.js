@@ -336,7 +336,8 @@
   }
   function renderWaterDepthPrepass(){
     const fx=window.PStudioEnvironmentFX,stats=fx?.getStats?.();
-    if(!waterDepthTarget||!waterDepthMaterial||!(Number(stats?.waterMaterials)>0)){
+    const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled;
+    if(!waterDepthTarget||!waterDepthMaterial||!needsDepth){
       fx?.setSceneDepthTexture?.(null,1,1,camera?.near,camera?.far);return false;
     }
     const T=window.THREE,size=renderer.getDrawingBufferSize(new T.Vector2());
@@ -347,7 +348,7 @@
       const name=String(object.name||'');
       const mats=Array.isArray(object.material)?object.material:[object.material];
       const transparent=mats.some(material=>material&&(material.transparent||(Number.isFinite(material.opacity)&&material.opacity<.999)||material.alphaMap||(material.alphaTest||0)>.001));
-      const omit=object.userData?.pstudioWaterSurface||object.userData?.pstudioWindPart||object.userData?.pstudioInstanceBatch||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|atmosphere[_ -]?dome|PStudio_Foliage_GPU|PStudio_GPU_Instances_Foliage)/i.test(name);
+      const omit=object.userData?.pstudioWaterSurface||!!object.userData?.pstudioWindPart||object.userData?.pstudioFoliageLOD!==undefined||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|atmosphere[_ -]?dome|PStudio_Foliage_GPU|PStudio_GPU_Instances_Foliage)/i.test(name);
       if(omit){hidden.push(object);object.visible=false;}
     });
     const previousTarget=renderer.getRenderTarget(),previousOverride=scene.overrideMaterial,previousAutoClear=renderer.autoClear;
