@@ -1360,6 +1360,58 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;object.userData.pstudioActiveAutoLOD=selected;
   }
+  function buildModelStreamingChunks(root){
+    const T=window.THREE,settings=root.userData?.pstudioStreamingConfig||{};
+    const cellSize=Math.max(48,Math.min(256,Number(settings.cellSize)||96));
+    const loadDistance=Math.max(96,Math.min(1200,Number(settings.loadDistance)||300));
+    const unloadDistance=Math.max(loadDistance+16,Math.min(1600,Number(settings.unloadDistance)||340));
+    const groups=new Map(),chunks=[];
+    root.updateMatrixWorld(true);
+    for(const child of [...root.children]){
+      const name=String(child.name||'');
+      const streamable=/^PStudioInstance_/i.test(name)||/(?:^|[_ -])Wind[_ -]?Tree/i.test(name)||/Wind_Grass|Wildflower_Cover/i.test(name);
+      if(!streamable)continue;
+      const bounds=new T.Box3().setFromObject(child);
+      if(bounds.isEmpty())continue;
+      const center=bounds.getCenter(new T.Vector3());
+      const cellX=Math.floor(center.x/cellSize),cellZ=Math.floor(center.z/cellSize);
+      const id=cellX+':'+cellZ;
+      if(!groups.has(id))groups.set(id,{id,cellX,cellZ,children:[]});
+      groups.get(id).children.push(child);
+    }
+    for(const group of groups.values()){
+      const chunk=new T.Group();
+      chunk.name='PStudio_StreamChunk_'+group.id.replace(':','_');
+      chunk.position.set((group.cellX+.5)*cellSize,0,(group.cellZ+.5)*cellSize);
+      chunk.userData.ownerId=root.userData.ownerId;
+      chunk.userData.pstudioStreamChunkId=group.id;
+      chunk.userData.pstudioStreamRadius=cellSize*.74;
+      chunk.userData.pstudioStreamLoadDistance=loadDistance;
+      chunk.userData.pstudioStreamUnloadDistance=unloadDistance;
+      root.add(chunk);root.updateMatrixWorld(true);
+      for(const child of group.children)chunk.attach(child);
+      chunks.push(chunk);
+    }
+    root.updateMatrixWorld(true);
+    return chunks;
+  }
+  function updateModelStreamingChunks(instance){
+    if(!instance?.streamChunks?.length||!camera)return;
+    const T=window.THREE;
+    instance.root.updateMatrixWorld(true);
+    const factor=qualityPreset==='mobile'?.72:qualityPreset==='balanced'?.86:(adaptiveQualityEnabled?[.72,.86,1.0][adaptiveQualityLevel]:1.0);
+    const cameraPosition=camera.position;
+    for(const chunk of instance.streamChunks){
+      const center=chunk.getWorldPosition(new T.Vector3());
+      const distance=Math.max(0,cameraPosition.distanceTo(center)-(chunk.userData.pstudioStreamRadius||0));
+      const wasActive=chunk.userData.pstudioStreamActive!==false;
+      const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance:chunk.userData.pstudioStreamLoadDistance;
+      const active=distance<=threshold*factor;
+      chunk.visible=active;
+      chunk.userData.pstudioStreamActive=active;
+    }
+  }
+
   function buildFoliageInstanceBatches(root){
     const T=window.THREE,groups=new Map(),batches=[];
     root.updateMatrixWorld(true);
