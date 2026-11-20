@@ -373,12 +373,29 @@
     return true;
   }
 
+  function hideStaticSkyForVolumetrics(){
+    if(!volumetricCloudsEnabled||!scene)return[];
+    const hidden=[];
+    scene.traverse(object=>{
+      if(!object.isMesh||!object.visible)return;
+      if(!/(?:sky[_ -]?dome|cloudbank|cumulus|cirrus|atmosphere[_ -]?dome)/i.test(String(object.name||'')))return;
+      hidden.push({object,visible:object.visible});
+      object.visible=false;
+    });
+    return hidden;
+  }
+  function restoreStaticSky(hidden){
+    for(const entry of hidden||[])entry.object.visible=entry.visible;
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
+    const hiddenStaticSky=[];
     try{
       renderWaterDepthPrepass();
+      if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
@@ -392,6 +409,7 @@
         renderer.render(scene,camera);
       }
     }finally{
+      restoreStaticSky(hiddenStaticSky);
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
