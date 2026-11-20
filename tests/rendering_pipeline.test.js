@@ -186,7 +186,7 @@ test('foliage model LODs are batched independently and switched by camera distan
 });
 test('parallax mapping consumes height stored in the normal texture alpha channel',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
-  for(const token of ['configureParallax',"heightSource:'normalTexture alpha'",'normalMap','pStudioHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v1'])assert.ok(fx.includes(token),token);
+  for(const token of ['configureParallax',"heightSource:'normalTexture alpha'",'normalMap','pStudioHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v2'])assert.ok(fx.includes(token),token);
 });
 
 
