@@ -948,7 +948,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return lightmapDatabasePromise;
   }
   function lightmapTargets(){
-    const out=[];for(const [key,object] of meshCache)if(object?.isMesh&&object.geometry)out.push({id:'primitive:'+key,object});
+    const out=[];for(const [key,object] of meshCache)if(object?.isMesh&&object.parent===primitiveGroup&&object.geometry)out.push({id:'primitive:'+key,object});
     for(const [key,instance] of modelInstances){const root=instance.root;root.traverse(object=>{if(!object.isMesh||!object.geometry)return;const path=[];let node=object;while(node&&node!==root){const parent=node.parent;if(!parent)break;path.push(parent.children.indexOf(node));node=parent;}if(node===root)out.push({id:'model:'+key+':'+path.reverse().join('.'),object});});}
     return out;
   }
