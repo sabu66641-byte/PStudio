@@ -349,3 +349,27 @@ test('static repeated detail geometry is eligible for chunk-local instancing',()
 test('GPU-updated foliage transforms skip hidden LOD and streamed chunks',()=>{
   assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
 });
+
+
+test('large GLB loading uses an object URL and progress events instead of an app-owned full ArrayBuffer copy',()=>{
+  assert.ok(renderer.includes('window.PStudioAssetStore.get(name,{cache:false})'));
+  assert.ok(renderer.includes('URL.createObjectURL(blob)'));
+  assert.ok(renderer.includes('loader.load(url,resolve,event=>'));
+  assert.ok(renderer.includes('URL.revokeObjectURL(url)'));
+  assert.ok(!renderer.includes("const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer()"));
+});
+test('large model loading checks estimated runtime memory against device memory before decoding',()=>{
+  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のGLBは保存済みです'])assert.ok(renderer.includes(token),token);
+});
+test('failed model loading clears pending promises so the same model can be retried',()=>{
+  assert.ok(renderer.includes('if(modelPromises.get(name)===promise)modelPromises.delete(name)'));
+  assert.ok(!renderer.includes('if(modelPromises.get(name)===promise&&modelCache.has(name))modelPromises.delete(name)'));
+});
+test('renderer exposes live memory telemetry and activates a safe graphics mode under memory pressure',()=>{
+  for(const token of ['function memorySnapshot()','function sampleMemoryPressure()','pstudio-memory-snapshot','heapPressure','modelPressure','memorySafetyApplied','getMemoryStats:memorySnapshot'])assert.ok(renderer.includes(token),token);
+});
+test('low-memory devices disable hardware MSAA and receive conservative quality settings',()=>{
+  assert.ok(renderer.includes('antialias:deviceGiB>=6'));
+  assert.ok(renderer.includes('if(memory<=2)return \'mobile\''));
+  assert.ok(renderer.includes('pixelRatio:0.8'));
+});
