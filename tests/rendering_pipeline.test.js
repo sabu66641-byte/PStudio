@@ -179,3 +179,12 @@ test('renderer exposes volumetric fog and static-scene temporal AA controls',()=
 test('imported named foliage meshes can be combined into owner-preserving GPU instance batches',()=>{
   for(const token of ['buildFoliageInstanceBatches','PStudio_Foliage_GPU_Instances','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
 });
+
+
+test('foliage model LODs are batched independently and switched by camera distance',()=>{
+  for(const token of ['pstudioFoliageLOD','LOD'+String(0),'entry.level===selected.level','foliageInstancedBatches','foliageInstancedInstances'])assert.ok(renderer.includes(token),token);
+});
+test('parallax mapping consumes height stored in the normal texture alpha channel',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['configureParallax','pstudioParallaxHeight','normalMap','pHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v1'])assert.ok(fx.includes(token),token);
+});
