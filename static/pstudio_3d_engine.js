@@ -395,24 +395,73 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
   function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
   async function bakeLightProbeVolume(o={}){
-    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');const generator=window.PStudioPostFX?.LightProbeGenerator;if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
-    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
-    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)));
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    const generator=window.PStudioPostFX?.LightProbeGenerator;
+    if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
+    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};
+    for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
+    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2))));
+    const positions=[];
+    for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(
+      Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),
+      Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),
+      Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)
+    ));
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
-    const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64))),previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,bounces=Math.max(0,Math.min(2,Math.floor(Number(o.bounces??1)))),bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.35));
-    let sourceProbes=[],finalProbes=[];const oldAuto=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=true;
+    const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64)));
+    const previous=bakedLightProbeVolume,previousSingle=bakedLightProbe;
+    const bounces=Math.max(0,Math.min(2,Math.floor(Number(o.bounces??1))));
+    const bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.35));
+    let sourceProbes=[],finalProbes=[];
+    const allocatedProbes=new Set(),oldAuto=renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate=true;
+    if(previousSingle)scene.remove(previousSingle);
     const capture=async(position,sources)=>{
-      const temp=[];if(sources.length){const near=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,sources.length));let sum=0;for(const e of near){e.w=1/Math.max(1,e.d);sum+=e.w;}for(const e of near){e.item.light.intensity=e.item.baseIntensity*bounceStrength*e.w/Math.max(1e-8,sum);scene.add(e.item.light);temp.push(e.item.light);}}
-      const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter}),cube=new T.CubeCamera(.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
-      try{scene.add(cube);cube.update(renderer,scene);scene.remove(cube);const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);return{position:position.clone(),light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))};}
-      finally{scene.remove(cube);target.dispose();for(const light of temp)scene.remove(light);}
+      const temporary=[];
+      if(sources.length){
+        const nearest=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,sources.length));
+        let sum=0;for(const entry of nearest){entry.weight=1/Math.max(1,entry.d);sum+=entry.weight;}
+        for(const entry of nearest){entry.item.light.intensity=entry.item.baseIntensity*bounceStrength*entry.weight/Math.max(1e-8,sum);scene.add(entry.item.light);temporary.push(entry.item.light);}
+      }
+      const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+      const cube=new T.CubeCamera(0.1,Math.max(50,Number(o.far)||500),target);
+      cube.position.copy(position);
+      try{
+        scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
+        const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);
+        const result={position:position.clone(),light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))};
+        allocatedProbes.add(result);
+        return result;
+      }finally{
+        scene.remove(cube);target.dispose();
+        for(const light of temporary)scene.remove(light);
+      }
     };
-    try{for(let pass=0;pass<=bounces;pass++){const next=[];for(const position of positions){next.push(await capture(position,sourceProbes));await new Promise(resolve=>requestAnimationFrame(resolve));}for(const item of sourceProbes)item.light.dispose?.();sourceProbes=next;finalProbes=next;}
-      for(const item of previous||[])item.light.dispose?.();if(previousSingle){scene.remove(previousSingle);previousSingle.dispose?.();}bakedLightProbe=null;bakedLightProbeVolume=finalProbes;
-      for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
-      updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();return{baked:true,probes:finalProbes.length,kind:'object-local-spatial-spherical-harmonics',bounces,bounceStrength,resolution:size,note:'オブジェクト位置ごとに近傍SHを補間します。追加バウンスは前段のプローブ照明を次の捕捉へ戻す近似GIです。'};
-    }catch(error){for(const item of sourceProbes)item.light.dispose?.();bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;if(previousSingle)scene.add(previousSingle);throw error;}
-    finally{renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);}
+    try{
+      for(let pass=0;pass<=bounces;pass++){
+        const next=[];
+        for(const position of positions){
+          next.push(await capture(position,sourceProbes));
+          await new Promise(resolve=>requestAnimationFrame(resolve));
+        }
+        for(const item of sourceProbes){item.light.dispose?.();allocatedProbes.delete(item);}
+        sourceProbes=next;finalProbes=next;
+      }
+      bakedLightProbe=null;bakedLightProbeVolume=finalProbes;
+      for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
+      for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
+      updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
+      for(const item of previous||[])item.light.dispose?.();
+      if(previousSingle)previousSingle.dispose?.();
+      return{baked:true,probes:finalProbes.length,kind:'object-local-spatial-spherical-harmonics',bounces,bounceStrength,resolution:size,note:'各オブジェクト位置に近傍SHを補間します。追加バウンスは前段のプローブ照明を次の捕捉へ戻す近似GIです。'};
+    }catch(error){
+      for(const item of allocatedProbes)item.light.dispose?.();
+      bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;
+      if(previousSingle)scene.add(previousSingle);
+      throw error;
+    }finally{
+      renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);
+    }
   }
   function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm)return;if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
