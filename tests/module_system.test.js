@@ -64,6 +64,18 @@ test('detects missing dependencies, cycles and conflicts', async () => {
   await assert.rejects(api.enable('test.two'), /conflict/);
 });
 
+test('prevents unregister while asynchronous activation is in progress', async () => {
+  const api = createManager();
+  let finishActivation;
+  const activation = new Promise(resolve => { finishActivation = resolve; });
+  api.register({ id: 'test.pending', activate: () => activation });
+  const enabling = api.enable('test.pending');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.throws(() => api.unregister('test.pending'), /operation is in progress/);
+  finishActivation();
+  await enabling;
+  assert.equal(api.get('test.pending').enabled, true);
+});
 test('supports lifecycle event subscriptions and unregister guards', async () => {
   const api = createManager();
   const events = [];
