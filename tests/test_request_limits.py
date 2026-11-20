@@ -9,13 +9,13 @@ class RequestLimitRegressionTests(unittest.TestCase):
         self.client = pstudio_app.app.test_client()
 
     def test_compile_rejects_source_above_512_kib(self):
-        source = " " * (pstudio_app.MAX_PS_SOURCE_BYTES + 1)
+        source = 'ps 1\\n' * (pstudio_app.MAX_PS_SOURCE_BYTES // 4 + 1)
         response = self.client.post("/compile", json={"code": source})
         self.assertEqual(response.status_code, 413)
         self.assertIn("512KB", response.get_json()["error"])
 
     def test_run_rejects_source_above_512_kib(self):
-        source = " " * (pstudio_app.MAX_PS_SOURCE_BYTES + 1)
+        source = 'ps 1\\n' * (pstudio_app.MAX_PS_SOURCE_BYTES // 4 + 1)
         response = self.client.post("/run", json={"code": source})
         self.assertEqual(response.status_code, 413)
         self.assertIn("512KB", response.get_json()["error"])
