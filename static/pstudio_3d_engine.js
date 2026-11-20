@@ -1167,7 +1167,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
       return asset;
     }).finally(()=>{
-      if(modelPromises.get(name)===promise&&modelCache.has(name))modelPromises.delete(name);
+      // Failed or cancelled loads must be retryable; never leave a resolved-null promise cached.
+      if(modelPromises.get(name)===promise)modelPromises.delete(name);
     });
     modelPromises.set(name,promise);
     return promise;
