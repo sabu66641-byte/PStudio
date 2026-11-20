@@ -18,6 +18,7 @@
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
   const waterMaterials=new Set();
+  let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
   let pmremGenerator = null, environmentTarget = null;
   let scene = null;
@@ -220,6 +221,17 @@
     renderer.toneMapping=T.ACESFilmicToneMapping;
     renderer.toneMappingExposure=1.12;
     renderer.setClearColor(0x171d26,1);
+    if(T.DepthTexture&&T.WebGLRenderTarget&&T.MeshDepthMaterial){
+      const size=renderer.getDrawingBufferSize(new T.Vector2());
+      waterDepthTarget=new T.WebGLRenderTarget(Math.max(1,size.x),Math.max(1,size.y),{depthBuffer:true,stencilBuffer:false});
+      waterDepthTarget.texture.generateMipmaps=false;
+      waterDepthTarget.depthTexture=new T.DepthTexture(Math.max(1,size.x),Math.max(1,size.y),T.UnsignedIntType);
+      waterDepthTarget.depthTexture.format=T.DepthFormat;
+      waterDepthTarget.depthTexture.minFilter=T.NearestFilter;
+      waterDepthTarget.depthTexture.magFilter=T.NearestFilter;
+      waterDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.BasicDepthPacking});
+      waterDepthMaterial.colorWrite=false;waterDepthMaterial.depthWrite=true;
+    }
     if('useLegacyLights' in renderer)renderer.useLegacyLights=false;
     scene=new T.Scene();scene.background=new T.Color(0x171d26);
     if(T.PMREMGenerator){
@@ -268,6 +280,7 @@
     const height = Math.max(1, Math.floor(rect.height));
     if (width !== lastSize.width || height !== lastSize.height) {
       renderer.setSize(width, height, false);composer?.setSize(width,height);
+      if(waterDepthTarget){const size=renderer.getDrawingBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       lastSize = { width, height };
@@ -308,11 +321,51 @@
       while(gpuTimerQueries.length>8){const oldest=gpuTimerQueries.shift();gpuTimerGl.deleteQuery(oldest.query);}
     }catch(error){try{gpuTimerGl.deleteQuery(query);}catch(_){}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query end failed; CPU timing fallback will be used.',error);}
   }
+  function renderWaterDepthPrepass(){
+    const fx=window.PStudioEnvironmentFX,stats=fx?.getStats?.();
+    if(!waterDepthTarget||!waterDepthMaterial||!(Number(stats?.waterMaterials)>0)){
+      fx?.setSceneDepthTexture?.(null,1,1,camera?.near,camera?.far);return false;
+    }
+    const T=window.THREE,size=renderer.getDrawingBufferSize(new T.Vector2());
+    if(waterDepthTarget.width!==Math.max(1,size.x)||waterDepthTarget.height!==Math.max(1,size.y))waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));
+    const hidden=[];
+    scene.traverse(object=>{
+      if(!object.isMesh||!object.visible)return;
+      const name=String(object.name||'');
+      const mats=Array.isArray(object.material)?object.material:[object.material];
+      const transparent=mats.some(material=>material&&(material.transparent||(Number.isFinite(material.opacity)&&material.opacity<.999)||material.alphaMap||(material.alphaTest||0)>.001));
+      const omit=object.userData?.pstudioWaterSurface||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|PStudio_Foliage_GPU)/i.test(name);
+      if(omit){hidden.push(object);object.visible=false;}
+    });
+    const previousTarget=renderer.getRenderTarget(),previousOverride=scene.overrideMaterial,previousAutoClear=renderer.autoClear;
+    const previousShadowAutoUpdate=renderer.shadowMap?.autoUpdate;
+    try{
+      scene.overrideMaterial=waterDepthMaterial;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
+      renderer.setRenderTarget(waterDepthTarget);renderer.autoClear=true;renderer.clear(true,true,true);
+      renderer.render(scene,camera);
+    }catch(error){
+      waterDepthPrepassFailed=true;
+      fx?.setSceneDepthTexture?.(null,1,1,camera.near,camera.far);
+      console.warn('[PStudio] Water depth prepass failed; edge-depth fallback will be used.',error);
+      return false;
+    }finally{
+      scene.overrideMaterial=previousOverride;
+      for(const object of hidden)object.visible=true;
+      renderer.setRenderTarget(previousTarget);renderer.autoClear=previousAutoClear;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=previousShadowAutoUpdate;
+    }
+    fx?.setSceneDepthTexture?.(waterDepthTarget.depthTexture,size.x,size.y,camera.near,camera.far);
+    waterDepthPrepassFailed=false;
+    return true;
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     try{
+      renderWaterDepthPrepass();
       if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
@@ -1817,7 +1870,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
