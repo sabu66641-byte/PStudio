@@ -1521,14 +1521,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         object.castShadow=true;
         object.receiveShadow=true;
         const cloneMaterial=material=>{
-          let copy=materialClones.get(material);
+          const windRole=String(object.userData?.pstudioWindPart||'');
+          const cacheKey=windRole ? (material.uuid+'|pstudio-wind-role:'+windRole) : material;
+          let copy=materialClones.get(cacheKey);
           if(copy)return copy;
           copy=material.clone();setupLightingMaterial(copy);
           materialDefaults.set(copy,{
             roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
             metalness:Number.isFinite(material.metalness)?material.metalness:0.04
           });
-          materialClones.set(material,copy);
+          materialClones.set(cacheKey,copy);
           return copy;
         };
         object.material=Array.isArray(object.material)
