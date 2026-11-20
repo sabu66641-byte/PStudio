@@ -5,6 +5,11 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+const physics = fs.readFileSync(path.join(root, 'static/pstudio_physics.js'), 'utf8');
+const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
@@ -95,7 +100,8 @@ test('UV lightmaps generate per-triangle UV2 atlases and persist in IndexedDB',(
 });
 test('BVH acceleration is optional and connected to occlusion raycasting',()=>{
   assert.ok(html.includes('three-mesh-bvh@0.7.8'));
-  for(const token of ['acceleratedRaycast','computeBoundsTree','scheduleGeometryBVH','disposeBoundsTree'])assert.ok(renderer.includes(token),token);
+  assert.ok(html.includes('acceleratedRaycast'));
+  for(const token of ['computeBoundsTree','scheduleGeometryBVH','disposeBoundsTree'])assert.ok(renderer.includes(token),token);
 });
 test('world chunk lifecycle suspends scripts, physics, ECS and owner audio',()=>{
   for(const token of ['isOwnerChunkActive','pauseOwnerAudio','resumeOwnerAudio','play_sound','stop_sound','set_sound_volume'])assert.ok(engine.includes(token),token);
