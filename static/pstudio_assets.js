@@ -174,9 +174,10 @@
 
   async function getStorageInfo() {
     const estimate = await storageEstimate();
-    const persisted = typeof window.navigator?.storage?.persisted === 'function'
-      ? await window.navigator.storage.persisted().catch(() => false)
-      : false;
+    let persisted = false;
+    try {
+      if (typeof window.navigator?.storage?.persisted === 'function') persisted = !!(await window.navigator.storage.persisted());
+    } catch (_) {}
     return { ...estimate, persisted, maxModelBytes: MAX_MODEL_BYTES };
   }
 
