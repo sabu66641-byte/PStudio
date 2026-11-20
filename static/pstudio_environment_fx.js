@@ -21,6 +21,7 @@
     const u = {
       time:{value:0}, amplitude:{value:waterfall?0.018:0.105},
       bounds:{value:new Three.Vector4(minX,minZ,width,depth)},
+      sceneDepth:{value:null},viewport:{value:new Three.Vector2(1,1)},near:{value:.1},far:{value:1600},sceneDepthValid:{value:0},
       shallow:{value:new Three.Color('#65d9bf')},
       deep:{value:new Three.Color('#08727d')},
       foam:{value:new Three.Color('#e3fff6')},
@@ -35,7 +36,7 @@
       });
       shader.vertexShader = addAfter(shader.vertexShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform float uPStudioWaterAmplitude;',
-        'varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;'
+        'varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
       shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>',[
         'float wa=sin(position.x*.071+position.z*.043+uPStudioWaterTime*.92);',
@@ -54,19 +55,31 @@
       shader.vertexShader = addAfter(shader.vertexShader,'#include <worldpos_vertex>',[
         'vPStudioWaterWorld=(modelMatrix*vec4(transformed,1.0)).xyz;','vPStudioWaterLocal=position;','vPStudioWaterUV=uv;'
       ].join('\n'));
+      shader.vertexShader = addAfter(shader.vertexShader,'#include <project_vertex>','vPStudioWaterClip=gl_Position;');
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform vec4 uPStudioWaterBounds;',
         'uniform vec3 uPStudioWaterShallow;','uniform vec3 uPStudioWaterDeep;','uniform vec3 uPStudioWaterFoam;',
-        'uniform float uPStudioWaterMode;','varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;'
+        'uniform float uPStudioWaterMode;','uniform sampler2D uPStudioSceneDepth;','uniform vec2 uPStudioWaterViewport;','uniform float uPStudioCameraNear;','uniform float uPStudioCameraFar;','uniform float uPStudioSceneDepthValid;','varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <color_fragment>',[
         'vec2 wuv=(vPStudioWaterLocal.xz-uPStudioWaterBounds.xy)/max(uPStudioWaterBounds.zw,vec2(.001));',
         'vec2 wed=min(wuv,vec2(1.0)-wuv);float edge=clamp(min(wed.x,wed.y),0.0,.5);',
         'float depth=smoothstep(.012,.34,edge);',
+        'float foamBand=(1.0-smoothstep(.018,.092,edge))*(.55+.45*sin(vPStudioWaterWorld.x*.46+vPStudioWaterWorld.z*.39+uPStudioWaterTime*1.6));',
+        'if(uPStudioSceneDepthValid>.5){',
+        'float sceneRaw=texture2D(uPStudioSceneDepth,gl_FragCoord.xy/max(uPStudioWaterViewport,vec2(1.0))).x;',
+        'float waterRaw=gl_FragCoord.z;',
+        'float sceneZ=sceneRaw*2.0-1.0;float waterZ=waterRaw*2.0-1.0;',
+        'float sceneLinear=(2.0*uPStudioCameraNear*uPStudioCameraFar)/max(1e-5,uPStudioCameraFar+uPStudioCameraNear-sceneZ*(uPStudioCameraFar-uPStudioCameraNear));',
+        'float waterLinear=(2.0*uPStudioCameraNear*uPStudioCameraFar)/max(1e-5,uPStudioCameraFar+uPStudioCameraNear-waterZ*(uPStudioCameraFar-uPStudioCameraNear));',
+        'float waterThickness=max(0.0,sceneLinear-waterLinear);',
+        'depth=smoothstep(.18,10.0,waterThickness);',
+        'float shorelineFoam=1.0-smoothstep(.035,.95,waterThickness);',
+        'foamBand=max(foamBand*.22,shorelineFoam*(.58+.42*sin(vPStudioWaterWorld.x*.61+vPStudioWaterWorld.z*.47+uPStudioWaterTime*1.8)));',
+        '}',
         'float variation=.5+.5*sin(vPStudioWaterWorld.x*.043+sin(vPStudioWaterWorld.z*.037)*1.8);',
         'vec3 depthColor=mix(uPStudioWaterShallow,uPStudioWaterDeep,clamp(depth*.88+variation*.12,0.0,1.0));',
         'float ripple=sin(vPStudioWaterWorld.x*1.85+vPStudioWaterWorld.z*1.31+uPStudioWaterTime*2.0)*sin(vPStudioWaterWorld.z*1.63-vPStudioWaterWorld.x*.74-uPStudioWaterTime*1.43);',
-        'float foamBand=(1.0-smoothstep(.018,.092,edge))*(.55+.45*sin(vPStudioWaterWorld.x*.46+vPStudioWaterWorld.z*.39+uPStudioWaterTime*1.6));',
         'if(uPStudioWaterMode<.5){diffuseColor.rgb=mix(diffuseColor.rgb,depthColor,.68);diffuseColor.rgb*=.96+.045*ripple;diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterFoam,clamp(foamBand*.62,0.0,.62));}',
         'else{float flow=.5+.5*sin(vPStudioWaterUV.y*110.0-uPStudioWaterTime*3.5+sin(vPStudioWaterUV.x*24.0)*2.2);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.58,.88,.91),smoothstep(.74,.98,flow)*.45);}'
       ].join('\n'));
@@ -79,6 +92,7 @@
     };
     material.customProgramCacheKey = () => 'pstudio-water-hq-v2-'+(waterfall?'fall':'surface')+(oldKey?oldKey():'');
     material.userData.pstudioWaterHQ = u;
+    if(object?.userData)object.userData.pstudioWaterSurface=true;
     material.roughness = waterfall ? 0.12 : 0.075;
     material.metalness = 0.015;
     material.transparent = false; material.depthWrite = true;
@@ -260,6 +274,7 @@
 
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,update,createVolumetricFogPass,
+    setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material.userData?.pstudioWaterHQ;if(!u)continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     releaseMaterial(material){water.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);},
     getStats:()=>({waterMaterials:water.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size})
   };
