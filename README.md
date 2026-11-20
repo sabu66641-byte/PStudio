@@ -507,7 +507,7 @@ The `auto` preset now prefers asynchronous WebGL GPU timer queries through `EXT_
 
 ### UV lightmap workflow
 
-Bake the spatial probe volume first, then generate and apply a lightmap atlas to currently loaded meshes. Use `ownerIds` to limit the bake to known static scene objects:
+Bake the spatial probe volume first, then generate and apply a lightmap atlas to currently loaded meshes. Stop Play before either bake so the scene remains static. Use `ownerIds` to limit the bake to known static scene objects:
 
 ```js
 await PStudio3D.bakeLightProbeVolume({
