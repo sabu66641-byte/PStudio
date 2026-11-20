@@ -533,7 +533,8 @@
     const activeCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
     const draws=[...activeCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
-    const has3D=draws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
+    const allDraws=[...commands.values()].flat();
+    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
