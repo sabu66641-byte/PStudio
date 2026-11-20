@@ -2,12 +2,59 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
   const LEAF = /tree|foliage|leaf|leaves|canopy|grass|meadow|wildflower|pine|bush|shrub/i;
   const UNDER = /submerged|underwater|reef|riverbed|seabed|waterbed/i;
+
+  function configureWaterDetail(material,object) {
+    if(!material || material.userData.pstudioWaterDetailHQ)return material;
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    const role=String(object?.userData?.pstudioWaterDetail||'micro-ripple');
+    const type=role==='spray-particles'?2:role==='shoreline-foam'?1:0;
+    const u={time:{value:0},type:{value:type},strength:{value:type===0?.72:type===1?.54:.38}};
+    const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
+    material.onBeforeCompile=function(shader,renderer){
+      if(old)old.call(this,shader,renderer);
+      Object.assign(shader.uniforms,{uPStudioWaterDetailTime:u.time,uPStudioWaterDetailType:u.type,uPStudioWaterDetailStrength:u.strength});
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
+        'uniform float uPStudioWaterDetailTime;',
+        'uniform float uPStudioWaterDetailType;',
+        'varying vec3 vPStudioWaterDetailWorld;'
+      ].join('\n'));
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
+        'float detailWave=sin(position.x*1.7+position.z*1.13+uPStudioWaterDetailTime*1.7);',
+        'float detailWave2=sin(position.x*.71-position.z*1.91-uPStudioWaterDetailTime*1.13);',
+        'float detailMove=mix(.009,.002,uPStudioWaterDetailType);',
+        'transformed.y+=detailMove*(detailWave*.65+detailWave2*.35);'
+      ].join('\n'));
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <worldpos_vertex>','vPStudioWaterDetailWorld=worldPosition.xyz;');
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
+        'uniform float uPStudioWaterDetailTime;',
+        'uniform float uPStudioWaterDetailType;',
+        'uniform float uPStudioWaterDetailStrength;',
+        'varying vec3 vPStudioWaterDetailWorld;'
+      ].join('\n'));
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>',[
+        'float detailPhase=vPStudioWaterDetailWorld.x*.47+vPStudioWaterDetailWorld.z*.39+uPStudioWaterDetailTime*(1.1+uPStudioWaterDetailType*.35);',
+        'float glint=pow(max(0.0,sin(detailPhase)*.5+.5),uPStudioWaterDetailType<.5?8.0:4.0);',
+        'float detailPulse=.82+.18*(.5+.5*sin(detailPhase*1.37));',
+        'diffuseColor.rgb+=vec3(.035,.105,.12)*glint*uPStudioWaterDetailStrength;',
+        'diffuseColor.a*=mix(detailPulse,.72+.28*glint,uPStudioWaterDetailType>.5?1.0:.0);'
+      ].join('\n'));
+    };
+    material.customProgramCacheKey=()=>'pstudio-water-detail-hq-v1-'+role+(oldKey?oldKey():'');
+    material.userData.pstudioWaterDetailHQ=u;
+    material.transparent=true;
+    material.depthWrite=false;
+    material.side=T()?.DoubleSide??material.side;
+    material.roughness=Math.max(.12,Number(material.roughness)||.24);
+    waterDetailMaterials.add(material);
+    if(object){object.renderOrder=type===2?5:3;object.userData.pstudioTransparentDetail=true;}
+    return material;
+  }
 
   function configureWater(material, object, waterfall) {
     if (!material || material.userData.pstudioWaterHQ) return material;
@@ -102,30 +149,50 @@
     return material;
   }
 
-  function configureFoliage(material, object) {
-    if (!material || material.userData.pstudioFoliageHQ) return material;
-    if (!material.isMeshStandardMaterial && !material.isMeshPhysicalMaterial && !material.isMeshToonMaterial) return material;
+  function configureFoliage(material,object) {
+    if(!material || material.userData.pstudioFoliageHQ)return material;
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial&&!material.isMeshToonMaterial)return material;
     object?.geometry?.computeBoundingBox?.();
-    const b=object?.geometry?.boundingBox, height=Math.max(.1,b?b.max.y-b.min.y:10), base=b?b.min.y:0;
-    const u={time:{value:0},strength:{value:.42},height:{value:height},base:{value:base}};
-    const old=material.onBeforeCompile, oldKey=material.customProgramCacheKey?.bind(material);
+    const b=object?.geometry?.boundingBox,height=Math.max(.1,b?b.max.y-b.min.y:10),base=b?b.min.y:0;
+    const role=String(object?.userData?.pstudioWindPart||'foliage');
+    const authored=Number(object?.userData?.pstudioWindWeight);
+    const fallback=role==='trunk'?.12:role==='branch'?.42:role==='leaf'?.88:.34;
+    const strength=Number.isFinite(authored)?Math.max(0,Math.min(1,authored)):fallback;
+    const u={time:{value:0},strength:{value:strength},height:{value:height},base:{value:base},direction:{value:new (T().Vector2)(.83,.56).normalize()}};
+    const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
-      Object.assign(shader.uniforms,{uPStudioWindTime:u.time,uPStudioWindStrength:u.strength,uPStudioFoliageHeight:u.height,uPStudioFoliageBaseY:u.base});
+      Object.assign(shader.uniforms,{
+        uPStudioWindTime:u.time,uPStudioWindStrength:u.strength,
+        uPStudioFoliageHeight:u.height,uPStudioFoliageBaseY:u.base,
+        uPStudioWindDirection:u.direction
+      });
       shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
-        'uniform float uPStudioWindTime;','uniform float uPStudioWindStrength;','uniform float uPStudioFoliageHeight;','uniform float uPStudioFoliageBaseY;'
+        'uniform float uPStudioWindTime;',
+        'uniform float uPStudioWindStrength;',
+        'uniform float uPStudioFoliageHeight;',
+        'uniform float uPStudioFoliageBaseY;',
+        'uniform vec2 uPStudioWindDirection;'
       ].join('\n'));
       shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
-        'float fh=clamp((position.y-uPStudioFoliageBaseY)/max(.1,uPStudioFoliageHeight),0.0,1.0);',
-        'float bend=pow(fh,1.55);',
-        'float gust=sin(uPStudioWindTime*1.08+position.x*.24+position.z*.19);',
-        'float detail=sin(uPStudioWindTime*2.47+position.x*1.9-position.z*1.57);',
-        'transformed.x+=(gust*.34+detail*.045)*bend*uPStudioWindStrength;',
-        'transformed.z+=(gust*.19+detail*.025)*bend*uPStudioWindStrength;'
+        'vec4 pstudioWindWorld=modelMatrix*vec4(transformed,1.0);',
+        '#ifdef USE_INSTANCING',
+        'pstudioWindWorld=modelMatrix*instanceMatrix*vec4(transformed,1.0);',
+        '#endif',
+        'float foliageHeight01=clamp((position.y-uPStudioFoliageBaseY)/max(.1,uPStudioFoliageHeight),0.0,1.0);',
+        'float foliageBend=pow(foliageHeight01,1.42);',
+        'float worldPhase=dot(pstudioWindWorld.xz,normalize(uPStudioWindDirection));',
+        'float broadGust=sin(uPStudioWindTime*.78+worldPhase*.047);',
+        'float secondaryGust=sin(uPStudioWindTime*1.31+worldPhase*.113+position.y*.39);',
+        'float leafFlutter=sin(uPStudioWindTime*3.25+worldPhase*.31+position.y*1.7+position.x*1.1);',
+        'float sway=(broadGust*.23+secondaryGust*.052+leafFlutter*.014)*foliageBend*uPStudioWindStrength;',
+        'transformed.x+=sway*uPStudioWindDirection.x;',
+        'transformed.z+=sway*uPStudioWindDirection.y;',
+        'transformed.y+=leafFlutter*.006*foliageBend*uPStudioWindStrength;'
       ].join('\n'));
     };
-    material.customProgramCacheKey=()=>'pstudio-foliage-wind-v2-'+(oldKey?oldKey():'');
-    material.userData.pstudioFoliageHQ=u;
+    material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v3-'+role+(oldKey?oldKey():'');
+    material.userData.pstudioFoliageHQ={role,strength,height,base,wind:'world-phased-multi-frequency'};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
     foliage.add(material);
@@ -299,9 +366,10 @@
     for(const m of mats){
       if(!m){out.push(m);continue;}
       const tag=name+' '+String(m.name||'');
-      if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
+      if(object.userData?.pstudioWaterDetail){const c=m.userData.pstudioWaterDetailHQ?m:m.clone();configureWaterDetail(c,object);out.push(c);}
+      else if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
-      else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk'){out.push(m);}
+      else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk'){configureFoliage(m,object);out.push(m);}
       else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);out.push(c);}
       else if(/leaf|foliage|canopy|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
@@ -316,6 +384,7 @@
   function update(time) {
     const t=Number(time)||0;
     for(const m of water){const u=m.userData.pstudioWaterHQ;if(u)u.time.value=t;}
+    for(const m of waterDetailMaterials){const u=m.userData.pstudioWaterDetailHQ;if(u)u.time.value=t;}
     for(const m of foliage){const u=m.userData.pstudioFoliageHQ;if(u)u.time.value=t;}
     for(const m of caustics){const u=m.userData.pstudioCausticsHQ;if(u)u.time.value=t;}for(const pass of cloudPasses)if(pass.uniforms?.uTime)pass.uniforms.uTime.value=t;
   }
@@ -419,7 +488,7 @@
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material.userData?.pstudioWaterHQ;if(!u)continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
-    releaseMaterial(material){water.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
-    getStats:()=>({waterMaterials:water.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
+    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
+    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
   };
 })();
