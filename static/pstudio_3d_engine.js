@@ -961,7 +961,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function installLightmap(object,record){
     const p=object.geometry?.attributes?.position;
-    if(!p||p.count!==record.vertexCount||record.uv2.length!==p.count*2||!Number.isInteger(record.width)||!Number.isInteger(record.height)||record.width<1||record.height<1||record.width>2048||record.height>2048||record.pixels.length!==record.width*record.height*4)return false;
+    if(!p||!record.uv2||!record.pixels||p.count!==record.vertexCount||record.uv2.length!==p.count*2||!Number.isInteger(record.width)||!Number.isInteger(record.height)||record.width<1||record.height<1||record.width>2048||record.height>2048||record.pixels.length!==record.width*record.height*4)return false;
     if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=object.geometry;object.userData.pstudioLightmapOriginalGeometryOwned=String(record.id).startsWith('primitive:');}
     if(!object.userData.pstudioLightmapGeometry){object.geometry=object.geometry.clone();object.userData.pstudioLightmapGeometry=true;}
     object.geometry.setAttribute('uv2',new window.THREE.BufferAttribute(new Float32Array(record.uv2),2));
@@ -1031,7 +1031,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   async function bakeUVLightmaps(options={}){
     if(!ensureRenderer())throw new Error('3D renderer unavailable.');if(!bakedLightProbeVolume?.length)throw new Error('Run bakeLightProbeVolume() before baking UV lightmaps.');
     const T=window.THREE,resolution=Math.max(128,Math.min(2048,Math.floor(Number(options.resolution)||512))),ownerFilter=Array.isArray(options.ownerIds)?new Set(options.ownerIds.map(String)):null,targets=lightmapTargets().filter(({object})=>!object.isSkinnedMesh&&!object.isInstancedMesh&&object.geometry?.attributes?.position&&(!ownerFilter||ownerFilter.has(String(object.userData.ownerId))));
-    if(!targets.length)throw new Error('No eligible static meshes.');const baked=[],failed=[];
+    if(!targets.length)throw new Error('No eligible static meshes.');
+    const deviceMemory=Math.max(1,Number(window.navigator?.deviceMemory)||4);
+    const budget=Math.max(8*1024*1024,Math.min(256*1024*1024,Number(options.maxBytes)||deviceMemory*16*1024*1024));
+    const perTextureBytes=resolution*resolution*8;
+    const baked=[],failed=[];let allocatedBytes=0;
     for(const {id,object} of targets){if(allocatedBytes+perTextureBytes>budget){failed.push({id,error:'Lightmap memory budget exceeded; reduce resolution or increase maxBytes.'});continue;}let working=null;try{
       const source=object.userData.pstudioLightmapOriginalGeometry||object.geometry,info=createLightmapUVGeometry(source,resolution);working=info.geometry;
       const pixels=await bakeLightmapPixels(object,working,info,resolution),oldGeometry=object.geometry;
