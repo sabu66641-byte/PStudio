@@ -164,7 +164,7 @@
         'vMapUv=pUV;',
         '#endif',
         '#include <map_fragment>'
-      ].join('\\n'));
+      ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v1-'+(previousKey?previousKey():'');
     material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha'};
