@@ -89,3 +89,18 @@ test('large-world culling retains geometry bounds and chunk assignments',()=>{
 });
 
 test('large geometry bounds prevent premature distance culling',()=>{assert.ok(renderer.includes('isWithinWorldDrawDistance'));assert.ok(renderer.includes('computeBoundingSphere'));assert.ok(renderer.includes('pstudioBoundsRadius'));});
+
+test('UV lightmaps generate per-triangle UV2 atlases and persist in IndexedDB',()=>{
+  for(const token of ['bakeUVLightmaps','createLightmapUVGeometry','bakeLightmapPixels','saveLightmaps','loadLightmaps','clearLightmaps','PStudioLightmaps','DataTexture','uv2'])assert.ok(renderer.includes(token),token);
+});
+test('BVH acceleration is optional and connected to occlusion raycasting',()=>{
+  assert.ok(html.includes('three-mesh-bvh@0.7.8'));
+  for(const token of ['acceleratedRaycast','computeBoundsTree','scheduleGeometryBVH','disposeBoundsTree'])assert.ok(renderer.includes(token),token);
+});
+test('world chunk lifecycle suspends scripts, physics, ECS and owner audio',()=>{
+  for(const token of ['isOwnerChunkActive','pauseOwnerAudio','resumeOwnerAudio','play_sound','stop_sound','set_sound_volume'])assert.ok(engine.includes(token),token);
+  for(const token of ['setActive','body.active===false'])assert.ok(physics.includes(token),token);
+  for(const token of ['setSceneObjectActive','entityActive.get(id)===false'])assert.ok(ecs.includes(token),token);
+  for(const token of ['world.chunk.suspended','world.chunk.resumed'])assert.ok(renderer.includes(token),token);
+  for(const token of ['"play_sound": 3','"stop_sound": 1','"set_sound_volume": 2'])assert.ok(app.includes(token),token);
+});
