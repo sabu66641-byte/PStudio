@@ -26,6 +26,24 @@
   let collisionPairs = new Set();
   let collision3DPairs = new Set();
   let particleSequence = 0;
+  const ownerAudio=new Map();
+  const chunkAudioSuspended=new Set();
+  function audioMap(ownerId){const key=String(ownerId);if(!ownerAudio.has(key))ownerAudio.set(key,new Map());return ownerAudio.get(key);}
+  function playOwnerSound(ownerId,name,volume,loop){
+    const assetList=typeof projectAssets!=='undefined'&&Array.isArray(projectAssets)?projectAssets:[];
+    const asset=assetList.find(item=>item?.kind==='audio'&&String(item.name)===String(name));
+    if(!asset||typeof (asset.data||asset.url)!=='string')throw new PsRuntimeError('音声アセットが見つかりません: '+String(name));
+    const sounds=audioMap(ownerId);let audio=sounds.get(String(name));
+    if(audio){audio.pause();try{audio.currentTime=0;}catch(_){} }
+    else{audio=new Audio(asset.data||asset.url);audio.preload='auto';sounds.set(String(name),audio);audio.addEventListener('ended',()=>{if(!audio.loop&&sounds.get(String(name))===audio)sounds.delete(String(name));});}
+    audio.volume=Math.max(0,Math.min(1,finite(volume,1)));audio.loop=truthy(loop);audio._pstudioResumeAfterChunk=false;
+    const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio playback was blocked:',error));return true;
+  }
+  function stopOwnerSound(ownerId,name){const sounds=ownerAudio.get(String(ownerId));if(!sounds)return false;const targets=name===null?[...sounds.values()]:[sounds.get(String(name))].filter(Boolean);for(const audio of targets){audio.pause();try{audio.currentTime=0;}catch(_){}for(const [key,value] of sounds)if(value===audio)sounds.delete(key);}if(!sounds.size)ownerAudio.delete(String(ownerId));return targets.length>0;}
+  function setOwnerSoundVolume(ownerId,name,volume){const audio=ownerAudio.get(String(ownerId))?.get(String(name));if(!audio)return false;audio.volume=Math.max(0,Math.min(1,finite(volume,1)));return true;}
+  function pauseOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){audio._pstudioResumeAfterChunk=!audio.paused;if(!audio.paused)audio.pause();}}
+  function resumeOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){if(audio._pstudioResumeAfterChunk){audio._pstudioResumeAfterChunk=false;const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio resume was blocked:',error));}}}
+  function stopAllOwnerAudio(){for(const ownerId of [...ownerAudio.keys()])stopOwnerSound(ownerId,null);chunkAudioSuspended.clear();}
 
   class PsRuntimeError extends Error {}
   const truthy = (v) => Array.isArray(v) ? v.length > 0 : !!v;
@@ -206,6 +224,9 @@
       case 'is_touched': if (!a.length) return touchActive; break;
       case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
       case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
+      case 'play_sound': if(a.length===3)return playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
+      case 'stop_sound': if(a.length===1)return stopOwnerSound(o.id,String(a[0])); break;
+      case 'set_sound_volume': if(a.length===2)return setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
       case 'get_delta_time': if (!a.length) return c.dt; break;
       case 'get_width': if (!a.length) return Number(o.w)||0; break;
       case 'get_height': if (!a.length) return Number(o.h)||0; break;
@@ -524,7 +545,13 @@
     const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
     try {
       const commands=new Map();
-      for(const object of sceneObjects||[]){const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;window.PStudioPhysics?.setActive?.(object.id,active);}
+      for(const object of sceneObjects||[]){
+        const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;
+        window.PStudioPhysics?.setActive?.(object.id,active);
+        window.PStudioECS?.setSceneObjectActive?.(object.id,active);
+        if(!active&&!chunkAudioSuspended.has(String(object.id))){pauseOwnerAudio(object.id);chunkAudioSuspended.add(String(object.id));}
+        else if(active&&chunkAudioSuspended.has(String(object.id))){resumeOwnerAudio(object.id);chunkAudioSuspended.delete(String(object.id));}
+      }
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
@@ -533,7 +560,7 @@
         ecs.applySceneObjectTransforms(sceneObjects || []);
       }
       for(const o of sceneObjects||[]){
-        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
+        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         const script=astForScript(o.script);if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
         if(!runtime.initialized.has(o.id)){
@@ -663,7 +690,7 @@
     } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
