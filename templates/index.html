@@ -1035,13 +1035,127 @@ async function fileAsDataURL(file){
   };reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
  });
 }
-async function validateGLBFile(file){
+const PSTUDIO_MAX_GLB_BYTES=1024*1024*1024;
+const PSTUDIO_MAX_GLTF_BYTES=128*1024*1024;
+const PSTUDIO_GLB_JSON_LIMIT=32*1024*1024;
+function dispatchGLBImportProgress(detail){try{window.dispatchEvent(new CustomEvent('pstudio-asset-import-progress',{detail}));}catch(_){}}
+function estimateModelMemoryBytes(fileBytes,geometryBytes,textureBytes){
+ const baseline=96*1024*1024;
+ return Math.ceil(fileBytes*.72+geometryBytes*1.8+textureBytes*1.28+baseline);
+}
+async function inspectGLBImageDimensions(file,binStart,view,name){
+ const maxRead=Math.min(128*1024,Math.max(0,view.byteLength));
+ if(!maxRead)return null;
+ const bytes=new Uint8Array(await file.slice(binStart+(view.byteOffset||0),binStart+(view.byteOffset||0)+maxRead).arrayBuffer());
+ const png=[137,80,78,71,13,10,26,10];
+ for(let i=0;i<=Math.min(64,bytes.length-24);i++){
+  let match=true;for(let k=0;k<8;k++)if(bytes[i+k]!==png[k]){match=false;break;}
+  if(match){const dv=new DataView(bytes.buffer,bytes.byteOffset+i,bytes.length-i);return{width:dv.getUint32(16,false),height:dv.getUint32(20,false)};}
+ }
+ let jpg=-1;for(let i=0;i<Math.min(64,bytes.length-1);i++)if(bytes[i]===255&&bytes[i+1]===216){jpg=i;break;}
+ if(jpg>=0){
+  let p=jpg+2;
+  while(p+8<bytes.length){
+   if(bytes[p]!==255){p++;continue;}
+   while(p<bytes.length&&bytes[p]===255)p++;
+   if(p>=bytes.length)break;
+   const marker=bytes[p++];
+   if(marker===0xd8||marker===0xd9||(marker>=0xd0&&marker<=0xd7))continue;
+   if(p+2>bytes.length)break;
+   const length=(bytes[p]<<8)|bytes[p+1];
+   if(length<2)break;
+   if([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)&&p+7<=bytes.length){
+    return{width:(bytes[p+5]<<8)|bytes[p+6],height:(bytes[p+3]<<8)|bytes[p+4]};
+   }
+   p+=length;
+  }
+ }
+ const hint=String(name||'').toLowerCase();
+ const dimension=/8k/.test(hint)?8192:/4k/.test(hint)?4096:/2k/.test(hint)?2048:/1k/.test(hint)?1024:0;
+ return dimension?{width:dimension,height:dimension,inferred:true}:null;
+}
+async function validateGLBFile(file,options={}){
+ if(!file||typeof file.slice!=='function')throw new TypeError('GLBファイルを読み込めません。');
+ if(file.size<20)throw new Error('GLBファイルが短すぎます。');
+ if(file.size>PSTUDIO_MAX_GLB_BYTES)throw new Error('GLBの上限は1GBです。');
  const header=await file.slice(0,12).arrayBuffer();
  if(header.byteLength!==12)throw new Error('GLBヘッダーが不足しています');
- const view=new DataView(header);
- if(view.getUint32(0,true)!==0x46546c67)throw new Error('GLBマジック番号が正しくありません');
- if(view.getUint32(4,true)!==2)throw new Error('GLB 2.0形式のみ対応しています');
- if(view.getUint32(8,true)>file.size||view.getUint32(8,true)<12)throw new Error('GLBファイル長が不正です');
+ const head=new DataView(header),magic=head.getUint32(0,true),version=head.getUint32(4,true),totalLength=head.getUint32(8,true);
+ if(magic!==0x46546c67)throw new Error('GLBマジック番号が正しくありません');
+ if(version!==2)throw new Error('GLB 2.0形式のみ対応しています');
+ if(totalLength!==file.size)throw new Error('GLBヘッダーのファイル長と実際のサイズが一致しません。ファイルを再コピーしてください。');
+ let offset=12,jsonChunk=null,jsonStart=0,binStart=0,binLength=0,chunkCount=0,seenJSON=false;
+ while(offset<totalLength){
+  const chunkHeader=await file.slice(offset,offset+8).arrayBuffer();
+  if(chunkHeader.byteLength!==8)throw new Error('GLBチャンクヘッダーが途中で切れています。');
+  const view=new DataView(chunkHeader),length=view.getUint32(0,true),type=view.getUint32(4,true);
+  const dataStart=offset+8,end=dataStart+length;
+  if(length===0||length%4!==0||end>totalLength)throw new Error('GLBチャンクのサイズまたは境界が不正です。');
+  chunkCount++;
+  if(chunkCount===1&&type!==0x4e4f534a)throw new Error('GLBの先頭チャンクがJSONではありません。');
+  if(type===0x4e4f534a){
+   if(seenJSON||length>PSTUDIO_GLB_JSON_LIMIT)throw new Error('GLBのJSONチャンクが重複、または32MBを超えています。');
+   seenJSON=true;jsonStart=dataStart;
+   const jsonBuffer=await file.slice(dataStart,end).arrayBuffer();
+   let text=new TextDecoder('utf-8',{fatal:true}).decode(jsonBuffer).replace(/[\u0000\s]+$/g,'');
+   try{jsonChunk=JSON.parse(text);}catch(error){throw new Error('GLBのJSONチャンクを解析できません: '+(error?.message||String(error)));}
+  }else if(type===0x004e4942){
+   if(binLength)throw new Error('GLBにBINチャンクが複数あります。');
+   binStart=dataStart;binLength=length;
+  }
+  offset=end;
+ }
+ if(offset!==totalLength||!jsonChunk)throw new Error('GLBのチャンク構造が不完全です。');
+ if(!jsonChunk.asset||!String(jsonChunk.asset.version||'').startsWith('2.'))throw new Error('glTF 2.0アセット情報がありません。');
+ if((jsonChunk.buffers||[]).length>1)throw new Error('GLBに複数の内部バッファがあります。外部依存を同梱したGLBにしてください。');
+ const declaredBuffer=Number(jsonChunk.buffers?.[0]?.byteLength)||0;
+ if(declaredBuffer>binLength)throw new Error('BINチャンクがbuffer.byteLengthより短く、GLBが破損している可能性があります。');
+ const bufferViews=jsonChunk.bufferViews||[];
+ for(let i=0;i<bufferViews.length;i++){
+  const item=bufferViews[i],start=Number(item.byteOffset)||0,length=Number(item.byteLength);
+  if(!Number.isSafeInteger(length)||length<0||start<0||start+length>declaredBuffer)throw new Error('bufferView '+i+' がBINバッファの範囲外です。');
+ }
+ const imageViews=new Set();
+ for(const image of jsonChunk.images||[]){
+  if(Number.isInteger(image.bufferView)){
+   if(!bufferViews[image.bufferView])throw new Error('画像のbufferView参照が不正です。');
+   imageViews.add(image.bufferView);
+  }
+ }
+ let geometryBytes=0,compressedImageBytes=0,decodedTextureBytes=0;
+ for(let i=0;i<bufferViews.length;i++){
+  const length=Number(bufferViews[i].byteLength)||0;
+  if(imageViews.has(i))compressedImageBytes+=length;else geometryBytes+=length;
+ }
+ for(const image of jsonChunk.images||[]){
+  const item=Number.isInteger(image.bufferView)?bufferViews[image.bufferView]:null;
+  if(!item||!binLength)continue;
+  const dimensions=await inspectGLBImageDimensions(file,binStart,item,image.name);
+  if(dimensions?.width&&dimensions?.height){
+   const w=Math.min(16384,dimensions.width),h=Math.min(16384,dimensions.height);
+   decodedTextureBytes+=w*h*4*1.34;
+  }else decodedTextureBytes+=Math.max(4*1024*1024,(item.byteLength||0)*8);
+ }
+ const estimatedGpuBytes=Math.ceil(geometryBytes*1.15+decodedTextureBytes);
+ const estimatedRuntimeBytes=estimateModelMemoryBytes(file.size,geometryBytes,decodedTextureBytes);
+ const triangles=(jsonChunk.meshes||[]).reduce((sum,mesh)=>sum+(mesh.primitives||[]).reduce((subtotal,primitive)=>{
+  const index=Number.isInteger(primitive.indices)?jsonChunk.accessors?.[primitive.indices]?.count:0;
+  const position=primitive.attributes?.POSITION;
+  const vertices=Number.isInteger(position)?jsonChunk.accessors?.[position]?.count:0;
+  const mode=primitive.mode===undefined?4:primitive.mode;
+  return subtotal+(mode===4?(index||vertices)/3:0);
+ },0),0);
+ const info={
+  sourceBytes:file.size,binBytes:binLength,jsonBytes:jsonStart?jsonStart-20:0,
+  geometryBytes,compressedImageBytes,decodedTextureBytes:Math.ceil(decodedTextureBytes),
+  estimatedGpuBytes,estimatedRuntimeBytes:estimatedRuntimeBytes,
+  nodeCount:(jsonChunk.nodes||[]).length,meshCount:(jsonChunk.meshes||[]).length,
+  materialCount:(jsonChunk.materials||[]).length,imageCount:(jsonChunk.images||[]).length,
+  triangleCount:Math.floor(triangles),animationCount:(jsonChunk.animations||[]).length,chunkCount
+ };
+ dispatchGLBImportProgress({stage:'validated',name:file.name,info});
+ options.onProgress?.({stage:'validated',info});
+ return info;
 }
 async function importGLTFFile(file,allFiles){
  const json=JSON.parse(await file.text());
@@ -1073,13 +1187,24 @@ async function importAssets(files){
  for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.glb'))){
   const existing=projectAssets.find(a=>a.name===file.name);
   if(existing?.locked){toast(file.name+' はロックされています');continue;}
-  if(file.size>30*1024*1024){toast(file.name+' は30 MBを超えています');continue;}
+  if(file.size>PSTUDIO_MAX_GLB_BYTES){toast(file.name+' は1GBを超えています');continue;}
   try{
-   await validateGLBFile(file);
-   await window.PStudioAssetStore.put(file.name,file);
+   toast(file.name+' を段階検査中…');
+   const inspection=await validateGLBFile(file);
+   dispatchGLBImportProgress({stage:'storage',name:file.name,info:inspection});
+   toast(file.name+' をIndexedDBへ保存中…');
+   await window.PStudioAssetStore.put(file.name,file,{metadata:inspection});
    projectAssets=projectAssets.filter(a=>a.name!==file.name);
-   projectAssets.push({name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',size:file.size,storage:'indexeddb'});ensureModelScript(projectAssets[projectAssets.length-1]);
+   projectAssets.push({
+    name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',
+    size:file.size,storage:'indexeddb',estimatedRuntimeBytes:inspection.estimatedRuntimeBytes,
+    estimatedGpuBytes:inspection.estimatedGpuBytes,triangleCount:inspection.triangleCount,
+    meshCount:inspection.meshCount,nodeCount:inspection.nodeCount
+   });
+   ensureModelScript(projectAssets[projectAssets.length-1]);
    window.PStudio3D?.invalidateAsset?.(file.name);added++;
+   dispatchGLBImportProgress({stage:'stored',name:file.name,info:inspection});
+   toast(file.name+' をインポートしました（'+(file.size/1024/1024).toFixed(1)+' MiB）');
   }catch(error){toast(file.name+': '+error.message);}
  }
  for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.gltf'))){
