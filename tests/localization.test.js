@@ -17,7 +17,7 @@ function sectionBetween(start, end) {
 test('all five header language options use the shared click handler', () => {
   for (const locale of locales) {
     assert.match(html, new RegExp('data-language="' + locale + '"'));
-    assert.doesNotMatch(html, new RegExp('onclick="chooseLanguage\\(\\\'' + locale + '\\'\\)"'));
+    assert.ok(!html.includes(`onclick="chooseLanguage('${locale}')"`), locale + ' must not have a duplicate inline click handler');
   }
   assert.match(html, /menu\.addEventListener\("click"/);
   assert.match(html, /setLanguage\(option\.dataset\.language\)/);
