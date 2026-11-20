@@ -222,8 +222,8 @@
     renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
     try{
       const memoryGiB=deviceGiB;
-      const gpuBudget=Math.floor(Math.max(192,Math.min(1024,memoryGiB*160))*1024*1024);
-      const cpuBudget=Math.floor(Math.max(384,Math.min(2048,memoryGiB*288))*1024*1024);
+      const gpuBudget=Math.floor(Math.max(192,Math.min(2048,memoryGiB*256))*1024*1024);
+      const cpuBudget=Math.floor(Math.max(384,Math.min(2048,memoryGiB*192))*1024*1024);
       window.PStudioResources?.setBudget?.('gpu',gpuBudget);
       window.PStudioResources?.setBudget?.('cpu',cpuBudget);
     }catch(error){console.warn('[PStudio] Device-aware resource budget setup failed; existing budgets remain active.',error);}
@@ -1147,6 +1147,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function modelRuntimeBudgetBytes(){
     return Math.floor(deviceMemoryGiB()*1024*1024*1024*0.58);
   }
+  function modelCpuHeapBudgetBytes(){
+    const jsHeapLimit=Number(window.performance?.memory?.jsHeapSizeLimit)||0;
+    const deviceBudget=deviceMemoryGiB()*1024*1024*1024*.25;
+    return Math.floor(jsHeapLimit>0?Math.min(deviceBudget,jsHeapLimit*.72):deviceBudget);
+  }
   function dispatchModelLoadProgress(detail){
     try{window.dispatchEvent(new CustomEvent('pstudio-model-load-progress',{detail}));}catch(_){}
   }
@@ -1162,15 +1167,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const blob=await window.PStudioAssetStore.get(name,{cache:false});
       if (!blob) throw new Error('Model asset not found: '+name+' (import a .glb or .gltf file first)');
       const metadata=await window.PStudioAssetStore.getMetadata?.(name)||null;
-      const estimatedRuntimeBytes=Math.max(
-        Number(metadata?.estimatedRuntimeBytes)||0,
-        Number(blob.size)||0
-      );
-      const safeBudget=modelRuntimeBudgetBytes();
-      if(estimatedRuntimeBytes>safeBudget){
-        const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0);
-        const budget=(safeBudget/1024/1024).toFixed(0);
-        throw new Error('この端末ではモデルの展開に必要なメモリが大きすぎます（推定'+needed+'MiB / 安全目安'+budget+'MiB）。より高メモリの端末、またはテクスチャを軽量化したモデルを使用してください。元のGLBは保存済みです。');
+      const estimatedRuntimeBytes=Math.max(Number(metadata?.estimatedRuntimeBytes)||0,Number(blob.size)||0);
+      const estimatedCpuBytes=Math.max(Number(metadata?.estimatedCpuBytes)||0,Number(blob.size)||0);
+      const safeBudget=modelRuntimeBudgetBytes(),cpuBudget=modelCpuHeapBudgetBytes();
+      if(estimatedRuntimeBytes>safeBudget||estimatedCpuBytes>cpuBudget){
+        const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0),budget=(safeBudget/1024/1024).toFixed(0);
+        const cpuNeeded=(estimatedCpuBytes/1024/1024).toFixed(0),cpuSafe=(cpuBudget/1024/1024).toFixed(0);
+        throw new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のGLBはIndexedDBに保存済みです。メモリに余裕のある端末、またはテクスチャを軽量化したモデルで読み込んでください。');
       }
       const loader=new window.PStudioGLTFLoader();
       const url=URL.createObjectURL(blob);
