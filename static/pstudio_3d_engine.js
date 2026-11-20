@@ -13,7 +13,7 @@
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
-  let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null;
+  let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
@@ -456,7 +456,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
     const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};
     for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
-    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2))));
+    const dims=['x','y','z'].map(axis=>Math.max(2,Math.min(4,Math.floor(Number(o[axis+'Count'])||2))));
     const positions=[];
     for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(
       Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),
@@ -466,18 +466,30 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
     const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64)));
     const previous=bakedLightProbeVolume,previousSingle=bakedLightProbe;
-    const bounces=Math.max(0,Math.min(2,Math.floor(Number(o.bounces??1))));
+    const maxBounces=Math.max(0,Math.min(4,Math.floor(Number(o.bounces??2))));
     const bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.35));
-    let sourceProbes=[],finalProbes=[];
-    const allocatedProbes=new Set(),oldAuto=renderer.shadowMap.autoUpdate;
+    const intensity=Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1));
+    const minBounceEnergy=Math.max(0,Math.min(0.1,Number.isFinite(Number(o.minBounceEnergy))?Number(o.minBounceEnergy):0.0005));
+    const allocated=new Set(),oldAuto=renderer.shadowMap.autoUpdate,oldEnvironment=scene.environment,oldBackground=scene.background;
+    let directProbes=[],sourceProbes=[],finalProbes=[],completedBounces=0,lastBounceEnergy=0;
     renderer.shadowMap.autoUpdate=true;
     if(previousSingle)scene.remove(previousSingle);
-    const capture=async(position,sources)=>{
-      const temporary=[];
+    const capture=async(position,sources,includeDirect,probeIntensity)=>{
+      const temporary=[],hiddenLights=[],environmentBefore=scene.environment,backgroundBefore=scene.background;
       if(sources.length){
-        const nearest=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,sources.length));
+        const nearest=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,4);
         let sum=0;for(const entry of nearest){entry.weight=1/Math.max(1,entry.d);sum+=entry.weight;}
-        for(const entry of nearest){entry.item.light.intensity=entry.item.baseIntensity*bounceStrength*entry.weight/Math.max(1e-8,sum);scene.add(entry.item.light);temporary.push(entry.item.light);}
+        for(const entry of nearest){
+          const light=entry.item.light;
+          light.intensity=entry.item.baseIntensity*bounceStrength*entry.weight/Math.max(1e-8,sum);
+          light.userData.pstudioBounceSource=true;scene.add(light);temporary.push(light);
+        }
+      }
+      if(!includeDirect){
+        scene.environment=null;scene.background=null;
+        scene.traverse(object=>{
+          if(object.isLight&&!object.userData?.pstudioBounceSource){hiddenLights.push([object,object.visible]);object.visible=false;}
+        });
       }
       const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
       const cube=new T.CubeCamera(0.1,Math.max(50,Number(o.far)||500),target);
@@ -485,37 +497,49 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       try{
         scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
         const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);
-        const result={position:position.clone(),light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))};
-        allocatedProbes.add(result);
-        return result;
+        const item={position:position.clone(),light,baseIntensity:probeIntensity};allocated.add(item);return item;
       }finally{
         scene.remove(cube);target.dispose();
-        for(const light of temporary)scene.remove(light);
+        for(const light of temporary){scene.remove(light);delete light.userData.pstudioBounceSource;}
+        for(const [light,visible] of hiddenLights)light.visible=visible;
+        scene.environment=environmentBefore;scene.background=backgroundBefore;
       }
     };
     try{
-      for(let pass=0;pass<=bounces;pass++){
+      // Pass 0 captures the scene's direct and environment illumination.
+      for(const position of positions){directProbes.push(await capture(position,[],true,intensity));await new Promise(resolve=>requestAnimationFrame(resolve));}
+      finalProbes=directProbes;sourceProbes=directProbes;
+      // Subsequent passes disable direct emitters and feed only the previous
+      // bounce field back through the scene's materials.
+      for(let pass=1;pass<=maxBounces;pass++){
         const next=[];
-        for(const position of positions){
-          next.push(await capture(position,sourceProbes));
-          await new Promise(resolve=>requestAnimationFrame(resolve));
+        for(const position of positions){next.push(await capture(position,sourceProbes,false,1));await new Promise(resolve=>requestAnimationFrame(resolve));}
+        let energy=0;
+        for(let i=0;i<next.length;i++){
+          const incoming=next[i].light.sh.coefficients,outgoing=finalProbes[i].light.sh.coefficients;
+          for(let k=0;k<9;k++){energy+=incoming[k].length();outgoing[k].add(incoming[k]);}
         }
-        for(const item of sourceProbes){item.light.dispose?.();allocatedProbes.delete(item);}
-        sourceProbes=next;finalProbes=next;
+        lastBounceEnergy=energy;completedBounces=pass;
+        for(const item of sourceProbes)if(!directProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
+        sourceProbes=next;
+        if(energy<=minBounceEnergy)break;
       }
-      bakedLightProbe=null;bakedLightProbeVolume=finalProbes;
+      for(const item of sourceProbes)if(!directProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
+      bakedLightProbe=null;bakedLightProbeVolume=finalProbes;bakedGIBounces=completedBounces;
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
       updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
       for(const item of previous||[])item.light.dispose?.();
       if(previousSingle)previousSingle.dispose?.();
-      return{baked:true,probes:finalProbes.length,kind:'object-local-spatial-spherical-harmonics',bounces,bounceStrength,resolution:size,note:'各オブジェクト位置に近傍SHを補間します。追加バウンスは前段のプローブ照明を次の捕捉へ戻す近似GIです。'};
+      for(const item of [...allocated])if(!finalProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
+      return{baked:true,probes:finalProbes.length,kind:'iterative-multibounce-diffuse-sh-gi',bounces:completedBounces,bounceStrength,resolution:size,lastBounceEnergy:Number(lastBounceEnergy.toFixed(6)),note:'直接光・環境光は初回のみ捕捉し、後続パスでは前段の拡散バウンスだけを材料へ戻します。SHプローブによる近似であり、動的レイトレーシングや完全な物理GIではありません。'};
     }catch(error){
-      for(const item of allocatedProbes)item.light.dispose?.();
+      for(const item of allocated)item.light.dispose?.();
       bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;
       if(previousSingle)scene.add(previousSingle);
       throw error;
     }finally{
+      scene.environment=oldEnvironment;scene.background=oldBackground;
       renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);
     }
   }
@@ -1534,11 +1558,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
-    clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;changed=true;}if(changed)drawFrame();return changed;},
+    clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed)drawFrame();return changed;},
     bakeLightProbeVolume,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
