@@ -597,7 +597,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values()){
       const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);instance.root.visible=active&&!instance.root.userData.pstudioOccluded;if(!active)continue;
       if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
-      else instance.root.traverse(object=>{if(object.isMesh&&object.userData.pstudioAutoLOD)applyAutoLOD(object,d);});
+      else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
     updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId)||source.mesh.userData.pstudioOccluded)continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
@@ -727,7 +727,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const T = window.THREE;
     const meshes = [];
     for(const mesh of meshCache.values()){if(mesh.isMesh&&mesh.userData.ownerId===selectedOwnerId)meshes.push(mesh);}
-    if (modelGroup) modelGroup.traverse(object => { if (object.isMesh && object.userData.ownerId === selectedOwnerId) meshes.push(object); });
+    for(const instance of modelInstances.values())for(const mesh of instance.meshes||[])if(mesh.userData.ownerId===selectedOwnerId)meshes.push(mesh);
     const signature=selectedOwnerId+':'+meshes.map(mesh=>mesh.uuid+':'+mesh.geometry?.uuid).join('|');
     if(signature!==selectionSignature){
       disposeGroup(selectionGroup);
@@ -1182,12 +1182,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const clone=window.PStudioSkeletonUtils?.clone
       ? window.PStudioSkeletonUtils.clone(asset.scene)
       : asset.scene.clone(true);
-    const materialDefaults=new Map();
+    const materialDefaults=new Map(),meshes=[];
     clone.userData.ownerId=ownerId;
     clone.traverse(object=>{
       object.userData.ownerId=ownerId;
       object.userData.modelRoot=clone;
       if(object.isMesh && object.material){
+        meshes.push(object);
         scheduleAutoLOD(object,object.geometry);
         object.castShadow=true;
         object.receiveShadow=true;
@@ -1202,9 +1203,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         object.material=Array.isArray(object.material)
           ? object.material.map(cloneMaterial)
           : cloneMaterial(object.material);
+        bindObjectProbeLighting(object);
       }
     });
-    clone.traverse(bindObjectProbeLighting);clone.updateMatrixWorld(true);
+    clone.updateMatrixWorld(true);
     const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
     clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     const lodMap=new Map();
@@ -1220,7 +1222,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
     const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
-    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease};
+    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -1228,15 +1230,22 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
 
   function applyModelMaterial(instance, state) {
     if(!instance?.materialDefaults)return;
-    instance.root.traverse(object=>{
-      if(!object.isMesh||!object.material)return;
+    const signature=JSON.stringify(state?{
+      roughness:state.roughness??null,
+      metalness:state.metalness??null,
+      modelOverrides:(state.modelOverrides||[]).map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
+    }:null);
+    if(instance.materialStateSignature===signature)return;
+    instance.materialStateSignature=signature;
+    for(const object of instance.meshes||[]){
+      if(!object.material)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials){const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
         material.roughness=state&&Number.isFinite(state.roughness)?state.roughness:defaults.roughness;material.metalness=state&&Number.isFinite(state.metalness)?state.metalness:defaults.metalness;
         const override=state?.modelOverrides?.find(item=>item.name==='*'||item.name===object.name||item.name===material.name);
         if(override){if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));if(override.color&&material.color)material.color.set(override.color);}
       }
-    });
+    }
   }
 
   function updateModelIK(instance, ik) {
