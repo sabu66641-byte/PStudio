@@ -151,7 +151,9 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
   assert.ok(materialBlock.includes('materialStateSignature'));
   assert.ok(materialBlock.includes('for(const object of instance.meshes||[])'));
   assert.ok(!materialBlock.includes('instance.root.traverse'));
-  assert.ok(renderer.includes('materialClones.get(material)'));
+  assert.ok(renderer.includes('materialClones.get(cacheKey)'));
+  assert.ok(renderer.includes("waterDetailRole?'water-detail:'+waterDetailRole:''"));
+  assert.ok(renderer.includes("windRole?'wind:'+windRole:''"));
   assert.ok(renderer.includes('const materialDefaults=new Map(),materialClones=new Map(),meshes=[]'));
   assert.ok(renderer.includes('for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d)'));
 });
