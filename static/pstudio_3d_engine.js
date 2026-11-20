@@ -347,7 +347,7 @@
       const name=String(object.name||'');
       const mats=Array.isArray(object.material)?object.material:[object.material];
       const transparent=mats.some(material=>material&&(material.transparent||(Number.isFinite(material.opacity)&&material.opacity<.999)||material.alphaMap||(material.alphaTest||0)>.001));
-      const omit=object.userData?.pstudioWaterSurface||object.userData?.pstudioWindPart||object.userData?.pstudioInstanceBatch||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|PStudio_Foliage_GPU|PStudio_GPU_Instances)/i.test(name);
+      const omit=object.userData?.pstudioWaterSurface||object.userData?.pstudioWindPart||object.userData?.pstudioInstanceBatch||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|atmosphere[_ -]?dome|PStudio_Foliage_GPU|PStudio_GPU_Instances_Foliage)/i.test(name);
       if(omit){hidden.push(object);object.visible=false;}
     });
     const previousTarget=renderer.getRenderTarget(),previousOverride=scene.overrideMaterial,previousAutoClear=renderer.autoClear;
@@ -1420,7 +1420,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     root.traverse(object=>{
       if(!object.isMesh||object.isSkinnedMesh)return;
       const objectName=String(object.name||'');
-      const isWindPart=object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch';
+      const isWindPart=object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk';
       const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName)||isWindPart;
       const isModularPart=/^PStudioInstance_/i.test(objectName)||object.userData?.pstudioInstanceBatch===true;
       if(!isTree&&!isModularPart)return;
