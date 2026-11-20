@@ -119,6 +119,7 @@ Current limits in `app.py`:
 - Captured stdout: 1 MiB.
 - Captured stderr: 256 KiB.
 - Discord send message: 2,000 characters.
+- Discord REST success response: 16 MiB by default (configurable per request); Discord error response: 64 KiB.
 - Discord interpreter: 100,000 AST/loop steps per top-level execution and 1 MiB accumulated output.
 
 These measures bound inputs, runtime duration, captured output and in-process concurrency. They do **not** create an operating-system sandbox, memory cgroup, syscall filter, or network isolation for generated binaries.
@@ -127,9 +128,9 @@ These measures bound inputs, runtime duration, captured output and in-process co
 
 These are audit findings to keep visible rather than silently implying they are solved:
 
-1. **Discord multi-user isolation:** REST Discord controls and the ps Discord runtime use process-global Bot/handler state. On a publicly shared deployment, one visitor's Bot session can affect another visitor's requests. Authentication/ownership boundaries are not currently implemented.
-2. **Normal C++ process isolation:** source generation is constrained by the ps grammar and the child process has time/output caps, but it is not isolated with OS-level memory, filesystem, syscall or network restrictions. Do not treat the endpoint as a hostile multi-tenant code sandbox.
-3. **Discord HTTP response bounds:** inspect and add bounded REST response reads in `discord_runtime.py`; the main normal C++ runner's stdout/stderr limits do not cover Discord REST responses.
+1. **Discord multi-user isolation (P1):** REST Discord routes use a process-global `discord_bot`; the normal ps Discord interpreter separately uses process-global `_ps_discord_bot` and `_ps_discord_handlers`. These two Bot paths are not per-user and are not unified. The REST endpoints have no authentication or ownership check. On a publicly shared deployment, visitors can interfere with the REST Bot state, and the two control paths can report/control different Bot instances. A per-user ownership/authentication model is required before treating Discord features as safe for multi-tenant public hosting.
+2. **Normal C++ process isolation (P1):** source generation is constrained by the ps grammar and the child process has time/output caps, but it is not isolated with OS-level memory, filesystem, syscall or network restrictions. Do not treat the endpoint as a hostile multi-tenant code sandbox.
+3. **Discord lifecycle (P2):** `discord_runtime.py` has an asynchronous Gateway lifecycle while `app.py` owns server-side Bot threads. Start/stop transitions and cross-route Bot ownership need an explicit lifecycle/owner contract before the REST and normal-ps Discord paths are unified.
 4. **Network runtime reachability:** `network.py` has URL/timeout/response-byte validation but no explicit private-network/SSRF destination policy. It is not currently exposed through the normal built-in allowlist or browser game-script API. Re-audit before integrating it.
 5. **Browser validation:** source/Node tests do not replace real WebGL, Android touch input, IndexedDB quota, GLTF texture loading, Render deployment or browser GPU validation.
 6. **World-scale limitations:** physics and chunk streaming have documented constraints; avoid advertising them as a complete general physics engine or a fully generalized 2D/3D world streaming system.
