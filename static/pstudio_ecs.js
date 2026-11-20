@@ -12,6 +12,7 @@
   const systems = new Map();
   const orderedSystems = [];
   const entities = new Set();
+  const entityActive = new Map();
   const listeners = new Map();
   const sceneEntityByObjectId = new Map();
   const sceneSnapshots = new Map();
@@ -216,6 +217,7 @@
     assertStructureMutable();
     const id = nextEntityId++;
     entities.add(id);
+    entityActive.set(id,true);
     try {
       if (initialComponents) {
         for (const [type, value] of Object.entries(initialComponents)) addComponent(id, type, value);
@@ -241,6 +243,7 @@
       }
     }
     entities.delete(id);
+    entityActive.delete(id);
     emit('entity-destroyed', { entity: id });
     return true;
   }
@@ -292,7 +295,7 @@
         const limit = base.entities.length;
         for (let index = 0; index < limit; index++) {
           const id = base.entities[index];
-          if (!entities.has(id)) continue;
+          if (!entities.has(id) || entityActive.get(id)===false) continue;
           let matches = true;
           for (const store of stores) {
             if (!store.has(id)) { matches = false; break; }
@@ -415,6 +418,7 @@
     return true;
   }
 
+  function setEntityActive(entity,active){const id=requireEntity(entity);entityActive.set(id,!!active);return entityActive.get(id);}
   function stats() {
     const componentCounts = Object.create(null);
     for (const [type, store] of componentStores) componentCounts[type] = store.size;
@@ -422,6 +426,7 @@
     for (const system of orderedSystems) if (system.enabled) enabledSystemCount++;
     return {
       entityCount: entities.size,
+      inactiveEntityCount:[...entityActive.values()].filter(value=>value===false).length,
       componentCounts,
       componentTypeCount: componentDefinitions.size,
       systemCount: systems.size,
@@ -536,6 +541,7 @@
     const id = sceneEntityByObjectId.get(String(objectId));
     return id && entities.has(id) ? id : null;
   }
+  function setSceneObjectActive(objectId,active){const entity=getEntityForSceneObject(objectId);if(!entity)return false;return setEntityActive(entity,active);}
 
   const api = {
     registerComponent,
@@ -569,6 +575,8 @@
     applySceneObjectTransforms,
     clearSceneObjects,
     getEntityForSceneObject,
+    setEntityActive,
+    setSceneObjectActive,
     version: '1.0.0'
   };
 
