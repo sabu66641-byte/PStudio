@@ -673,6 +673,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
 
   function updateCamera(deltaTime = 1 / 60, excludedOwnerId = activeCameraOwnerId) {
+    if (cameraUpdateRaf) { window.cancelAnimationFrame(cameraUpdateRaf); cameraUpdateRaf = 0; }
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
