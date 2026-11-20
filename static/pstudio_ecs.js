@@ -290,7 +290,7 @@
     iterationDepth++;
     try {
       if (!stores.length) {
-        for (const id of entities) callback(id);
+        for (const id of entities) if(entityActive.get(id)!==false)callback(id);
       } else {
         const limit = base.entities.length;
         for (let index = 0; index < limit; index++) {
@@ -519,7 +519,7 @@
     for (const object of sceneObjects) {
       if (!object || object.id === undefined || object.id === null) continue;
       const entity = sceneEntityByObjectId.get(String(object.id));
-      if (!entity || !entities.has(entity)) continue;
+      if (!entity || !entities.has(entity) || entityActive.get(entity)===false) continue;
       const transform = getComponent(entity, 'Transform');
       copyTransform(object, transform);
       sceneSnapshots.set(entity, Object.assign({}, transform));
