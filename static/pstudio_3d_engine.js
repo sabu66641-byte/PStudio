@@ -860,14 +860,22 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function disposeMesh(mesh) {
     if (!mesh) return;
     mesh.userData?.pstudioLightmapTexture?.dispose?.();
-    if(mesh.userData?.pstudioLightmapGeometry)mesh.geometry?.dispose?.();
-    if(mesh.userData?.pstudioLightmapOriginalGeometryOwned)mesh.userData.pstudioLightmapOriginalGeometry?.dispose?.();
-    mesh.geometry?.disposeBoundsTree?.();
+    const currentGeometry=mesh.geometry,lightmapped=!!mesh.userData?.pstudioLightmapGeometry;
+    if(currentGeometry?.userData){currentGeometry.userData.pstudioBVHDisposed=true;currentGeometry.userData.pstudioBVHToken=(currentGeometry.userData.pstudioBVHToken||0)+1;}
+    currentGeometry?.disposeBoundsTree?.();
+    if(lightmapped)currentGeometry?.dispose?.();
+    if(mesh.userData?.pstudioLightmapOriginalGeometryOwned){
+      const original=mesh.userData.pstudioLightmapOriginalGeometry;
+      if(original?.userData){original.userData.pstudioBVHDisposed=true;original.userData.pstudioBVHToken=(original.userData.pstudioBVHToken||0)+1;}
+      original?.disposeBoundsTree?.();original?.dispose?.();
+    }
     if (mesh.parent) mesh.parent.remove(mesh);
     if(mesh.userData?.pstudioLightmapOriginalMaterial){const originals=Array.isArray(mesh.userData.pstudioLightmapOriginalMaterial)?mesh.userData.pstudioLightmapOriginalMaterial:[mesh.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
     if (mesh.material) waterMaterials.delete(mesh.material);
     mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
-    const lods=mesh.userData.pstudioAutoLOD||[];if(lods.length){for(const level of lods)if(level.owned)level.geometry.dispose?.();if(!mesh.userData.pstudioLightmapGeometry&&!mesh.userData.pstudioLightmapOriginalGeometryOwned)lods[0]?.geometry?.dispose?.();}else if(!mesh.userData.pstudioLightmapGeometry)mesh.geometry?.dispose?.();
+    const lods=mesh.userData.pstudioAutoLOD||[];
+    if(lods.length){for(const level of lods)if(level.owned){level.geometry.userData.pstudioBVHDisposed=true;level.geometry.userData.pstudioBVHToken=(level.geometry.userData.pstudioBVHToken||0)+1;level.geometry.disposeBoundsTree?.();level.geometry.dispose?.();}if(!lightmapped&&!mesh.userData.pstudioLightmapOriginalGeometryOwned){lods[0]?.geometry?.disposeBoundsTree?.();lods[0]?.geometry?.dispose?.();}}
+    else if(!lightmapped)currentGeometry?.dispose?.();
     if (mesh.material) mesh.material.dispose();
     mesh.getRenderTarget?.()?.dispose?.();
   }
@@ -877,7 +885,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const geometries=new Set(),materials=new Set(),textures=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
-      if(object.geometry){object.geometry.disposeBoundsTree?.();geometries.add(object.geometry);}
+      if(object.geometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();geometries.add(object.geometry);}
       for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
     });
     materials.forEach(material=>{
@@ -977,7 +985,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function clearObjectLightmap(object){
     if(!object?.userData)return false;let changed=false;
     if(object.userData.pstudioLightmapTexture){object.userData.pstudioLightmapTexture.dispose();object.userData.pstudioLightmapTexture=null;changed=true;}
-    if(object.userData.pstudioLightmapGeometry&&object.userData.pstudioLightmapOriginalGeometry){object.geometry.disposeBoundsTree?.();object.geometry.dispose?.();object.geometry=object.userData.pstudioLightmapOriginalGeometry;object.userData.pstudioLightmapOriginalGeometry=null;object.userData.pstudioLightmapGeometry=false;object.userData.pstudioLightmapOriginalGeometryOwned=false;changed=true;}
+    if(object.userData.pstudioLightmapGeometry&&object.userData.pstudioLightmapOriginalGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();object.geometry.dispose?.();object.geometry=object.userData.pstudioLightmapOriginalGeometry;object.userData.pstudioLightmapOriginalGeometry=null;object.userData.pstudioLightmapGeometry=false;object.userData.pstudioLightmapOriginalGeometryOwned=false;changed=true;}
     if(object.userData.pstudioLightmapOriginalMaterial){const current=Array.isArray(object.material)?object.material:[object.material];for(const m of current)m?.dispose?.();object.material=object.userData.pstudioLightmapOriginalMaterial;object.userData.pstudioLightmapOriginalMaterial=null;changed=true;}
     delete object.userData.pstudioLightmapId;return changed;
   }
@@ -1063,7 +1071,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(object.userData.pstudioAutoLOD?.length){object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD)if(level.owned)level.geometry.dispose?.();object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;}
       if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=oldGeometry;object.userData.pstudioLightmapOriginalGeometryOwned=id.startsWith('primitive:');}
       object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;
-      if(oldGeometry!==object.userData.pstudioLightmapOriginalGeometry&&oldGeometry!==object.geometry)oldGeometry.dispose?.();
+      if(oldGeometry!==object.userData.pstudioLightmapOriginalGeometry&&oldGeometry!==object.geometry){oldGeometry.userData.pstudioBVHDisposed=true;oldGeometry.userData.pstudioBVHToken=(oldGeometry.userData.pstudioBVHToken||0)+1;oldGeometry.disposeBoundsTree?.();oldGeometry.dispose?.();}
       object.userData.pstudioLightmapTexture?.dispose?.();const packedPixels=packHalfFloat(pixels),texture=new T.DataTexture(packedPixels,resolution,resolution,T.RGBAFormat,T.HalfFloatType);
       texture.name='PStudioLightmap:'+id;texture.magFilter=T.NearestFilter;texture.minFilter=T.NearestFilter;texture.generateMipmaps=false;texture.flipY=false;texture.needsUpdate=true;
       object.userData.pstudioLightmapTexture=texture;cloneLightmapMaterial(object,texture);object.userData.pstudioLightmapId=id;baked.push(id);allocatedBytes+=perTextureBytes;
@@ -1073,8 +1081,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function scheduleGeometryBVH(geometry){
     if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled)return false;
-    geometry.userData=geometry.userData||{};geometry.userData.pstudioBVHScheduled=true;
-    const build=()=>{if(!geometry.boundsTree)try{geometry.computeBoundsTree({maxLeafTris:12});}catch(error){console.warn('[PStudio] BVH build skipped:',error);}geometry.userData.pstudioBVHScheduled=false;};
+    geometry.userData=geometry.userData||{};geometry.userData.pstudioBVHScheduled=true;geometry.userData.pstudioBVHDisposed=false;const token=(geometry.userData.pstudioBVHToken||0)+1;geometry.userData.pstudioBVHToken=token;
+    const build=()=>{if(geometry.userData.pstudioBVHToken!==token||geometry.userData.pstudioBVHDisposed){geometry.userData.pstudioBVHScheduled=false;return;}if(!geometry.boundsTree)try{geometry.computeBoundsTree({maxLeafTris:12});}catch(error){console.warn('[PStudio] BVH build skipped:',error);}geometry.userData.pstudioBVHScheduled=false;};
     if(window.requestIdleCallback)window.requestIdleCallback(build,{timeout:1500});else window.setTimeout(build,0);return true;
   }
 
@@ -1278,7 +1286,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const materials=Array.isArray(object.material)?object.material:[object.material];
       materials.forEach(material=>material.dispose());
       if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
-      object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry)object.geometry?.dispose?.();object.geometry?.disposeBoundsTree?.();
+      object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
     modelInstances.delete(key);
