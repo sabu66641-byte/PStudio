@@ -468,7 +468,7 @@ await PStudio3D.bakeLightProbeVolume({
 });
 ```
 
-The first pass captures the current scene lighting. Later passes temporarily feed the previous pass's probes into the next capture, providing approximate additional diffuse bounce. This is a bounded baked approximation, not a real-time path tracer or a complete solution for moving lights and moving geometry. UV lightmaps are available through `PStudio3D.bakeUVLightmaps({ resolution })`. The current atlas gives each triangle a separate non-overlapping chart, evaluates interpolated probe SH irradiance per texel, and applies a linear-float `lightMap` texture using the second UV channel. `saveLightmaps(name)` and `loadLightmaps(name)` persist UV2 coordinates and texture data in browser IndexedDB; `clearLightmaps()` removes the runtime application. This is a deterministic per-triangle atlas rather than a seam-aware chart packer, and the bake stores probe-derived diffuse irradiance rather than full direct-shadow/path-traced transport. Skinned meshes are excluded. Re-bake after topology or static-lighting changes.
+The first pass captures direct and environment illumination. Up to four later passes disable direct emitters and the environment, then feed only the previous diffuse-bounce field back through scene materials; a low-energy threshold can stop the iteration early. This improves multi-bounce color transfer while avoiding repeatedly adding direct light. It remains a spatial-SH approximation: it does not perform visibility-correct surface-to-surface ray transport, dynamic path tracing, or physically complete GI for moving lights and geometry. UV lightmaps are available through `PStudio3D.bakeUVLightmaps({ resolution })`. The current atlas gives each triangle a separate non-overlapping chart, evaluates interpolated probe SH irradiance per texel, and applies a linear-float `lightMap` texture using the second UV channel. `saveLightmaps(name)` and `loadLightmaps(name)` persist UV2 coordinates and texture data in browser IndexedDB; `clearLightmaps()` removes the runtime application. This is a deterministic per-triangle atlas rather than a seam-aware chart packer, and the bake stores probe-derived diffuse irradiance rather than full direct-shadow/path-traced transport. Skinned meshes are excluded. Re-bake after topology or static-lighting changes.
 
 ### Cascaded shadow maps
 
@@ -538,38 +538,3 @@ func update(dt)
 ```
 
 The audio asset must already be imported into the project. `play_sound(name, volume, loop)` plays it for the calling Game Object; `stop_sound(name)` stops that owner's sound and `set_sound_volume(name, volume)` changes its volume. Browser autoplay restrictions can still prevent playback until the user interacts with the page.
-
-## Rendering Engine 1.8 — UV Lightmaps, BVH Occlusion and Chunk Lifecycle
-
-
-### UV lightmap workflow
-
-Bake the spatial probe volume first, then generate and apply a lightmap atlas to currently loaded meshes:
-
-```js
-await PStudio3D.bakeLightProbeVolume({
-  min: { x: -40, y: 0, z: -40 },
-  max: { x: 40, y: 16, z: 40 },
-  xCount: 3, yCount: 2, zCount: 3,
-  resolution: 64, bounces: 2, bounceStrength: 0.3
-});
-const result = await PStudio3D.bakeUVLightmaps({ resolution: 512 });
-console.log(result);
-await PStudio3D.saveLightmaps('world-lighting');
-```
-
-After scene objects and model assets load in a later session, call `await PStudio3D.loadLightmaps('world-lighting')`. Mesh identifiers use scene-object command order and model hierarchy paths; changing topology or command order can invalidate a saved entry. Lightmap data is stored in that browser's IndexedDB, so include it in a project backup workflow before moving devices.
-
-### Audio and streamed-owner lifecycle
-
-```ps
-func start()
-    play_sound("forest_ambience.ogg", 0.65, true)
-
-func update(dt)
-    if dt > 0
-        set_sound_volume("forest_ambience.ogg", 0.65)
-```
-
-The audio asset must already be imported into the project. `play_sound(name, volume, loop)` plays it for the calling Game Object; `stop_sound(name)` stops that owner's sound and `set_sound_volume(name, volume)` changes its volume. Browser autoplay restrictions can still prevent playback until the user interacts with the page.
-
