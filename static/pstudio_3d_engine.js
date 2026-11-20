@@ -705,6 +705,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
       instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
+      updateModelStreamingChunks(instance);
       if(instance.lodLevels?.length>1){const lodScale=qualityPreset==='mobile'?0.62:qualityPreset==='balanced'?0.82:(adaptiveQualityEnabled?[0.62,0.82,1.0][adaptiveQualityLevel]:1.0),activeLodDistances=worldRenderConfig.lodDistances.map(value=>value*lodScale),idx=activeLodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?activeLodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;}
       else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
@@ -1458,11 +1459,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function updateFoliageInstanceBatches(instance){
     if(!instance?.foliageBatches?.length)return;
     const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
-    const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
+    const matrix=new T.Matrix4();
     for(const entry of instance.foliageBatches){
       if(!entry.isTree)continue;
-      const batch=entry.mesh;
-      for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,source.matrixWorld);batch.setMatrixAt(i,matrix);}
+      const batch=entry.mesh,parent=entry.parent||root;parent.updateWorldMatrix(true,true);
+      const inverseParent=parent.matrixWorld.clone().invert();
+      for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseParent,source.matrixWorld);batch.setMatrixAt(i,matrix);}
       batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
     }
   }
@@ -1502,6 +1504,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     });
     clone.updateMatrixWorld(true);
+    const streamChunks=buildModelStreamingChunks(clone);
     const foliageBatches=buildFoliageInstanceBatches(clone);updateFoliageInstanceBatches({root:clone,foliageBatches});
     const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
     clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
@@ -1521,7 +1524,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
     const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
     if(mixer&&autoClip){const action=mixer.clipAction(autoClip);action.reset().setLoop(T.LoopRepeat,Infinity).play();}
-    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches};
+    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches,streamChunks};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -1977,7 +1980,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       geometries:renderer.info?.memory?.geometries||0,
       textures:renderer.info?.memory?.textures||0,
       instancedBatches:instancedBatches.size,
-      instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
+      instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
       renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
