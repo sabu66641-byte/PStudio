@@ -1139,6 +1139,7 @@ async function validateGLBFile(file,options={}){
    decodedTextureBytes+=w*h*4*1.34;
   }else decodedTextureBytes+=Math.max(4*1024*1024,(item.byteLength||0)*8);
  }
+ const estimatedCpuBytes=Math.ceil(file.size*.72+geometryBytes*1.8+96*1024*1024);
  const estimatedGpuBytes=Math.ceil(geometryBytes*1.15+decodedTextureBytes);
  const estimatedRuntimeBytes=estimateModelMemoryBytes(file.size,geometryBytes,decodedTextureBytes);
  const triangles=(jsonChunk.meshes||[]).reduce((sum,mesh)=>sum+(mesh.primitives||[]).reduce((subtotal,primitive)=>{
@@ -1151,7 +1152,7 @@ async function validateGLBFile(file,options={}){
  const info={
   sourceBytes:file.size,binBytes:binLength,jsonBytes:jsonLength,
   geometryBytes,compressedImageBytes,decodedTextureBytes:Math.ceil(decodedTextureBytes),
-  estimatedGpuBytes,estimatedRuntimeBytes:estimatedRuntimeBytes,
+  estimatedCpuBytes,estimatedGpuBytes,estimatedRuntimeBytes:estimatedRuntimeBytes,
   nodeCount:(jsonChunk.nodes||[]).length,meshCount:(jsonChunk.meshes||[]).length,
   materialCount:(jsonChunk.materials||[]).length,imageCount:(jsonChunk.images||[]).length,
   triangleCount:Math.floor(triangles),animationCount:(jsonChunk.animations||[]).length,chunkCount
