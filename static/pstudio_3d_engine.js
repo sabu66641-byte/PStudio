@@ -10,6 +10,7 @@
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
+  let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null;
@@ -166,9 +167,9 @@
   }
   function applyAdaptiveQuality(){
     if(!adaptiveQualityEnabled||qualityPreset!=='auto'||!renderer)return;
-    const ms=Number(lastRenderDurationMs)||0;adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
+    const now=window.performance?.now?.()??Date.now();const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
     if(adaptiveFrameEMA>23){adaptiveSlowFrames++;adaptiveFastFrames=0;}else if(adaptiveFrameEMA<13){adaptiveFastFrames++;adaptiveSlowFrames=0;}else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
-    const now=window.performance?.now?.()??Date.now();if(now-adaptiveLastChange<1800)return;
+    if(now-adaptiveLastChange<1800)return;
     let changed=false;if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}if(!changed)return;
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel];
@@ -176,7 +177,7 @@
     const effects=adaptiveQualityLevel>=1;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
-    lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA});}catch(_){}
+    lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
   }
 
   function ensureRenderer(){
@@ -184,6 +185,7 @@
     if(!window.THREE||!window.THREE.WebGLRenderer)return false;
     const T=window.THREE;
     renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
+    try{const gl=renderer.getContext(),extension=gl.getExtension?.('EXT_disjoint_timer_query_webgl2');if(extension&&typeof gl.createQuery==='function'&&typeof gl.getQueryParameter==='function'){gpuTimerGl=gl;gpuTimerExtension=extension;}else{gpuTimerGl=null;gpuTimerExtension=null;}}catch(error){gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timing extension unavailable; CPU timing fallback will be used.',error);}
     if(renderer.info)renderer.info.autoReset=false;
     renderer.outputColorSpace=T.SRGBColorSpace;
     renderer.toneMapping=T.ACESFilmicToneMapping;
@@ -238,21 +240,62 @@
     }
   }
 
+  function pollGpuTimerQueries(){
+    if(!gpuTimerGl||!gpuTimerExtension)return;
+    try{
+      const disjoint=!!gpuTimerGl.getParameter(gpuTimerExtension.GPU_DISJOINT_EXT);
+      if(disjoint){for(const entry of gpuTimerQueries)gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.length=0;return;}
+      const now=window.performance?.now?.()??Date.now();
+      for(let i=gpuTimerQueries.length-1;i>=0;i--){
+        const entry=gpuTimerQueries[i],available=gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT_AVAILABLE);
+        if(available){
+          const nanoseconds=Number(gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT));
+          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;}
+          gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);
+        }else if(now-entry.submittedAt>2000){gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);}
+      }
+    }catch(error){
+      for(const entry of gpuTimerQueries){try{gpuTimerGl.deleteQuery(entry.query);}catch(_){}}
+      gpuTimerQueries.length=0;gpuTimerGl=null;gpuTimerExtension=null;
+      console.warn('[PStudio] GPU timer queries disabled; CPU timing fallback will be used.',error);
+    }
+  }
+  function beginGpuTimerQuery(){
+    if(!gpuTimerGl||!gpuTimerExtension)return null;
+    try{const query=gpuTimerGl.createQuery();if(!query)return null;gpuTimerGl.beginQuery(gpuTimerExtension.TIME_ELAPSED_EXT,query);return query;}
+    catch(error){gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query start failed; CPU timing fallback will be used.',error);return null;}
+  }
+  function endGpuTimerQuery(query){
+    if(!query||!gpuTimerGl||!gpuTimerExtension)return;
+    try{
+      gpuTimerGl.endQuery(gpuTimerExtension.TIME_ELAPSED_EXT);
+      gpuTimerQueries.push({query,submittedAt:window.performance?.now?.()??Date.now()});
+      while(gpuTimerQueries.length>8){const oldest=gpuTimerQueries.shift();gpuTimerGl.deleteQuery(oldest.query);}
+    }catch(error){try{gpuTimerGl.deleteQuery(query);}catch(_){}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query end failed; CPU timing fallback will be used.',error);}
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
-    renderer.info?.reset?.();
-    const started=window.performance?.now?.()??Date.now();
-    if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){
-      if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
-      if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
-      if(ssrPass)ssrPass.enabled=ssrEnabled;
-      composer.render();
-    }else{
-      if(ssaoPass)ssaoPass.enabled=false;
-      if(ssrPass)ssrPass.enabled=false;
-      renderer.render(scene,camera);
+    renderer.info?.reset?.();pollGpuTimerQueries();
+    const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
+    try{
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){
+        if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
+        if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
+        if(ssrPass)ssrPass.enabled=ssrEnabled;
+        composer.render();
+      }else{
+        if(ssaoPass)ssaoPass.enabled=false;
+        if(ssrPass)ssrPass.enabled=false;
+        renderer.render(scene,camera);
+      }
+    }finally{
+      lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+      endGpuTimerQuery(gpuQuery);
+      const now=window.performance?.now?.()??Date.now();
+      const hasRecentGpuSample=lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+      adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
+      applyAdaptiveQuality();
     }
-    lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);applyAdaptiveQuality();
   }
 
   function createGpuParticleSystem(capacity,color,size=0.085){
@@ -1378,7 +1421,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),timingSource:'CPU render submission time; GPU timer queries are not available',quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2))},gi:{probeCount:bakedLightProbeVolume?.length||0,objectLocalSH:true},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,objectLocalSH:true},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
