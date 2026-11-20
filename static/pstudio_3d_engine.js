@@ -347,7 +347,7 @@
       const name=String(object.name||'');
       const mats=Array.isArray(object.material)?object.material:[object.material];
       const transparent=mats.some(material=>material&&(material.transparent||(Number.isFinite(material.opacity)&&material.opacity<.999)||material.alphaMap||(material.alphaTest||0)>.001));
-      const omit=object.userData?.pstudioWaterSurface||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|PStudio_Foliage_GPU)/i.test(name);
+      const omit=object.userData?.pstudioWaterSurface||object.userData?.pstudioWindPart||object.userData?.pstudioInstanceBatch||transparent||/(?:sky|cloud|tree|foliage|grass|wildflower|PStudio_Foliage_GPU|PStudio_GPU_Instances)/i.test(name);
       if(omit){hidden.push(object);object.visible=false;}
     });
     const previousTarget=renderer.getRenderTarget(),previousOverride=scene.overrideMaterial,previousAutoClear=renderer.autoClear;
@@ -1348,13 +1348,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     root.traverse(object=>{
       if(!object.isMesh||object.isSkinnedMesh)return;
       const objectName=String(object.name||'');
-      const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName);
+      const isWindPart=object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch';
+      const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName)||isWindPart;
       const isModularPart=/^PStudioInstance_/i.test(objectName)||object.userData?.pstudioInstanceBatch===true;
       if(!isTree&&!isModularPart)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       if(materials.length!==1||!object.geometry||!materials[0])return;
-      const levelMatch=objectName.match(/LOD([0-9]+)/i);
-      const level=levelMatch?Number(levelMatch[1]):null;
+      let levelMatch=objectName.match(/LOD([0-9]+)/i);
+      let parent=object.parent;
+      while(!levelMatch&&parent&&parent!==root){levelMatch=String(parent.name||'').match(/LOD([0-9]+)/i);parent=parent.parent;}
+      const level=levelMatch?Number(levelMatch[1]):(isWindPart?0:null);
       const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level);
       if(!groups.has(key))groups.set(key,{sources:[],level,isTree});
       groups.get(key).sources.push(object);
