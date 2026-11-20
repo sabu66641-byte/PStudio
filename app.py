@@ -894,12 +894,20 @@ def generate_cpp(ast):
         "#include <algorithm>",
         "#include <type_traits>",
         "#include <cmath>",
+        "#include <optional>",
+        "#include <stdexcept>",
+        "#include <utility>",
+        "#include <iterator>",
         "using namespace std;",
         "",
         "template<typename T> bool ps_truthy(const T& v) { return static_cast<bool>(v); }",
         "bool ps_truthy(const string& v) { return !v.empty(); }",
         "template<typename T> bool ps_truthy(const vector<T>& v) { return !v.empty(); }",
         "template<typename A, typename B> auto ps_pow(A a, B b) { return std::pow(a, b); }",
+        "template<typename A, typename B> double ps_div(A a, B b) { if (b == 0) throw std::runtime_error(\"division by zero\"); return static_cast<double>(a) / static_cast<double>(b); }",
+        "template<typename A, typename B> auto ps_mod(A a, B b) { if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>) { if (b == 0) throw std::runtime_error(\"modulo by zero\"); return std::fmod(static_cast<double>(a), static_cast<double>(b)); } else { if (b == 0) throw std::runtime_error(\"modulo by zero\"); return a % b; } }",
+        "template<typename T> T& ps_get(std::optional<T>& slot, const char* name) { if (!slot.has_value()) throw std::runtime_error(std::string(\"未定義の変数: \") + name); return *slot; }",
+        "template<typename T, typename U> void ps_set(std::optional<T>& slot, U&& value, const char* name) { (void)name; slot = std::forward<U>(value); }",
         "",
         "template<typename T> int len(const vector<T>& v) { return static_cast<int>(v.size()); }",
         "int len(const string& s) { return static_cast<int>(s.length()); }",
@@ -912,48 +920,171 @@ def generate_cpp(ast):
 
     functions_buf = []
 
-    def to_cpp_expr(node):
+    def array_type(node):
+        elements = node.get("elements", [])
+        if not elements:
+            return "vector<int>"
+        first = elements[0]
+        if first.get("type") == "Literal":
+            raw = first.get("value", "")
+            if raw.startswith('"'):
+                return "vector<string>"
+            if raw in ("true", "false"):
+                return "vector<bool>"
+            if "." in raw:
+                return "vector<double>"
+        return "vector<int>"
+
+    def to_cpp_expr(node, scoped_vars=None, parameter_names=None):
         if not node:
             return ""
-
+        scoped_vars = scoped_vars or set()
+        parameter_names = parameter_names or set()
         typ = node["type"]
 
         if typ == "Literal":
-            raw = node["value"]
-            if raw == "true" or raw == "false":
-                return raw
-            return raw
-        if typ == "Variable":
             return node["value"]
+        if typ == "Variable":
+            name = node["value"]
+            if name in ("true", "false"):
+                return name
+            if name in scoped_vars:
+                return f'ps_get({name}, "{name}")'
+            return name
         if typ == "UnaryExpr":
             op = node["op"]
-            right = to_cpp_expr(node["right"])
+            right = to_cpp_expr(node["right"], scoped_vars, parameter_names)
             if op == "!":
                 return f"(!ps_truthy({right}))"
             return f"({op}{right})"
         if typ == "PostfixExpr":
-            return f"({to_cpp_expr(node['value'])}{node['op']})"
+            return f"({to_cpp_expr(node['value'], scoped_vars, parameter_names)}{node['op']})"
         if typ == "BinaryExpr":
             op = node["op"]
-            left_str = to_cpp_expr(node["left"])
-            right_str = to_cpp_expr(node["right"])
-            if op == "+" and (left_str.startswith('"') or right_str.startswith('"')):
-                if left_str.startswith('"'):
+            left_node, right_node = node["left"], node["right"]
+            left_str = to_cpp_expr(left_node, scoped_vars, parameter_names)
+            right_str = to_cpp_expr(right_node, scoped_vars, parameter_names)
+            if op == "+" and (
+                (left_node.get("type") == "Literal" and left_node.get("value", "").startswith('"'))
+                or (right_node.get("type") == "Literal" and right_node.get("value", "").startswith('"'))
+            ):
+                if left_node.get("type") == "Literal" and left_node.get("value", "").startswith('"'):
                     left_str = f"string({left_str})"
-                if right_str.startswith('"'):
+                if right_node.get("type") == "Literal" and right_node.get("value", "").startswith('"'):
                     right_str = f"string({right_str})"
             if op == "**":
                 return f"ps_pow({left_str}, {right_str})"
+            if op == "/":
+                return f"ps_div({left_str}, {right_str})"
+            if op == "%":
+                return f"ps_mod({left_str}, {right_str})"
             if op in ("&&", "||"):
                 return f"(ps_truthy({left_str}) {op} ps_truthy({right_str}))"
             return f"({left_str} {op} {right_str})"
         if typ == "ArrayLiteral":
-            return "{" + ", ".join(to_cpp_expr(e) for e in node.get("elements", [])) + "}"
+            cpp_type = array_type(node)
+            values = ", ".join(to_cpp_expr(item, scoped_vars, parameter_names) for item in node.get("elements", []))
+            return f"{cpp_type}{{{values}}}"
         if typ == "IndexExpr":
-            return f"{node['name']}[{to_cpp_expr(node['index'])}]"
+            base = to_cpp_expr({"type": "Variable", "value": node["name"]}, scoped_vars, parameter_names)
+            return f"{base}[{to_cpp_expr(node['index'], scoped_vars, parameter_names)}]"
         if typ == "CallExpr":
-            return f"{node['name']}(" + ", ".join(to_cpp_expr(a) for a in node.get("args", [])) + ")"
+            return node["name"] + "(" + ", ".join(
+                to_cpp_expr(arg, scoped_vars, parameter_names) for arg in node.get("args", [])
+            ) + ")"
         return ""
+
+    def cpp_decl_type(node, scoped_vars, parameter_names):
+        if node and node.get("type") == "Literal":
+            raw = node.get("value", "")
+            if raw in ("true", "false"):
+                return "bool"
+            if raw.startswith('"'):
+                return "string"
+            return "double" if "." in raw else "int"
+        if node and node.get("type") == "ArrayLiteral":
+            return array_type(node)
+        if node and node.get("type") == "CallExpr":
+            name = node.get("name")
+            if name == "input":
+                return "string"
+            if name == "len":
+                return "int"
+            if name == "range":
+                return "vector<int>"
+        if node and node.get("type") == "BinaryExpr":
+            op = node.get("op")
+            if op in ("&&", "||", "==", "!=", "<", ">", "<=", ">="):
+                return "bool"
+            if op in ("/", "**"):
+                return "double"
+        expression = to_cpp_expr(node, scoped_vars, parameter_names)
+        if not expression:
+            raise Exception("C++生成エラー: 変数の型を推定できません。")
+        return f"std::decay_t<decltype({expression})>"
+
+    def iterable_expression(node, scoped_vars, parameter_names):
+        if node and node.get("type") == "ArrayLiteral":
+            return to_cpp_expr(node, scoped_vars, parameter_names)
+        return to_cpp_expr(node, scoped_vars, parameter_names)
+
+    def collect_scope_declarations(nodes, parameter_names):
+        scoped_vars = set()
+        declarations = []
+        loop_temp_sequence = [0]
+
+        def declare(name, type_expression):
+            if name in parameter_names or name in scoped_vars:
+                return
+            declarations.append(f"    std::optional<{type_expression}> {name};")
+            scoped_vars.add(name)
+
+        def visit(body):
+            index = 0
+            while index < len(body):
+                node = body[index]
+                typ = node.get("type")
+
+                if typ == "FunctionDef":
+                    index += 1
+                    continue
+
+                if typ == "AssignmentExpression":
+                    name = node["variable"]
+                    if name not in scoped_vars and name not in parameter_names:
+                        type_expression = cpp_decl_type(node["value"], scoped_vars, parameter_names)
+                        declare(name, type_expression)
+                    index += 1
+                    continue
+
+                if typ == "IfStatement":
+                    visit(node.get("body", []))
+                    branch_index = index + 1
+                    while branch_index < len(body) and body[branch_index].get("type") in ("ElifStatement", "ElseStatement"):
+                        visit(body[branch_index].get("body", []))
+                        branch_index += 1
+                    index = branch_index
+                    continue
+
+                if typ in ("ElifStatement", "ElseStatement", "WhileStatement"):
+                    visit(node.get("body", []))
+                    index += 1
+                    continue
+
+                if typ == "ForStatement":
+                    name = node["variable"]
+                    if name not in scoped_vars and name not in parameter_names:
+                        iterable = iterable_expression(node["range"], scoped_vars, parameter_names)
+                        element_type = f"std::decay_t<decltype(*std::begin({iterable}))>"
+                        declare(name, element_type)
+                    visit(node.get("body", []))
+                    index += 1
+                    continue
+
+                index += 1
+
+        visit(nodes)
+        return declarations, scoped_vars, loop_temp_sequence
 
     def has_return(nodes):
         for node in nodes:
@@ -963,84 +1094,78 @@ def generate_cpp(ast):
                 return True
         return False
 
-    def array_type(node):
-        elements = node.get("elements", [])
-        if not elements:
-            return "vector<int>"
-        first = elements[0]
-        if first.get("type") == "Literal" and first.get("value", "").startswith('"'):
-            return "vector<string>"
-        if first.get("type") == "Literal" and "." in first.get("value", ""):
-            return "vector<double>"
-        return "vector<int>"
-
-    def walk(nodes, indent_str="    ", declared_vars=None):
-        if declared_vars is None:
-            declared_vars = set()
+    def walk(nodes, scoped_vars, parameter_names, loop_temp_sequence):
         lines = []
+        indent_str = "    "
 
         for node in nodes:
             typ = node["type"]
 
             if typ == "AssignmentExpression":
                 var = node["variable"]
-                val_node = node["value"]
-                cpp_val = to_cpp_expr(val_node)
-                if var in declared_vars:
-                    lines.append(f"{indent_str}{var} = {cpp_val};")
+                cpp_val = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                if var in scoped_vars:
+                    lines.append(f'{indent_str}ps_set({var}, {cpp_val}, "{var}");')
                 else:
-                    if val_node["type"] == "ArrayLiteral":
-                        type_str = array_type(val_node)
-                    elif val_node["type"] == "Literal" and val_node["value"].startswith('"'):
-                        type_str = "string"
-                    elif val_node["type"] == "CallExpr" and val_node["name"] == "input":
-                        type_str = "string"
-                    else:
-                        type_str = "auto"
-                    lines.append(f"{indent_str}{type_str} {var} = {cpp_val};")
-                    declared_vars.add(var)
+                    lines.append(f"{indent_str}{var} = {cpp_val};")
 
             elif typ == "CompoundAssignment":
                 var = node["variable"]
                 op = node["op"]
-                cpp_val = to_cpp_expr(node["value"])
-                if var not in declared_vars:
-                    raise Exception(f"未定義の変数に複合代入しています: {var}")
-                lines.append(f"{indent_str}{var} {op} {cpp_val};")
+                cpp_val = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                target = f'ps_get({var}, "{var}")' if var in scoped_vars else var
+                lines.append(f"{indent_str}{target} {op} {cpp_val};")
 
             elif typ == "ArrayAssignStatement":
-                lines.append(f"{indent_str}{node['name']}[{to_cpp_expr(node['index'])}] = {to_cpp_expr(node['value'])};")
+                name = node["name"]
+                base = f'ps_get({name}, "{name}")' if name in scoped_vars else name
+                index = to_cpp_expr(node["index"], scoped_vars, parameter_names)
+                value = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}{base}[{index}] = {value};")
 
             elif typ == "ArrayCompoundAssignStatement":
-                op = node.get("op", "+=")
-                lines.append(f"{indent_str}{node['name']}[{to_cpp_expr(node['index'])}] {op} {to_cpp_expr(node['value'])};")
+                name = node["name"]
+                base = f'ps_get({name}, "{name}")' if name in scoped_vars else name
+                index = to_cpp_expr(node["index"], scoped_vars, parameter_names)
+                value = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}{base}[{index}] {node.get('op', '+=')} {value};")
 
             elif typ == "PrintStatement":
-                lines.append(f"{indent_str}cout << {to_cpp_expr(node['value'])} << endl;")
+                value = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}cout << {value} << endl;")
 
             elif typ in ("IfStatement", "ElifStatement"):
                 prefix = "if" if typ == "IfStatement" else "else if"
-                lines.append(f"{indent_str}{prefix} ({to_cpp_expr(node['condition'])}) {{")
-                lines.extend(walk(node["body"], indent_str + "    ", declared_vars))
+                condition = to_cpp_expr(node["condition"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}{prefix} ({condition}) {{")
+                lines.extend(walk(node["body"], scoped_vars, parameter_names, loop_temp_sequence))
                 lines.append(f"{indent_str}}}")
 
             elif typ == "ElseStatement":
                 lines.append(f"{indent_str}else {{")
-                lines.extend(walk(node["body"], indent_str + "    ", declared_vars))
+                lines.extend(walk(node["body"], scoped_vars, parameter_names, loop_temp_sequence))
                 lines.append(f"{indent_str}}}")
 
             elif typ == "WhileStatement":
-                lines.append(f"{indent_str}while ({to_cpp_expr(node['condition'])}) {{")
-                lines.extend(walk(node["body"], indent_str + "    ", declared_vars))
+                condition = to_cpp_expr(node["condition"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}while ({condition}) {{")
+                lines.extend(walk(node["body"], scoped_vars, parameter_names, loop_temp_sequence))
                 lines.append(f"{indent_str}}}")
 
             elif typ == "ForStatement":
-                rng_str = to_cpp_expr(node["range"])
+                iterable = iterable_expression(node["range"], scoped_vars, parameter_names)
+                temp = f"__pstudio_range_item_{loop_temp_sequence[0]}"
+                loop_temp_sequence[0] += 1
+                while temp in scoped_vars or temp in parameter_names:
+                    temp = f"__pstudio_range_item_{loop_temp_sequence[0]}"
+                    loop_temp_sequence[0] += 1
+                lines.append(f"{indent_str}for (auto&& {temp} : {iterable}) {{")
                 loop_var = node["variable"]
-                lines.append(f"{indent_str}for (auto {loop_var} : {rng_str}) {{")
-                inner_vars = set(declared_vars)
-                inner_vars.add(loop_var)
-                lines.extend(walk(node["body"], indent_str + "    ", inner_vars))
+                if loop_var in scoped_vars:
+                    lines.append(f'{indent_str}    ps_set({loop_var}, {temp}, "{loop_var}");')
+                else:
+                    lines.append(f"{indent_str}    {loop_var} = {temp};")
+                lines.extend(walk(node["body"], scoped_vars, parameter_names, loop_temp_sequence))
                 lines.append(f"{indent_str}}}")
 
             elif typ == "BREAKStatement":
@@ -1051,31 +1176,46 @@ def generate_cpp(ast):
                 if node.get("value") is None:
                     lines.append(f"{indent_str}return;")
                 else:
-                    lines.append(f"{indent_str}return {to_cpp_expr(node['value'])};")
+                    value = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                    lines.append(f"{indent_str}return {value};")
 
             elif typ == "FunctionDef":
                 params = node.get("params", [])
+                parameter_names_inner = set(params)
                 if params:
-                    t_params = ", ".join(f"typename T_{x}" for x in params)
-                    param_str = ", ".join(f"T_{x} {x}" for x in params)
+                    t_params = ", ".join(f"typename T_{name}" for name in params)
+                    param_str = ", ".join(f"T_{name} {name}" for name in params)
                     header = [f"template <{t_params}>"]
                 else:
                     param_str = ""
                     header = []
                 ret_type = "auto" if has_return(node.get("body", [])) else "void"
+                local_declarations, local_scoped_vars, local_loop_sequence = collect_scope_declarations(
+                    node.get("body", []), parameter_names_inner
+                )
                 func_lines = header + [f"{ret_type} {node['name']}({param_str}) {{"]
-                local_declared = set(params)
-                func_lines.extend(walk(node.get("body", []), "    ", local_declared))
+                func_lines.extend(local_declarations)
+                func_lines.extend(walk(
+                    node.get("body", []), local_scoped_vars,
+                    parameter_names_inner, local_loop_sequence
+                ))
                 func_lines.append("}")
                 functions_buf.append("\n".join(func_lines))
 
             elif typ == "ExpressionStatement":
-                lines.append(f"{indent_str}{to_cpp_expr(node['value'])};")
+                value = to_cpp_expr(node["value"], scoped_vars, parameter_names)
+                lines.append(f"{indent_str}{value};")
 
         return lines
 
-    main_body = walk(ast["body"], declared_vars=set())
-    final_code = cpp_lines + [""] + functions_buf + [""] + ["int main() {"] + main_body + ["    return 0;", "}"]
+    main_declarations, main_scoped_vars, main_loop_sequence = collect_scope_declarations(
+        ast["body"], set()
+    )
+    main_body = walk(ast["body"], main_scoped_vars, set(), main_loop_sequence)
+    final_code = (
+        cpp_lines + [""] + functions_buf + [""] + ["int main() {"]
+        + main_declarations + main_body + ["    return 0;", "}"]
+    )
     return "\n".join(final_code)
 
 
