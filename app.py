@@ -21,6 +21,24 @@ except ImportError:
 
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
+
+MAX_PS_SOURCE_BYTES = 512 * 1024
+MAX_PS_STDIN_BYTES = 128 * 1024
+MAX_DISCORD_CONTENT_CHARS = 2000
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify({
+        "success": False,
+        "error": "リクエスト本文が上限（2MB）を超えています。"
+    }), 413
+
+
+def source_size_bytes(source):
+    return len(source.encode("utf-8"))
+
 
 discord_bot = None
 discord_bot_lock = threading.Lock()
@@ -2466,6 +2484,11 @@ def compile_code():
         return jsonify({"success": False, "error": "code は文字列で指定してください。"}), 400
     if not source.strip():
         return jsonify({"success": False, "error": "コードが空です。"}), 400
+    if source_size_bytes(source) > MAX_PS_SOURCE_BYTES:
+        return jsonify({
+            "success": False,
+            "error": "ソースコードの上限は512KBです。"
+        }), 413
     try:
         tree = parse(tokenize(source))
         validate_ast(tree)
@@ -2505,6 +2528,18 @@ def run_code():
             "success": False,
             "error": "コードが空です。"
         }), 400
+
+    if source_size_bytes(source) > MAX_PS_SOURCE_BYTES:
+        return jsonify({
+            "success": False,
+            "error": "ソースコードの上限は512KBです。"
+        }), 413
+
+    if source_size_bytes(stdin_text) > MAX_PS_STDIN_BYTES:
+        return jsonify({
+            "success": False,
+            "error": "標準入力の上限は128KBです。"
+        }), 413
 
     try:
         tokens = tokenize(source)
@@ -2758,6 +2793,12 @@ def discord_send():
         return jsonify({
             "success": False,
             "error": "content が必要です。"
+        }), 400
+
+    if len(str(content)) > MAX_DISCORD_CONTENT_CHARS:
+        return jsonify({
+            "success": False,
+            "error": "Discordメッセージは2000文字以内にしてください。"
         }), 400
 
     try:
