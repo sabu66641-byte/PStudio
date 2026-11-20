@@ -307,3 +307,11 @@ test('streaming chunks are constructed from top-level world children for this GL
   assert.ok(renderer.includes('/^PStudioInstance_/i.test(name)'));
   assert.ok(renderer.includes('/(?:^|[_ -])Wind[_ -]?Tree/i.test(name)'));
 });
+
+
+test('triplanar projection honors scale and normal blend values authored in GLB material extras',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.ok(fx.includes('material.userData?.pstudioTriplanarScale'));
+  assert.ok(fx.includes('material.userData?.pstudioTriplanarSharpness'));
+  assert.ok(fx.includes('material.userData?.pstudioTriplanarNormalWeight'));
+});
