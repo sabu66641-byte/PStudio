@@ -1182,7 +1182,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const clone=window.PStudioSkeletonUtils?.clone
       ? window.PStudioSkeletonUtils.clone(asset.scene)
       : asset.scene.clone(true);
-    const materialDefaults=new Map(),meshes=[];
+    const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
     clone.userData.ownerId=ownerId;
     clone.traverse(object=>{
       object.userData.ownerId=ownerId;
@@ -1193,11 +1193,14 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         object.castShadow=true;
         object.receiveShadow=true;
         const cloneMaterial=material=>{
-          const copy=material.clone();setupLightingMaterial(copy);
+          let copy=materialClones.get(material);
+          if(copy)return copy;
+          copy=material.clone();setupLightingMaterial(copy);
           materialDefaults.set(copy,{
             roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
             metalness:Number.isFinite(material.metalness)?material.metalness:0.04
           });
+          materialClones.set(material,copy);
           return copy;
         };
         object.material=Array.isArray(object.material)
@@ -1333,14 +1336,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(!instance) return;
     if(instance.mixer) instance.mixer.stopAllAction();
     if(instance.root.parent) instance.root.parent.remove(instance.root);
+    const disposedMaterials=new Set();
     instance.root.traverse(object=>{
-      if(!object.isMesh||!object.material)return;
+      if(!object.isMesh)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
-      materials.forEach(material=>material.dispose());
-      if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
+      for(const material of materials)if(material)disposedMaterials.add(material);
+      if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)if(material)disposedMaterials.add(material);}
       object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
+    disposedMaterials.forEach(material=>material.dispose());
     modelInstances.delete(key);
     instance.resourceLease?.release?.();
   }
