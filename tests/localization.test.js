@@ -61,3 +61,11 @@ test('responsive layout changes do not override the existing font sizes', () => 
   const css = sectionBetween('/* Responsive UI refinement', '</style>');
   assert.doesNotMatch(css, /font-size\s*:/);
 });
+
+test('runtime text updates are translated without replacing the canonical source', () => {
+  assert.match(html, /const appliedTextNodes = new WeakMap\(\)/);
+  assert.match(html, /record\.type === "characterData"/);
+  assert.match(html, /current !== lastApplied/);
+  assert.match(html, /originalTextNodes\.set\(node, current\)/);
+  assert.match(html, /characterData: true/);
+});
