@@ -230,7 +230,7 @@
       waterDepthTarget.depthTexture.minFilter=T.NearestFilter;
       waterDepthTarget.depthTexture.magFilter=T.NearestFilter;
       waterDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.BasicDepthPacking});
-      waterDepthMaterial.colorWrite=false;waterDepthMaterial.depthWrite=true;
+      waterDepthMaterial.colorWrite=false;waterDepthMaterial.depthWrite=true;waterDepthMaterial.side=T.DoubleSide;
     }
     if('useLegacyLights' in renderer)renderer.useLegacyLights=false;
     scene=new T.Scene();scene.background=new T.Color(0x171d26);
