@@ -70,7 +70,7 @@ test('primitive cache uses the same mesh object for caching and rendering', () =
 });
 
 test('object-local SH GI blends probes and supports iterative diffuse bounce capture',()=>{
-  for(const x of ['bakeLightProbeVolume','object-local-spatial-spherical-harmonics','pstudio-object-sh-v1','pstudioEvaluateSH','updateObjectProbeUniforms','bounces','bounceStrength'])assert.ok(renderer.includes(x),x);
+  for(const x of ['bakeLightProbeVolume','iterative-multibounce-diffuse-sh-gi','pstudio-object-sh-v1','pstudioEvaluateSH','updateObjectProbeUniforms','bounces','bounceStrength'])assert.ok(renderer.includes(x),x);
 });
 test('three-cascade shadows load the version-aligned CSM addon with fallback',()=>{
   assert.ok(html.includes('three/addons/csm/CSM.js'));
@@ -110,4 +110,8 @@ test('world chunk lifecycle suspends scripts, physics, ECS and owner audio',()=>
   for(const token of ['setSceneObjectActive','entityActive.get(id)===false'])assert.ok(ecs.includes(token),token);
   for(const token of ['world.chunk.suspended','world.chunk.resumed'])assert.ok(renderer.includes(token),token);
   for(const token of ['"play_sound": 3','"stop_sound": 1','"set_sound_volume": 2'])assert.ok(app.includes(token),token);
+});
+
+test('multi-bounce GI separates direct lighting and converges on bounce energy',()=>{
+  for(const token of ['maxBounces','minBounceEnergy','pstudioBounceSource','scene.environment=null','scene.background=new T.Color(0x000000)','completedBounces'])assert.ok(renderer.includes(token),token);
 });
