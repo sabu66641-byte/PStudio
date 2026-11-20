@@ -131,3 +131,7 @@ test('inactive script owners retain prior render commands for seamless resume',(
   assert.ok(engine.includes('runtime.started.has(o.id)'));
   assert.ok(engine.includes('physicsCommands'));
 });
+
+test('saved lightmaps validate source geometry and bake-time world transforms',()=>{
+  for(const token of ['lightmapGeometryFingerprint','lightmapMatrixMatches','pstudioLightmapBakedMatrix','fingerprint','matrixWorld'])assert.ok(renderer.includes(token),token);
+});
