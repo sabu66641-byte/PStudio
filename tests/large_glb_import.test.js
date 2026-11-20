@@ -116,3 +116,10 @@ test('GLB validator rejects external resources and out-of-range buffer views', a
   });
   await assert.rejects(validateGLBFile(outOfRange), /範囲外/);
 });
+
+
+test('external .gltf bundling remains capped separately to avoid giant base64 copies',()=>{
+  assert.ok(html.includes('const PSTUDIO_MAX_GLTF_BYTES=30*1024*1024'));
+  assert.ok(html.includes("if(file.size>PSTUDIO_MAX_GLTF_BYTES)"));
+  assert.ok(html.includes('大容量モデルは.glbで読み込んでください。'));
+});
