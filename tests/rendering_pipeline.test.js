@@ -141,3 +141,24 @@ test('saved indexed meshes rebuild the same non-indexed UV2 geometry on load',()
   assert.ok(renderer.includes('position.count!==record.vertexCount'));
   assert.ok(renderer.includes('pstudioLightmapOriginalGeometryOwned'));
 });
+
+
+test('GLTF instance rendering reuses mesh references and avoids unchanged material traversals',()=>{
+  const materialStart=renderer.indexOf('function applyModelMaterial(instance, state)');
+  const materialEnd=renderer.indexOf('function removeModelInstance(key)',materialStart);
+  assert.ok(materialStart>=0&&materialEnd>materialStart);
+  const materialBlock=renderer.slice(materialStart,materialEnd);
+  assert.ok(materialBlock.includes('materialStateSignature'));
+  assert.ok(materialBlock.includes('for(const object of instance.meshes||[])'));
+  assert.ok(!materialBlock.includes('instance.root.traverse'));
+  assert.ok(renderer.includes('materialClones.get(material)'));
+  assert.ok(renderer.includes('const materialDefaults=new Map(),materialClones=new Map(),meshes=[]'));
+  assert.ok(renderer.includes('for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d)'));
+});
+
+test('automatic LOD work is serialized into idle callbacks without forced timeout execution',()=>{
+  assert.ok(renderer.includes('const autoLODQueue=[]'));
+  assert.ok(renderer.includes('function scheduleAutoLODPump()'));
+  assert.ok(renderer.includes('window.requestIdleCallback(pump)'));
+  assert.ok(!renderer.includes('requestIdleCallback(build,{timeout:1200})'));
+});
