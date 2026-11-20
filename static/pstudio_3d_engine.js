@@ -1075,9 +1075,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const uv=new Float32Array(p.count*2);for(let i=0;i<triangles;i++){const col=i%grid,row=Math.floor(i/grid),x0=col*cell+pad/resolution,y0=row*cell+pad/resolution,x1=(col+1)*cell-pad/resolution,y1=(row+1)*cell-pad/resolution,k=i*6;uv[k]=x0;uv[k+1]=y0;uv[k+2]=x1;uv[k+3]=y0;uv[k+4]=x0;uv[k+5]=y1;}
     g.setAttribute('uv2',new T.BufferAttribute(uv,2));return{geometry:g,uv2:uv,triangles,grid};
   }
-  async function bakeLightmapPixels(object,g,info,resolution){
-    const T=window.THREE,p=g.attributes.position,n=g.attributes.normal;if(object.updateWorldMatrix)object.updateWorldMatrix(true,false);else object.updateMatrixWorld(true);const nm=new T.Matrix3().getNormalMatrix(object.matrixWorld),wp=[],wn=[];
-    for(let i=0;i<p.count;i++){wp.push(new T.Vector3().fromBufferAttribute(p,i).applyMatrix4(object.matrixWorld));wn.push(new T.Vector3().fromBufferAttribute(n,i).applyMatrix3(nm).normalize());}
+  async function bakeLightmapPixels(object,g,info,resolution,bakedMatrix){
+    const T=window.THREE,p=g.attributes.position,n=g.attributes.normal,matrix=new T.Matrix4().fromArray(bakedMatrix),nm=new T.Matrix3().getNormalMatrix(matrix),wp=[],wn=[];
+    for(let i=0;i<p.count;i++){wp.push(new T.Vector3().fromBufferAttribute(p,i).applyMatrix4(matrix));wn.push(new T.Vector3().fromBufferAttribute(n,i).applyMatrix3(nm).normalize());}
     const data=new Float32Array(resolution*resolution*4),cell=resolution/info.grid,pad=Math.max(2,Math.ceil(resolution*.025/info.grid)),usable=Math.max(1,cell-2*pad);
     const point=new T.Vector3(),normal=new T.Vector3(),light=new T.Vector3();
     for(let tri=0;tri<info.triangles;tri++){const col=tri%info.grid,row=Math.floor(tri/info.grid),x0=Math.ceil(col*cell+pad),y0=Math.ceil(row*cell+pad),x1=Math.floor((col+1)*cell-pad),y1=Math.floor((row+1)*cell-pad),a=wp[tri*3],b=wp[tri*3+1],c=wp[tri*3+2],na=wn[tri*3],nb=wn[tri*3+1],nc=wn[tri*3+2];
@@ -1101,7 +1101,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const baked=[],failed=[];let allocatedBytes=0;
     for(const {id,object} of targets){if(allocatedBytes+perTextureBytes>budget){failed.push({id,error:'Lightmap memory budget exceeded; reduce resolution or increase maxBytes.'});continue;}let working=null;try{
       const source=object.userData.pstudioLightmapOriginalGeometry||object.userData.pstudioAutoLOD?.[0]?.geometry||object.geometry,info=createLightmapUVGeometry(source,resolution);working=info.geometry;
-      const pixels=await bakeLightmapPixels(object,working,info,resolution),oldGeometry=object.geometry,bakedMatrix=Array.from(object.matrixWorld.elements);
+      if(object.updateWorldMatrix)object.updateWorldMatrix(true,false);else object.updateMatrixWorld(true);const bakedMatrix=Array.from(object.matrixWorld.elements);
+      const pixels=await bakeLightmapPixels(object,working,info,resolution,bakedMatrix),oldGeometry=object.geometry;
       if(object.userData.pstudioAutoLOD?.length){object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD)if(level.owned)level.geometry.dispose?.();object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;}
       if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=source;object.userData.pstudioLightmapOriginalGeometryOwned=id.startsWith('primitive:');}
       object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;
