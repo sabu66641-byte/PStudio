@@ -451,6 +451,40 @@ Large-world controls:
 
 Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This describes the earlier single-camera baseline; the later Rendering Engine 1.7 section documents the optional three-cascade CSM path and single-camera fallback. Chunk streaming now supports model preloading and render/model resource release, but it still does not pause ps scripts, physics, AI or audio; those systems need project-level world-partition integration.
 
+## Rendering Engine 1.8 — UV Lightmaps, BVH Occlusion and Chunk Lifecycle
+
+
+### UV lightmap workflow
+
+Bake the spatial probe volume first, then generate and apply a lightmap atlas to currently loaded static meshes:
+
+```js
+await PStudio3D.bakeLightProbeVolume({
+  min: { x: -40, y: 0, z: -40 },
+  max: { x: 40, y: 16, z: 40 },
+  xCount: 3, yCount: 2, zCount: 3,
+  resolution: 64, bounces: 2, bounceStrength: 0.3
+});
+const result = await PStudio3D.bakeUVLightmaps({ resolution: 512 });
+console.log(result);
+await PStudio3D.saveLightmaps('world-lighting');
+```
+
+After scene objects and model assets load in a later session, call `await PStudio3D.loadLightmaps('world-lighting')`. Mesh identifiers use scene-object command order and model hierarchy paths; changing topology or command order can invalidate a saved entry. Lightmap data is stored in that browser's IndexedDB, so include it in a project backup workflow before moving devices.
+
+### Audio and streamed-owner lifecycle
+
+```ps
+func start()
+    play_sound("forest_ambience.ogg", 0.65, true)
+
+func update(dt)
+    if dt > 0
+        set_sound_volume("forest_ambience.ogg", 0.65)
+```
+
+The audio asset must already be imported into the project. `play_sound(name, volume, loop)` plays it for the calling Game Object; `stop_sound(name)` stops that owner's sound and `set_sound_volume(name, volume)` changes its volume. Browser autoplay restrictions can still prevent playback until the user interacts with the page.
+
 ## Rendering Engine 1.7 — Object-Space GI, Cascaded Shadows and Adaptive Worlds
 
 ### Object-local indirect lighting
@@ -468,7 +502,7 @@ await PStudio3D.bakeLightProbeVolume({
 });
 ```
 
-The first pass captures the current scene lighting. Later passes temporarily feed the previous pass's probes into the next capture, providing approximate additional diffuse bounce. This is a bounded baked approximation, not a real-time path tracer or a complete solution for moving lights and moving geometry. It is not yet a UV-unwrapped texture lightmap system; meshes still need dedicated lightmap UV generation, baking, persistence and runtime sampling before that feature can be called complete.
+The first pass captures the current scene lighting. Later passes temporarily feed the previous pass's probes into the next capture, providing approximate additional diffuse bounce. This is a bounded baked approximation, not a real-time path tracer or a complete solution for moving lights and moving geometry. UV lightmaps are available through `PStudio3D.bakeUVLightmaps({ resolution })`. The current atlas gives each triangle a separate non-overlapping chart, evaluates interpolated probe SH irradiance per texel, and applies a linear-float `lightMap` texture using the second UV channel. `saveLightmaps(name)` and `loadLightmaps(name)` persist UV2 coordinates and texture data in browser IndexedDB; `clearLightmaps()` removes the runtime application. This is a deterministic per-triangle atlas rather than a seam-aware chart packer, and the bake stores probe-derived diffuse irradiance rather than full direct-shadow/path-traced transport. Skinned meshes are excluded. Re-bake after topology or static-lighting changes.
 
 ### Cascaded shadow maps
 
@@ -480,7 +514,7 @@ When `SimplifyModifier` is available, static indexed meshes with 240–16,000 ve
 
 ### Occlusion and world streaming
 
-Occlusion culling performs a limited number of CPU ray checks per update and can reject objects behind opaque scene geometry. It also checks source objects represented by instanced batches. It is a conservative CPU-side approximation, not hardware occlusion queries or a portal/BVH system; transparent materials are intentionally excluded as blockers. Use `PStudio3D.setOcclusionCulling(false)` to disable it.
+Occlusion culling performs a limited number of CPU ray checks per update and can reject objects behind opaque scene geometry, including sources represented by instanced batches. When the optional `three-mesh-bvh` addon loads, mesh raycasts use per-geometry BVHs for accelerated intersection tests; otherwise standard Three.js raycasting remains available. This is BVH-accelerated CPU occlusion, not hardware GPU occlusion queries or a world-level portal/cluster visibility solver. Transparent and transmissive materials are excluded as blockers. Use `PStudio3D.setOcclusionCulling(false)` to disable it.
 
 A chunk can preload model assets asynchronously and run lifecycle callbacks:
 
@@ -496,7 +530,7 @@ PStudio3D.registerWorldChunk('forest-east', {
 PStudio3D.assignObjectToChunk('forest-tree-01', 'forest-east');
 ```
 
-When a chunk leaves its unload radius, its assigned render meshes and model instances are released and the resource manager is asked to trim unretained GPU resources. The callback can coordinate additional project data. This renderer-level streaming does not yet suspend ps scripts, physics, AI or audio for unloaded owners; those systems still require world-partition integration.
+When a chunk leaves its unload radius, assigned render meshes and model instances are released and the resource manager trims unretained GPU resources. Owners assigned to an inactive chunk stop running their `.ps` callbacks; runtime state and previous draw commands are retained so `start()` is not called again on resume. Physics bodies are deactivated without discarding position or velocity, ECS `query()` / `forEach()` omit inactive scene entities, and owner audio started with `play_sound()` is paused and resumed only if it was playing before suspension. Use `stop_sound(name)` and `set_sound_volume(name, volume)` for audio control. This lifecycle currently follows the 3D world-chunk camera path; a generalized 2D world-partition scheduler and streaming of arbitrary external audio/asset dependencies remain future work.
 
 ### Adaptive quality
 
