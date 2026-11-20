@@ -106,6 +106,7 @@ test('BVH acceleration is optional and connected to occlusion raycasting',()=>{
 test('world chunk lifecycle suspends scripts, physics, ECS and owner audio',()=>{
   for(const token of ['isOwnerChunkActive','pauseOwnerAudio','resumeOwnerAudio','play_sound','stop_sound','set_sound_volume'])assert.ok(engine.includes(token),token);
   for(const token of ['setActive','body.active===false'])assert.ok(physics.includes(token),token);
+  assert.ok(engine.includes('physicsCommands'));
   for(const token of ['setSceneObjectActive','entityActive.get(id)===false'])assert.ok(ecs.includes(token),token);
   for(const token of ['world.chunk.suspended','world.chunk.resumed'])assert.ok(renderer.includes(token),token);
   for(const token of ['"play_sound": 3','"stop_sound": 1','"set_sound_volume": 2'])assert.ok(app.includes(token),token);
