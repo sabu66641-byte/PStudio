@@ -705,7 +705,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
       instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
-      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;}
+      if(instance.lodLevels?.length>1){const lodScale=qualityPreset==='mobile'?0.62:qualityPreset==='balanced'?0.82:(adaptiveQualityEnabled?[0.62,0.82,1.0][adaptiveQualityLevel]:1.0),activeLodDistances=worldRenderConfig.lodDistances.map(value=>value*lodScale),idx=activeLodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?activeLodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;}
       else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
     updateOcclusionVisibility();
@@ -1402,6 +1402,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
     const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
     for(const entry of instance.foliageBatches){
+      if(!entry.isTree)continue;
       const batch=entry.mesh;
       for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,source.matrixWorld);batch.setMatrixAt(i,matrix);}
       batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
