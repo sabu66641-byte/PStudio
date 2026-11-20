@@ -383,7 +383,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function registerWorldChunk(id,o={}){
     const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
     const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0,old=worldChunks.get(key);
-    const chunk={id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:old?.active??(o.active!==false),loading:false,generation:old?.generation||0,assets:Array.isArray(o.assets)?[...new Set(o.assets.map(String))]:[],onLoad:typeof o.onLoad==='function'?o.onLoad:old?.onLoad,onUnload:typeof o.onUnload==='function'?o.onUnload:old?.onUnload,error:null,lastLoadedAt:old?.lastLoadedAt||0};
+    const chunk={id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:old?.active??(o.active===true),loading:false,generation:old?.generation||0,assets:Array.isArray(o.assets)?[...new Set(o.assets.map(String))]:[],onLoad:typeof o.onLoad==='function'?o.onLoad:old?.onLoad,onUnload:typeof o.onUnload==='function'?o.onUnload:old?.onUnload,error:null,lastLoadedAt:old?.lastLoadedAt||0};
     worldChunks.set(key,chunk);return{id:key,loadDistance,unloadDistance,active:chunk.active,assetCount:chunk.assets.length};
   }
   function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
@@ -414,12 +414,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }catch(error){for(const item of sourceProbes)item.light.dispose?.();bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;if(previousSingle)scene.add(previousSingle);throw error;}
     finally{renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);}
   }
-  function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();return;}if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
+  function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm)return;if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
   function updateOcclusionVisibility(){
     if(!occlusionEnabled||!occlusionRaycaster||!camera||++occlusionFrame%2!==0)return;
     const candidates=[];for(const mesh of meshCache.values())if(mesh.visible&&mesh.parent===primitiveGroup)candidates.push({object:mesh,owner:mesh.userData.ownerId});
+    for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])if(isOwnerChunkActive(source.mesh.userData.ownerId))candidates.push({object:source.mesh,owner:source.mesh.userData.ownerId,instancedSource:source});
     for(const instance of modelInstances.values())if(instance.root.visible)candidates.push({object:instance.root,owner:instance.ownerId,instance});
     if(!candidates.length){occlusionCursor=0;return;}
     primitiveGroup.updateMatrixWorld(true);modelGroup.updateMatrixWorld(true);
@@ -428,6 +429,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const c=candidates[occlusionCursor++%candidates.length],object=c.object,center=new window.THREE.Vector3();
       let radius=Math.max(0.2,Number(object.userData?.pstudioBoundsRadius)||0.5);
       if(c.instance?.localBoundsCenter){center.copy(c.instance.localBoundsCenter);object.localToWorld(center);}
+      else if(c.instancedSource){object.updateMatrixWorld(true);object.geometry?.computeBoundingSphere?.();if(object.geometry?.boundingSphere){center.copy(object.geometry.boundingSphere.center).applyMatrix4(object.matrixWorld);radius=Math.max(radius,object.geometry.boundingSphere.radius*(object.scale.length()/Math.sqrt(3)));}else object.getWorldPosition(center);}
       else if(object.isMesh){object.geometry?.computeBoundingSphere?.();if(object.geometry?.boundingSphere){center.copy(object.geometry.boundingSphere.center).applyMatrix4(object.matrixWorld);radius=Math.max(radius,object.geometry.boundingSphere.radius*(object.scale.length()/Math.sqrt(3)));}else object.getWorldPosition(center);}
       else object.getWorldPosition(center);
       const ray=center.clone().sub(camera.position),distance=ray.length();if(distance<3){object.visible=true;continue;}
@@ -438,7 +440,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(hit.object.userData?.primitiveType==='water'||mats.some(m=>m?.transparent||m?.transmission>0))return false;
         return hit.distance<distance-radius*0.5;
       });
-      object.visible=!blocker;
+      if(c.instancedSource)object.userData.pstudioOccluded=!!blocker;else object.visible=!blocker;
     }
     if(occlusionCursor>=candidates.length)occlusionCursor=0;
   }
@@ -451,7 +453,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       else instance.root.traverse(object=>{if(object.isMesh&&object.userData.pstudioAutoLOD)applyAutoLOD(object,d);});
     }
     updateOcclusionVisibility();
-    for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId))continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
+    for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId)||source.mesh.userData.pstudioOccluded)continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
     updateProbeVolumeBlend();updateDirectionalShadowAnchor(new window.THREE.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]));
   }
 
@@ -894,7 +896,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
     const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
-    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease};
+    const instance={key,ownerId,name,root:clone,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -1194,7 +1196,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
-          mesh=new T.Mesh(geometry,material);scheduleAutoLOD(mesh,geometry);
+          mesh=new T.Mesh(geometry,material);setupLightingMaterial(material);bindObjectProbeLighting(mesh);scheduleAutoLOD(mesh,geometry);
           mesh.castShadow=d.type!=='plane'&&d.type!=='water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
