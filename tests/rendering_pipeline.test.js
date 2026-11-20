@@ -205,3 +205,9 @@ test('water and caustics world positions do not depend on optional worldPosition
   assert.ok(!fx.includes('vPStudioWaterWorld=worldPosition.xyz'));
   assert.ok(!fx.includes('vPStudioCausticWorld=worldPosition.xyz'));
 });
+
+
+test('generated foliage instance batches are excluded from authored mesh LOD node collection',()=>{
+  assert.ok(renderer.includes('PStudio_Foliage_GPU_Instances_Level'));
+  assert.ok(!renderer.includes("batch.name='PStudio_Foliage_GPU_Instances_LOD'"));
+});
