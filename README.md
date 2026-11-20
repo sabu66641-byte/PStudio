@@ -430,7 +430,7 @@ Select a non-model Scene object and use the **Shader Editor** graph or GLSL edit
 
 ## Rendering Engine 1.6 — Spatial Irradiance and Large-World Rendering
 
-`PStudio3D.bakeLightProbeVolume(options)` captures a bounded grid of radiance probes (2–4 samples per axis, at most 32 probes, 32–128 cube resolution) and smoothly blends the nearest probes according to camera position. This is a camera-local lighting approximation, not per-object probe interpolation or complete multi-bounce real-time GI. Re-bake after major static lighting, geometry or environment changes.
+`PStudio3D.bakeLightProbeVolume(options)` captures a bounded grid of spherical-harmonic (SH) irradiance probes (2–4 samples per axis, at most 32 probes, 32–128 cube resolution). The current renderer now performs per-object interpolation from the nearest probes and feeds the result into the indirect-diffuse term of standard/physical materials. It is a baked, object-local diffuse GI approximation; it is not a full dynamic ray-traced solution or a UV lightmap texture baker. Re-bake after major static lighting, geometry or environment changes.
 
 ```js
 await PStudio3D.bakeLightProbeVolume({
@@ -450,3 +450,54 @@ Large-world controls:
 - Three.js frustum culling remains enabled for ordinary meshes and model submeshes. Instanced batches compact visible instances and refresh selection mappings.
 
 Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This remains a single directional shadow camera, not cascaded shadow maps (CSM). Chunk visibility does not pause ps scripts, physics, AI or audio; full world streaming still needs project-level orchestration.
+
+## Rendering Engine 1.7 — Object-Space GI, Cascaded Shadows and Adaptive Worlds
+
+### Object-local indirect lighting
+
+The spatial probe volume now supplies each supported mesh with SH coefficients interpolated at that object's world-space position. The nearest four probes are weighted by inverse distance. Standard and physical materials evaluate the interpolated SH irradiance in the indirect-diffuse shader path. `PStudio3D.bakeLightProbeVolume(options)` supports bounded iterative capture passes:
+
+```js
+await PStudio3D.bakeLightProbeVolume({
+  min: { x: -80, y: 0, z: -80 },
+  max: { x: 80, y: 24, z: 80 },
+  xCount: 3, yCount: 2, zCount: 3,
+  resolution: 64,
+  bounces: 1,
+  bounceStrength: 0.35
+});
+```
+
+The first pass captures the current scene lighting. Later passes temporarily feed the previous pass's probes into the next capture, providing approximate additional diffuse bounce. This is a bounded baked approximation, not a real-time path tracer or a complete solution for moving lights and moving geometry. It is not yet a UV-unwrapped texture lightmap system; meshes still need dedicated lightmap UV generation, baking, persistence and runtime sampling before that feature can be called complete.
+
+### Cascaded shadow maps
+
+When the version-matched Three.js CSM addon loads, the directional key light uses three practical cascades with camera-frustum fitting and fade blending. Standard and physical materials are registered with CSM. If the optional addon fails to load or initialize, the previous single directional shadow camera remains as a fallback. `PStudio3D.setWorldRenderConfig({ shadowDistance })` controls the configured far distance. Cascade count and shadow-map size are bounded for browser/mobile GPUs.
+
+### Automatic mesh LOD
+
+When `SimplifyModifier` is available, static indexed meshes with 240–16,000 vertices can generate two lower-detail representations during idle time. The thresholds use the first two values in `lodDistances`. Existing explicitly named GLTF LOD groups take precedence. Skinned meshes, explicitly named LOD hierarchies and meshes outside the supported size range retain their source geometry.
+
+### Occlusion and world streaming
+
+Occlusion culling performs a limited number of CPU ray checks per update and can reject objects behind opaque scene geometry. It also checks source objects represented by instanced batches. It is a conservative CPU-side approximation, not hardware occlusion queries or a portal/BVH system; transparent materials are intentionally excluded as blockers. Use `PStudio3D.setOcclusionCulling(false)` to disable it.
+
+A chunk can preload model assets asynchronously and run lifecycle callbacks:
+
+```js
+PStudio3D.registerWorldChunk('forest-east', {
+  x: 500, y: 0, z: 0,
+  loadDistance: 700, unloadDistance: 900,
+  assets: ['Forest.glb', 'Ruins.glb'],
+  active: false,
+  onLoad: ({ id, assets }) => console.log('loaded', id, assets),
+  onUnload: ({ id }) => console.log('unloaded', id)
+});
+PStudio3D.assignObjectToChunk('forest-tree-01', 'forest-east');
+```
+
+When a chunk leaves its unload radius, its assigned render meshes and model instances are released and the resource manager is asked to trim unretained GPU resources. The callback can coordinate additional project data. This renderer-level streaming does not yet suspend ps scripts, physics, AI or audio for unloaded owners; those systems still require world-partition integration.
+
+### Adaptive quality
+
+The `auto` preset now monitors a smoothed CPU render-submission time and gradually adjusts pixel ratio, screen-space AO/reflections and shadow-map resolution. Manual `mobile`, `balanced`, `high` and `ultra` presets remain available. This measurement is not a direct GPU timer query or GPU utilization percentage; it is a browser-safe performance signal that can include CPU submission cost and indirectly reflect GPU pressure. Adaptive changes are exposed through `getQualityPreset()` and renderer statistics.
