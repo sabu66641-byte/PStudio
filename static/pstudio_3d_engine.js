@@ -620,7 +620,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
       instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
-      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
+      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.level!==undefined)entry.mesh.visible=entry.level===selected.level;}
       else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
     updateOcclusionVisibility();
@@ -1282,21 +1282,26 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(!object.isMesh||object.isSkinnedMesh||!/(?:^|[_ -])Wind[_ -]?Tree/i.test(String(object.name||'')))return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       if(materials.length!==1||!object.geometry||!materials[0])return;
-      const key=object.geometry.uuid+'|'+materials[0].uuid;
-      if(!groups.has(key))groups.set(key,[]);
-      groups.get(key).push(object);
+      const levelMatch=String(object.name||'').match(/LOD([0-9]+)/i);
+      const level=levelMatch?Number(levelMatch[1]):0;
+      const key=object.geometry.uuid+'|'+materials[0].uuid+'|LOD'+level;
+      if(!groups.has(key))groups.set(key,{sources:[],level});
+      groups.get(key).sources.push(object);
     });
     const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
-    for(const sources of groups.values()){
+    for(const group of groups.values()){
+      const sources=group.sources,level=group.level;
       if(sources.length<4)continue;
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_Foliage_GPU_Instances';batch.castShadow=true;batch.receiveShadow=true;
+      batch.name='PStudio_Foliage_GPU_Instances_LOD'+level;batch.castShadow=true;batch.receiveShadow=true;
       batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
-      batch.userData.pstudioFoliageSources=sources;
+      batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;
+      batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
+      batch.userData.pstudioFoliageSources=sources;batch.visible=level===0;
       root.add(batch);
       for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
       batch.instanceMatrix.setUsage(T.DynamicDrawUsage);batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
-      batches.push({mesh:batch,sources});
+      batches.push({mesh:batch,sources,level});
     }
     return batches;
   }
