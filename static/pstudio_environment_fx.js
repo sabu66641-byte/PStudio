@@ -32,7 +32,8 @@
       if (old) old.call(this,shader,renderer);
       Object.assign(shader.uniforms,{
         uPStudioWaterTime:u.time,uPStudioWaterAmplitude:u.amplitude,uPStudioWaterBounds:u.bounds,
-        uPStudioWaterShallow:u.shallow,uPStudioWaterDeep:u.deep,uPStudioWaterFoam:u.foam,uPStudioWaterMode:u.mode
+        uPStudioWaterShallow:u.shallow,uPStudioWaterDeep:u.deep,uPStudioWaterFoam:u.foam,uPStudioWaterMode:u.mode,
+        uPStudioSceneDepth:u.sceneDepth,uPStudioWaterViewport:u.viewport,uPStudioCameraNear:u.near,uPStudioCameraFar:u.far,uPStudioSceneDepthValid:u.sceneDepthValid
       });
       shader.vertexShader = addAfter(shader.vertexShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform float uPStudioWaterAmplitude;',
