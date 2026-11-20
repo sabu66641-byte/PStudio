@@ -119,3 +119,15 @@ test('multi-bounce GI separates direct lighting and converges on bounce energy',
 test('UV lightmaps use linear half-float textures with a device-aware memory budget',()=>{
   for(const token of ['HalfFloatType','packHalfFloat','floatToHalf','deviceMemory','maxBytes','allocatedBytes','budgetBytes'])assert.ok(renderer.includes(token),token);
 });
+
+test('BVH occlusion state persists between bounded candidate checks',()=>{
+  assert.ok(renderer.includes('object.userData.pstudioOccluded=!!blocker'));
+  assert.ok(renderer.includes('mesh.parent===primitiveGroup'));
+  assert.ok(renderer.includes('occlusionRaycaster.firstHitOnly=true'));
+  assert.ok(renderer.includes('object.userData.pstudioOccluded=false;object.visible=true'));
+});
+test('inactive script owners retain prior render commands for seamless resume',()=>{
+  assert.ok(engine.includes('runtime.contexts.get(o.id)'));
+  assert.ok(engine.includes('runtime.started.has(o.id)'));
+  assert.ok(engine.includes('physicsCommands'));
+});
