@@ -525,7 +525,7 @@ console.log(result);
 await PStudio3D.saveLightmaps('world-lighting');
 ```
 
-After scene objects and model assets load in a later session, call `await PStudio3D.loadLightmaps('world-lighting')`. Mesh identifiers use scene-object command order and model hierarchy paths; changing topology or command order can invalidate a saved entry. Lightmap data is stored in that browser's IndexedDB, so include it in a project backup workflow before moving devices.
+After scene objects and model assets load in a later session, call `await PStudio3D.loadLightmaps('world-lighting')`. Mesh identifiers use scene-object command order and model hierarchy paths; changing topology, command order or the baked world transform invalidates a saved entry. Lightmap data is stored in that browser's IndexedDB, so include it in a project backup workflow before moving devices.
 
 ### Audio and streamed-owner lifecycle
 
