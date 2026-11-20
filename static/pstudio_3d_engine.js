@@ -1336,7 +1336,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           ? object.material.map(cloneMaterial)
           : cloneMaterial(object.material);
         window.PStudioEnvironmentFX?.configureObject?.(object);
-        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{roughness:Number.isFinite(configured.oughness)?configured.roughness:(Number.isFinite(configured.roughness)?configured.roughness:0.72),metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04});
+        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{roughness:Number.isFinite(configured.roughness)?configured.roughness:0.72,metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04});
         bindObjectProbeLighting(object);
       }
     });
