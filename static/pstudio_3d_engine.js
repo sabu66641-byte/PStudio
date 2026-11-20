@@ -364,11 +364,34 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
 
 
-  function registerWorldChunk(id,o={}){const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0;worldChunks.set(key,{id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:worldChunks.get(key)?.active??true});return{id:key,loadDistance,unloadDistance};}
+  function purgeWorldChunkRuntime(chunkId){
+    const owners=new Set([...objectChunkAssignments].filter(([,id])=>id===chunkId).map(([owner])=>owner));
+    for(const [key,mesh] of [...meshCache])if(owners.has(String(mesh.userData.ownerId))){disposeMesh(mesh);meshCache.delete(key);}
+    for(const [key,instance] of [...modelInstances])if(owners.has(String(instance.ownerId)))removeModelInstance(key);
+  }
+  function beginWorldChunkLoad(chunk){
+    if(chunk.loading||chunk.active)return;const token=++chunk.generation;chunk.loading=true;chunk.error=null;
+    Promise.all(chunk.assets.map(name=>requestModelAsset(name))).then(async()=>{if(token!==chunk.generation)return;if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:chunk.assets.slice()});if(token!==chunk.generation)return;
+      chunk.loading=false;chunk.active=true;chunk.lastLoadedAt=Date.now();try{window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:chunk.assets.length});}catch(_){}
+    }).catch(error=>{if(token===chunk.generation){chunk.loading=false;chunk.active=false;chunk.error=String(error?.message||error);try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}}});
+  }
+  function endWorldChunkLoad(chunk){
+    chunk.generation++;chunk.loading=false;chunk.active=false;purgeWorldChunkRuntime(chunk.id);
+    try{const result=chunk.onUnload?.({id:chunk.id,assets:chunk.assets.slice()});if(result?.catch)result.catch(error=>console.warn('[PStudio] Chunk unload callback failed:',error));}catch(error){console.warn('[PStudio] Chunk unload callback failed:',error);}
+    window.PStudioResources?.trim?.('gpu');try{window.PStudioEvents?.emit('world.chunk.unloaded',{id:chunk.id});}catch(_){}
+  }
+  function registerWorldChunk(id,o={}){
+    const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
+    const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0,old=worldChunks.get(key);
+    const chunk={id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:old?.active??(o.active!==false),loading:false,generation:old?.generation||0,assets:Array.isArray(o.assets)?[...new Set(o.assets.map(String))]:[],onLoad:typeof o.onLoad==='function'?o.onLoad:old?.onLoad,onUnload:typeof o.onUnload==='function'?o.onUnload:old?.onUnload,error:null,lastLoadedAt:old?.lastLoadedAt||0};
+    worldChunks.set(key,chunk);return{id:key,loadDistance,unloadDistance,active:chunk.active,assetCount:chunk.assets.length};
+  }
   function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
-  function unregisterWorldChunk(id){const key=String(id);if(!worldChunks.delete(key))return false;for(const [owner,chunk] of objectChunkAssignments)if(chunk===key)objectChunkAssignments.delete(owner);return true;}
+  function unregisterWorldChunk(id){const key=String(id),chunk=worldChunks.get(key);if(!chunk)return false;if(chunk.active||chunk.loading)endWorldChunkLoad(chunk);worldChunks.delete(key);for(const [owner,chunkId] of objectChunkAssignments)if(chunkId===key)objectChunkAssignments.delete(owner);return true;}
   function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
-  function updateWorldChunkStates(){if(!camera)return;for(const c of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(c.x,c.y,c.z));if(c.active&&d>c.unloadDistance)c.active=false;else if(!c.active&&d<c.loadDistance)c.active=true;}}
+  function updateWorldChunkStates(){
+    if(!camera)return;for(const chunk of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(chunk.x,chunk.y,chunk.z));if((chunk.active||chunk.loading)&&d>chunk.unloadDistance)endWorldChunkLoad(chunk);else if(!chunk.active&&!chunk.loading&&d<chunk.loadDistance)beginWorldChunkLoad(chunk);}
+  }
   function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
   function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
   async function bakeLightProbeVolume(o={}){
@@ -393,8 +416,41 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();return;}if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
-  function updateWorldVisibility(){if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;for(const mesh of meshCache.values())mesh.visible=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);
-    for(const instance of modelInstances.values()){const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);instance.root.visible=active;if(!active||!instance.lodLevels||instance.lodLevels.length<2)continue;const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
+  function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
+  function updateOcclusionVisibility(){
+    if(!occlusionEnabled||!occlusionRaycaster||!camera||++occlusionFrame%2!==0)return;
+    const candidates=[];for(const mesh of meshCache.values())if(mesh.visible&&mesh.parent===primitiveGroup)candidates.push({object:mesh,owner:mesh.userData.ownerId});
+    for(const instance of modelInstances.values())if(instance.root.visible)candidates.push({object:instance.root,owner:instance.ownerId,instance});
+    if(!candidates.length){occlusionCursor=0;return;}
+    primitiveGroup.updateMatrixWorld(true);modelGroup.updateMatrixWorld(true);
+    const limit=Math.min(8,candidates.length);
+    for(let n=0;n<limit;n++){
+      const c=candidates[occlusionCursor++%candidates.length],object=c.object,center=new window.THREE.Vector3();
+      let radius=Math.max(0.2,Number(object.userData?.pstudioBoundsRadius)||0.5);
+      if(c.instance?.localBoundsCenter){center.copy(c.instance.localBoundsCenter);object.localToWorld(center);}
+      else if(object.isMesh){object.geometry?.computeBoundingSphere?.();if(object.geometry?.boundingSphere){center.copy(object.geometry.boundingSphere.center).applyMatrix4(object.matrixWorld);radius=Math.max(radius,object.geometry.boundingSphere.radius*(object.scale.length()/Math.sqrt(3)));}else object.getWorldPosition(center);}
+      else object.getWorldPosition(center);
+      const ray=center.clone().sub(camera.position),distance=ray.length();if(distance<3){object.visible=true;continue;}
+      occlusionRaycaster.set(camera.position,ray.normalize());occlusionRaycaster.near=0.05;occlusionRaycaster.far=Math.max(0.1,distance-radius*0.5);
+      const blocker=occlusionRaycaster.intersectObjects([primitiveGroup,modelGroup],true).find(hit=>{
+        const owner=getOcclusionOwner(hit);if(owner===null||String(owner)===String(c.owner))return false;
+        const mats=Array.isArray(hit.object.material)?hit.object.material:[hit.object.material];
+        if(hit.object.userData?.primitiveType==='water'||mats.some(m=>m?.transparent||m?.transmission>0))return false;
+        return hit.distance<distance-radius*0.5;
+      });
+      object.visible=!blocker;
+    }
+    if(occlusionCursor>=candidates.length)occlusionCursor=0;
+  }
+  function updateWorldVisibility(){
+    if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;
+    for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active;if(active)applyAutoLOD(mesh,camera.position.distanceTo(mesh.position));}
+    for(const instance of modelInstances.values()){
+      const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);instance.root.visible=active;if(!active)continue;
+      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
+      else instance.root.traverse(object=>{if(object.isMesh&&object.userData.pstudioAutoLOD)applyAutoLOD(object,d);});
+    }
+    updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId))continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
     updateProbeVolumeBlend();updateDirectionalShadowAnchor(new window.THREE.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]));
   }
@@ -577,6 +633,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
 
   function getInstanceBatchKey(mesh){
+    if(mesh.userData?.pstudioAutoLODGenerating||mesh.userData?.pstudioAutoLOD?.length>1)return null;
     const type=mesh.userData?.primitiveType;
     if(!['cube','box','sphere','cylinder','cone','capsule'].includes(type))return null;
     const material=mesh.material;
@@ -673,7 +730,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if (!mesh) return;
     if (mesh.parent) mesh.parent.remove(mesh);
     if (mesh.material) waterMaterials.delete(mesh.material);
-    if (mesh.geometry) mesh.geometry.dispose();
+    mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
+    const lods=mesh.userData.pstudioAutoLOD||[];if(lods.length){for(const level of lods)if(level.owned)level.geometry.dispose?.();lods[0]?.geometry?.dispose?.();}else mesh.geometry?.dispose?.();
     if (mesh.material) mesh.material.dispose();
     mesh.getRenderTarget?.()?.dispose?.();
   }
@@ -765,6 +823,34 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const e of near){const coeff=e.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,e.w/Math.max(1e-8,sum)*e.item.baseIntensity);}}
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
+  function hasNamedLODParent(object){
+    let node=object;while(node){if(/(?:^|[ _-])LOD[0-9]+(?:$|[ _-])/i.test(String(node.name||'')))return true;node=node.parent;}return false;
+  }
+  function scheduleAutoLOD(object,geometry){
+    const Modifier=window.PStudioSimplifyModifier,pos=geometry?.attributes?.position,count=pos?.count||0;
+    if(!Modifier||!geometry||count<240||count>16000||hasNamedLODParent(object)||object.isSkinnedMesh)return false;
+    const token=(object.userData.pstudioLODToken||0)+1;object.userData.pstudioLODToken=token;
+    object.userData.pstudioAutoLOD=[{geometry,distance:0,owned:false}];object.userData.pstudioAutoLODGenerating=true;
+    const build=()=>{
+      if(object.userData.pstudioLODToken!==token||object.geometry!==geometry){object.userData.pstudioAutoLODGenerating=false;return;}
+      const levels=[{geometry,distance:0,owned:false}],modifier=new Modifier();
+      for(const spec of [{keep:0.58,distance:worldRenderConfig.lodDistances[0]||25},{keep:0.3,distance:worldRenderConfig.lodDistances[1]||70}]){
+        try{const lod=modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));if(!lod?.attributes?.position||lod.attributes.position.count>=count*0.94){lod?.dispose?.();continue;}lod.computeBoundingSphere?.();lod.computeVertexNormals?.();levels.push({geometry:lod,distance:spec.distance,owned:true});}
+        catch(error){console.warn('[PStudio] Automatic LOD generation skipped:',error);break;}
+      }
+      if(object.userData.pstudioLODToken!==token){for(const level of levels)if(level.owned)level.geometry.dispose?.();return;}
+      object.userData.pstudioAutoLOD=levels.length>1?levels:null;object.userData.pstudioAutoLODGenerating=false;
+      try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length});}catch(_){}
+    };
+    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(build,{timeout:1200});else window.setTimeout(build,0);
+    return true;
+  }
+  function applyAutoLOD(object,distance){
+    const levels=object?.userData?.pstudioAutoLOD;if(!levels?.length)return;
+    let selected=0;for(let i=1;i<levels.length;i++)if(distance>=levels[i].distance)selected=i;
+    if(object.userData.pstudioActiveAutoLOD===selected)return;
+    object.geometry=levels[selected].geometry;object.userData.pstudioActiveAutoLOD=selected;
+  }
   function createModelInstance(key, ownerId, name, asset) {
     const T=window.THREE;
     const clone=window.PStudioSkeletonUtils?.clone
@@ -776,6 +862,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.ownerId=ownerId;
       object.userData.modelRoot=clone;
       if(object.isMesh && object.material){
+        scheduleAutoLOD(object,object.geometry);
         object.castShadow=true;
         object.receiveShadow=true;
         const cloneMaterial=material=>{
@@ -793,7 +880,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     });
     clone.traverse(bindObjectProbeLighting);clone.updateMatrixWorld(true);
     const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
-    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
+    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     const lodMap=new Map();
     clone.traverse(object=>{
       const match=String(object.name||'').match(/(?:^|[ _-])LOD([0-9]+)(?:$|[ _-])/i);
@@ -915,6 +1002,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(!object.isMesh||!object.material)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       materials.forEach(material=>material.dispose());
+      object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
     modelInstances.delete(key);
     instance.resourceLease?.release?.();
@@ -1106,7 +1194,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
-          mesh=new T.Mesh(geometry,material);
+          mesh=new T.Mesh(geometry,material);scheduleAutoLOD(mesh,geometry);
           mesh.castShadow=d.type!=='plane'&&d.type!=='water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
@@ -1233,7 +1321,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     bakeLightProbe,
     clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;changed=true;}if(changed)drawFrame();return changed;},
     bakeLightProbeVolume,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
-    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
+    setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values())mesh.visible=true;for(const instance of modelInstances.values())instance.root.visible=true;return occlusionEnabled;},
+    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset
