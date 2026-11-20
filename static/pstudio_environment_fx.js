@@ -14,7 +14,7 @@
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
     const role=String(object?.userData?.pstudioWaterDetail||'micro-ripple');
     const type=role==='spray-particles'?2:role==='shoreline-foam'?1:0;
-    const u={time:{value:0},type:{value:type},strength:{value:type===0?.72:type===1?.54:.38}};
+    const u={time:{value:0},type:{value:type},strength:{value:type === 0 ? 0.72 : type === 1 ? 0.54 : 0.38}};
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -156,7 +156,7 @@
     const b=object?.geometry?.boundingBox,height=Math.max(.1,b?b.max.y-b.min.y:10),base=b?b.min.y:0;
     const role=String(object?.userData?.pstudioWindPart||'foliage');
     const authored=Number(object?.userData?.pstudioWindWeight);
-    const fallback=role==='trunk'?.12:role==='branch'?.42:role==='leaf'?.88:.34;
+    const fallback=role === 'trunk' ? 0.12 : role === 'branch' ? 0.42 : role === 'leaf' ? 0.88 : 0.34;
     const strength=Number.isFinite(authored)?Math.max(0,Math.min(1,authored)):fallback;
     const u={time:{value:0},strength:{value:strength},height:{value:height},base:{value:base},direction:{value:new (T().Vector2)(.83,.56).normalize()}};
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
