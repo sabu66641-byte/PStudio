@@ -675,6 +675,7 @@ GAME_FUNCTIONS = {
     "quest_start": 1, "quest_complete": 1, "quest_is_complete": 1, "quest_set_progress": 3, "quest_get_progress": 1,
     "nav_add_node": 4, "nav_connect": 2, "nav_build_grid": 5, "nav_build_from_triangles": 2, "nav_build_from_terrain": 8, "nav_build_from_model": 6, "nav_block_node": 2, "nav_next_node": 2, "nav_clear": 0,
     "draw_hud_text": 5, "draw_hud_bar": 7,
+    "play_sound": 3, "stop_sound": 1, "set_sound_volume": 2,
     "set_step_height": 1, "set_max_slope": 1,
     "get_axis": 1, "was_key_pressed": 1,
     "load_model": 5, "play_animation": 1, "play_animation_once": 1, "blend_animations": 3, "stop_animation": 0, "set_animation_speed": 1,
