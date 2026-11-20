@@ -188,6 +188,9 @@
     id = String(id);
     const record = modules.get(id);
     if (!record) return false;
+    if (record.state === 'activating' || record.state === 'deactivating') {
+      throw new Error('Cannot unregister module while an operation is in progress: ' + id);
+    }
     if (record.enabled) throw new Error('Disable module before unregistering: ' + id);
     const dependents = [...modules.values()].filter(item => item.dependencies.includes(id));
     if (dependents.length) throw new Error('Cannot unregister module; dependencies exist: ' + dependents.map(item => item.id).join(', '));
