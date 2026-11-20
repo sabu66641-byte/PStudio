@@ -380,6 +380,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function bakeLightProbe(options={}) {
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    if(window.PStudioEngine?.isRunning?.())throw new Error('Stop Play before baking static global illumination.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
     if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
     const T=window.THREE,size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
@@ -1092,7 +1093,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }return data;
   }
   async function bakeUVLightmaps(options={}){
-    if(!ensureRenderer())throw new Error('3D renderer unavailable.');if(!bakedLightProbeVolume?.length)throw new Error('Run bakeLightProbeVolume() before baking UV lightmaps.');
+    if(!ensureRenderer())throw new Error('3D renderer unavailable.');if(window.PStudioEngine?.isRunning?.())throw new Error('Stop Play before baking static UV lightmaps.');if(!bakedLightProbeVolume?.length)throw new Error('Run bakeLightProbeVolume() before baking UV lightmaps.');
     const T=window.THREE,resolution=Math.max(128,Math.min(2048,Math.floor(Number(options.resolution)||512))),ownerFilter=Array.isArray(options.ownerIds)?new Set(options.ownerIds.map(String)):null,targets=lightmapTargets().filter(({object})=>{const materials=Array.isArray(object.material)?object.material:[object.material];return !object.isSkinnedMesh&&!object.isInstancedMesh&&!object.morphTargetInfluences?.length&&!Object.keys(object.geometry?.morphAttributes||{}).length&&object.geometry?.attributes?.position&&materials.length>0&&materials.every(material=>material&&'lightMap' in material)&&(!ownerFilter||ownerFilter.has(String(object.userData.ownerId)));});
     if(!targets.length)throw new Error('No eligible static meshes.');
     const deviceMemory=Math.max(1,Number(window.navigator?.deviceMemory)||4);
