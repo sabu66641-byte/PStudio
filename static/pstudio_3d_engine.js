@@ -6,8 +6,8 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null;
-  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,temporalAAEnabled=false;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -183,7 +183,7 @@
   function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0?'mobile':Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
-    const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
+    const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio));composer?.setPixelRatio?.(renderer.getPixelRatio());
       renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
@@ -230,7 +230,12 @@
     const CSM=window.PStudioCSM;if(CSM){try{csm=new CSM({maxFar:worldRenderConfig.shadowDistance,cascades:3,mode:'practical',parent:scene,shadowMapSize:2048,lightDirection:new T.Vector3(-5,-9,-6).normalize(),camera});csm.fade=true;keyLight=csm.lights?.[0]||null;}catch(error){csm=null;console.warn('[PStudio] CSM initialization failed; using single-cascade fallback:',error);}}
     const FX=window.PStudioPostFX;
     if(FX?.EffectComposer&&FX?.RenderPass&&FX?.OutputPass){
-      composer=new FX.EffectComposer(renderer);composer.setPixelRatio?.(renderer.getPixelRatio());composer.addPass(new FX.RenderPass(scene,camera));
+      composer=new FX.EffectComposer(renderer);composer.setPixelRatio?.(renderer.getPixelRatio());
+      if(FX.TAARenderPass){taaPass=new FX.TAARenderPass(scene,camera);taaPass.accumulate=false;taaPass.sampleLevel=1;taaPass.enabled=true;composer.addPass(taaPass);}
+      else composer.addPass(new FX.RenderPass(scene,camera));
+      for(const target of [composer.renderTarget1,composer.renderTarget2]){if(target){target.depthBuffer=true;if(T.DepthTexture&&!target.depthTexture)target.depthTexture=new T.DepthTexture(Math.max(1,canvas.width),Math.max(1,canvas.height),T.UnsignedIntType);}}
+      volumetricFogPass=window.PStudioEnvironmentFX?.createVolumetricFogPass?.(FX,T)||null;if(volumetricFogPass)composer.addPass(volumetricFogPass);
+      if(!taaPass&&FX.SMAAPass){smaaPass=new FX.SMAAPass(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));composer.addPass(smaaPass);}
       if(FX.GTAOPass){gtaoPass=new FX.GTAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));if(FX.GTAOPass.OUTPUT?.Denoise!==undefined)gtaoPass.output=FX.GTAOPass.OUTPUT.Denoise;gtaoPass.enabled=false;composer.addPass(gtaoPass);ssaoPass=gtaoPass;}
       else if(FX.SSAOPass){ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);}
       if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
@@ -308,10 +313,11 @@
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     try{
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled)){
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
+        if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;const u=volumetricFogPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);}}
         composer.render();
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
@@ -355,7 +361,8 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
   function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
   function updateGpuParticleSystems(){const ratio=renderer?.getPixelRatio?.()||1;for(const emitter of particleEmitters.values()){emitter.system.uniforms.uTime.value=particleClock;emitter.system.uniforms.uPixelRatio.value=ratio;}for(const effect of particleBursts.values()){effect.system.uniforms.uTime.value=particleClock;effect.system.uniforms.uPixelRatio.value=ratio;}}
 
-  function configureWaterMaterial(material) {
+  function configureWaterMaterial(material,object=null) {
+    if(window.PStudioEnvironmentFX?.configureWater)return window.PStudioEnvironmentFX.configureWater(material,object,false);
     const uniforms={uPStudioTime:{value:0},uPStudioWaveAmplitude:{value:0.075}};
     material.onBeforeCompile=shader=>{
       shader.uniforms.uPStudioTime=uniforms.uPStudioTime;
@@ -364,23 +371,14 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
 uniform float uPStudioTime;
 uniform float uPStudioWaveAmplitude;
 `);
-      shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>',`#include <beginnormal_vertex>
-float pstudioPhaseA=position.x*0.42+position.z*0.27+uPStudioTime*0.82;
-float pstudioPhaseB=position.x*0.78-position.z*0.51-uPStudioTime*0.57;
-float pstudioDx=uPStudioWaveAmplitude*0.42*cos(pstudioPhaseA)+uPStudioWaveAmplitude*0.34*0.78*cos(pstudioPhaseB);
-float pstudioDz=uPStudioWaveAmplitude*0.27*cos(pstudioPhaseA)-uPStudioWaveAmplitude*0.34*0.51*cos(pstudioPhaseB);
-objectNormal=normalize(vec3(-pstudioDx,1.0,-pstudioDz));
-`);
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
 float pstudioWaveA=sin(position.x*0.42+position.z*0.27+uPStudioTime*0.82);
 float pstudioWaveB=sin(position.x*0.78-position.z*0.51-uPStudioTime*0.57);
 transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pstudioWaveB;
 `);
     };
-    material.customProgramCacheKey=()=>'pstudio-water-waves-v1';
-    material.userData.pstudioWaterUniforms=uniforms;
-    waterMaterials.add(material);
-    return material;
+    material.customProgramCacheKey=()=>'pstudio-water-waves-fallback-v2';
+    material.userData.pstudioWaterUniforms=uniforms;waterMaterials.add(material);return material;
   }
 
   async function loadEnvironmentHDR(url,options={}) {
@@ -1272,6 +1270,42 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;object.userData.pstudioActiveAutoLOD=selected;
   }
+  function buildFoliageInstanceBatches(root){
+    const T=window.THREE,groups=new Map(),batches=[];
+    root.updateMatrixWorld(true);
+    root.traverse(object=>{
+      if(!object.isMesh||object.isSkinnedMesh||!/(?:^|[_ -])Wind[_ -]?Tree/i.test(String(object.name||'')))return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      if(materials.length!==1||!object.geometry||!materials[0])return;
+      const key=object.geometry.uuid+'|'+materials[0].uuid;
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(object);
+    });
+    const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
+    for(const sources of groups.values()){
+      if(sources.length<4)continue;
+      const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
+      batch.name='PStudio_Foliage_GPU_Instances';batch.castShadow=true;batch.receiveShadow=true;
+      batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
+      batch.userData.pstudioFoliageSources=sources;
+      root.add(batch);
+      for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
+      batch.instanceMatrix.setUsage(T.DynamicDrawUsage);batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
+      batches.push({mesh:batch,sources});
+    }
+    return batches;
+  }
+  function updateFoliageInstanceBatches(instance){
+    if(!instance?.foliageBatches?.length)return;
+    const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
+    const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
+    for(const entry of instance.foliageBatches){
+      const batch=entry.mesh;
+      for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,source.matrixWorld);batch.setMatrixAt(i,matrix);}
+      batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
+    }
+  }
+
   function createModelInstance(key, ownerId, name, asset) {
     const T=window.THREE;
     const clone=window.PStudioSkeletonUtils?.clone
@@ -1301,10 +1335,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         object.material=Array.isArray(object.material)
           ? object.material.map(cloneMaterial)
           : cloneMaterial(object.material);
+        window.PStudioEnvironmentFX?.configureObject?.(object);
+        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{roughness:Number.isFinite(configured.oughness)?configured.roughness:(Number.isFinite(configured.roughness)?configured.roughness:0.72),metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04});
         bindObjectProbeLighting(object);
       }
     });
     clone.updateMatrixWorld(true);
+    const foliageBatches=buildFoliageInstanceBatches(clone);updateFoliageInstanceBatches({root:clone,foliageBatches});
     const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
     clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     const lodMap=new Map();
@@ -1320,7 +1357,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
     const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
-    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null};
+    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -1382,7 +1419,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }else if(instance.layerActions){for(const action of instance.layerActions.values())action.fadeOut(0.12);instance.layerActions.clear();}
     if(state.blend){
       instance.mixer.timeScale=instance.speed;
-      instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));
+      instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));updateFoliageInstanceBatches(instance);
       return;
     }
     if(state.clipName){
@@ -1453,7 +1490,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     let frameDelta=1/60;
     for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
     particleClock+=frameDelta;
-    for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}
+    for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}window.PStudioEnvironmentFX?.update?.(particleClock);
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     const pendingFrameInstances=[];
     let cameraCommand=null,environment=null,cameraOwnerId=null;
@@ -1757,6 +1794,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&qualityPreset==='auto';adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
+    setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=resolveQualityPreset(qualityPreset)==='ultra'?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
+    setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,
@@ -1768,7 +1807,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
