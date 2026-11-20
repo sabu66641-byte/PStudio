@@ -1360,6 +1360,9 @@ def generate_cpp(ast):
 # ps Discord Runtime
 # ====================================================
 
+MAX_DISCORD_PS_STEPS = 100000
+MAX_DISCORD_PS_OUTPUT_BYTES = 1024 * 1024
+
 _ps_discord_bot = None
 _ps_discord_lock = threading.Lock()
 _ps_discord_handlers = {}
@@ -1395,15 +1398,18 @@ class PsFunction:
         for i, name in enumerate(params):
             env[name] = args[i]
 
+        self.interpreter._begin_execution()
         try:
-            self.interpreter.execute_block(
-                self.node.get("body", []),
-                env
-            )
-        except PsReturnSignal as e:
-            return e.value
-
-        return None
+            try:
+                self.interpreter.execute_block(
+                    self.node.get("body", []),
+                    env
+                )
+            except PsReturnSignal as e:
+                return e.value
+            return None
+        finally:
+            self.interpreter._end_execution()
 
 
 class PsDiscordInterpreter:
@@ -1413,6 +1419,11 @@ class PsDiscordInterpreter:
         self.globals = {}
         self.functions = {}
         self.output = []
+        self.output_bytes = 0
+        self.max_output_bytes = MAX_DISCORD_PS_OUTPUT_BYTES
+        self.max_steps = MAX_DISCORD_PS_STEPS
+        self._execution_depth = 0
+        self._execution_steps = 0
         self._if_chain_end = 0
 
         for node in tree.get("body", []):
@@ -1421,6 +1432,21 @@ class PsDiscordInterpreter:
                     node,
                     self
                 )
+
+    def _begin_execution(self):
+        if self._execution_depth == 0:
+            self._execution_steps = 0
+        self._execution_depth += 1
+
+    def _end_execution(self):
+        self._execution_depth = max(0, self._execution_depth - 1)
+
+    def _consume_step(self):
+        self._execution_steps += 1
+        if self._execution_steps > self.max_steps:
+            raise Exception(
+                f"Discord ps実行が命令上限（{self.max_steps}）を超えたため停止しました。"
+            )
 
     def eval_expr(self, node, env):
         if node is None:
@@ -2276,8 +2302,15 @@ class PsDiscordInterpreter:
             )
 
             text = str(value)
+            text_bytes = len(text.encode("utf-8"))
+            separator_bytes = 1 if self.output else 0
+            if self.output_bytes + separator_bytes + text_bytes > self.max_output_bytes:
+                raise Exception(
+                    f"Discord ps出力が上限（{self.max_output_bytes} bytes）を超えました。"
+                )
 
             self.output.append(text)
+            self.output_bytes += separator_bytes + text_bytes
 
             print(text)
 
@@ -2381,6 +2414,7 @@ class PsDiscordInterpreter:
                 node["condition"],
                 env
             ):
+                self._consume_step()
                 try:
                     self.execute_block(
                         node["body"],
@@ -2402,6 +2436,7 @@ class PsDiscordInterpreter:
             )
 
             for value in iterable:
+                self._consume_step()
                 env[
                     node["variable"]
                 ] = value
@@ -2448,6 +2483,7 @@ class PsDiscordInterpreter:
         i = 0
 
         while i < len(body):
+            self._consume_step()
             node = body[i]
             typ = node.get("type")
 
@@ -2502,14 +2538,15 @@ class PsDiscordInterpreter:
             i += 1
 
     def run(self):
-        self.execute_block(
-            self.tree.get("body", []),
-            self.globals
-        )
-
-        return "\n".join(
-            self.output
-        )
+        self._begin_execution()
+        try:
+            self.execute_block(
+                self.tree.get("body", []),
+                self.globals
+            )
+            return "\n".join(self.output)
+        finally:
+            self._end_execution()
 
 
 # ====================================================
