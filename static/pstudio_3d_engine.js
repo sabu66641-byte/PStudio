@@ -546,7 +546,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
   function updateOcclusionVisibility(){
     if(!occlusionEnabled||!occlusionRaycaster||!camera||++occlusionFrame%2!==0)return;
-    const candidates=[];for(const mesh of meshCache.values())if(isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,worldRenderConfig.maxDrawDistance))candidates.push({object:mesh,owner:mesh.userData.ownerId});
+    const candidates=[];for(const mesh of meshCache.values())if(mesh.parent===primitiveGroup&&isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,worldRenderConfig.maxDrawDistance))candidates.push({object:mesh,owner:mesh.userData.ownerId});
     for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])if(isOwnerChunkActive(source.mesh.userData.ownerId))candidates.push({object:source.mesh,owner:source.mesh.userData.ownerId,instancedSource:source});
     for(const instance of modelInstances.values())if(isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,worldRenderConfig.maxDrawDistance))candidates.push({object:instance.root,owner:instance.ownerId,instance});
     if(!candidates.length){occlusionCursor=0;return;}
@@ -568,7 +568,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(hit.object.userData?.primitiveType==='water'||mats.some(m=>m?.transparent||m?.transmission>0))return false;
         return hit.distance<distance-radius*0.5;
       });
-      object.userData.pstudioOccluded=!!blocker;if(c.instancedSource)object.userData.pstudioOccluded=!!blocker;else object.visible=!blocker;
+      object.userData.pstudioOccluded=!!blocker;if(!c.instancedSource)object.visible=!blocker;
     }
     if(occlusionCursor>=candidates.length)occlusionCursor=0;
   }
