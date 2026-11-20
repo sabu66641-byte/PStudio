@@ -1212,7 +1212,7 @@ def generate_cpp(ast):
                     name = node["variable"]
                     if name not in scoped_vars and name not in parameter_names:
                         iterable = iterable_expression(node["range"], scoped_vars, parameter_names)
-                        element_type = f"std::decay_t<decltype(*std::begin({iterable}))>"
+                        element_type = f"typename std::iterator_traits<decltype(std::begin({iterable}))>::value_type"
                         declare(name, element_type)
                     visit(node.get("body", []))
                     index += 1
@@ -1558,10 +1558,10 @@ class PsDiscordInterpreter:
                 return -value
             if node["op"] == "~":
                 return ~value
-            if node["op"] == "++":
-                return value + 1
-            if node["op"] == "--":
-                return value - 1
+            if node["op"] in ("++", "--"):
+                updated = value + 1 if node["op"] == "++" else value - 1
+                self.assign_target(node["right"], updated, env)
+                return updated
 
             return value
 
@@ -1617,10 +1617,8 @@ class PsDiscordInterpreter:
                 return left * right
 
             if op == "/":
-                if isinstance(left, int) and isinstance(right, int):
-                    if right == 0:
-                        raise ZeroDivisionError("division by zero")
-                    return int(left / right)
+                if right == 0:
+                    raise ZeroDivisionError("division by zero")
                 return left / right
 
             if op == "%":
@@ -2333,7 +2331,9 @@ class PsDiscordInterpreter:
             elif op == "-": result = current - value
             elif op == "*": result = current * value
             elif op == "/":
-                result = int(current / value) if isinstance(current, int) and isinstance(value, int) else current / value
+                if value == 0:
+                    raise ZeroDivisionError("division by zero")
+                result = current / value
             elif op == "%": result = current % value
             elif op == "&": result = current & value
             elif op == "|": result = current | value
@@ -2359,7 +2359,10 @@ class PsDiscordInterpreter:
             if op == "+": base[index] = current + value
             elif op == "-": base[index] = current - value
             elif op == "*": base[index] = current * value
-            elif op == "/": base[index] = int(current / value) if isinstance(current, int) and isinstance(value, int) else current / value
+            elif op == "/":
+                if value == 0:
+                    raise ZeroDivisionError("division by zero")
+                base[index] = current / value
             elif op == "%": base[index] = current % value
             elif op == "&": base[index] = current & value
             elif op == "|": base[index] = current | value
