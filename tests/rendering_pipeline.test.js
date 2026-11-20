@@ -39,9 +39,9 @@ test('HDR loading and baked diffuse probe APIs are exposed with boundaries', () 
 test('water uses a physical transmission material and animated vertex displacement', () => {
   assert.ok(renderer.includes('transmission:0.82'));
   assert.ok(renderer.includes('ior:1.333'));
-  assert.ok(renderer.includes('pstudio-water-waves-v1'));
+  assert.ok(renderer.includes('pstudio-water-hq-v2-') || renderer.includes('pstudio-water-waves-fallback-v2'));
   assert.ok(renderer.includes('uPStudioWaveAmplitude'));
-  assert.ok(renderer.includes('pstudioWaveA'));
+  assert.ok(renderer.includes('pstudioWaterHQ') || renderer.includes('pstudioWaveA'));
 });
 
 test('GPU particle trajectories are evaluated by shader attributes', () => {
@@ -161,4 +161,21 @@ test('automatic LOD work is serialized into idle callbacks without forced timeou
   assert.ok(renderer.includes('function scheduleAutoLODPump()'));
   assert.ok(renderer.includes('window.requestIdleCallback(pump)'));
   assert.ok(!renderer.includes('requestIdleCallback(build,{timeout:1200})'));
+});
+
+
+test('environment FX provide water depth tint, shoreline foam, foliage wind and underwater caustics',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['uPStudioWaterShallow','uPStudioWaterDeep','foamBand','pstudioWaterHQ','uPStudioWindTime','uPStudioFoliageHeight','uPStudioCausticTime','configureObject'])assert.ok(fx.includes(token),token);
+});
+test('environment FX are loaded before the isolated 3D renderer',()=>{
+  const plugin=html.indexOf('pstudio_environment_fx.js');
+  const rendererScript=html.indexOf('pstudio_3d_engine.js');
+  assert.ok(plugin>=0&&rendererScript>plugin);
+});
+test('renderer exposes volumetric fog and static-scene temporal AA controls',()=>{
+  for(const token of ['setVolumetricFog','volumetricFogPass','setTemporalAA','TAARenderPass','SMAAPass'])assert.ok(renderer.includes(token),token);
+});
+test('imported named foliage meshes can be combined into owner-preserving GPU instance batches',()=>{
+  for(const token of ['buildFoliageInstanceBatches','PStudio_Foliage_GPU_Instances','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
 });
