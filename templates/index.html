@@ -46,6 +46,49 @@
 .pstudio-dialog-root{position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:18px}.pstudio-dialog-root[hidden]{display:none}.pstudio-dialog-backdrop{position:absolute;inset:0;background:rgba(3,6,11,.76);backdrop-filter:blur(7px);animation:dialogFade .16s ease-out}.pstudio-dialog{position:relative;width:min(100%,440px);padding:25px 25px 19px;border:1px solid #465263;border-radius:15px;background:linear-gradient(145deg,#222b37,#171d26 72%);box-shadow:0 28px 90px #000c,inset 0 1px 0 #ffffff0b;animation:dialogIn .2s cubic-bezier(.2,.8,.2,1);display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:14px;row-gap:22px}.pstudio-dialog-mark{width:36px;height:36px;display:grid;place-items:center;border:1px solid #ef626c66;border-radius:10px;background:#ef444414;color:#ff858d;font-size:19px;font-weight:800}.pstudio-dialog-content{min-width:0;padding-top:1px}.pstudio-dialog-content h2{margin:0 0 8px;color:#f0f4f9;font-size:17px;line-height:1.4;font-weight:750}.pstudio-dialog-content p{margin:0;color:#aab6c5;font-size:12px;line-height:1.8;white-space:pre-line}.pstudio-dialog-actions{grid-column:1/-1;display:flex;justify-content:flex-end;align-items:center;gap:9px;padding-top:2px}.pstudio-dialog-actions button{min-width:88px;height:36px;padding:0 14px;border:1px solid #465263;border-radius:7px;background:#252e39;color:#cbd5e1;font-size:12px;font-weight:650;transition:background .14s,border-color .14s,transform .14s}.pstudio-dialog-actions button:hover{background:#303b49;border-color:#687789;color:#fff}.pstudio-dialog-actions button:active{transform:translateY(1px)}.pstudio-dialog-actions button.danger{border:1px solid #ef626c;background:#ef444410;color:#ff858d}.pstudio-dialog-actions button.danger:hover{background:#ef444426;border-color:#ff858d;color:#ffb0b5}.pstudio-dialog-actions button.primary{border-color:#9ca3af;background:#d1d5db;color:#17191e}.pstudio-dialog-actions button.primary:hover{background:#f4f4f5}#pstudio-dialog-input-wrap{margin-top:15px}#pstudio-dialog-input{width:100%;height:39px;padding:0 11px;border:1px solid #4a5869;border-radius:7px;background:#10161e;color:#f1f5f9;font-size:13px;outline:none}#pstudio-dialog-input:focus{border-color:#aab6c5;box-shadow:0 0 0 3px #94a3b81c}@keyframes dialogFade{from{opacity:0}to{opacity:1}}@keyframes dialogIn{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes pickerIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}@media(max-width:480px){.pstudio-dialog{padding:21px 18px 16px;border-radius:13px;column-gap:11px}.pstudio-dialog-content h2{font-size:16px}.pstudio-dialog-actions button{flex:1}.language-picker-trigger{min-width:88px;padding:0 7px}}@media(prefers-reduced-motion:reduce){.pstudio-dialog,.pstudio-dialog-backdrop,.language-picker-menu{animation:none}}
 
 .project-backup-wrap{position:relative;flex:0 0 auto}.project-backup-trigger{height:34px;padding:0 10px;border-color:var(--line);background:#202733;color:#e4eaf2;font-size:12px}.project-backup-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:85;min-width:218px;padding:5px;border:1px solid #4b5868;border-radius:9px;background:#202733;box-shadow:0 16px 40px #0009}.project-backup-menu[hidden]{display:none}.project-backup-menu button{display:block;width:100%;padding:10px 11px;border:0;border-radius:6px;background:transparent;color:#e5edf6;text-align:left;font-size:12px}.project-backup-menu button:hover{background:#303d4c}.project-backup-menu button+button{margin-top:2px}.project-backup-wrap~#pstudio-import-input{display:none!important}@media(max-width:700px){.project-backup-trigger{height:32px;padding:0 7px;font-size:10px}}@media(max-width:380px){.project-backup-trigger{display:inline-flex;height:30px;padding:0 6px;font-size:10px}.project-backup-trigger span{display:none}}
+
+/* Responsive UI refinement: preserve full engine controls while preventing cramped tablet layouts. */
+@media (max-width: 1050px) {
+  .app-header { gap: 7px; padding-inline: 10px; min-width: 0; }
+  .brand { min-width: 118px; gap: 7px; }
+  .brand-caption { display: none; }
+  .top-nav { gap: 1px; min-width: 0; }
+  .top-nav button { padding-inline: 7px; font-size: 11px; white-space: nowrap; }
+  .header-action { padding-inline: 8px; font-size: 11px; white-space: nowrap; }
+  .language-picker-trigger { min-width: 88px; }
+  .ide-shell { grid-template-columns: 168px minmax(0,1fr); grid-template-rows: minmax(320px,1fr) 170px 190px; }
+  .explorer-content { min-width: 0; }
+  .inspector-content { grid-template-columns: repeat(3,minmax(0,1fr)); min-width: 0; }
+  .inspector-section { min-width: 0; overflow-wrap: anywhere; }
+  .setting-row { align-items: flex-start; flex-wrap: wrap; font-size: 12px; }
+  .setting-row select,.setting-row input { max-width: 100%; }
+  .panel-heading,.tree-group,.tree-folder,.inspector-title { font-size: 11px; }
+  .tree-file { font-size: 12px; min-width: 0; }
+  .project-tools button { font-size: 11px; }
+}
+@media (max-width: 700px) {
+  .app-header { overflow-x: auto; }
+  .ide-shell { height: calc(100dvh - var(--header-h)); }
+  .workspace-tabs { overflow-x: auto; }
+  .workspace-tab { white-space: nowrap; }
+  .editor-toolbar { min-width: 0; }
+  .editor-toolbar .tool-btn { white-space: nowrap; }
+  .explorer-content { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .inspector-content { min-width: 0; }
+  .object-field,.setting-row { min-width: 0; }
+  .object-field input,.object-field select { max-width: 100%; }
+  .bottom-tabs { min-width: 0; }
+}
+@media (max-width: 420px) {
+  .brand { min-width: 82px; }
+  .brand-mark { display: none; }
+  .brand-name { font-size: 13px; }
+  .project-backup-trigger { min-width: 0; }
+  .language-picker-trigger { min-width: 78px; }
+  .header-action.primary { padding-inline: 7px; }
+  .tool-btn { font-size: 10px; }
+  .inspector-section { min-width: 160px; }
+}
 </style>
 </head>
 <body>
@@ -1129,6 +1172,54 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             fr: "Français"
         };
 
+        const uiTranslations = {
+            ja: {
+                "PS DEVELOPMENT ENVIRONMENT":"PS 開発環境", "Editor":"エディター", "Examples":"サンプル", "Language Guide":"言語ガイド", "About ps":"psについて",
+                "Workspace / main.ps":"ワークスペース / main.ps", "Backup":"バックアップ", "Save":"保存", "Run":"実行", "PROJECT":"プロジェクト", "GAME PROJECT":"ゲームプロジェクト",
+                "WORKSPACE":"ワークスペース", "＋ Script":"＋ スクリプト", "＋ Scene":"＋ シーン", "＋ Asset":"＋ アセット", "ASSETS":"アセット",
+                "Drop images / audio / GLB / GLTF models here":"画像・音声・GLB・GLTFモデルをここにドロップ", "Select GLTF textures and BIN files together":"GLTFのテクスチャとBINファイルは一緒に選択してください",
+                "EDITOR":"エディター", "GAME / SCENE":"ゲーム / シーン", "Saved locally":"ローカルに保存済み", "Clear":"クリア", "Compile":"コンパイル",
+                "SCENE VIEW":"シーンビュー", "VIEW":"表示", "AUTO":"自動", "Object":"オブジェクト", "Refresh":"更新", "Play":"再生", "Stop":"停止",
+                "INSPECTOR":"インスペクター", "SETTINGS":"設定", "GAME OBJECT":"ゲームオブジェクト", "Select an object in the Scene view or Project tree to edit its properties.":"シーンビューまたはプロジェクト一覧からオブジェクトを選択すると、ここでプロパティを編集できます。",
+                "Name":"名前", "3D Model":"3Dモデル", "Model Scale":"モデル倍率", "Material name (* = all)":"マテリアル名（* = すべて）", "Roughness":"粗さ", "Metalness":"金属度", "Material color":"マテリアル色",
+                "Apply GLB Material":"GLBマテリアルを適用", "Position X":"位置 X", "Position Y":"位置 Y", "Position Z":"位置 Z", "Rotation X (°)":"回転 X (°)", "Rotation Y (°)":"回転 Y (°)", "Rotation Z (°)":"回転 Z (°)",
+                "Width":"幅", "Height":"高さ", "Sprite asset":"スプライトアセット", "None":"なし", "Attached ps script":"関連付けるpsスクリプト", "Enable Collider (GLB mesh)":"コライダーを有効化（GLBメッシュ）",
+                "Bloom":"ブルーム", "SSAO":"SSAO", "Bloom strength":"ブルーム強度", "Enable Particle Emitter":"パーティクル発生器を有効化", "Particles / second":"毎秒のパーティクル数",
+                "Particle color":"パーティクル色", "Particle speed":"パーティクル速度", "Lifetime (seconds)":"寿命（秒）", "Max particles":"最大パーティクル数", "Delete Object":"オブジェクトを削除",
+                "SHADER EDITOR · GLSL":"シェーダーエディター · GLSL", "Apply Node Graph":"ノードグラフを適用", "Edit GLSL directly":"GLSLを直接編集", "Apply Shader":"シェーダーを適用", "Reset":"リセット",
+                "Font size":"フォントサイズ", "Tab size":"タブ幅", "Soft wrap":"右端で折り返す", "Show line numbers":"行番号を表示", "EXECUTION":"実行設定", "Input mode":"入力モード", "No stdin":"標準入力なし", "Use stdin":"標準入力を使用",
+                "Run sends your source to the PStudio server. Compile returns generated C++ without executing it.":"実行するとソースコードをPStudioサーバーへ送信します。コンパイルでは実行せず、生成されたC++コードを返します。",
+                "LANGUAGE":"言語", "GAME SCRIPT API":"ゲームスクリプトAPI", "OUTPUT":"出力", "STDIN":"標準入力", "Copy":"コピー", "PStudio is ready. Press Run to execute your ps program.":"PStudioの準備ができました。「実行」を押すとpsプログラムを実行します。",
+                "Ready · 960 × 540":"準備完了 · 960 × 540", "Clear editor":"エディターをクリア", "Movement joystick":"移動スティック", "JUMP":"ジャンプ"
+            },
+            en: {
+                "PS 開発環境":"PS DEVELOPMENT ENVIRONMENT", "エディター":"Editor", "サンプル":"Examples", "言語ガイド":"Language Guide", "psについて":"About ps",
+                "ワークスペース":"Workspace", "バックアップ":"Backup", "保存":"Save", "実行":"Run", "プロジェクト":"PROJECT", "ゲームプロジェクト":"GAME PROJECT",
+                "スクリプト":"Script", "シーン":"Scene", "アセット":"Asset", "アセットをここにドロップ":"Drop assets here", "エディター":"EDITOR", "ゲーム / シーン":"GAME / SCENE",
+                "ローカルに保存済み":"Saved locally", "クリア":"Clear", "コンパイル":"Compile", "シーンビュー":"SCENE VIEW", "表示":"VIEW", "自動":"AUTO", "オブジェクト":"Object",
+                "更新":"Refresh", "再生":"Play", "停止":"Stop", "インスペクター":"INSPECTOR", "設定":"SETTINGS", "ゲームオブジェクト":"GAME OBJECT", "名前":"Name",
+                "位置 X":"Position X", "位置 Y":"Position Y", "位置 Z":"Position Z", "幅":"Width", "高さ":"Height", "削除":"Delete", "出力":"OUTPUT", "標準入力":"STDIN", "コピー":"Copy"
+            },
+            zh: {
+                "Editor":"编辑器", "Examples":"示例", "Language Guide":"语言指南", "About ps":"关于 ps", "PROJECT":"项目", "WORKSPACE":"工作区", "＋ Script":"＋ 脚本", "＋ Scene":"＋ 场景", "＋ Asset":"＋ 资源",
+                "ASSETS":"资源", "EDITOR":"编辑器", "GAME / SCENE":"游戏 / 场景", "Saved locally":"已保存到本地", "Clear":"清空", "Compile":"编译", "SCENE VIEW":"场景视图", "VIEW":"视图",
+                "AUTO":"自动", "Object":"对象", "Refresh":"刷新", "Play":"运行", "Stop":"停止", "INSPECTOR":"检查器", "SETTINGS":"设置", "GAME OBJECT":"游戏对象", "Name":"名称",
+                "Position X":"位置 X", "Position Y":"位置 Y", "Position Z":"位置 Z", "OUTPUT":"输出", "STDIN":"标准输入", "Copy":"复制", "Delete Object":"删除对象"
+            },
+            es: {
+                "Editor":"Editor", "Examples":"Ejemplos", "Language Guide":"Guía del lenguaje", "About ps":"Acerca de ps", "PROJECT":"PROYECTO", "WORKSPACE":"ESPACIO DE TRABAJO",
+                "ASSETS":"RECURSOS", "EDITOR":"EDITOR", "GAME / SCENE":"JUEGO / ESCENA", "Saved locally":"Guardado localmente", "Clear":"Limpiar", "Compile":"Compilar", "SCENE VIEW":"VISTA DE ESCENA",
+                "VIEW":"VISTA", "AUTO":"AUTO", "Object":"Objeto", "Refresh":"Actualizar", "Play":"Iniciar", "Stop":"Detener", "INSPECTOR":"INSPECTOR", "SETTINGS":"AJUSTES",
+                "GAME OBJECT":"OBJETO DEL JUEGO", "Name":"Nombre", "Position X":"Posición X", "Position Y":"Posición Y", "Position Z":"Posición Z", "OUTPUT":"SALIDA", "STDIN":"ENTRADA ESTÁNDAR", "Copy":"Copiar"
+            },
+            fr: {
+                "Editor":"Éditeur", "Examples":"Exemples", "Language Guide":"Guide du langage", "About ps":"À propos de ps", "PROJECT":"PROJET", "WORKSPACE":"ESPACE DE TRAVAIL",
+                "ASSETS":"RESSOURCES", "EDITOR":"ÉDITEUR", "GAME / SCENE":"JEU / SCÈNE", "Saved locally":"Enregistré localement", "Clear":"Effacer", "Compile":"Compiler", "SCENE VIEW":"VUE DE LA SCÈNE",
+                "VIEW":"VUE", "AUTO":"AUTO", "Object":"Objet", "Refresh":"Actualiser", "Play":"Jouer", "Stop":"Arrêter", "INSPECTOR":"INSPECTEUR", "SETTINGS":"PARAMÈTRES",
+                "GAME OBJECT":"OBJET DU JEU", "Name":"Nom", "Position X":"Position X", "Position Y":"Position Y", "Position Z":"Position Z", "OUTPUT":"SORTIE", "STDIN":"ENTRÉE STANDARD", "Copy":"Copier"
+            }
+        };
+
         const translations = {
             en: {
                 "▶ 実行": "▶ Run",
@@ -1422,11 +1513,8 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         };
 
         const originalTextNodes = new WeakMap();
-        let translatableTextNodes = null;
 
         function getTranslatableTextNodes() {
-            if (translatableTextNodes) return translatableTextNodes;
-
             const walker = document.createTreeWalker(
                 document.body,
                 NodeFilter.SHOW_TEXT,
@@ -1434,7 +1522,8 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                     acceptNode(node) {
                         const parent = node.parentElement;
                         if (!parent) return NodeFilter.FILTER_REJECT;
-                        if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) || parent.closest(".ide-shell, .side-menu, .language-options")) {
+                        if (["SCRIPT", "STYLE", "PRE", "TEXTAREA", "CODE"].includes(parent.tagName) ||
+                            parent.closest(".code-editor, #output, #stdin-panel, .file-label, .asset-name, .file-icon, .game-stage, .game-status, .language-options, .language-picker-menu, .project-backup-menu")) {
                             return NodeFilter.FILTER_REJECT;
                         }
                         return NodeFilter.FILTER_ACCEPT;
@@ -1442,9 +1531,9 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 }
             );
 
-            translatableTextNodes = [];
-            while (walker.nextNode()) translatableTextNodes.push(walker.currentNode);
-            return translatableTextNodes;
+            const nodes = [];
+            while (walker.nextNode()) nodes.push(walker.currentNode);
+            return nodes;
         }
 
         function toggleLanguageMenu() {
@@ -1466,7 +1555,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 const trimmed = original.trim();
                 const prefix = original.match(/^\s*/)[0];
                 const suffix = original.match(/\s*$/)[0];
-                const translated = language === "ja" ? trimmed : dictionary[trimmed];
+                const translated = dictionary[trimmed] ?? (uiTranslations[language] || {})[trimmed];
 
                 if (translated !== undefined) {
                     node.nodeValue = prefix + translated + suffix;
