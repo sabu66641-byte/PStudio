@@ -61,8 +61,19 @@
   let smoothedPosition = null;
   let pinchMidpoint = null;
   let lastObjectTap = null;
+  let cameraUpdateRaf = 0;
+  let lastOcclusionUpdate = 0;
   const DOUBLE_TAP_MS = 500;
   const DOUBLE_TAP_DISTANCE = 40;
+
+  // Coalesce high-frequency touch/mouse events into one camera update per display frame.
+  function scheduleCameraUpdate(excludedOwnerId = activeCameraOwnerId) {
+    if (cameraUpdateRaf) return;
+    cameraUpdateRaf = window.requestAnimationFrame(() => {
+      cameraUpdateRaf = 0;
+      updateCamera(1 / 60, excludedOwnerId);
+    });
+  }
 
   function setupControls() {
     if (controlsReady) return;
@@ -137,12 +148,12 @@
           drawFrame();
         }
       }
-      if(pointerMode==='orbit' || pointerMode==='pinch' || pointerMode==='pan') updateCamera();
+      if(pointerMode==='orbit' || pointerMode==='pinch' || pointerMode==='pan') scheduleCameraUpdate();
       e.preventDefault();
     });
     const end=e=>{if(activePointers.has(e.pointerId)){if(pointerMode==='object-pending'||pointerMode==='locked-object'){lastObjectTap={ownerId:dragInfo?.ownerId||selectedOwnerId,time:Date.now(),x:e.clientX,y:e.clientY};}else if(pointerMode!=='double-tap')lastObjectTap=null;}activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;pinchGestureStart=null;pinchGestureMode=null;}};
     canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
-    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));updateCamera();e.preventDefault();},{passive:false});
+    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));scheduleCameraUpdate();e.preventDefault();},{passive:false});
     canvas.addEventListener('contextmenu',e=>e.preventDefault());
   }
   const QUALITY_PROFILES={
@@ -151,7 +162,7 @@
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true},
     ultra:{pixelRatio:2,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true}
   };
-  function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0||Number(window.innerWidth||0)<760?'balanced':'high';}
+  function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0?'mobile':Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
@@ -549,7 +560,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
   function updateOcclusionVisibility(){
-    if(!occlusionEnabled||!occlusionRaycaster||!camera||++occlusionFrame%2!==0)return;
+    if(!occlusionEnabled||!occlusionRaycaster||!camera)return;
+    const now=window.performance?.now?.()??Date.now();
+    if(now-lastOcclusionUpdate<180)return;
+    lastOcclusionUpdate=now;
+    occlusionFrame++;
     const candidates=[];for(const mesh of meshCache.values())if(mesh.parent===primitiveGroup&&isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,worldRenderConfig.maxDrawDistance))candidates.push({object:mesh,owner:mesh.userData.ownerId});
     for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])if(isOwnerChunkActive(source.mesh.userData.ownerId))candidates.push({object:source.mesh,owner:source.mesh.userData.ownerId,instancedSource:source});
     for(const instance of modelInstances.values())if(isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,worldRenderConfig.maxDrawDistance))candidates.push({object:instance.root,owner:instance.ownerId,instance});
@@ -616,31 +631,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     else right.normalize();
     const up=new window.THREE.Vector3().crossVectors(right,direction).normalize();
     const side=0.22,vertical=0.16;
-    const origins=[
-      target.clone(),
-      target.clone().addScaledVector(right,side),
-      target.clone().addScaledVector(right,-side),
-      target.clone().addScaledVector(up,vertical),
-      target.clone().addScaledVector(up,-vertical)
-    ];
-    // Raycaster reads matrixWorld; refresh it after the runtime moved this frame's objects.
+    // A single center ray is substantially cheaper than five recursive scene raycasts
+    // on every touch-move, while still preventing the camera from crossing solid geometry.
     primitiveGroup.updateMatrixWorld(true);
     modelGroup.updateMatrixWorld(true);
-    let safeDistance=distance;
-    const roots=[primitiveGroup,modelGroup];
-    for(const origin of origins){
-      cameraCollisionRaycaster.set(origin,direction);
-      cameraCollisionRaycaster.near=0.04;
-      cameraCollisionRaycaster.far=safeDistance;
-      const hits=cameraCollisionRaycaster.intersectObjects(roots,true);
-      const hit=hits.find(item=>{
-        const ownerId=item.object?.userData?.ownerId;
-        return ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId;
-      });
-      if(hit){
-        safeDistance=Math.min(safeDistance,Math.max(CAMERA_MIN_DISTANCE,hit.distance-CAMERA_CLEARANCE));
-      }
-    }
+    cameraCollisionRaycaster.set(target,direction);
+    cameraCollisionRaycaster.near=0.04;
+    cameraCollisionRaycaster.far=distance;
+    const hits=cameraCollisionRaycaster.intersectObjects([primitiveGroup,modelGroup],true);
+    const hit=hits.find(item=>{
+      const ownerId=item.object?.userData?.ownerId;
+      return ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId;
+    });
+    const safeDistance=hit?Math.max(CAMERA_MIN_DISTANCE,hit.distance-CAMERA_CLEARANCE):distance;
     return target.clone().addScaledVector(direction,safeDistance);
   }
 
