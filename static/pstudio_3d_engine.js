@@ -1723,13 +1723,15 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           const vertexShader='varying vec2 vUv;\nvoid main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
           let material;
           if(d.type==='water'){
-            material=configureWaterMaterial(new T.MeshPhysicalMaterial({
+            material=new T.MeshPhysicalMaterial({
               color:d.color||'#4f9fc2',roughness:0.075,metalness:0,
               transmission:0.82,ior:1.333,thickness:1.35,
               attenuationColor:new T.Color('#a5d9eb'),attenuationDistance:7.5,
               clearcoat:1,clearcoatRoughness:0.035,side:T.DoubleSide,
               transparent:false,depthWrite:true
-            }));
+            });
+            setupLightingMaterial(material);
+            material=configureWaterMaterial(material);
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
           }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
