@@ -36,6 +36,9 @@ test('unchanged scene camera commands do not reset editor orbit and zoom state',
   assert.match(renderer, /cameraCommandSignature=nextCameraSignature/);
   assert.match(renderer, /const nextCameraSignature=cameraCommand/);
 });
+test('selecting a scene object marks it as the camera focus collision exclusion', () => {
+  assert.match(renderer, /if\(id!==null&&id!==undefined\)cameraFocusOwnerId=String\(id\)/);
+});
 
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
