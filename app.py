@@ -6,6 +6,100 @@ import tempfile
 
 from flask import Flask, request, jsonify, render_template
 
+MAX_PROCESS_STDOUT_BYTES = 1024 * 1024
+MAX_PROCESS_STDERR_BYTES = 256 * 1024
+
+
+class ProcessOutputLimitExceeded(Exception):
+    pass
+
+
+def run_process_bounded(args, *, input_text=None, timeout=30,
+                        stdout_limit=MAX_PROCESS_STDOUT_BYTES,
+                        stderr_limit=MAX_PROCESS_STDERR_BYTES):
+    """Run a child process while bounding captured stdout/stderr memory."""
+    process = subprocess.Popen(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0
+    )
+    buffers = {
+        "stdout": bytearray(),
+        "stderr": bytearray()
+    }
+    limits = {
+        "stdout": max(0, int(stdout_limit)),
+        "stderr": max(0, int(stderr_limit))
+    }
+    output_limited = threading.Event()
+
+    def drain(name, stream):
+        buffer = buffers[name]
+        limit = limits[name]
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            remaining = limit - len(buffer)
+            if remaining > 0:
+                buffer.extend(chunk[:remaining])
+            if len(chunk) > remaining and not output_limited.is_set():
+                output_limited.set()
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+
+    def feed_input():
+        try:
+            if input_text:
+                process.stdin.write(input_text.encode("utf-8"))
+                process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+
+    readers = [
+        threading.Thread(target=drain, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=drain, args=("stderr", process.stderr), daemon=True)
+    ]
+    writer = threading.Thread(target=feed_input, daemon=True)
+    for thread in readers:
+        thread.start()
+    writer.start()
+
+    timed_out = False
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        process.kill()
+        returncode = process.wait()
+
+    writer.join(timeout=2)
+    for thread in readers:
+        thread.join(timeout=2)
+
+    stdout_text = bytes(buffers["stdout"]).decode("utf-8", errors="replace")
+    stderr_text = bytes(buffers["stderr"]).decode("utf-8", errors="replace")
+
+    if output_limited.is_set():
+        raise ProcessOutputLimitExceeded(
+            "プログラム出力が上限を超えたため停止しました（標準出力1MB / 標準エラー256KB）。"
+        )
+    if timed_out:
+        raise subprocess.TimeoutExpired(
+            args, timeout, output=stdout_text, stderr=stderr_text
+        )
+
+    return subprocess.CompletedProcess(args, returncode, stdout_text, stderr_text)
+
 try:
     from discord_runtime import DiscordBot, DiscordError
     PS_DISCORD_AVAILABLE = True
@@ -2586,7 +2680,7 @@ def run_code():
             ) as f:
                 f.write(cpp_code)
 
-            compile_result = subprocess.run(
+            compile_result = run_process_bounded(
                 [
                     "g++",
                     "-std=c++17",
@@ -2594,10 +2688,6 @@ def run_code():
                     "-o",
                     executable_path
                 ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=30
             )
 
@@ -2608,13 +2698,9 @@ def run_code():
                     "cpp": cpp_code
                 })
 
-            run_result = subprocess.run(
+            run_result = run_process_bounded(
                 [executable_path],
-                capture_output=True,
-                input=stdin_text,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                input_text=stdin_text,
                 timeout=30
             )
 
@@ -2631,6 +2717,12 @@ def run_code():
             "success": False,
             "error": "実行がタイムアウトしました。"
         }), 408
+
+    except ProcessOutputLimitExceeded as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 422
 
     except Exception as e:
         return jsonify({
