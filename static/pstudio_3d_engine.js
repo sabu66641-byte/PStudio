@@ -212,7 +212,7 @@
     cameraPan=new T.Vector3();
     hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
     if(!csm){keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;scene.add(keyLight,keyLight.target);}
-    occlusionRaycaster=new T.Raycaster();applyQualityPreset(qualityPreset);setupControls();return true;
+    occlusionRaycaster=new T.Raycaster();occlusionRaycaster.firstHitOnly=true;applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
   function disposeGroup(group) {
@@ -842,6 +842,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(mesh.userData?.pstudioLightmapOriginalGeometryOwned)mesh.userData.pstudioLightmapOriginalGeometry?.dispose?.();
     mesh.geometry?.disposeBoundsTree?.();
     if (mesh.parent) mesh.parent.remove(mesh);
+    if(mesh.userData?.pstudioLightmapOriginalMaterial){const originals=Array.isArray(mesh.userData.pstudioLightmapOriginalMaterial)?mesh.userData.pstudioLightmapOriginalMaterial:[mesh.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
     if (mesh.material) waterMaterials.delete(mesh.material);
     mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
     const lods=mesh.userData.pstudioAutoLOD||[];if(lods.length){for(const level of lods)if(level.owned)level.geometry.dispose?.();if(!mesh.userData.pstudioLightmapGeometry&&!mesh.userData.pstudioLightmapOriginalGeometryOwned)lods[0]?.geometry?.dispose?.();}else if(!mesh.userData.pstudioLightmapGeometry)mesh.geometry?.dispose?.();
@@ -985,21 +986,22 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const uv=new Float32Array(p.count*2);for(let i=0;i<triangles;i++){const col=i%grid,row=Math.floor(i/grid),x0=col*cell+pad/resolution,y0=row*cell+pad/resolution,x1=(col+1)*cell-pad/resolution,y1=(row+1)*cell-pad/resolution,k=i*6;uv[k]=x0;uv[k+1]=y0;uv[k+2]=x1;uv[k+3]=y0;uv[k+4]=x0;uv[k+5]=y1;}
     g.setAttribute('uv2',new T.BufferAttribute(uv,2));return{geometry:g,uv2:uv,triangles,grid};
   }
-  function bakeLightmapPixels(object,g,info,resolution){
+  async function bakeLightmapPixels(object,g,info,resolution){
     const T=window.THREE,p=g.attributes.position,n=g.attributes.normal;object.updateMatrixWorld(true);const nm=new T.Matrix3().getNormalMatrix(object.matrixWorld),wp=[],wn=[];
     for(let i=0;i<p.count;i++){wp.push(new T.Vector3().fromBufferAttribute(p,i).applyMatrix4(object.matrixWorld));wn.push(new T.Vector3().fromBufferAttribute(n,i).applyMatrix3(nm).normalize());}
     const data=new Float32Array(resolution*resolution*4),cell=resolution/info.grid,pad=Math.max(2,Math.ceil(resolution*.025/info.grid)),usable=Math.max(1,cell-2*pad);
     for(let tri=0;tri<info.triangles;tri++){const col=tri%info.grid,row=Math.floor(tri/info.grid),x0=Math.ceil(col*cell+pad),y0=Math.ceil(row*cell+pad),x1=Math.floor((col+1)*cell-pad),y1=Math.floor((row+1)*cell-pad),a=wp[tri*3],b=wp[tri*3+1],c=wp[tri*3+2],na=wn[tri*3],nb=wn[tri*3+1],nc=wn[tri*3+2];
       for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const wb=(x+.5-(col*cell+pad))/usable,wc=(y+.5-(row*cell+pad))/usable,wa=1-wb-wc;if(wa<0||wb<0||wc<0)continue;const point=a.clone().multiplyScalar(wa).addScaledVector(b,wb).addScaledVector(c,wc),normal=na.clone().multiplyScalar(wa).addScaledVector(nb,wb).addScaledVector(nc,wc).normalize(),light=evaluateProbeSH(point,normal),k=(y*resolution+x)*4;data[k]=light.x;data[k+1]=light.y;data[k+2]=light.z;data[k+3]=1;}
+      if((tri+1)%16===0)await new Promise(resolve=>requestAnimationFrame(resolve));
     }return data;
   }
   async function bakeUVLightmaps(options={}){
     if(!ensureRenderer())throw new Error('3D renderer unavailable.');if(!bakedLightProbeVolume?.length)throw new Error('Run bakeLightProbeVolume() before baking UV lightmaps.');
-    const T=window.THREE,resolution=Math.max(128,Math.min(2048,Math.floor(Number(options.resolution)||512))),targets=lightmapTargets().filter(({object})=>!object.isSkinnedMesh&&!object.isInstancedMesh&&object.geometry?.attributes?.position);
+    const T=window.THREE,resolution=Math.max(128,Math.min(2048,Math.floor(Number(options.resolution)||512))),ownerFilter=Array.isArray(options.ownerIds)?new Set(options.ownerIds.map(String)):null,targets=lightmapTargets().filter(({object})=>!object.isSkinnedMesh&&!object.isInstancedMesh&&object.geometry?.attributes?.position&&(!ownerFilter||ownerFilter.has(String(object.userData.ownerId))));
     if(!targets.length)throw new Error('No eligible static meshes.');const baked=[],failed=[];
     for(const {id,object} of targets){let working=null;try{
       const source=object.userData.pstudioLightmapOriginalGeometry||object.geometry,info=createLightmapUVGeometry(source,resolution);working=info.geometry;
-      const pixels=bakeLightmapPixels(object,working,info,resolution),oldGeometry=object.geometry;
+      const pixels=await bakeLightmapPixels(object,working,info,resolution),oldGeometry=object.geometry;
       if(object.userData.pstudioAutoLOD?.length){object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD)if(level.owned)level.geometry.dispose?.();object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;}
       if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=oldGeometry;object.userData.pstudioLightmapOriginalGeometryOwned=id.startsWith('primitive:');}
       object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;
@@ -1217,6 +1219,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(!object.isMesh||!object.material)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       materials.forEach(material=>material.dispose());
+      if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
       object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry)object.geometry?.dispose?.();object.geometry?.disposeBoundsTree?.();
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
