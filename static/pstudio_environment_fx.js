@@ -30,7 +30,13 @@
         'float detailMove=mix(.009,.002,uPStudioWaterDetailType);',
         'transformed.y+=detailMove*(detailWave*.65+detailWave2*.35);'
       ].join('\n'));
-      shader.vertexShader=addAfter(shader.vertexShader,'#include <worldpos_vertex>','vPStudioWaterDetailWorld=worldPosition.xyz;');
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <project_vertex>',[
+        'vec4 pStudioDetailWorld=modelMatrix*vec4(transformed,1.0);',
+        '#ifdef USE_INSTANCING',
+        'pStudioDetailWorld=modelMatrix*instanceMatrix*vec4(transformed,1.0);',
+        '#endif',
+        'vPStudioWaterDetailWorld=pStudioDetailWorld.xyz;'
+      ].join('\n'));
       shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
         'uniform float uPStudioWaterDetailTime;',
         'uniform float uPStudioWaterDetailType;',
