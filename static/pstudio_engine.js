@@ -591,6 +591,7 @@
 
       // Scene-only render settings (models and particle emitters) remain active without scripts.
       for(const o of sceneObjects||[]){
+        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled))continue;
         const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
         const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
