@@ -219,6 +219,14 @@
     if(!window.THREE||!window.THREE.WebGLRenderer)return false;
     const T=window.THREE;
     renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
+    try{
+      const memoryGiB=Math.max(2,Math.min(16,Number(window.navigator?.deviceMemory)||4));
+      const gpuBudget=Math.floor((memoryGiB>=8?1024:memoryGiB>=6?768:memoryGiB>=4?640:384)*1024*1024);
+      const cpuBudget=Math.floor((memoryGiB>=8?2048:memoryGiB>=6?1536:memoryGiB>=4?1024:512)*1024*1024);
+      window.PStudioResources?.setBudget?.('gpu',gpuBudget);
+      window.PStudioResources?.setBudget?.('cpu',cpuBudget);
+    }catch(error){console.warn('[PStudio] Device-aware resource budget setup failed; existing budgets remain active.',error);}
+
     try{const gl=renderer.getContext(),extension=gl.getExtension?.('EXT_disjoint_timer_query_webgl2');if(extension&&typeof gl.createQuery==='function'&&typeof gl.getQueryParameter==='function'){gpuTimerGl=gl;gpuTimerExtension=extension;}else{gpuTimerGl=null;gpuTimerExtension=null;}}catch(error){gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timing extension unavailable; CPU timing fallback will be used.',error);}
     if(renderer.info)renderer.info.autoReset=false;
     renderer.outputColorSpace=T.SRGBColorSpace;
@@ -1356,7 +1364,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const sources=group.sources,level=group.level;
       if(sources.length<3)continue;
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_LOD'+level:'Architecture_Static');batch.castShadow=true;batch.receiveShadow=true;
+      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:'Architecture_Static');batch.castShadow=true;batch.receiveShadow=true;
       batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
       batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;batch.userData.pstudioInstanceBatch=!group.isTree;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
