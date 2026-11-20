@@ -147,8 +147,8 @@
       if(!m){out.push(m);continue;}
       const tag=name+' '+String(m.name||'');
       if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
-      else if(UNDER.test(name)){const c=m.clone();configureUnderwater(c);out.push(c);}
-      else if(LEAF.test(name)||/detailed.*foliage/i.test(m.name||'')){const c=m.clone();configureFoliage(c,object);out.push(c);}
+      else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
+      else if(LEAF.test(name)||/detailed.*foliage/i.test(m.name||'')){configureFoliage(m,object);out.push(m);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge/i.test(tag)){
         const c=m.clone();if('roughness'in c)c.roughness=Math.max(.56,Number(c.roughness)||.68);if('metalness'in c)c.metalness=Math.min(.08,Number(c.metalness)||0);if(c.normalScale)c.normalScale.set(.78,.78);out.push(c);
       } else out.push(m);
