@@ -339,12 +339,12 @@ test('GLB water surface uses four wave bands and separate micro-normal frequenci
 test('per-role shader material caching avoids trunk-branch-leaf and spray-foam uniform collisions',()=>{
   assert.ok(renderer.includes('pstudioWindPart'));
   assert.ok(renderer.includes('pstudioWaterDetail'));
-  assert.ok(renderer.includes('pstudio-role:'+roleKey));
+  assert.ok(renderer.includes("material.uuid+'|pstudio-role:'+roleKey"));
 });
 test('static repeated detail geometry is eligible for chunk-local instancing',()=>{
   assert.ok(renderer.includes('/^PStudioInstance_/i.test(objectName)'));
   assert.ok(renderer.includes('chunkId=streamParent.userData?.pstudioStreamChunkId'));
-  assert.ok(renderer.includes('group.sources.push(object)'));
+  assert.ok(renderer.includes('groups.get(key).sources.push(object)'));
 });
 test('GPU-updated foliage transforms skip hidden LOD and streamed chunks',()=>{
   assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
