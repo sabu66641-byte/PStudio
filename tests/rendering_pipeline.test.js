@@ -72,7 +72,7 @@ test('three-cascade shadows load the version-aligned CSM addon with fallback',()
   for(const x of ['window.PStudioCSM','cascades:3','csm.setupMaterial','csm.update()'])assert.ok(renderer.includes(x),x);
 });
 test('adaptive rendering adjusts resolution, effects and shadow quality',()=>{
-  for(const x of ['applyAdaptiveQuality','adaptiveFrameEMA','adaptiveSlowFrames','setAdaptiveQuality','render.quality.adapted','timingSource'])assert.ok(renderer.includes(x),x);
+  for(const x of ['applyAdaptiveQuality','adaptiveFrameEMA','adaptiveSlowFrames','setAdaptiveQuality','render.quality.adapted','EXT_disjoint_timer_query_webgl2','TIME_ELAPSED_EXT','gpuRenderTimeMs','gpuTimerQuerySupported','timingSource'])assert.ok(renderer.includes(x),x);
 });
 test('automatic LOD supports static imported and general meshes',()=>{
   assert.ok(html.includes('three/addons/modifiers/SimplifyModifier.js'));
