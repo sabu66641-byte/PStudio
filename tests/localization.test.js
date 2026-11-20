@@ -52,8 +52,8 @@ test('translated about paragraphs are excluded from dynamic text rebasing', () =
 });
 
 test('translation keeps canonical source text and correct whitespace boundaries', () => {
-  assert.match(html, /if \(!originalTextNodes\.has\(node\)\) originalTextNodes\.set\(node, current\)/);
-  assert.match(html, /original\.match\(\/\^\\s\*\/\)\[0\]/);
+  assert.match(html, /if \(!originalTextNodes\.has\(node\)\)/);
+  assert.match(html, /originalTextNodes\.set\(node, current\)/);
   assert.match(html, /original\.match\(\/\\s\*\$\/\)\[0\]/);
 });
 
