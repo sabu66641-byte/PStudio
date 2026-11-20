@@ -182,9 +182,9 @@ test('imported named foliage meshes can be combined into owner-preserving GPU in
 
 
 test('foliage model LODs are batched independently and switched by camera distance',()=>{
-  for(const token of ['pstudioFoliageLOD','LOD'+level,'entry.level===selected.level','foliageInstancedBatches','foliageInstancedInstances'])assert.ok(renderer.includes(token),token);
+  for(const token of ['pstudioFoliageLOD','match(/LOD([0-9]+)/i)','entry.level===selected.level','foliageInstancedBatches','foliageInstancedInstances'])assert.ok(renderer.includes(token),token);
 });
 test('parallax mapping consumes height stored in the normal texture alpha channel',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
-  for(const token of ['configureParallax','heightSource:' + 'normalTexture alpha','normalMap','pHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v1'])assert.ok(fx.includes(token),token);
+  for(const token of ['configureParallax',"heightSource:'normalTexture alpha'",'normalMap','pHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v1'])assert.ok(fx.includes(token),token);
 });
