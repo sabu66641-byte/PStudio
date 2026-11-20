@@ -61,6 +61,9 @@
   let smoothedPosition = null;
   let pinchMidpoint = null;
   let lastObjectTap = null;
+  let interactionSurface = null;
+  let cameraCommandSignature = null;
+  const pendingCameraFrames = new Set();
   let cameraUpdateRaf = 0;
   let lastOcclusionUpdate = 0;
   const DOUBLE_TAP_MS = 500;
@@ -81,25 +84,32 @@
     raycaster = new window.THREE.Raycaster();
     cameraCollisionRaycaster = new window.THREE.Raycaster();
     pointerNdc = new window.THREE.Vector2();
+    interactionSurface = canvas.parentElement || canvas;
+    interactionSurface.style.touchAction = 'none';
     canvas.style.touchAction = 'none';
-    canvas.addEventListener('pointerdown', e => {
+    interactionSurface.addEventListener('pointerdown', e => {
       if (!renderer || !camera) return;
+      if (e.target?.closest?.('.touch-controls, #game-ui-overlay, button, input, select, textarea')) return;
       activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pinchGestureStart={distance:pinchDistance,midpoint:{...pinchMidpoint}};pinchGestureMode=null;pointerMode='pinch';dragInfo=null;lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
-      if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};lastObjectTap=null;try{canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(activePointers.size===2){const pts=[...activePointers.values()];pinchDistance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);pinchMidpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};pinchGestureStart={distance:pinchDistance,midpoint:{...pinchMidpoint}};pinchGestureMode=null;pointerMode='pinch';dragInfo=null;lastObjectTap=null;try{interactionSurface.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
+      if(e.button===1 || e.button===2 || (e.button===0 && e.shiftKey)){pointerMode='pan';pointerStart={x:e.clientX,y:e.clientY};lastObjectTap=null;try{interactionSurface.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();return;}
       // During Play, pointer drags control the third-person camera rather than editing scene objects.
       if(window.PStudioEngine?.isRunning?.()){
         pointerMode='orbit';
         pointerStart={x:e.clientX,y:e.clientY};
         lastObjectTap=null;
-        try{canvas.setPointerCapture(e.pointerId)}catch(_){}
+        try{interactionSurface.setPointerCapture(e.pointerId)}catch(_){}
         e.preventDefault();
         return;
       }
       const rect=canvas.getBoundingClientRect();
-      pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
-      raycaster.setFromCamera(pointerNdc,camera);
-      const hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId!==undefined||h.object.userData.instanceOwnerIds?.[h.instanceId]!==undefined);
+      const insideCanvas=e.clientX>=rect.left&&e.clientX<=rect.right&&e.clientY>=rect.top&&e.clientY<=rect.bottom&&rect.width>0&&rect.height>0;
+      let hit=null;
+      if(insideCanvas){
+        pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);
+        raycaster.setFromCamera(pointerNdc,camera);
+        hit=raycaster.intersectObjects([primitiveGroup,modelGroup].filter(Boolean),true).find(h=>h.object.userData.ownerId!==undefined||h.object.userData.instanceOwnerIds?.[h.instanceId]!==undefined);
+      }
       pointerStart={x:e.clientX,y:e.clientY};
       if(hit){
         const sourceKey=hit.object.userData.instanceSourceKeys?.[hit.instanceId];
@@ -127,9 +137,9 @@
           }
         }
       }else{pointerMode='orbit';dragInfo=null;lastObjectTap=null;}
-      try{canvas.setPointerCapture(e.pointerId)}catch(_){} e.preventDefault();
+      try{interactionSurface.setPointerCapture(e.pointerId)}catch(_){} e.preventDefault();
     });
-    canvas.addEventListener('pointermove',e=>{
+    interactionSurface.addEventListener('pointermove',e=>{
       if(!pointerMode||!renderer)return;
       if(lastObjectTap&&Math.hypot(e.clientX-lastObjectTap.x,e.clientY-lastObjectTap.y)>DOUBLE_TAP_DISTANCE)lastObjectTap=null;
       if(activePointers.has(e.pointerId))activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -137,7 +147,14 @@
       else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
         orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));pointerStart={x:e.clientX,y:e.clientY};
-      }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}else if(pointerMode==='object-pending'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){pointerMode='object';}else if(pointerMode==='object'&&dragInfo){
+      }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}
+      else if(pointerMode==='locked-object'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){
+        // When model manipulation is locked, dragging over the model orbits the camera.
+        pointerMode='orbit';dragInfo=null;lastObjectTap=null;
+        const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
+        orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));
+        pointerStart={x:e.clientX,y:e.clientY};
+      }else if(pointerMode==='object-pending'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){pointerMode='object';}else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
         const point=new window.THREE.Vector3();
         if(raycaster.ray.intersectPlane(dragInfo.plane,point)){
@@ -152,9 +169,9 @@
       e.preventDefault();
     });
     const end=e=>{if(activePointers.has(e.pointerId)){if(pointerMode==='object-pending'||pointerMode==='locked-object'){lastObjectTap={ownerId:dragInfo?.ownerId||selectedOwnerId,time:Date.now(),x:e.clientX,y:e.clientY};}else if(pointerMode!=='double-tap')lastObjectTap=null;}activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;pinchGestureStart=null;pinchGestureMode=null;}};
-    canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
-    canvas.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));scheduleCameraUpdate();e.preventDefault();},{passive:false});
-    canvas.addEventListener('contextmenu',e=>e.preventDefault());
+    interactionSurface.addEventListener('pointerup',end);interactionSurface.addEventListener('pointercancel',end);
+    interactionSurface.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));scheduleCameraUpdate();e.preventDefault();},{passive:false});
+    interactionSurface.addEventListener('contextmenu',e=>e.preventDefault());
   }
   const QUALITY_PROFILES={
     mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false},
@@ -573,6 +590,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const limit=Math.min(8,candidates.length);
     for(let n=0;n<limit;n++){
       const c=candidates[occlusionCursor++%candidates.length],object=c.object,center=new window.THREE.Vector3();
+      if(String(c.owner)===String(selectedOwnerId)){
+        object.userData.pstudioOccluded=false;
+        object.visible=true;
+        continue;
+      }
       if(!c.instancedSource){object.visible=true;if(object.isMesh)scheduleGeometryBVH(object.geometry);else object.traverse?.(child=>{if(child.isMesh)scheduleGeometryBVH(child.geometry);});}else scheduleGeometryBVH(object.geometry);
       let radius=Math.max(0.2,Number(object.userData?.pstudioBoundsRadius)||0.5);
       if(c.instance?.localBoundsCenter){center.copy(c.instance.localBoundsCenter);object.localToWorld(center);}
@@ -595,13 +617,55 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;
     for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,camera.position.distanceTo(mesh.position));}
     for(const instance of modelInstances.values()){
-      const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);instance.root.visible=active&&!instance.root.userData.pstudioOccluded;if(!active)continue;
+      const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
+      const isSelected=String(instance.ownerId)===String(selectedOwnerId);
+      instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
+      if(!active)continue;
       if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
       else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
     updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId)||source.mesh.userData.pstudioOccluded)continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
     updateProbeVolumeBlend();updateDirectionalShadowAnchor(new window.THREE.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]));
+  }
+
+  function frameCameraToModel(instance){
+    if(!instance?.root||!camera||!window.THREE)return false;
+    const T=window.THREE;
+    instance.root.updateMatrixWorld(true);
+    const bounds=new T.Box3().setFromObject(instance.root);
+    if(bounds.isEmpty())return false;
+    const sphere=bounds.getBoundingSphere(new T.Sphere());
+    const radius=Number.isFinite(sphere.radius)?Math.max(0.25,sphere.radius):0.25;
+    const oldTarget=new T.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]);
+    const direction=new T.Vector3(cameraBase[0],cameraBase[1],cameraBase[2]).sub(oldTarget);
+    if(direction.lengthSq()<1e-8)direction.set(6,5,8);
+    direction.normalize();
+    const verticalFov=(camera.fov||55)*Math.PI/180;
+    const horizontalFov=2*Math.atan(Math.tan(verticalFov/2)*Math.max(0.1,camera.aspect||1));
+    const limitingFov=Math.max(0.12,Math.min(verticalFov,horizontalFov));
+    const distance=Math.max(0.75,(radius/Math.sin(limitingFov/2))*1.16);
+    const center=sphere.center;
+    cameraTarget=[center.x,center.y,center.z];
+    cameraBase=[center.x+direction.x*distance,center.y+direction.y*distance,center.z+direction.z*distance];
+    cameraPan?.set(0,0,0);
+    zoom=1;
+    cameraSmoothing=0;
+    smoothedTarget=null;
+    smoothedPosition=null;
+    return true;
+  }
+
+  function frameObject(ownerId){
+    const id=String(ownerId);
+    const instance=[...modelInstances.values()].find(item=>String(item.ownerId)===id);
+    if(!instance){
+      pendingCameraFrames.add(id);
+      return {pending:true,framed:false};
+    }
+    const framed=frameCameraToModel(instance);
+    if(framed)updateCamera(1/60,activeCameraOwnerId);
+    return {pending:false,framed};
   }
 
   function panCamera(dx, dy) {
@@ -1132,6 +1196,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function setupLightingMaterial(material){
     if(!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
     if(csm&&!material.userData.pstudioCSMSetup){try{csm.setupMaterial(material);material.userData.pstudioCSMSetup=true;}catch(error){console.warn('[PStudio] CSM material setup failed:',error);}}
+    // Keep native GLTF material shaders untouched until an SH probe volume is baked.
+    if(!bakedLightProbeVolume?.length)return material;
     if(material.userData.pstudioProbeShaderSetup)return material;
     const oldCompile=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material),probeUniforms=Array.from({length:9},()=>new window.THREE.Vector3());
     material.onBeforeCompile=function(shader,rendererRef){if(typeof oldCompile==='function')oldCompile.call(this,shader,rendererRef);shader.uniforms.uPStudioSH={value:probeUniforms};
@@ -1386,6 +1452,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     particleClock+=frameDelta;
     for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
+    const pendingFrameInstances=[];
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     let defaultBackground=0x171d26;
     if(hdrTexture&&hdrShowBackground)scene.background=hdrTexture;
@@ -1469,6 +1536,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
           instance.root.rotation.set(Number(d.rotationX)||0,Number(d.rotationY)||0,Number(d.rotationZ)||0);
           instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
+          if(pendingCameraFrames.has(String(ownerId))){
+            pendingCameraFrames.delete(String(ownerId));
+            pendingFrameInstances.push(instance);
+          }
           applyModelMaterial(instance,ownerMaterial);
           const animState={loop:true,layers:[]};
           for(const item of list){
@@ -1609,15 +1680,19 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         else{if(Number.isFinite(environment.lightX))keyLight.position.x=environment.lightX;if(Number.isFinite(environment.lightY))keyLight.position.y=environment.lightY;if(Number.isFinite(environment.lightZ))keyLight.position.z=environment.lightZ;if(Number.isFinite(environment.lightIntensity))keyLight.intensity=environment.lightIntensity;}
       }
     }
-    cameraTarget = cameraCommand
-      ? [cameraCommand.targetX, cameraCommand.targetY, cameraCommand.targetZ]
-      : [0, 0, 0];
-    cameraBase = cameraCommand
-      ? [cameraCommand.x, cameraCommand.y, cameraCommand.z]
-      : [6, 5, 8];
-    cameraSmoothing = cameraCommand ? Math.max(0, Math.min(30, Number(cameraCommand.smoothing) || 0)) : 0;
-    activeCameraOwnerId=cameraOwnerId;
-    if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
+    const nextCameraSignature=cameraCommand
+      ? [cameraCommand.x,cameraCommand.y,cameraCommand.z,cameraCommand.targetX,cameraCommand.targetY,cameraCommand.targetZ,cameraCommand.smoothing??0,cameraOwnerId??''].join('|')
+      : 'default';
+    if(nextCameraSignature!==cameraCommandSignature){
+      cameraTarget=cameraCommand?[cameraCommand.targetX,cameraCommand.targetY,cameraCommand.targetZ]:[0,0,0];
+      cameraBase=cameraCommand?[cameraCommand.x,cameraCommand.y,cameraCommand.z]:[6,5,8];
+      cameraSmoothing=cameraCommand?Math.max(0,Math.min(30,Number(cameraCommand.smoothing)||0)):0;
+      activeCameraOwnerId=cameraOwnerId;
+      cameraPan?.set(0,0,0);
+      if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
+      cameraCommandSignature=nextCameraSignature;
+    }
+    for(const instance of pendingFrameInstances)frameCameraToModel(instance);
     refreshSelectionOutline();
     updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
   }
@@ -1667,6 +1742,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   window.PStudio3D = {
     render,
     clear,
+    frameObject,
     setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) drawFrame(); },
     getCameraBasis,
     getModelCollisionTriangles,
