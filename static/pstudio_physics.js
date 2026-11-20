@@ -69,7 +69,7 @@
   function setActive(id, active) {
     const body=bodies.get(id);if(!body)return false;
     const next=!!active;if(body.active===next)return true;body.active=next;
-    if(!next){body.input=[0,0];body.force=[0,0,0];body.pendingForce=[0,0,0];}
+    if(!next){body.input=[0,0];body.force=[0,0,0];body.pendingForce=[0,0,0];body.previousPosition=body.position.slice();}
     else body.previousPosition=body.position.slice();
     return true;
   }
