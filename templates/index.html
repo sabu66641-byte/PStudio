@@ -1202,7 +1202,7 @@ async function importAssets(files){
    projectAssets.push({
     name:file.name,kind:'model',format:'glb',mime:file.type||'model/gltf-binary',
     size:file.size,storage:'indexeddb',estimatedRuntimeBytes:inspection.estimatedRuntimeBytes,
-    estimatedGpuBytes:inspection.estimatedGpuBytes,triangleCount:inspection.triangleCount,
+    estimatedCpuBytes:inspection.estimatedCpuBytes,estimatedGpuBytes:inspection.estimatedGpuBytes,triangleCount:inspection.triangleCount,
     meshCount:inspection.meshCount,nodeCount:inspection.nodeCount
    });
    ensureModelScript(projectAssets[projectAssets.length-1]);
