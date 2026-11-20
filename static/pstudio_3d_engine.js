@@ -375,8 +375,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       chunk.loading=false;chunk.active=true;chunk.lastLoadedAt=Date.now();try{window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:chunk.assets.length});}catch(_){}
     }).catch(error=>{if(token===chunk.generation){chunk.loading=false;chunk.active=false;chunk.error=String(error?.message||error);try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}}});
   }
+  function releaseChunkAssetCache(chunk){
+    const protectedAssets=new Set();
+    for(const other of worldChunks.values())if(other.id!==chunk.id&&(other.active||other.loading))for(const name of other.assets||[])protectedAssets.add(name);
+    for(const name of chunk.assets||[]){
+      if(protectedAssets.has(name))continue;
+      let removed=false;
+      try{removed=window.PStudioResources?.remove?.('model-gpu',name,{reason:'chunk-unloaded'})||false;}catch(_){continue;}
+      if(!removed&&!([...modelInstances.values()].some(instance=>instance.name===name))){
+        const asset=modelCache.get(name);if(asset){disposeModelAsset(asset);modelCache.delete(name);}
+      }
+    }
+  }
   function endWorldChunkLoad(chunk){
-    chunk.generation++;chunk.loading=false;chunk.active=false;purgeWorldChunkRuntime(chunk.id);
+    chunk.generation++;chunk.loading=false;chunk.active=false;purgeWorldChunkRuntime(chunk.id);releaseChunkAssetCache(chunk);
     try{const result=chunk.onUnload?.({id:chunk.id,assets:chunk.assets.slice()});if(result?.catch)result.catch(error=>console.warn('[PStudio] Chunk unload callback failed:',error));}catch(error){console.warn('[PStudio] Chunk unload callback failed:',error);}
     window.PStudioResources?.trim?.('gpu');try{window.PStudioEvents?.emit('world.chunk.unloaded',{id:chunk.id});}catch(_){}
   }
