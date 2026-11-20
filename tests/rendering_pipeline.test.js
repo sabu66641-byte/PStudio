@@ -229,3 +229,40 @@ test('primitive water is tagged for depth prepass and uses its actual geometry b
   assert.ok(renderer.includes('waterUniforms.bounds.value.set(bounds.min.x,bounds.min.z'));
   assert.ok(renderer.includes('setupLightingMaterial(material);\n            material=configureWaterMaterial(material);'));
 });
+
+
+test('world-space triplanar PBR projects albedo, normal, roughness and metalness across rock and terrain',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['configureTriplanar','pstudio-world-triplanar-pbr-v1','vPStudioTriWorldPosition','pStudioTriColor','pStudioTriNormal','pStudioR','pStudioM','pstudioSurfaceMode'])assert.ok(fx.includes(token),token);
+});
+test('volumetric cloud pass raymarches a procedural cloud field and atmospheric horizon',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','STEPS','cloudAlpha','uSunDirection'])assert.ok(fx.includes(token),token);
+});
+test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+});
+test('GLB auto-play animation extras start a looping environment animation on import',()=>{
+  assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
+  assert.ok(renderer.includes('mixer.clipAction(autoClip)'));
+  assert.ok(renderer.includes('action.reset().setLoop(T.LoopRepeat,Infinity).play()'));
+});
+test('animated tree parts inherit their parent LOD and share GPU instance batches',()=>{
+  for(const token of ["object.userData?.pstudioWindPart==='leaf'","object.userData?.pstudioWindPart==='branch'",'while(!levelMatch&&parent&&parent!==root)','PStudio_GPU_Instances_','entry.isTree&&Number.isInteger(entry.level)'])assert.ok(renderer.includes(token),token);
+});
+test('modular architecture components are batched independently from foliage and remain visible across tree LOD changes',()=>{
+  for(const token of ['/\^PStudioInstance_/i','group.isTree','level===null||level===0','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
+});
+test('volumetric sky replaces baked cloud meshes only while the cloud renderer is active and restores visibility',()=>{
+  for(const token of ['hideStaticSkyForVolumetrics','restoreStaticSky','volumetricCloudsEnabled','cloudbank|cumulus|cirrus'])assert.ok(renderer.includes(token),token);
+});
+test('multi-bounce environment GI has a high quality entry point and resolution presets',()=>{
+  for(const token of ['bakeEnvironmentGI','qualityPreset===\'ultra\'?128:96','qualityPreset===\'ultra\'?3:2','bounceStrength:options?.bounceStrength??0.42'])assert.ok(renderer.includes(token),token);
+});
+test('GTAO output uses the scene composite mode rather than the AO-only debug view',()=>{
+  assert.ok(renderer.includes('gtaoPass.output=FX.GTAOPass.OUTPUT.Default'));
+  assert.ok(!renderer.includes('gtaoPass.output=FX.GTAOPass.OUTPUT.Denoise'));
+});
+test('high-detail asset loads receive device-aware CPU and GPU resource budgets',()=>{
+  for(const token of ['window.navigator?.deviceMemory','PStudioResources?.setBudget?.(\'gpu\'','PStudioResources?.setBudget?.(\'cpu\''])assert.ok(renderer.includes(token),token);
+});
