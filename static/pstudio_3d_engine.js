@@ -465,7 +465,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     ));
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
     const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64)));
-    const previous=bakedLightProbeVolume,previousSingle=bakedLightProbe;
+    const previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,previousBounces=bakedGIBounces;
     const maxBounces=Math.max(0,Math.min(4,Math.floor(Number(o.bounces??2))));
     const bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.35));
     const intensity=Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1));
@@ -533,8 +533,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       return{baked:true,probes:finalProbes.length,kind:'iterative-multibounce-diffuse-sh-gi',bounces:completedBounces,bounceStrength,resolution:size,lastBounceEnergy:Number(lastBounceEnergy.toFixed(6)),note:'直接光・環境光は初回のみ捕捉し、後続パスでは前段の拡散バウンスだけを材料へ戻します。SHプローブによる近似であり、動的レイトレーシングや完全な物理GIではありません。'};
     }catch(error){
       for(const item of allocated)item.light.dispose?.();
-      bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;
+      bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;bakedGIBounces=previousBounces;
       if(previousSingle)scene.add(previousSingle);
+      for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
+      for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
+      updateProbeVolumeBlend();
       throw error;
     }finally{
       scene.environment=oldEnvironment;scene.background=oldBackground;
