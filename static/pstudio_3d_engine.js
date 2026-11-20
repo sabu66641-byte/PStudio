@@ -63,6 +63,7 @@
   let lastObjectTap = null;
   let interactionSurface = null;
   let cameraCommandSignature = null;
+  let cameraFocusOwnerId = null;
   const pendingCameraFrames = new Set();
   let cameraUpdateRaf = 0;
   let lastOcclusionUpdate = 0;
@@ -648,6 +649,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const center=sphere.center;
     cameraTarget=[center.x,center.y,center.z];
     cameraBase=[center.x+direction.x*distance,center.y+direction.y*distance,center.z+direction.z*distance];
+    cameraFocusOwnerId=String(instance.ownerId);
     cameraPan?.set(0,0,0);
     zoom=1;
     cameraSmoothing=0;
@@ -705,7 +707,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const hits=cameraCollisionRaycaster.intersectObjects([primitiveGroup,modelGroup],true);
     const hit=hits.find(item=>{
       const ownerId=item.object?.userData?.ownerId;
-      return ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId;
+      const isCameraFocus=ownerId!==undefined&&ownerId!==null&&cameraFocusOwnerId!==null&&String(ownerId)===String(cameraFocusOwnerId);
+      return !isCameraFocus&&(ownerId===undefined||ownerId===null||ownerId!==excludedOwnerId);
     });
     const safeDistance=hit?Math.max(CAMERA_MIN_DISTANCE,hit.distance-CAMERA_CLEARANCE):distance;
     return target.clone().addScaledVector(direction,safeDistance);
@@ -1690,6 +1693,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       activeCameraOwnerId=cameraOwnerId;
       cameraPan?.set(0,0,0);
       if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
+      cameraFocusOwnerId=null;
       cameraCommandSignature=nextCameraSignature;
     }
     for(const instance of pendingFrameInstances)frameCameraToModel(instance);
@@ -1743,7 +1747,15 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     render,
     clear,
     frameObject,
-    setSelected: id => { selectedOwnerId = id || null; refreshSelectionOutline(); if (renderer && scene && camera) drawFrame(); },
+    setSelected: id => {
+      selectedOwnerId = id || null;
+      if(id!==null&&id!==undefined){
+        const instance=[...modelInstances.values()].find(item=>String(item.ownerId)===String(id));
+        if(instance)cameraFocusOwnerId=String(id);
+      }
+      refreshSelectionOutline();
+      if(renderer&&scene&&camera)drawFrame();
+    },
     getCameraBasis,
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
