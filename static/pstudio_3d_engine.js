@@ -1749,10 +1749,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     frameObject,
     setSelected: id => {
       selectedOwnerId = id || null;
-      if(id!==null&&id!==undefined){
-        const instance=[...modelInstances.values()].find(item=>String(item.ownerId)===String(id));
-        if(instance)cameraFocusOwnerId=String(id);
-      }
+      if(id!==null&&id!==undefined)cameraFocusOwnerId=String(id);
       refreshSelectionOutline();
       if(renderer&&scene&&camera)drawFrame();
     },
