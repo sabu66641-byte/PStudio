@@ -6,8 +6,8 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null;
-  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,temporalAAEnabled=false;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,temporalAAEnabled=false;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -176,10 +176,10 @@
     interactionSurface.addEventListener('contextmenu',e=>e.preventDefault());
   }
   const QUALITY_PROFILES={
-    mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false},
-    balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false},
-    high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true},
-    ultra:{pixelRatio:2,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true}
+    mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
+    balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
+    high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true},
+    ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}
   };
   function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0?'mobile':Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
@@ -189,8 +189,12 @@
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio));composer?.setPixelRatio?.(renderer.getPixelRatio());
       renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      for(const light of lights)if(light?.shadow){const size=csm?Math.min(2048,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
-      if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}lastSize={width:0,height:0};resize();
+      for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
+      if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
+      volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;
+      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+      if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
+      lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile});}catch(_){}
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
@@ -252,6 +256,7 @@
       else if(FX.SSAOPass){ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);}
       if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
       if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
+      volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
@@ -366,11 +371,12 @@
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     try{
       renderWaterDepthPrepass();
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
-        if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;const u=volumetricFogPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);}}
+        if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;const u=volumetricFogPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);u.tDepth.value=waterDepthTarget?.depthTexture||null;}}
+        if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;const u=volumetricCloudPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;}}
         composer.render();
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
@@ -673,7 +679,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
       instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
-      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.level!==undefined)entry.mesh.visible=entry.level===selected.level;}
+      if(instance.lodLevels?.length>1){const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;}
       else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
     }
     updateOcclusionVisibility();
@@ -1332,29 +1338,33 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const T=window.THREE,groups=new Map(),batches=[];
     root.updateMatrixWorld(true);
     root.traverse(object=>{
-      if(!object.isMesh||object.isSkinnedMesh||!/(?:^|[_ -])Wind[_ -]?Tree/i.test(String(object.name||'')))return;
+      if(!object.isMesh||object.isSkinnedMesh)return;
+      const objectName=String(object.name||'');
+      const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName);
+      const isModularPart=/^PStudioInstance_/i.test(objectName)||object.userData?.pstudioInstanceBatch===true;
+      if(!isTree&&!isModularPart)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       if(materials.length!==1||!object.geometry||!materials[0])return;
-      const levelMatch=String(object.name||'').match(/LOD([0-9]+)/i);
-      const level=levelMatch?Number(levelMatch[1]):0;
-      const key=object.geometry.uuid+'|'+materials[0].uuid+'|LOD'+level;
-      if(!groups.has(key))groups.set(key,{sources:[],level});
+      const levelMatch=objectName.match(/LOD([0-9]+)/i);
+      const level=levelMatch?Number(levelMatch[1]):null;
+      const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level);
+      if(!groups.has(key))groups.set(key,{sources:[],level,isTree});
       groups.get(key).sources.push(object);
     });
     const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
     for(const group of groups.values()){
       const sources=group.sources,level=group.level;
-      if(sources.length<4)continue;
+      if(sources.length<3)continue;
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_Foliage_GPU_Instances_Level'+level;batch.castShadow=true;batch.receiveShadow=true;
+      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_LOD'+level:'Architecture_Static');batch.castShadow=true;batch.receiveShadow=true;
       batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
-      batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;
+      batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;batch.userData.pstudioInstanceBatch=!group.isTree;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
-      batch.userData.pstudioFoliageSources=sources;batch.visible=level===0;
+      batch.userData.pstudioFoliageSources=sources;batch.visible=level===null||level===0;
       root.add(batch);
       for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
       batch.instanceMatrix.setUsage(T.DynamicDrawUsage);batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
-      batches.push({mesh:batch,sources,level});
+      batches.push({mesh:batch,sources,level,isTree:group.isTree});
     }
     return batches;
   }
@@ -1420,7 +1430,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       .map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
     const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
-    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches};
+    const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
+    const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
+    if(mixer&&autoClip){const action=mixer.clipAction(autoClip);action.reset().setLoop(T.LoopRepeat,Infinity).play();}
+    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches};
     modelInstances.set(key,instance);
     modelGroup.add(clone);
     return instance;
@@ -1523,7 +1536,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     instance.mixer.timeScale=instance.speed;
-    instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));
+    instance.mixer.update(Math.max(0,Math.min(0.1,Number(dt)||0)));updateFoliageInstanceBatches(instance);
   }
 
   function removeModelInstance(key) {
@@ -1867,6 +1880,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&qualityPreset==='auto';adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=resolveQualityPreset(qualityPreset)==='ultra'?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
     setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
+    setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass;if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base))u.uCloudBase.value=options.base;if(Number.isFinite(options.top))u.uCloudTop.value=Math.max(u.uCloudBase.value+1,options.top);if(Number.isFinite(options.density))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,
@@ -1875,10 +1889,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       geometries:renderer.info?.memory?.geometries||0,
       textures:renderer.info?.memory?.textures||0,
       instancedBatches:instancedBatches.size,
-      instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
+      instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
