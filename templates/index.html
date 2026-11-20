@@ -1036,7 +1036,7 @@ async function fileAsDataURL(file){
  });
 }
 const PSTUDIO_MAX_GLB_BYTES=1024*1024*1024;
-const PSTUDIO_MAX_GLTF_BYTES=128*1024*1024;
+const PSTUDIO_MAX_GLTF_BYTES=30*1024*1024;
 const PSTUDIO_GLB_JSON_LIMIT=32*1024*1024;
 function dispatchGLBImportProgress(detail){try{window.dispatchEvent(new CustomEvent('pstudio-asset-import-progress',{detail}));}catch(_){}}
 function estimateModelMemoryBytes(fileBytes,geometryBytes,textureBytes){
@@ -1212,6 +1212,7 @@ async function importAssets(files){
   }catch(error){toast(file.name+': '+error.message);}
  }
  for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.gltf'))){
+  if(file.size>PSTUDIO_MAX_GLTF_BYTES){toast(file.name+' は30 MBを超えています。.gltfは外部依存をBase64化するため、30 MB以下にしてください。大容量モデルは.glbで読み込んでください。');continue;}
   const existing=projectAssets.find(a=>a.name===file.name);
   if(existing?.locked){toast(file.name+' はロックされています');continue;}
   try{
