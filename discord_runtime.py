@@ -842,13 +842,15 @@ class DiscordClient:
         background=Trueなら別スレッドでGatewayを常駐させる。
         """
         if self._started:
-            return
-
-        if not background:
-            asyncio.run(self.start_async())
+            if self._stop_event.is_set():
+                raise DiscordError("Discord Botの停止処理中です。終了後に再度起動してください。")
             return
 
         if self._thread and self._thread.is_alive():
+            raise DiscordError("前回のDiscord Botスレッドが終了していません。停止完了後に再試行してください。")
+
+        if not background:
+            asyncio.run(self.start_async())
             return
 
         def runner():
@@ -878,14 +880,15 @@ class DiscordClient:
 
             asyncio.run_coroutine_threadsafe(close(), self._loop)
 
-        self._started = False
+        # _started is cleared by start_async()'s finally block after the
+        # websocket and reconnect loop have actually exited.
 
     def is_running(self) -> bool:
-        return self._started
+        return self._started and not self._stop_event.is_set()
 
     def status(self) -> dict[str, Any]:
         return {
-            "running": self._started,
+            "running": self.is_running(),
             "connected": self._ws is not None,
             "session_id": self.session_id,
             "user": self.user,
