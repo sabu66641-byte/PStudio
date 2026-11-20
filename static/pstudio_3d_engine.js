@@ -1024,7 +1024,10 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(let i=0;i<p.count;i++){wp.push(new T.Vector3().fromBufferAttribute(p,i).applyMatrix4(object.matrixWorld));wn.push(new T.Vector3().fromBufferAttribute(n,i).applyMatrix3(nm).normalize());}
     const data=new Float32Array(resolution*resolution*4),cell=resolution/info.grid,pad=Math.max(2,Math.ceil(resolution*.025/info.grid)),usable=Math.max(1,cell-2*pad);
     for(let tri=0;tri<info.triangles;tri++){const col=tri%info.grid,row=Math.floor(tri/info.grid),x0=Math.ceil(col*cell+pad),y0=Math.ceil(row*cell+pad),x1=Math.floor((col+1)*cell-pad),y1=Math.floor((row+1)*cell-pad),a=wp[tri*3],b=wp[tri*3+1],c=wp[tri*3+2],na=wn[tri*3],nb=wn[tri*3+1],nc=wn[tri*3+2];
-      for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){const wb=(x+.5-(col*cell+pad))/usable,wc=(y+.5-(row*cell+pad))/usable,wa=1-wb-wc;if(wa<0||wb<0||wc<0)continue;const point=a.clone().multiplyScalar(wa).addScaledVector(b,wb).addScaledVector(c,wc),normal=na.clone().multiplyScalar(wa).addScaledVector(nb,wb).addScaledVector(nc,wc).normalize(),light=evaluateProbeSH(point,normal),k=(y*resolution+x)*4;data[k]=light.x;data[k+1]=light.y;data[k+2]=light.z;data[k+3]=1;}
+      for(let y=y0;y<y1;y++){
+        for(let x=x0;x<x1;x++){const wb=(x+.5-(col*cell+pad))/usable,wc=(y+.5-(row*cell+pad))/usable,wa=1-wb-wc;if(wa<0||wb<0||wc<0)continue;const point=a.clone().multiplyScalar(wa).addScaledVector(b,wb).addScaledVector(c,wc),normal=na.clone().multiplyScalar(wa).addScaledVector(nb,wb).addScaledVector(nc,wc).normalize(),light=evaluateProbeSH(point,normal),k=(y*resolution+x)*4;data[k]=light.x;data[k+1]=light.y;data[k+2]=light.z;data[k+3]=1;}
+        if((y-y0+1)%24===0)await new Promise(resolve=>requestAnimationFrame(resolve));
+      }
       if((tri+1)%16===0)await new Promise(resolve=>requestAnimationFrame(resolve));
     }return data;
   }
