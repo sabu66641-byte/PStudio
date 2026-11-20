@@ -115,3 +115,7 @@ test('world chunk lifecycle suspends scripts, physics, ECS and owner audio',()=>
 test('multi-bounce GI separates direct lighting and converges on bounce energy',()=>{
   for(const token of ['maxBounces','minBounceEnergy','pstudioBounceSource','scene.environment=null','scene.background=new T.Color(0x000000)','completedBounces'])assert.ok(renderer.includes(token),token);
 });
+
+test('UV lightmaps use linear half-float textures with a device-aware memory budget',()=>{
+  for(const token of ['HalfFloatType','packHalfFloat','floatToHalf','deviceMemory','maxBytes','allocatedBytes','budgetBytes'])assert.ok(renderer.includes(token),token);
+});
