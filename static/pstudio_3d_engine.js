@@ -183,6 +183,7 @@
   };
   function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
+    memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const selected=resolveQualityPreset(qualityPreset),baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
@@ -206,9 +207,9 @@
     if(now-adaptiveLastChange<1800)return;
     let changed=false;if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}if(!changed)return;
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
-    const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel];
-    renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),scale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+    const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
+    renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
@@ -433,9 +434,6 @@
         window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
         window.PStudioResources.trim?.('gpu',Math.floor(cache.gpuBudgetBytes*.72));
       }
-    }else if(pressure<.62&&memorySafetyApplied){
-      memorySafetyApplied=false;
-      lastSize={width:0,height:0};
     }
     try{window.dispatchEvent(new CustomEvent('pstudio-memory-snapshot',{detail:{...snapshot,pressure,memorySafetyApplied}}));}catch(_){}
   }
