@@ -844,7 +844,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if (mesh.parent) mesh.parent.remove(mesh);
     if (mesh.material) waterMaterials.delete(mesh.material);
     mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
-    const lods=mesh.userData.pstudioAutoLOD||[];if(lods.length){for(const level of lods)if(level.owned)level.geometry.dispose?.();lods[0]?.geometry?.dispose?.();}else mesh.geometry?.dispose?.();
+    const lods=mesh.userData.pstudioAutoLOD||[];if(lods.length){for(const level of lods)if(level.owned)level.geometry.dispose?.();if(!mesh.userData.pstudioLightmapGeometry&&!mesh.userData.pstudioLightmapOriginalGeometryOwned)lods[0]?.geometry?.dispose?.();}else if(!mesh.userData.pstudioLightmapGeometry)mesh.geometry?.dispose?.();
     if (mesh.material) mesh.material.dispose();
     mesh.getRenderTarget?.()?.dispose?.();
   }
@@ -854,7 +854,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const geometries=new Set(),materials=new Set(),textures=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
-      if(object.geometry)geometries.add(object.geometry);
+      if(object.geometry){object.geometry.disposeBoundsTree?.();geometries.add(object.geometry);}
       for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
     });
     materials.forEach(material=>{
@@ -1217,6 +1217,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(!object.isMesh||!object.material)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       materials.forEach(material=>material.dispose());
+      object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry)object.geometry?.dispose?.();object.geometry?.disposeBoundsTree?.();
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
     modelInstances.delete(key);
@@ -1431,12 +1432,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)&&!preservedOwners.has(mesh.userData.ownerId)){disposeMesh(mesh);meshCache.delete(key);}else if(preservedOwners.has(mesh.userData.ownerId))mesh.visible=false;}
     updateInstancedBatches();
     for(const [key,emitter] of particleEmitters){
-      if(stoppedEmitters.has(key)||!usedEmitters.has(key)){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
+      if(stoppedEmitters.has(key)||(!usedEmitters.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':')))){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
     }
     for(const key of stoppedEmitters){const emitter=particleEmitters.get(key);if(emitter){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}}
     for(const [key,effect] of particleBursts){if(particleClock>=effect.expiresAt){disposeGpuParticleSystem(effect.system);particleBursts.delete(key);}}
     updateGpuParticleSystems();
-    for(const [key,light] of dynamicLights){if(!usedLights.has(key)){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
+    for(const [key,light] of dynamicLights){if(!usedLights.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':'))){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const [key,instance] of modelInstances){if(!usedModels.has(key)&&!preservedOwners.has(instance.ownerId))removeModelInstance(key);else if(preservedOwners.has(instance.ownerId))instance.root.visible=false;}
     if(environment){
