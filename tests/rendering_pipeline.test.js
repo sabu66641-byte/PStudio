@@ -300,7 +300,7 @@ test('cloud and atmospheric depth consumers trigger scene depth capture even wit
 test('static modular architecture GPU batches contribute to opaque scene depth',()=>{
   assert.ok(renderer.includes('object.userData?.pstudioFoliageLOD!==undefined'));
   assert.ok(!renderer.includes('object.userData?.pstudioInstanceBatch||transparent'));
-  assert.ok(renderer.includes('PStudio_GPU_Instances_Architecture_Static'));
+  assert.ok(renderer.includes("'Architecture_Static'"));
 });
 test('streaming chunks are constructed from top-level world children for this GLB hierarchy',()=>{
   assert.ok(renderer.includes('for(const child of [...root.children])'));
