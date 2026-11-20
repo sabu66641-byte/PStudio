@@ -996,8 +996,10 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     object.userData.pstudioLightmapTexture?.dispose?.();object.userData.pstudioLightmapTexture=texture;cloneLightmapMaterial(object,texture);object.userData.pstudioLightmapId=record.id;object.userData.pstudioLightmapBakedMatrix=record.matrixWorld?Array.from(record.matrixWorld):null;return true;
   }
   function applyPendingLightmaps(){
-    if(!pendingLightmaps.size)return;const byId=new Map(lightmapTargets().map(t=>[t.id,t.object]));
-    for(const [id,record] of [...pendingLightmaps]){const object=byId.get(id);if(!object)continue;if(installLightmap(object,record))pendingLightmaps.delete(id);else{pendingLightmaps.delete(id);console.warn('[PStudio] Skipped incompatible lightmap:',id);}}
+    if(!pendingLightmaps.size)return{applied:0,skipped:0,pending:0};
+    const byId=new Map(lightmapTargets().map(t=>[t.id,t.object]));let applied=0,skipped=0;
+    for(const [id,record] of [...pendingLightmaps]){const object=byId.get(id);if(!object)continue;if(installLightmap(object,record)){pendingLightmaps.delete(id);applied++;}else{pendingLightmaps.delete(id);skipped++;console.warn('[PStudio] Skipped incompatible lightmap:',id);}}
+    return{applied,skipped,pending:pendingLightmaps.size};
   }
   function clearObjectLightmap(object){
     if(!object?.userData)return false;let changed=false;
@@ -1024,8 +1026,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   async function loadLightmaps(name='default'){
     const key=String(name||'default').trim(),db=await openLightmapDatabase(),data=await new Promise((resolve,reject)=>{const tx=db.transaction('lightmaps','readonly'),q=tx.objectStore('lightmaps').get(key);q.onsuccess=()=>resolve(q.result||null);q.onerror=()=>reject(q.error||new Error('Lightmap load failed.'));});
     if(!data||data.schema!==1||!Array.isArray(data.records))throw new Error('Lightmap set not found or unsupported.');
-    pendingLightmaps.clear();for(const item of data.records)pendingLightmaps.set(item.id,item);applyPendingLightmaps();if(renderer&&scene)drawFrame();
-    return{name:key,meshes:data.records.length,applied:data.records.length-pendingLightmaps.size,pending:pendingLightmaps.size};
+    pendingLightmaps.clear();for(const item of data.records)pendingLightmaps.set(item.id,item);const status=applyPendingLightmaps();if(renderer&&scene)drawFrame();
+    return{name:key,meshes:data.records.length,...status};
   }
   function addProbeSH(item,weight,normal,target){
     const c=item.light.sh.coefficients,w=weight*item.baseIntensity,x=normal.x,y=normal.y,z=normal.z;
