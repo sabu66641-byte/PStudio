@@ -560,7 +560,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       else if(c.instancedSource){object.updateMatrixWorld(true);object.geometry?.computeBoundingSphere?.();if(object.geometry?.boundingSphere){center.copy(object.geometry.boundingSphere.center).applyMatrix4(object.matrixWorld);radius=Math.max(radius,object.geometry.boundingSphere.radius*(object.scale.length()/Math.sqrt(3)));}else object.getWorldPosition(center);}
       else if(object.isMesh){object.geometry?.computeBoundingSphere?.();if(object.geometry?.boundingSphere){center.copy(object.geometry.boundingSphere.center).applyMatrix4(object.matrixWorld);radius=Math.max(radius,object.geometry.boundingSphere.radius*(object.scale.length()/Math.sqrt(3)));}else object.getWorldPosition(center);}
       else object.getWorldPosition(center);
-      const ray=center.clone().sub(camera.position),distance=ray.length();if(distance<3){object.visible=true;continue;}
+      const ray=center.clone().sub(camera.position),distance=ray.length();if(distance<3){object.userData.pstudioOccluded=false;object.visible=true;continue;}
       occlusionRaycaster.set(camera.position,ray.normalize());occlusionRaycaster.near=0.05;occlusionRaycaster.far=Math.max(0.1,distance-radius*0.5);
       const blocker=occlusionRaycaster.intersectObjects([primitiveGroup,modelGroup],true).find(hit=>{
         const owner=getOcclusionOwner(hit);if(owner===null||String(owner)===String(c.owner))return false;
@@ -568,7 +568,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(hit.object.userData?.primitiveType==='water'||mats.some(m=>m?.transparent||m?.transmission>0))return false;
         return hit.distance<distance-radius*0.5;
       });
-      if(c.instancedSource)object.userData.pstudioOccluded=!!blocker;else object.visible=!blocker;
+      object.userData.pstudioOccluded=!!blocker;if(c.instancedSource)object.userData.pstudioOccluded=!!blocker;else object.visible=!blocker;
     }
     if(occlusionCursor>=candidates.length)occlusionCursor=0;
   }
