@@ -1428,24 +1428,30 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       let parent=object.parent;
       while(!levelMatch&&parent&&parent!==root){levelMatch=String(parent.name||'').match(/LOD([0-9]+)/i);parent=parent.parent;}
       const level=levelMatch?Number(levelMatch[1]):(isWindPart?0:null);
-      const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level);
-      if(!groups.has(key))groups.set(key,{sources:[],level,isTree});
+      let streamParent=object.parent;
+      while(streamParent&&streamParent!==root&&!streamParent.userData?.pstudioStreamChunkId)streamParent=streamParent.parent;
+      if(!streamParent||streamParent===root)streamParent=root;
+      const chunkId=streamParent.userData?.pstudioStreamChunkId||'GLOBAL';
+      const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level)+'|'+chunkId;
+      if(!groups.has(key))groups.set(key,{sources:[],level,isTree,parent:streamParent});
       groups.get(key).sources.push(object);
     });
-    const inverseRoot=root.matrixWorld.clone().invert(),matrix=new T.Matrix4();
+    const matrix=new T.Matrix4();
     for(const group of groups.values()){
-      const sources=group.sources,level=group.level;
+      const sources=group.sources,level=group.level,parent=group.parent;
       if(sources.length<3)continue;
+      parent.updateWorldMatrix(true,true);
+      const inverseParent=parent.matrixWorld.clone().invert();
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
       batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:'Architecture_Static');batch.castShadow=true;batch.receiveShadow=true;
       batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
-      batch.userData.modelRoot=root;batch.userData.pstudioFoliageLOD=level;batch.userData.pstudioInstanceBatch=!group.isTree;
+      batch.userData.modelRoot=root;batch.userData.pstudioStreamChunkId=parent.userData?.pstudioStreamChunkId||null;batch.userData.pstudioFoliageLOD=level;batch.userData.pstudioInstanceBatch=!group.isTree;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
       batch.userData.pstudioFoliageSources=sources;batch.visible=level===null||level===0;
-      root.add(batch);
-      for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseRoot,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
+      parent.add(batch);
+      for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseParent,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
       batch.instanceMatrix.setUsage(T.DynamicDrawUsage);batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
-      batches.push({mesh:batch,sources,level,isTree:group.isTree});
+      batches.push({mesh:batch,sources,level,isTree:group.isTree,parent});
     }
     return batches;
   }
