@@ -9,9 +9,12 @@
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
+  let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
+  let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
+  let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
-  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:180,probeBlendCount:4};
+  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
   const waterMaterials=new Set();
   const instancedBatches=new Map();
@@ -149,20 +152,31 @@
   };
   function resolveQualityPreset(name){if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';return Number(window.navigator?.maxTouchPoints||0)>0||Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
-    qualityPreset=QUALITY_PROFILES[name]?name:'auto';
-    const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];
-    qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
+    qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
+    const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;
     if(renderer){
-      renderer.setPixelRatio(Math.min(Math.max(1,Number(window.devicePixelRatio)||1),profile.pixelRatio));
-      composer?.setPixelRatio?.(renderer.getPixelRatio());
-      renderer.shadowMap.enabled=true;
-      renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
-      renderer.shadowMap.needsUpdate=true;
-      if(keyLight?.shadow){keyLight.shadow.mapSize.set(profile.shadowSize,profile.shadowSize);keyLight.shadow.radius=profile.shadowMode==='vsm'?4:3;if('blurSamples' in keyLight.shadow)keyLight.shadow.blurSamples=profile.shadowMode==='vsm'?8:4;keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;keyLight.shadow.needsUpdate=true;}
-      lastSize={width:0,height:0};resize();
+      renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio));composer?.setPixelRatio?.(renderer.getPixelRatio());
+      renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
+      const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
+      for(const light of lights)if(light?.shadow){const size=csm?Math.min(2048,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
+      if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile});}catch(_){}
-    return {preset:selected,...profile};
+    return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
+  }
+  function applyAdaptiveQuality(){
+    if(!adaptiveQualityEnabled||qualityPreset!=='auto'||!renderer)return;
+    const ms=Number(lastRenderDurationMs)||0;adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
+    if(adaptiveFrameEMA>23){adaptiveSlowFrames++;adaptiveFastFrames=0;}else if(adaptiveFrameEMA<13){adaptiveFastFrames++;adaptiveSlowFrames=0;}else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
+    const now=window.performance?.now?.()??Date.now();if(now-adaptiveLastChange<1800)return;
+    let changed=false;if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}if(!changed)return;
+    adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
+    const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel];
+    renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),scale));composer?.setPixelRatio?.(renderer.getPixelRatio());
+    const effects=adaptiveQualityLevel>=1;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;
+    const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
+    for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
+    lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA});}catch(_){}
   }
 
   function ensureRenderer(){
@@ -182,6 +196,7 @@
       if(window.PStudioRoomEnvironment){const room=new window.PStudioRoomEnvironment();environmentTarget=pmremGenerator.fromScene(room,0.04);scene.environment=environmentTarget.texture;room.dispose?.();}
     }
     camera=new T.PerspectiveCamera(55,16/9,0.1,1600);camera.position.set(6,5,8);camera.lookAt(0,0,0);
+    const CSM=window.PStudioCSM;if(CSM){try{csm=new CSM({maxFar:worldRenderConfig.shadowDistance,cascades:3,mode:'practical',parent:scene,shadowMapSize:2048,lightDirection:new T.Vector3(-5,-9,-6).normalize(),camera});csm.fade=true;keyLight=csm.lights?.[0]||null;}catch(error){csm=null;console.warn('[PStudio] CSM initialization failed; using single-cascade fallback:',error);}}
     const FX=window.PStudioPostFX;
     if(FX?.EffectComposer&&FX?.RenderPass&&FX?.OutputPass){
       composer=new FX.EffectComposer(renderer);composer.setPixelRatio?.(renderer.getPixelRatio());composer.addPass(new FX.RenderPass(scene,camera));
@@ -194,9 +209,8 @@
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
     cameraPan=new T.Vector3();
     hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
-    keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;
-    keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;
-    scene.add(keyLight,keyLight.target);applyQualityPreset(qualityPreset);setupControls();return true;
+    if(!csm){keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;scene.add(keyLight,keyLight.target);}
+    occlusionRaycaster=new T.Raycaster();applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
   function disposeGroup(group) {
@@ -238,7 +252,7 @@
       if(ssrPass)ssrPass.enabled=false;
       renderer.render(scene,camera);
     }
-    lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+    lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);applyAdaptiveQuality();
   }
 
   function createGpuParticleSystem(capacity,color,size=0.085){
@@ -355,31 +369,29 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function unregisterWorldChunk(id){const key=String(id);if(!worldChunks.delete(key))return false;for(const [owner,chunk] of objectChunkAssignments)if(chunk===key)objectChunkAssignments.delete(owner);return true;}
   function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
   function updateWorldChunkStates(){if(!camera)return;for(const c of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(c.x,c.y,c.z));if(c.active&&d>c.unloadDistance)c.active=false;else if(!c.active&&d<c.loadDistance)c.active=true;}}
-  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance)))worldRenderConfig.shadowDistance=Math.max(32,Math.min(1000,Number(o.shadowDistance)));if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
-  function updateProbeVolumeBlend(){if(!bakedLightProbeVolume||!camera)return;const n=Math.min(worldRenderConfig.probeBlendCount,bakedLightProbeVolume.length),near=bakedLightProbeVolume.map(item=>({item,d:item.position.distanceToSquared(camera.position)})).sort((a,b)=>a.d-b.d).slice(0,n);let sum=0;for(const e of near){e.w=1/Math.max(1,e.d);sum+=e.w;}const active=new Set(near.map(e=>e.item));for(const e of near)e.item.light.intensity=e.item.baseIntensity*e.w/Math.max(1e-8,sum);for(const item of bakedLightProbeVolume)if(!active.has(item))item.light.intensity=0;}
-  async function bakeLightProbeVolume(o={}) {
-    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
-    const generator=window.PStudioPostFX?.LightProbeGenerator;if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
-    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};
-    for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
-    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];
-    for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)));
+  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
+  function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
+  async function bakeLightProbeVolume(o={}){
+    if(!ensureRenderer())throw new Error('The 3D renderer is not available.');const generator=window.PStudioPostFX?.LightProbeGenerator;if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
+    const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};for(const axis of ['x','y','z'])if(!Number.isFinite(Number(min[axis]))||!Number.isFinite(Number(max[axis]))||Number(max[axis])<=Number(min[axis]))throw new RangeError('Probe volume bounds must be finite and max must exceed min on every axis.');
+    const dims=['x','y','z'].map(a=>Math.max(2,Math.min(4,Math.floor(Number(o[a+'Count'])||2)))),positions=[];for(let z=0;z<dims[2];z++)for(let y=0;y<dims[1];y++)for(let x=0;x<dims[0];x++)positions.push(new window.THREE.Vector3(Number(min.x)+(Number(max.x)-Number(min.x))*x/(dims[0]-1),Number(min.y)+(Number(max.y)-Number(min.y))*y/(dims[1]-1),Number(min.z)+(Number(max.z)-Number(min.z))*z/(dims[2]-1)));
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
-    const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64))),previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,newVolume=[];
-    for(const item of previous||[])scene.remove(item.light);if(previousSingle)scene.remove(previousSingle);
-    const oldAuto=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=true;
-    try{
-      for(const position of positions){const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter}),cube=new T.CubeCamera(.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
-        try{scene.add(cube);cube.update(renderer,scene);scene.remove(cube);const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);newVolume.push({position,light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))});}
-        finally{scene.remove(cube);target.dispose();}
-        await new Promise(resolve=>requestAnimationFrame(resolve));
-      }
-      bakedLightProbe=null;bakedLightProbeVolume=newVolume;for(const item of newVolume)scene.add(item.light);updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
-      return{baked:true,probes:newVolume.length,kind:'camera-local-spatial-irradiance-volume',resolution:size,note:'カメラ位置に応じて近傍プローブをブレンドする近似方式です。オブジェクト単位の完全なマルチバウンスGIではありません。'};
-    }catch(error){for(const item of newVolume){scene.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;for(const item of previous||[])scene.add(item.light);if(previousSingle)scene.add(previousSingle);throw error;}
+    const T=window.THREE,size=Math.max(32,Math.min(128,Math.floor(Number(o.resolution)||64))),previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,bounces=Math.max(0,Math.min(2,Math.floor(Number(o.bounces??1)))),bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.35));
+    let sourceProbes=[],finalProbes=[];const oldAuto=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=true;
+    const capture=async(position,sources)=>{
+      const temp=[];if(sources.length){const near=sources.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,sources.length));let sum=0;for(const e of near){e.w=1/Math.max(1,e.d);sum+=e.w;}for(const e of near){e.item.light.intensity=e.item.baseIntensity*bounceStrength*e.w/Math.max(1e-8,sum);scene.add(e.item.light);temp.push(e.item.light);}}
+      const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter}),cube=new T.CubeCamera(.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
+      try{scene.add(cube);cube.update(renderer,scene);scene.remove(cube);const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);return{position:position.clone(),light,baseIntensity:Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1))};}
+      finally{scene.remove(cube);target.dispose();for(const light of temp)scene.remove(light);}
+    };
+    try{for(let pass=0;pass<=bounces;pass++){const next=[];for(const position of positions){next.push(await capture(position,sourceProbes));await new Promise(resolve=>requestAnimationFrame(resolve));}for(const item of sourceProbes)item.light.dispose?.();sourceProbes=next;finalProbes=next;}
+      for(const item of previous||[])item.light.dispose?.();if(previousSingle){scene.remove(previousSingle);previousSingle.dispose?.();}bakedLightProbe=null;bakedLightProbeVolume=finalProbes;
+      for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
+      updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();return{baked:true,probes:finalProbes.length,kind:'object-local-spatial-spherical-harmonics',bounces,bounceStrength,resolution:size,note:'オブジェクト位置ごとに近傍SHを補間します。追加バウンスは前段のプローブ照明を次の捕捉へ戻す近似GIです。'};
+    }catch(error){for(const item of sourceProbes)item.light.dispose?.();bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;if(previousSingle)scene.add(previousSingle);throw error;}
     finally{renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);}
   }
-  function updateDirectionalShadowAnchor(target){if(!keyLight?.shadow||!camera)return;const sh=keyLight.shadow,extent=worldRenderConfig.shadowDistance,texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
+  function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();return;}if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
   function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
   function updateWorldVisibility(){if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;for(const mesh of meshCache.values())mesh.visible=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);
     for(const instance of modelInstances.values()){const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);instance.root.visible=active;if(!active||!instance.lodLevels||instance.lodLevels.length<2)continue;const idx=worldRenderConfig.lodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?worldRenderConfig.lodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}}
@@ -490,8 +502,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       smoothedPosition.copy(desiredPosition);
     }
     const collisionSafePosition=resolveCameraCollision(target,smoothedPosition,excludedOwnerId);
-    camera.position.copy(collisionSafePosition);
-    camera.lookAt(smoothedTarget);
+    camera.position.copy(collisionSafePosition);camera.lookAt(smoothedTarget);if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();}
     for(const instance of modelInstances.values()){
       if(!instance.lodLevels||instance.lodLevels.length<2)continue;
       const distance=camera.position.distanceTo(instance.root.position);
@@ -734,6 +745,26 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return promise;
   }
 
+  function setupLightingMaterial(material){
+    if(!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
+    if(csm&&!material.userData.pstudioCSMSetup){try{csm.setupMaterial(material);material.userData.pstudioCSMSetup=true;}catch(error){console.warn('[PStudio] CSM material setup failed:',error);}}
+    if(material.userData.pstudioProbeShaderSetup)return material;
+    const oldCompile=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material),probeUniforms=Array.from({length:9},()=>new window.THREE.Vector3());
+    material.onBeforeCompile=function(shader,rendererRef){if(typeof oldCompile==='function')oldCompile.call(this,shader,rendererRef);shader.uniforms.uPStudioSH={value:probeUniforms};
+      shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+uniform vec3 uPStudioSH[9];
+vec3 pstudioEvaluateSH(vec3 n){float x=n.x,y=n.y,z=n.z;vec3 value=uPStudioSH[0]*0.886227+uPStudioSH[1]*(1.023327*y)+uPStudioSH[2]*(1.023327*z)+uPStudioSH[3]*(1.023327*x)+uPStudioSH[4]*(0.858086*x*y)+uPStudioSH[5]*(0.858086*y*z)+uPStudioSH[6]*(0.247708*(3.0*z*z-1.0))+uPStudioSH[7]*(0.858086*x*z)+uPStudioSH[8]*(0.429043*(x*x-y*y));return max(value,vec3(0.0));}`);
+      shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>',`#include <lights_fragment_begin>
+reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(viewMatrix))*geometry.normal))*BRDF_Lambert(diffuseColor.rgb);`);
+      material.userData.pstudioProbeUniforms=probeUniforms;};
+    material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
+  }
+  function updateObjectProbeUniforms(object,material){
+    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;const center=new window.THREE.Vector3();object.getWorldPosition(center);
+    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;for(const e of near){e.w=1/Math.max(0.25,e.d);sum+=e.w;}
+    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const e of near){const coeff=e.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,e.w/Math.max(1e-8,sum)*e.item.baseIntensity);}}
+  }
+  function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function createModelInstance(key, ownerId, name, asset) {
     const T=window.THREE;
     const clone=window.PStudioSkeletonUtils?.clone
@@ -748,7 +779,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         object.castShadow=true;
         object.receiveShadow=true;
         const cloneMaterial=material=>{
-          const copy=material.clone();
+          const copy=material.clone();setupLightingMaterial(copy);
           materialDefaults.set(copy,{
             roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
             metalness:Number.isFinite(material.metalness)?material.metalness:0.04
@@ -760,7 +791,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           : cloneMaterial(object.material);
       }
     });
-    clone.updateMatrixWorld(true);
+    clone.traverse(bindObjectProbeLighting);clone.updateMatrixWorld(true);
     const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
     clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
     const lodMap=new Map();
@@ -906,7 +937,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     else scene.background=new T.Color(defaultBackground);
     scene.fog=null;
     if(hemisphereLight) hemisphereLight.intensity=1.15;
-    if(keyLight){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
+    if(keyLight&&!csm){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
@@ -1118,10 +1149,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         scene.fog=new T.Fog(environment.fogColor,near,far);
       }
       if(keyLight){
-        if(Number.isFinite(environment.lightX))keyLight.position.x=environment.lightX;
-        if(Number.isFinite(environment.lightY))keyLight.position.y=environment.lightY;
-        if(Number.isFinite(environment.lightZ))keyLight.position.z=environment.lightZ;
-        if(Number.isFinite(environment.lightIntensity))keyLight.intensity=environment.lightIntensity;
+        if(csm){if(Number.isFinite(environment.lightX)||Number.isFinite(environment.lightY)||Number.isFinite(environment.lightZ)){const dir=csm.lightDirection||new T.Vector3(-5,-9,-6);dir.set(Number.isFinite(environment.lightX)?environment.lightX:dir.x,Number.isFinite(environment.lightY)?environment.lightY:dir.y,Number.isFinite(environment.lightZ)?environment.lightZ:dir.z).normalize();csm.updateFrustums?.();}if(Number.isFinite(environment.lightIntensity))for(const light of csm.lights||[])light.intensity=Math.max(0,environment.lightIntensity);}
+        else{if(Number.isFinite(environment.lightX))keyLight.position.x=environment.lightX;if(Number.isFinite(environment.lightY))keyLight.position.y=environment.lightY;if(Number.isFinite(environment.lightZ))keyLight.position.z=environment.lightZ;if(Number.isFinite(environment.lightIntensity))keyLight.intensity=environment.lightIntensity;}
       }
     }
     cameraTarget = cameraCommand
@@ -1186,8 +1215,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     getCameraBasis,
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
-    setQualityPreset:applyQualityPreset,
-    getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset)}),
+    setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&qualityPreset==='auto';adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
+    getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,
       triangles:renderer.info?.render?.triangles||0,
@@ -1198,8 +1227,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),
-      quality:resolveQualityPreset(qualityPreset)
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),timingSource:'CPU render submission time; GPU timer queries are not available',quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2))},gi:{probeCount:bakedLightProbeVolume?.length||0,objectLocalSH:true},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
