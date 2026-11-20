@@ -1084,7 +1084,7 @@ async function validateGLBFile(file,options={}){
  if(magic!==0x46546c67)throw new Error('GLBマジック番号が正しくありません');
  if(version!==2)throw new Error('GLB 2.0形式のみ対応しています');
  if(totalLength!==file.size)throw new Error('GLBヘッダーのファイル長と実際のサイズが一致しません。ファイルを再コピーしてください。');
- let offset=12,jsonChunk=null,jsonStart=0,binStart=0,binLength=0,chunkCount=0,seenJSON=false;
+ let offset=12,jsonChunk=null,jsonStart=0,jsonLength=0,binStart=0,binLength=0,chunkCount=0,seenJSON=false;
  while(offset<totalLength){
   const chunkHeader=await file.slice(offset,offset+8).arrayBuffer();
   if(chunkHeader.byteLength!==8)throw new Error('GLBチャンクヘッダーが途中で切れています。');
@@ -1092,10 +1092,11 @@ async function validateGLBFile(file,options={}){
   const dataStart=offset+8,end=dataStart+length;
   if(length===0||length%4!==0||end>totalLength)throw new Error('GLBチャンクのサイズまたは境界が不正です。');
   chunkCount++;
+  if(chunkCount>4096)throw new Error('GLBのチャンク数が上限4096を超えています。');
   if(chunkCount===1&&type!==0x4e4f534a)throw new Error('GLBの先頭チャンクがJSONではありません。');
   if(type===0x4e4f534a){
    if(seenJSON||length>PSTUDIO_GLB_JSON_LIMIT)throw new Error('GLBのJSONチャンクが重複、または32MBを超えています。');
-   seenJSON=true;jsonStart=dataStart;
+   seenJSON=true;jsonStart=dataStart;jsonLength=length;
    const jsonBuffer=await file.slice(dataStart,end).arrayBuffer();
    let text=new TextDecoder('utf-8',{fatal:true}).decode(jsonBuffer).replace(/[\u0000\s]+$/g,'');
    try{jsonChunk=JSON.parse(text);}catch(error){throw new Error('GLBのJSONチャンクを解析できません: '+(error?.message||String(error)));}
@@ -1108,6 +1109,8 @@ async function validateGLBFile(file,options={}){
  if(offset!==totalLength||!jsonChunk)throw new Error('GLBのチャンク構造が不完全です。');
  if(!jsonChunk.asset||!String(jsonChunk.asset.version||'').startsWith('2.'))throw new Error('glTF 2.0アセット情報がありません。');
  if((jsonChunk.buffers||[]).length>1)throw new Error('GLBに複数の内部バッファがあります。外部依存を同梱したGLBにしてください。');
+ if((jsonChunk.buffers||[]).some(buffer=>buffer.uri&&!String(buffer.uri).startsWith('data:')))throw new Error('GLBが外部バッファを参照しています。外部依存ファイルを同梱して再出力してください。');
+ if((jsonChunk.images||[]).some(image=>image.uri&&!String(image.uri).startsWith('data:')))throw new Error('GLBが外部画像を参照しています。テクスチャをGLB内に埋め込んで再出力してください。');
  const declaredBuffer=Number(jsonChunk.buffers?.[0]?.byteLength)||0;
  if(declaredBuffer>binLength)throw new Error('BINチャンクがbuffer.byteLengthより短く、GLBが破損している可能性があります。');
  const bufferViews=jsonChunk.bufferViews||[];
@@ -1146,7 +1149,7 @@ async function validateGLBFile(file,options={}){
   return subtotal+(mode===4?(index||vertices)/3:0);
  },0),0);
  const info={
-  sourceBytes:file.size,binBytes:binLength,jsonBytes:jsonStart?jsonStart-20:0,
+  sourceBytes:file.size,binBytes:binLength,jsonBytes:jsonLength,
   geometryBytes,compressedImageBytes,decodedTextureBytes:Math.ceil(decodedTextureBytes),
   estimatedGpuBytes,estimatedRuntimeBytes:estimatedRuntimeBytes,
   nodeCount:(jsonChunk.nodes||[]).length,meshCount:(jsonChunk.meshes||[]).length,
