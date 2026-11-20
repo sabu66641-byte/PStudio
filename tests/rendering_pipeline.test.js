@@ -188,3 +188,20 @@ test('parallax mapping consumes height stored in the normal texture alpha channe
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   for(const token of ['configureParallax',"heightSource:'normalTexture alpha'",'normalMap','pHeight=texture2D(normalMap','pstudio-parallax-alpha-height-v1'])assert.ok(fx.includes(token),token);
 });
+
+
+test('parallax shader uses a writable local UV instead of assigning to a fragment varying',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.ok(fx.includes('vec2 pStudioParallaxUv=vMapUv'));
+  assert.ok(fx.includes('texture2D(map,pStudioParallaxUv)'));
+  assert.ok(!fx.includes('vMapUv=pUV'));
+  assert.ok(!fx.includes('vMapUv=pStudioParallaxUv'));
+  assert.ok(fx.includes('vPStudioParallaxViewPosition=-mvPosition.xyz'));
+});
+test('water and caustics world positions do not depend on optional worldPosition declarations',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.ok(fx.includes('vPStudioWaterWorld=(modelMatrix*vec4(transformed,1.0)).xyz'));
+  assert.ok(fx.includes('vPStudioCausticWorld=(modelMatrix*vec4(transformed,1.0)).xyz'));
+  assert.ok(!fx.includes('vPStudioWaterWorld=worldPosition.xyz'));
+  assert.ok(!fx.includes('vPStudioCausticWorld=worldPosition.xyz'));
+});
