@@ -209,7 +209,7 @@ test('water and caustics world positions do not depend on optional worldPosition
 
 test('generated foliage instance batches are excluded from authored mesh LOD node collection',()=>{
   assert.ok(renderer.includes('PStudio_GPU_Instances_'));
-  assert.ok(!renderer.includes("batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level"));
+  assert.ok(!renderer.includes("batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_LOD'")));
 });
 
 
@@ -272,7 +272,7 @@ test('GLB spatial chunks preserve child transforms and stream detail by GPU-awar
   for(const token of ['buildModelStreamingChunks','pstudioStreamingConfig','chunk.attach(child)','pstudioStreamChunkId','pstudioStreamLoadDistance','updateModelStreamingChunks','activeModelStreamChunks'])assert.ok(renderer.includes(token),token);
 });
 test('chunk-local GPU instance batches retain animated tree transforms but do not update static architecture every frame',()=>{
-  for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
+  for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
 });
 
 
