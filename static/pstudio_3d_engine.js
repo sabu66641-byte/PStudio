@@ -865,6 +865,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(batch){primitiveGroup.remove(batch);batch.geometry.dispose();batch.material.dispose();}
         batch=new T.InstancedMesh(items[0].mesh.geometry.clone(),items[0].mesh.material.clone(),items.length);
         batch.userData.isPStudioInstanceBatch=true;
+        batch.userData.modelRoot=items[0].mesh.userData.modelRoot||items[0].mesh.parent;
+        batch.userData.instanceOwnerIds=new Array(items.length).fill(batch.userData.ownerId);
         batch.userData.capacity=items.length;
         batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
         batch.castShadow=true;batch.receiveShadow=true;
@@ -944,7 +946,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     if (mesh.parent) mesh.parent.remove(mesh);
     if(mesh.userData?.pstudioLightmapOriginalMaterial){const originals=Array.isArray(mesh.userData.pstudioLightmapOriginalMaterial)?mesh.userData.pstudioLightmapOriginalMaterial:[mesh.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
-    if (mesh.material) waterMaterials.delete(mesh.material);
+    if (mesh.material) { waterMaterials.delete(mesh.material); for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))window.PStudioEnvironmentFX?.releaseMaterial?.(material); }
     mesh.userData.pstudioLODToken=(mesh.userData.pstudioLODToken||0)+1;
     const lods=mesh.userData.pstudioAutoLOD||[];
     if(lods.length){for(const level of lods)if(level.owned){level.geometry.userData.pstudioBVHDisposed=true;level.geometry.userData.pstudioBVHToken=(level.geometry.userData.pstudioBVHToken||0)+1;level.geometry.disposeBoundsTree?.();level.geometry.dispose?.();}if(!lightmapped&&!mesh.userData.pstudioLightmapOriginalGeometryOwned){lods[0]?.geometry?.disposeBoundsTree?.();lods[0]?.geometry?.dispose?.();}}
@@ -1477,7 +1479,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
-    disposedMaterials.forEach(material=>material.dispose());
+    disposedMaterials.forEach(material=>{window.PStudioEnvironmentFX?.releaseMaterial?.(material);material.dispose();});
     modelInstances.delete(key);
     instance.resourceLease?.release?.();
   }
