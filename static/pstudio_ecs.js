@@ -275,7 +275,7 @@
     const result = [];
     const source = base ? base.entities : entities;
     for (const id of source) {
-      if (entities.has(id) && required.every(type => componentStores.get(type).has(id))) result.push(id);
+      if (entities.has(id) && entityActive.get(id)!==false && required.every(type => componentStores.get(type).has(id))) result.push(id);
     }
     result.sort((a, b) => a - b);
     return result;
