@@ -87,18 +87,20 @@
         'varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
       shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>',[
-        'float wa=sin(position.x*.071+position.z*.043+uPStudioWaterTime*.92);',
-        'float wb=sin(position.x*.137-position.z*.091-uPStudioWaterTime*.67);',
-        'float wc=sin(position.x*.31+position.z*.22+uPStudioWaterTime*1.43);',
-        'float wx=uPStudioWaterAmplitude*(.071*cos(position.x*.071+position.z*.043+uPStudioWaterTime*.92)+.137*cos(position.x*.137-position.z*.091-uPStudioWaterTime*.67)+.31*cos(position.x*.31+position.z*.22+uPStudioWaterTime*1.43));',
-        'float wz=uPStudioWaterAmplitude*(.043*cos(position.x*.071+position.z*.043+uPStudioWaterTime*.92)-.091*cos(position.x*.137-position.z*.091-uPStudioWaterTime*.67)+.22*cos(position.x*.31+position.z*.22+uPStudioWaterTime*1.43));',
+        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92;',
+        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67;',
+        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43;',
+        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07;',
+        'float wx=uPStudioWaterAmplitude*(.071*.52*cos(wp1)+.137*.27*cos(wp2)+.31*.14*cos(wp3)+.49*.07*cos(wp4));',
+        'float wz=uPStudioWaterAmplitude*(.043*.52*cos(wp1)-.091*.27*cos(wp2)+.22*.14*cos(wp3)-.37*.07*cos(wp4));',
         'objectNormal=normalize(vec3(-wx,1.0,-wz));'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <begin_vertex>',[
-        'float w1=sin(position.x*.071+position.z*.043+uPStudioWaterTime*.92);',
-        'float w2=sin(position.x*.137-position.z*.091-uPStudioWaterTime*.67);',
-        'float w3=sin(position.x*.31+position.z*.22+uPStudioWaterTime*1.43);',
-        'transformed.y+=uPStudioWaterAmplitude*(.53*w1+.29*w2+.12*w3);'
+        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92;',
+        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67;',
+        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43;',
+        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07;',
+        'transformed.y+=uPStudioWaterAmplitude*(.52*sin(wp1)+.27*sin(wp2)+.14*sin(wp3)+.07*sin(wp4));'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <worldpos_vertex>',[
         'vPStudioWaterWorld=(modelMatrix*vec4(transformed,1.0)).xyz;','vPStudioWaterLocal=position;','vPStudioWaterUV=uv;'
@@ -132,8 +134,11 @@
         'else{float flow=.5+.5*sin(vPStudioWaterUV.y*110.0-uPStudioWaterTime*3.5+sin(vPStudioWaterUV.x*24.0)*2.2);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.58,.88,.91),smoothstep(.74,.98,flow)*.45);}'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <normal_fragment_maps>',[
-        'vec3 rippleN=normalize(vec3(.13*cos(vPStudioWaterWorld.x*1.6+uPStudioWaterTime*1.8),1.0,.12*sin(vPStudioWaterWorld.z*1.4-uPStudioWaterTime*1.35)));',
-        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*.10);'
+        'float microA=sin(vPStudioWaterWorld.x*1.72+vPStudioWaterWorld.z*1.31+uPStudioWaterTime*2.4);',
+        'float microB=sin(vPStudioWaterWorld.z*1.94-vPStudioWaterWorld.x*.83-uPStudioWaterTime*1.8);',
+        'float crossRipple=sin((vPStudioWaterWorld.x+vPStudioWaterWorld.z)*3.1+uPStudioWaterTime*2.9);',
+        'vec3 rippleN=normalize(vec3(.095*microA+.028*crossRipple,1.0,.09*microB-.024*crossRipple));',
+        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*.13);'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <roughnessmap_fragment>',
         'roughnessFactor=clamp(roughnessFactor+.035*(.5+.5*sin(vPStudioWaterWorld.x*2.0+vPStudioWaterWorld.z*1.7+uPStudioWaterTime)),.035,.34);');
