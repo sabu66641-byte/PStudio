@@ -8,21 +8,57 @@
 
   function openDatabase() {
     if (databasePromise) return databasePromise;
-    databasePromise = new Promise((resolve, reject) => {
-      if (!window.indexedDB) {
+
+    let settled = false;
+    const pending = new Promise((resolve, reject) => {
+      const indexedDb = window.indexedDB;
+      if (!indexedDb) {
+        settled = true;
         reject(new Error('このブラウザではIndexedDBが利用できません。'));
         return;
       }
-      const request = indexedDB.open(DB_NAME, VERSION);
+
+      let request;
+      try {
+        request = indexedDb.open(DB_NAME, VERSION);
+      } catch (error) {
+        settled = true;
+        reject(error);
+        return;
+      }
+
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'name' });
         }
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error('モデル保存領域を開けませんでした。'));
-      request.onblocked = () => reject(new Error('モデル保存領域が別のタブで使用中です。'));
+      request.onsuccess = () => {
+        const db = request.result;
+        if (settled) {
+          // A blocked request may later succeed after this caller has already retried.
+          db?.close?.();
+          return;
+        }
+        settled = true;
+        resolve(db);
+      };
+      request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        reject(request.error || new Error('モデル保存領域を開けませんでした。'));
+      };
+      request.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('モデル保存領域が別のタブで使用中です。'));
+      };
+    });
+
+    databasePromise = pending.catch(error => {
+      // Permit a later retry after a transient failure, unsupported browser or blocked upgrade.
+      databasePromise = null;
+      throw error;
     });
     return databasePromise;
   }
