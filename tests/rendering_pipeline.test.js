@@ -315,3 +315,35 @@ test('triplanar projection honors scale and normal blend values authored in GLB 
   assert.ok(fx.includes('material.userData?.pstudioTriplanarSharpness'));
   assert.ok(fx.includes('material.userData?.pstudioTriplanarNormalWeight'));
 });
+
+
+test('GLB water detail extras are routed before generic water/foam detection',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.ok(fx.includes("if(object.userData?.pstudioWaterDetail){"));
+  assert.ok(fx.indexOf("if(object.userData?.pstudioWaterDetail){")<fx.indexOf("else if(WATER.test(tag))"));
+});
+test('water detail materials remain transparent, depth-write disabled and time animated',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['configureWaterDetail','material.transparent=true','material.depthWrite=false','uPStudioWaterDetailTime','waterDetailMaterials','waterDetailMaterials.delete(material)'])assert.ok(fx.includes(token),token);
+});
+test('trunk, branch and leaves receive separate world-phased wind response strengths',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ["role === 'trunk' ? 0.12","role === 'branch' ? 0.42","role === 'leaf' ? 0.88",'worldPhase=dot(pstudioWindWorld.xz','leafFlutter=sin','pstudio-foliage-wind-hq-v3'])assert.ok(fx.includes(token),token);
+});
+test('GLB water surface uses four wave bands and separate micro-normal frequencies',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['wp1=position.x*.071','wp2=position.x*.137','wp3=position.x*.31','wp4=position.x*.49','microA=sin','microB=sin','crossRipple=sin'])assert.ok(fx.includes(token),token);
+});
+test('per-role shader material caching avoids trunk-branch-leaf and spray-foam uniform collisions',()=>{
+  assert.ok(renderer.includes('pstudioWindPart'));
+  assert.ok(renderer.includes('pstudioWaterDetail'));
+  assert.ok(renderer.includes('pstudio-role:'+roleKey));
+});
+test('static repeated detail geometry is eligible for chunk-local instancing',()=>{
+  assert.ok(renderer.includes('/^PStudioInstance_/i.test(objectName)'));
+  assert.ok(renderer.includes('chunkId=streamParent.userData?.pstudioStreamChunkId'));
+  assert.ok(renderer.includes('group.sources.push(object)'));
+});
+test('GPU-updated foliage transforms skip hidden LOD and streamed chunks',()=>{
+  assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
+});
