@@ -222,3 +222,10 @@ test('water uses opaque scene depth to derive water thickness and shoreline foam
 test('water depth prepass restores scene visibility, override material and render target after rendering',()=>{
   for(const token of ['previousOverride','previousTarget','for(const object of hidden)object.visible=true','scene.overrideMaterial=previousOverride','renderer.setRenderTarget(previousTarget)'])assert.ok(renderer.includes(token),token);
 });
+
+
+test('primitive water is tagged for depth prepass and uses its actual geometry bounds',()=>{
+  assert.ok(renderer.includes("mesh.userData.pstudioWaterSurface=true"));
+  assert.ok(renderer.includes('waterUniforms.bounds.value.set(bounds.min.x,bounds.min.z'));
+  assert.ok(renderer.includes('setupLightingMaterial(material);\n            material=configureWaterMaterial(material);'));
+});
