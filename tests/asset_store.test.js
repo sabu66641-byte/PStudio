@@ -188,3 +188,23 @@ test('asset store checks browser quota and requests persistent storage before wr
   assert.equal(persistCalls, 1);
   assert.equal(db.records.has('quota.glb'), false);
 });
+
+
+test('large Blobs bypass the in-memory resource cache and are read directly from IndexedDB', async () => {
+  const blob = { size: 128 * 1024 * 1024, type: 'model/gltf-binary' };
+  const db = makeWritableDatabase();
+  db.records.set('world.glb', { name: 'world.glb', blob, size: blob.size, metadata: null });
+  const { store, window } = createStore({
+    open() {
+      const request = { result: db };
+      queueMicrotask(() => request.onsuccess?.());
+      return request;
+    }
+  });
+  let cacheCalls = 0;
+  window.PStudioResources = {
+    getOrLoad() { cacheCalls++; throw new Error('large Blob should not enter the memory cache'); }
+  };
+  assert.equal(await store.get('world.glb'), blob);
+  assert.equal(cacheCalls, 0);
+});
