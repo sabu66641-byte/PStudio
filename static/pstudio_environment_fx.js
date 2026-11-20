@@ -299,8 +299,8 @@
       if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
       else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'){out.push(m);}
-      else if(/leaf|foliage|canopy|grass|meadow|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
-      else if(/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)||m.userData?.pstudioSurfaceMode==='triplanar-pbr'){const c=m.clone();configureTriplanar(c,object);out.push(c);}
+      else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);out.push(c);}
+      else if(/leaf|foliage|canopy|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
         const c=m.clone();
         if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge/i.test(tag)){if('roughness'in c)c.roughness=Math.max(.56,Number(c.roughness)||.68);if('metalness'in c)c.metalness=Math.min(.08,Number(c.metalness)||0);if(c.normalScale)c.normalScale.set(.78,.78);}
@@ -325,7 +325,7 @@
         uCameraWorld:{value:new Three.Matrix4()},uFogColor:{value:new Three.Color('#bfe2eb')},
         uSunDirection:{value:new Three.Vector3(-.42,.78,-.46).normalize()},uTime:{value:0},
         uCloudBase:{value:54},uCloudTop:{value:108},uCloudDensity:{value:.78},uCloudScale:{value:.0095},
-        uAtmosphereStrength:{value:.28}
+        uAtmosphereStrength:{value:.96}
       },
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader:[
