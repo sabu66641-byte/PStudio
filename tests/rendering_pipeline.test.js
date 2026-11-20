@@ -177,7 +177,7 @@ test('renderer exposes volumetric fog and static-scene temporal AA controls',()=
   for(const token of ['setVolumetricFog','volumetricFogPass','setTemporalAA','TAARenderPass','SMAAPass'])assert.ok(renderer.includes(token),token);
 });
 test('imported named foliage meshes can be combined into owner-preserving GPU instance batches',()=>{
-  for(const token of ['buildFoliageInstanceBatches','PStudio_Foliage_GPU_Instances','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
+  for(const token of ['buildFoliageInstanceBatches','PStudio_GPU_Instances_Foliage_Level','pstudioFoliageSources','updateFoliageInstanceBatches'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -208,8 +208,8 @@ test('water and caustics world positions do not depend on optional worldPosition
 
 
 test('generated foliage instance batches are excluded from authored mesh LOD node collection',()=>{
-  assert.ok(renderer.includes('PStudio_Foliage_GPU_Instances_Level'));
-  assert.ok(!renderer.includes("batch.name='PStudio_Foliage_GPU_Instances_LOD'"));
+  assert.ok(renderer.includes('PStudio_GPU_Instances_Foliage_Level'));
+  assert.ok(!renderer.includes("batch.name='PStudio_GPU_Instances_Foliage_Level'+level"));
 });
 
 
