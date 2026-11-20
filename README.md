@@ -449,7 +449,7 @@ Large-world controls:
 - `PStudio3D.unregisterWorldChunk(id)` removes a chunk and owner assignments.
 - Three.js frustum culling remains enabled for ordinary meshes and model submeshes. Instanced batches compact visible instances and refresh selection mappings.
 
-Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This remains a single directional shadow camera, not cascaded shadow maps (CSM). Chunk visibility does not pause ps scripts, physics, AI or audio; full world streaming still needs project-level orchestration.
+Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This describes the earlier single-camera baseline; the later Rendering Engine 1.7 section documents the optional three-cascade CSM path and single-camera fallback. Chunk streaming now supports model preloading and render/model resource release, but it still does not pause ps scripts, physics, AI or audio; those systems need project-level world-partition integration.
 
 ## Rendering Engine 1.7 — Object-Space GI, Cascaded Shadows and Adaptive Worlds
 
