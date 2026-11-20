@@ -400,7 +400,7 @@
     if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
-    const objs=(sceneObjects||[]).filter(o=>o.collider);
+    const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
     const now=new Set();
     for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
     collisionPairs=now;
@@ -524,6 +524,7 @@
     const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
     try {
       const commands=new Map();
+      for(const object of sceneObjects||[]){const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;window.PStudioPhysics?.setActive?.(object.id,active);}
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
@@ -532,6 +533,7 @@
         ecs.applySceneObjectTransforms(sceneObjects || []);
       }
       for(const o of sceneObjects||[]){
+        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
         const script=astForScript(o.script);if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
         if(!runtime.initialized.has(o.id)){
