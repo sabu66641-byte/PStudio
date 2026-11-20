@@ -1,0 +1,63 @@
+import pathlib
+import unittest
+
+import app
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+class ExampleProjectRegressionTests(unittest.TestCase):
+    def setUp(self):
+        app.app.config.update(TESTING=True)
+        self.client = app.app.test_client()
+
+    def load_sources(self, paths):
+        return {
+            path.name: path.read_text(encoding="utf-8")
+            for path in paths
+        }
+
+    def validate_game_scripts(self, scripts):
+        response = self.client.post("/game/prepare", json={"scripts": scripts})
+        self.assertEqual(
+            response.status_code,
+            200,
+            msg=f"/game/prepare rejected example scripts: {response.get_json()}",
+        )
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(set(payload["scripts"]), set(scripts))
+        return payload["scripts"]
+
+    def test_root_player_and_enemy_examples_validate_together(self):
+        paths = [
+            ROOT / "examples" / "player.ps",
+            ROOT / "examples" / "enemy.ps",
+        ]
+        parsed = self.validate_game_scripts(self.load_sources(paths))
+        self.assertEqual(
+            {name: len(tree["body"]) for name, tree in parsed.items()},
+            {"player.ps": 3, "enemy.ps": 3},
+        )
+
+    def test_3d_rpg_starter_scripts_validate_together(self):
+        paths = [
+            ROOT / "examples" / "3d_rpg" / "player_controller.ps",
+            ROOT / "examples" / "3d_rpg" / "world.ps",
+        ]
+        parsed = self.validate_game_scripts(self.load_sources(paths))
+        self.assertIn("player_controller.ps", parsed)
+        self.assertIn("world.ps", parsed)
+
+    def test_game_prepare_rejects_oversized_combined_script_payload(self):
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"large.ps": "x" * (512 * 1024 + 1)}},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("512KB", response.get_json()["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()
