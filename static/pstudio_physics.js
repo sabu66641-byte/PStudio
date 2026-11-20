@@ -9,6 +9,9 @@
   const SKIN = 0.001;
   const bodies = new Map();
   const platformPositions = new Map();
+  const staticColliderCache = new Map();
+  const modelTriangleArrayIds = new WeakMap();
+  let modelTriangleArraySequence = 0;
   let accumulator = 0;
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -152,47 +155,164 @@
 
   function getStaticColliders(commandsByObject) {
     const colliders = [];
-    const trackPlatform = (collider, x, y, z, rotation=[0,0,0]) => {
-      const previous=platformPositions.get(collider.id),rot=rotation.map(v=>finite(v));
-      collider.deltaX=previous?x-previous.x:0;collider.deltaY=previous?y-previous.y:0;collider.deltaZ=previous?z-previous.z:0;
-      collider.previousPosition=previous?[previous.x,previous.y,previous.z]:[x,y,z];collider.deltaRotation=previous?rot.map((v,i)=>{let d=v-previous.rotation[i];while(d>Math.PI)d-=Math.PI*2;while(d< -Math.PI)d+=Math.PI*2;return d;}):[0,0,0];
-      platformPositions.set(collider.id,{x,y,z,rotation:rot});return collider;
+    const activeStaticKeys = new Set();
+    const activePlatformIds = new Set();
+    const pushCached = (key, build) => {
+      activeStaticKeys.add(key);
+      let cached = staticColliderCache.get(key);
+      if (!cached) {
+        cached = build();
+        staticColliderCache.set(key, cached);
+      }
+      for (const collider of cached) colliders.push(collider);
     };
+    const triangleBounds = (ownerId, suffix, points) => {
+      const xs = [points[0], points[3], points[6]];
+      const ys = [points[1], points[4], points[7]];
+      const zs = [points[2], points[5], points[8]];
+      return {
+        type: 'triangle',
+        id: String(ownerId) + ':' + suffix,
+        points,
+        minX: Math.min(...xs), maxX: Math.max(...xs),
+        minY: Math.min(...ys), maxY: Math.max(...ys),
+        minZ: Math.min(...zs), maxZ: Math.max(...zs)
+      };
+    };
+    const getTriangleArrayId = value => {
+      let id = modelTriangleArrayIds.get(value);
+      if (!id) {
+        id = ++modelTriangleArraySequence;
+        modelTriangleArrayIds.set(value, id);
+      }
+      return id;
+    };
+    const trackPlatform = (collider, x, y, z, rotation = [0, 0, 0]) => {
+      activePlatformIds.add(collider.id);
+      const previous = platformPositions.get(collider.id);
+      const rot = rotation.map(v => finite(v));
+      collider.deltaX = previous ? x - previous.x : 0;
+      collider.deltaY = previous ? y - previous.y : 0;
+      collider.deltaZ = previous ? z - previous.z : 0;
+      collider.previousPosition = previous ? [previous.x, previous.y, previous.z] : [x, y, z];
+      collider.deltaRotation = previous
+        ? rot.map((value, index) => {
+            let delta = value - previous.rotation[index];
+            while (delta > Math.PI) delta -= Math.PI * 2;
+            while (delta < -Math.PI) delta += Math.PI * 2;
+            return delta;
+          })
+        : [0, 0, 0];
+      platformPositions.set(collider.id, { x, y, z, rotation: rot });
+      return collider;
+    };
+
     for (const [ownerId, draws] of commandsByObject) {
       if (bodies.has(ownerId)) continue;
-      for (const d of draws) {
+      for (let drawIndex = 0; drawIndex < draws.length; drawIndex++) {
+        const d = draws[drawIndex];
         const x = finite(d.x), y = finite(d.y), z = finite(d.z);
+
         if (d.type === 'plane') {
-          colliders.push(trackPlatform({type:'plane',id:String(ownerId)+':'+colliders.length,x,y,z,halfX:Math.max(0.001,finite(d.width))/2,halfZ:Math.max(0.001,finite(d.depth))/2},x,y,z));
+          const id = String(ownerId) + ':plane:' + drawIndex;
+          colliders.push(trackPlatform({
+            type: 'plane', id, x, y, z,
+            halfX: Math.max(0.001, finite(d.width)) / 2,
+            halfZ: Math.max(0.001, finite(d.depth)) / 2
+          }, x, y, z));
           continue;
         }
-        if (d.type === 'triangle_collider' && Array.isArray(d.points) && d.points.length===9) {
-          {const points=d.points.map(v=>finite(v)),xs=[points[0],points[3],points[6]],ys=[points[1],points[4],points[7]],zs=[points[2],points[5],points[8]];colliders.push({type:'triangle',id:String(ownerId)+':'+colliders.length,points,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs),deltaX:0,deltaY:0,deltaZ:0});}
+
+        if (d.type === 'triangle_collider' && Array.isArray(d.points) && d.points.length === 9) {
+          const pointSignature = d.points.map(value => finite(value)).join(',');
+          const key = 'triangle:' + String(ownerId) + ':' + drawIndex + ':' + pointSignature;
+          pushCached(key, () => [triangleBounds(ownerId, 'triangle:' + drawIndex, d.points.map(value => finite(value)))]);
           continue;
         }
-        if(d.type==='model_mesh_collider'&&Array.isArray(d.triangles)){const v=d.triangles;for(let i=0;i+8<v.length;i+=9){const points=v.slice(i,i+9).map(finite),xs=[points[0],points[3],points[6]],ys=[points[1],points[4],points[7]],zs=[points[2],points[5],points[8]];colliders.push({type:'triangle',id:String(ownerId)+':model:'+i,points,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs)});}}
-        if(d.type==='terrain'){
-          const segments=Math.max(2,Math.min(96,Math.floor(finite(d.segments,2)))),width=Math.max(1,finite(d.width)),depth=Math.max(1,finite(d.depth)),height=Math.max(0,finite(d.height));
-          const at=(ix,iz)=>{const lx=(ix/segments-.5)*width,lz=(iz/segments-.5)*depth;return [x+lx,y+height*(Math.sin(lx*.18)*Math.cos(lz*.16)*.5+Math.sin((lx+lz)*.07)*.15),z+lz];};
-          for(let iz=0;iz<segments;iz++)for(let ix=0;ix<segments;ix++){const a=at(ix,iz),b=at(ix+1,iz),c=at(ix,iz+1),e=at(ix+1,iz+1);for(const pts of [[...a,...c,...b],[...b,...c,...e]]){const xs=[pts[0],pts[3],pts[6]],ys=[pts[1],pts[4],pts[7]],zs=[pts[2],pts[5],pts[8]];colliders.push({type:'triangle',id:String(ownerId)+':terrain:'+ix+':'+iz+':'+colliders.length,points:pts,minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),minZ:Math.min(...zs),maxZ:Math.max(...zs)});}}
+
+        if (d.type === 'model_mesh_collider' && Array.isArray(d.triangles)) {
+          const values = d.triangles;
+          if (values.length >= 9) {
+            const key = 'model:' + String(ownerId) + ':' + drawIndex + ':' + getTriangleArrayId(values);
+            pushCached(key, () => {
+              const result = [];
+              for (let index = 0; index + 8 < values.length; index += 9) {
+                const points = values.slice(index, index + 9).map(value => finite(value));
+                result.push(triangleBounds(ownerId, 'model:' + drawIndex + ':' + index, points));
+              }
+              return result;
+            });
+          }
           continue;
         }
-        let hx, hy, hz;
+
+        if (d.type === 'terrain') {
+          const segments = Math.max(2, Math.min(96, Math.floor(finite(d.segments, 2))));
+          const width = Math.max(1, finite(d.width));
+          const depth = Math.max(1, finite(d.depth));
+          const height = Math.max(0, finite(d.height));
+          const key = [
+            'terrain', String(ownerId), drawIndex, x, y, z,
+            width, depth, height, segments
+          ].join(':');
+          pushCached(key, () => {
+            const result = [];
+            const at = (ix, iz) => {
+              const lx = (ix / segments - 0.5) * width;
+              const lz = (iz / segments - 0.5) * depth;
+              const surfaceY = y + height * (
+                Math.sin(lx * 0.18) * Math.cos(lz * 0.16) * 0.5 +
+                Math.sin((lx + lz) * 0.07) * 0.15
+              );
+              return [x + lx, surfaceY, z + lz];
+            };
+            for (let iz = 0; iz < segments; iz++) {
+              for (let ix = 0; ix < segments; ix++) {
+                const a = at(ix, iz), b = at(ix + 1, iz);
+                const c = at(ix, iz + 1), e = at(ix + 1, iz + 1);
+                result.push(
+                  triangleBounds(ownerId, 'terrain:' + drawIndex + ':' + ix + ':' + iz + ':0', [...a, ...c, ...b]),
+                  triangleBounds(ownerId, 'terrain:' + drawIndex + ':' + ix + ':' + iz + ':1', [...b, ...c, ...e])
+                );
+              }
+            }
+            return result;
+          });
+          continue;
+        }
+
+        let halfX, halfY, halfZ;
         if (d.type === 'cube' || d.type === 'box') {
           const a = d.type === 'cube' ? Math.max(0.001, finite(d.size)) / 2 : Math.max(0.001, finite(d.width)) / 2;
           const b = d.type === 'cube' ? a : Math.max(0.001, finite(d.height)) / 2;
           const c = d.type === 'cube' ? a : Math.max(0.001, finite(d.depth)) / 2;
-          const rx=finite(d.rotationX),ry=finite(d.rotationY),rz=finite(d.rotationZ);
-          const c1=Math.cos(rx),s1=Math.sin(rx),c2=Math.cos(ry),s2=Math.sin(ry),c3=Math.cos(rz),s3=Math.sin(rz);
-          hx=Math.abs(c2*c3)*a+Math.abs(c2*s3)*b+Math.abs(s2)*c;
-          hy=Math.abs(s1*s2*c3+c1*s3)*a+Math.abs(s1*s2*s3-c1*c3)*b+Math.abs(s1*c2)*c;
-          hz=Math.abs(c1*s2*c3-s1*s3)*a+Math.abs(c1*s2*s3+s1*c3)*b+Math.abs(c1*c2)*c;
+          const rx = finite(d.rotationX), ry = finite(d.rotationY), rz = finite(d.rotationZ);
+          const c1 = Math.cos(rx), s1 = Math.sin(rx), c2 = Math.cos(ry), s2 = Math.sin(ry), c3 = Math.cos(rz), s3 = Math.sin(rz);
+          halfX = Math.abs(c2 * c3) * a + Math.abs(c2 * s3) * b + Math.abs(s2) * c;
+          halfY = Math.abs(s1 * s2 * c3 + c1 * s3) * a + Math.abs(s1 * s2 * s3 - c1 * c3) * b + Math.abs(s1 * c2) * c;
+          halfZ = Math.abs(c1 * s2 * c3 - s1 * s3) * a + Math.abs(c1 * s2 * s3 + s1 * c3) * b + Math.abs(c1 * c2) * c;
         } else if (d.type === 'cylinder' || d.type === 'cone' || d.type === 'capsule') {
-          hx = hz = Math.max(0.001, finite(d.radius));
-          hy = Math.max(0.001, finite(d.height)) / 2;
-        } else continue;
-        colliders.push(trackPlatform({type:'box',id:String(ownerId)+':'+colliders.length,minX:x-hx,maxX:x+hx,minY:y-hy,maxY:y+hy,minZ:z-hz,maxZ:z+hz},x,y,z,[finite(d.rotationX),finite(d.rotationY),finite(d.rotationZ)]));
+          halfX = halfZ = Math.max(0.001, finite(d.radius));
+          halfY = Math.max(0.001, finite(d.height)) / 2;
+        } else {
+          continue;
+        }
+
+        const id = String(ownerId) + ':box:' + drawIndex;
+        colliders.push(trackPlatform({
+          type: 'box', id,
+          minX: x - halfX, maxX: x + halfX,
+          minY: y - halfY, maxY: y + halfY,
+          minZ: z - halfZ, maxZ: z + halfZ
+        }, x, y, z, [finite(d.rotationX), finite(d.rotationY), finite(d.rotationZ)]));
       }
+    }
+
+    for (const key of staticColliderCache.keys()) {
+      if (!activeStaticKeys.has(key)) staticColliderCache.delete(key);
+    }
+    for (const id of platformPositions.keys()) {
+      if (!activePlatformIds.has(id)) platformPositions.delete(id);
     }
     return colliders;
   }
@@ -471,16 +591,30 @@
     return result;
   }
 
+  function getStats() {
+    let cachedTriangleCount = 0;
+    for (const entry of staticColliderCache.values()) cachedTriangleCount += entry.length;
+    return {
+      bodyCount: bodies.size,
+      activeBodyCount: [...bodies.values()].filter(body => body.active !== false).length,
+      staticColliderCacheEntries: staticColliderCache.size,
+      cachedTriangleCount,
+      trackedPlatforms: platformPositions.size,
+      accumulator
+    };
+  }
+
   function clear() {
     bodies.clear();
     platformPositions.clear();
+    staticColliderCache.clear();
     accumulator = 0;
   }
 
   window.PStudioPhysics = {
     createBody, getBody, setActive, getPosition, setPosition, getVelocity, setVelocity,
     setGravity, beginFrame, applyForce, applyImpulse, configureController,
-    setStepHeight, setMaxSlope, moveCharacter, jump, isGrounded, step, clear,
+    setStepHeight, setMaxSlope, moveCharacter, jump, isGrounded, step, clear, getStats,
     version: '1.0.0'
   };
 })();
