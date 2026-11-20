@@ -1880,6 +1880,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         };
 
         const originalTextNodes = new WeakMap();
+        const appliedTextNodes = new WeakMap();
         const originalAttributes = new WeakMap();
 
         function getTranslatableTextNodes(root = document.body) {
@@ -1900,6 +1901,18 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         }
 
         function getTextTranslation(original, language) {
+            const cursor = original.match(/^Ln (\d+), Col (\d+)$/);
+            if (cursor) {
+                const line = Number(cursor[1]);
+                const column = Number(cursor[2]);
+                return ({
+                    ja: line + "行, " + column + "列",
+                    en: "Ln " + line + ", Col " + column,
+                    zh: "第 " + line + " 行，第 " + column + " 列",
+                    es: "Lín. " + line + ", Col. " + column,
+                    fr: "Lig. " + line + ", Col. " + column
+                })[language];
+            }
             const dictionaries = [
                 translations[language] || {},
                 uiTranslations[language] || {},
@@ -1911,16 +1924,26 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             return undefined;
         }
 
-        function translateTextNode(node, language = currentLanguage) {
+        function translateTextNode(node, language = currentLanguage, force = false) {
             if (!node || !node.parentElement || node.parentElement.closest(".about-localized")) return;
-            if (!originalTextNodes.has(node)) originalTextNodes.set(node, node.nodeValue);
+            const current = node.nodeValue;
+            const lastApplied = appliedTextNodes.get(node);
+            if (originalTextNodes.has(node) && lastApplied !== undefined && current !== lastApplied) {
+                originalTextNodes.set(node, current);
+            } else if (!originalTextNodes.has(node)) {
+                originalTextNodes.set(node, current);
+            }
+            if (!force && lastApplied !== undefined && current === lastApplied) return;
+
             const original = originalTextNodes.get(node);
             const trimmed = original.trim();
             if (!trimmed) return;
             const prefix = original.match(/^\s*/)[0];
             const suffix = original.match(/\s*$/)[0];
             const translated = getTextTranslation(trimmed, language);
-            node.nodeValue = translated === undefined ? original : prefix + translated + suffix;
+            const output = translated === undefined ? original : prefix + translated + suffix;
+            appliedTextNodes.set(node, output);
+            if (node.nodeValue !== output) node.nodeValue = output;
         }
 
         function translateElementAttributes(element, language = currentLanguage) {
@@ -1939,10 +1962,10 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             }
         }
 
-        function translateSubtree(root, language = currentLanguage) {
+        function translateSubtree(root, language = currentLanguage, force = false) {
             if (!root) return;
             if (root.nodeType === 1) translateElementAttributes(root, language);
-            getTranslatableTextNodes(root).forEach(node => translateTextNode(node, language));
+            getTranslatableTextNodes(root).forEach(node => translateTextNode(node, language, force));
             if (root.querySelectorAll) root.querySelectorAll("*").forEach(element => translateElementAttributes(element, language));
         }
         function toggleLanguageMenu() {
@@ -1955,7 +1978,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             if (!supported.includes(language)) return false;
 
             currentLanguage = language;
-            translateSubtree(document.body, language);
+            translateSubtree(document.body, language, true);
 
             const about = aboutTranslations[language];
             for (const [id, key] of [["about-intro", "intro"], ["about-goal", "goal"], ["about-vision", "vision"]]) {
@@ -2012,6 +2035,10 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
 
             const observer = new MutationObserver(records => {
                 for (const record of records) {
+                    if (record.type === "characterData") {
+                        if (!record.target.parentElement?.closest(".about-localized")) translateTextNode(record.target, currentLanguage);
+                        continue;
+                    }
                     for (const node of record.addedNodes) {
                         if (node.nodeType === Node.TEXT_NODE) {
                             if (!node.parentElement?.closest(".about-localized")) translateTextNode(node, currentLanguage);
@@ -2021,7 +2048,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                     }
                 }
             });
-            observer.observe(document.body, { childList: true, subtree: true });
+            observer.observe(document.body, { childList: true, characterData: true, subtree: true });
         });
 
 
