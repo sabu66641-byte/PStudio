@@ -1080,7 +1080,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(renderer&&scene)drawFrame();return{baked:baked.length,failed,meshes:baked,resolution,allocatedBytes,budgetBytes:budget,format:'linear-half-float-rgba',uvLayout:'non-overlapping-per-triangle-atlas',lighting:'spatial-sh-probe-irradiance'};
   }
   function scheduleGeometryBVH(geometry){
-    if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled)return false;
+    if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled||geometry.userData?.pstudioBVHDisposed)return false;
     geometry.userData=geometry.userData||{};geometry.userData.pstudioBVHScheduled=true;geometry.userData.pstudioBVHDisposed=false;const token=(geometry.userData.pstudioBVHToken||0)+1;geometry.userData.pstudioBVHToken=token;
     const build=()=>{if(geometry.userData.pstudioBVHToken!==token||geometry.userData.pstudioBVHDisposed){geometry.userData.pstudioBVHScheduled=false;return;}if(!geometry.boundsTree)try{geometry.computeBoundsTree({maxLeafTris:12});}catch(error){console.warn('[PStudio] BVH build skipped:',error);}geometry.userData.pstudioBVHScheduled=false;};
     if(window.requestIdleCallback)window.requestIdleCallback(build,{timeout:1500});else window.setTimeout(build,0);return true;
