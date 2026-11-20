@@ -257,7 +257,7 @@ test('volumetric sky replaces baked cloud meshes only while the cloud renderer i
   for(const token of ['hideStaticSkyForVolumetrics','restoreStaticSky','volumetricCloudsEnabled','cloudbank|cumulus|cirrus'])assert.ok(renderer.includes(token),token);
 });
 test('multi-bounce environment GI has a high quality entry point and resolution presets',()=>{
-  for(const token of ['bakeEnvironmentGI','qualityPreset===\'ultra\'?128:96','qualityPreset===\'ultra\'?3:2','bounceStrength:options?.bounceStrength??0.42'])assert.ok(renderer.includes(token),token);
+  for(const token of ['bakeEnvironmentGI','const T=window.THREE,bounds=new T.Box3()','modelGroup.traverse(object=>','xCount:options.xCount??4','yCount:options.yCount??2','zCount:options.zCount??4','qualityPreset===\'ultra\'?128:96','qualityPreset===\'ultra\'?3:2','bounceStrength:options.bounceStrength??0.42'])assert.ok(renderer.includes(token),token);
 });
 test('GTAO output uses the scene composite mode rather than the AO-only debug view',()=>{
   assert.ok(renderer.includes('gtaoPass.output=FX.GTAOPass.OUTPUT.Default'));
