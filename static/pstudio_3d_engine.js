@@ -1088,6 +1088,16 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     materials.forEach(material=>material.dispose());
   }
 
+  function deviceMemoryGiB(){
+    const value=Number(window.navigator?.deviceMemory);
+    return Number.isFinite(value)&&value>0?Math.max(1,Math.min(16,value)):4;
+  }
+  function modelRuntimeBudgetBytes(){
+    return Math.floor(deviceMemoryGiB()*1024*1024*1024*0.58);
+  }
+  function dispatchModelLoadProgress(detail){
+    try{window.dispatchEvent(new CustomEvent('pstudio-model-load-progress',{detail}));}catch(_){}
+  }
   function requestModelAsset(name) {
     if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
     if (modelPromises.has(name)) return modelPromises.get(name);
@@ -1095,20 +1105,42 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const promise=(async()=>{
       if (!window.PStudioGLTFLoader) throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
       if (!window.PStudioAssetStore) throw new Error('3D asset storage is unavailable.');
-      const blob=await window.PStudioAssetStore.get(name);
+      // A large Blob is fetched through an object URL. This avoids allocating a second
+      // application-owned ArrayBuffer before GLTFLoader starts its own binary pipeline.
+      const blob=await window.PStudioAssetStore.get(name,{cache:false});
       if (!blob) throw new Error('Model asset not found: '+name+' (import a .glb or .gltf file first)');
+      const metadata=await window.PStudioAssetStore.getMetadata?.(name)||null;
+      const estimatedRuntimeBytes=Math.max(
+        Number(metadata?.estimatedRuntimeBytes)||0,
+        Number(blob.size)||0
+      );
+      const safeBudget=modelRuntimeBudgetBytes();
+      if(estimatedRuntimeBytes>safeBudget){
+        const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0);
+        const budget=(safeBudget/1024/1024).toFixed(0);
+        throw new Error('この端末ではモデルの展開に必要なメモリが大きすぎます（推定'+needed+'MiB / 安全目安'+budget+'MiB）。より高メモリの端末、またはテクスチャを軽量化したモデルを使用してください。元のGLBは保存済みです。');
+      }
       const loader=new window.PStudioGLTFLoader();
-      const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer();
-      const gltf=await new Promise((resolve,reject)=>loader.parse(source,'',resolve,reject));
+      const url=URL.createObjectURL(blob);
+      let gltf;
+      try{
+        gltf=await new Promise((resolve,reject)=>{
+          loader.load(url,resolve,event=>{
+            const loaded=Number(event?.loaded)||0,total=Number(event?.total)||blob.size;
+            dispatchModelLoadProgress({name,stage:'fetching',loaded,total,progress:total>0?Math.max(0,Math.min(1,loaded/total)):0});
+          },reject);
+        });
+      }finally{URL.revokeObjectURL(url);}
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
-      const asset={scene:gltf.scene,animations:gltf.animations||[]};
+      dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
+      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes};
       modelCache.set(name,asset);
       if(window.PStudioResources?.register){
         window.PStudioResources.register('model-gpu',name,asset,{
           category:'gpu',
-          sizeBytes:Math.max(blob.size*2,blob.size+1024),
-          metadata:{sourceBytes:blob.size,estimate:'decoded model and GPU allocation'},
+          sizeBytes:Math.max(Number(metadata?.estimatedGpuBytes)||0,Math.ceil(blob.size*1.6)),
+          metadata:{sourceBytes:blob.size,estimatedRuntimeBytes,estimate:'GLB metadata geometry plus decoded texture and GPU allocation'},
           dispose:disposeModelAsset,
           onEvict:()=>{
             if(modelCache.get(name)===asset)modelCache.delete(name);
@@ -1117,6 +1149,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           }
         });
       }
+      dispatchModelLoadProgress({name,stage:'ready',loaded:blob.size,total:blob.size,progress:1});
       return asset;
     })().catch(error=>{
       const message=String(error?.message||error);
