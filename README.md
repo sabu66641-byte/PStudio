@@ -468,7 +468,7 @@ await PStudio3D.bakeLightProbeVolume({
 });
 ```
 
-The first pass captures direct and environment illumination. Up to four later passes disable direct emitters and the environment, then feed only the previous diffuse-bounce field back through scene materials; a low-energy threshold can stop the iteration early. This improves multi-bounce color transfer while avoiding repeatedly adding direct light. It remains a spatial-SH approximation: it does not perform visibility-correct surface-to-surface ray transport, dynamic path tracing, or physically complete GI for moving lights and geometry. UV lightmaps are available through `PStudio3D.bakeUVLightmaps({ resolution })`. The current atlas gives each triangle a separate non-overlapping chart, evaluates interpolated probe SH irradiance per texel, and applies a linear-float `lightMap` texture using the second UV channel. `saveLightmaps(name)` and `loadLightmaps(name)` persist UV2 coordinates and texture data in browser IndexedDB; `clearLightmaps()` removes the runtime application. This is a deterministic per-triangle atlas rather than a seam-aware chart packer, and the bake stores probe-derived diffuse irradiance rather than full direct-shadow/path-traced transport. Skinned meshes are excluded. Re-bake after topology or static-lighting changes.
+The first pass captures direct and environment illumination. Up to four later passes disable direct emitters and the environment, then feed only the previous diffuse-bounce field back through scene materials; a low-energy threshold can stop the iteration early. This improves multi-bounce color transfer while avoiding repeatedly adding direct light. It remains a spatial-SH approximation: it does not perform visibility-correct surface-to-surface ray transport, dynamic path tracing, or physically complete GI for moving lights and geometry. UV lightmaps are available through `PStudio3D.bakeUVLightmaps({ resolution })`. The current atlas gives each triangle a separate non-overlapping chart, evaluates interpolated probe SH irradiance per texel, and applies a linear half-float `lightMap` texture using the second UV channel. `saveLightmaps(name)` and `loadLightmaps(name)` persist UV2 coordinates and texture data in browser IndexedDB; `clearLightmaps()` removes the runtime application. This is a deterministic per-triangle atlas rather than a seam-aware chart packer, and the bake stores probe-derived diffuse irradiance rather than full direct-shadow/path-traced transport. Skinned meshes are excluded. The default memory budget scales with reported device memory (capped at 256 MiB); pass `maxBytes` to override it. Re-bake after topology or static-lighting changes.
 
 ### Cascaded shadow maps
 
@@ -518,7 +518,8 @@ await PStudio3D.bakeLightProbeVolume({
 });
 const result = await PStudio3D.bakeUVLightmaps({
   resolution: 512,
-  ownerIds: ['building-01', 'ground-01']
+  ownerIds: ['building-01', 'ground-01'],
+  maxBytes: 64 * 1024 * 1024
 });
 console.log(result);
 await PStudio3D.saveLightmaps('world-lighting');
