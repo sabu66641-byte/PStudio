@@ -1286,7 +1286,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const materials=Array.isArray(object.material)?object.material:[object.material];
       materials.forEach(material=>material.dispose());
       if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)material?.dispose?.();}
-      object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
+      object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
     });
     modelInstances.delete(key);
