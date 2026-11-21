@@ -419,8 +419,13 @@
     const modelBytes=[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0);
     const modelBudget=modelRuntimeBudgetBytes();
     const resources=window.PStudioResources?.stats?.()||null;
-    const gpuBytes=Number(resources?.gpuBytes)||0,gpuBudget=Number(resources?.gpuBudgetBytes)||0;
-    const cpuBytes=Number(resources?.cpuBytes)||0,cpuBudget=Number(resources?.cpuBudgetBytes)||0;
+    const virtualTexturePageTableBytes=[...virtualTextures.values()].reduce((sum,record)=>sum+(record.pageTableData?.byteLength||0),0);
+    const virtualTextureAtlasBytes=[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+(atlas.bytes||0),0);
+    const clusteredLightingBytes=Number(clusteredLightingResources?.bytes)||0;
+    const auxiliaryGpuBytes=virtualTextureAtlasBytes+virtualTexturePageTableBytes+clusteredLightingBytes;
+    const auxiliaryCpuBytes=virtualTexturePageTableBytes+clusteredLightingBytes;
+    const gpuBytes=(Number(resources?.gpuBytes)||0)+auxiliaryGpuBytes,gpuBudget=Number(resources?.gpuBudgetBytes)||0;
+    const cpuBytes=(Number(resources?.cpuBytes)||0)+auxiliaryCpuBytes,cpuBudget=Number(resources?.cpuBudgetBytes)||0;
     const heapRatio=limit>0?used/limit:0;
     const modelRatio=modelBudget>0?modelBytes/modelBudget:0;
     const gpuRatio=gpuBudget>0?gpuBytes/gpuBudget:0;
@@ -439,6 +444,11 @@
       cpuResourceBytes:cpuBytes,
       cpuBudgetBytes:cpuBudget,
       cpuResourcePressure:cpuRatio,
+      auxiliaryGpuBytes,
+      auxiliaryCpuBytes,
+      virtualTextureAtlasBytes,
+      virtualTexturePageTableBytes,
+      clusteredLightingBytes,
       rendererMemory:renderer?.info?.memory?{geometries:renderer.info.memory.geometries||0,textures:renderer.info.memory.textures||0}:null,
       resources,
       modelPreparationPending,
