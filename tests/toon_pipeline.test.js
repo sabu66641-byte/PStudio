@@ -182,7 +182,7 @@ test('PBR remains the default, while toon mode uses a standard material with the
   assert.match(renderer, /shaderMode=ownerMaterial\?\.shader\|\|'standard'/);
   assert.match(renderer, /shaderMode==='toon'\)material=new T\.MeshStandardMaterial/);
   assert.match(fxSource, /reflectedLight\.directDiffuse\*=mix/);
-  assert.match(fxSource, /#if !defined\\(USE_ENVMAP\\) && !defined\\(USE_SKINNING\\)/);
+  assert.ok(fxSource.includes('#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)'));
   assert.match(fxSource, /attribute vec3 normal/);
   assert.match(renderer, /setupLightingMaterial\(material\)/);
   assert.match(renderer, /setupClusteredLightingMaterial\(material\)/);
