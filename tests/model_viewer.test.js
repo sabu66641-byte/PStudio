@@ -92,6 +92,16 @@ test('large GLB scenes bypass recursive CPU occlusion raycasts while keeping fru
   assert.match(renderer,/if\(hasHighComplexityModel\)/);
   assert.match(renderer,/instance\.occlusionEligible===false\|\|!instance\.root\.userData\.pstudioOccluded/);
 });
+test('streaming updates only the root matrix and does not traverse all GLB descendants each frame',()=>{
+  assert.match(renderer,/instance\.root\.updateWorldMatrix\(true,false\);\s*const factor=qualityPreset/);
+  assert.doesNotMatch(renderer,/function updateModelStreamingChunks\(instance\)\{[\s\S]{0,160}root\.updateMatrixWorld\(true\)/);
+});
+test('static imported models skip the animated foliage matrix update path',()=>{
+  assert.match(renderer,/animatedFoliageBatches:foliageBatches\.filter\(entry=>entry\.isTree\)/);
+  assert.match(renderer,/const entries=instance\?\.animatedFoliageBatches/);
+  assert.match(renderer,/parent\.updateWorldMatrix\(true,false\)/);
+  assert.doesNotMatch(renderer,/function updateFoliageInstanceBatches\(instance\)\{[\s\S]{0,220}root\.updateMatrixWorld\(true\)/);
+});
 test('large selected GLBs use one bounds outline instead of per-mesh edge geometries',()=>{
   assert.match(renderer,/complexInstance=\[\.\.\.modelInstances\.values\(\)\]\.find/);
   assert.match(renderer,/new T\.Box3Helper\(bounds,0xffffff\)/);
