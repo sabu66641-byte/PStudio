@@ -408,3 +408,71 @@ test('per-instance frustum culling filters instanced draw batches against the ca
 test('GLTF scene decode timing is reported separately from binary fetch and GPU preparation',()=>{
   for(const token of ['scene-decode-start','scene-decoded','durationMs','gpu-textures','shader-precompile',"stage:'prepared'"])assert.ok(renderer.includes(token),token);
 });
+
+
+test('GLTFLoader runs in a module worker and transfers a structured scene packet',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  for(const token of [
+    'GLTFLoader','loader.parseAsync(buffer, \'\')','serializeGLTF(gltf',
+    'transferTypedArray','ImageBitmap','boneInverses','AnimationClip',
+    'isInstancedMesh','parseMs','serializeMs','postMessage({ id: message.id, ok: true, result: packet }'
+  ])assert.ok(worker.includes(token),token);
+  for(const token of [
+    'new window.Worker(\'/static/pstudio_gltf_worker.js\'',
+    'worker.postMessage({id,op:\'parse-glb\',blob,assetKey:name,textureSupport:getWorkerTextureSupport()}',
+    'hydrateGLTFWorkerPacket(packet,name)','CompressedTexture','CompressedArrayTexture',
+    'parseGLTFOnMainThread(blob,name)'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('large model scene hydration and instance creation yield between bounded batches',()=>{
+  for(const token of [
+    'async function hydrateGLTFWorkerPacket','await checkpoint(\'scene-hydrate-geometry\'',
+    'async function cloneModelHierarchyAsync','async function createModelInstanceAsync',
+    'await buildModelStreamingChunks(clone)','await buildFoliageInstanceBatches(clone)',
+    'await nextPreparationFrame()','modelInstancePromises'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('GPU texture preparation is staged and shader compilation targets only the hidden new model',()=>{
+  for(const token of [
+    'function collectModelTextures','renderer?.initTexture?.(texture)',
+    'stage:\'gpu-textures\'','renderer.compileAsync(instance.root,camera,scene)',
+    'instance.preparationCancelled','parallelShaderCompileSupported'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('virtual texturing retains source images in the worker and streams page tiles into bounded GPU atlases',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  for(const token of [
+    'VIRTUAL_IMAGES.set(workerImageKey,bitmap)','message.op === \'extract-tile\'',
+    'new OffscreenCanvas(width,height)','message.op === \'release-asset\''
+  ])assert.ok(worker.includes(token),token);
+  for(const token of [
+    'initializeVirtualTextureAtlas','renderer.copyTextureToTexture',
+    'virtualTexturePageCache','requestVirtualTexturePage',
+    'requestVisibleVirtualTextureTiles','setupVirtualTextureMaterial',
+    'texture.userData.pstudioVirtualTexture'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('clustered forward lighting assigns point lights to spatial clusters and evaluates local lights in the GPU shader',()=>{
+  for(const token of [
+    'CLUSTER_GRID_X=16','CLUSTER_MAX_LIGHTS=96','CLUSTER_MAX_PER_CELL=24',
+    'ensureClusteredLightingResources','function updateClusteredLighting',
+    'getDistanceAttenuation','BRDF_Lambert(diffuseColor.rgb)',
+    'setClusteredLighting:enabled','clusteredLighting:{enabled:'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('instanced GPU frustum rejection uses instance transforms and model-space bounding spheres',()=>{
+  for(const token of [
+    'function enableGPUFrustumCullingForBatch','uPStudioFrustumCenter',
+    'modelMatrix*instanceMatrix','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)',
+    'setGPUInstanceFrustumCulling'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('virtual texture and clustered-light allocations are included in renderer memory telemetry',()=>{
+  for(const token of ['virtualTextureAtlasBytes','clusteredLightingBytes','atlasBytes:','gpuPressure','getMemoryStats:memorySnapshot'])assert.ok(renderer.includes(token),token);
+});
