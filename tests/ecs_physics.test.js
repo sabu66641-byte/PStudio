@@ -102,7 +102,8 @@ test('runtime executes prePhysics ECS phase before the Physics step and postPhys
   const step = engine.indexOf('PStudioPhysics?.step');
   const post = engine.indexOf("updatePhase?.('postPhysics'");
   assert.ok(pre >= 0 && step > pre && post > step);
-  assert.match(engine, /applySceneObjectTransforms\(sceneObjects \\|\\| \[\]\\)/);
+  assert.ok(engine.includes('ecsAfterPhysics.applySceneObjectTransforms(sceneObjects || [])'));
+  assert.ok(engine.includes('ecs.applySceneObjectTransforms(sceneObjects || [])'));
 });
 
 test('ECS Physics and typed Inspector scripts load after their owning core modules', () => {
@@ -114,4 +115,24 @@ test('ECS Physics and typed Inspector scripts load after their owning core modul
   assert.ok(physicsBridge > ecsCore);
   assert.ok(inspector > physicsBridge);
   assert.doesNotThrow(() => new vm.Script(read('static/pstudio_ecs_inspector.js')));
+});
+
+
+test('disabled PhysicsBody does not require a body before Play and re-enables safely', () => {
+  const { ecs, physics } = createRuntimeModules();
+  ecs.syncSceneObjects([{ id: 'switchable', name: 'Switchable', x: 0, y: 0, z: 0 }]);
+  const entity = ecs.getEntityForSceneObject('switchable');
+  ecs.addComponent(entity, 'PhysicsBody', { enabled: false });
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.equal(physics.getBody('switchable'), null);
+  assert.equal(ecs.getComponent(entity, 'PhysicsState').active, false);
+
+  const configuration = ecs.getComponent(entity, 'PhysicsBody');
+  ecs.setComponent(entity, 'PhysicsBody', { ...configuration, enabled: true });
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.ok(physics.getBody('switchable'));
+  ecs.removeComponent(entity, 'PhysicsBody');
+  assert.equal(physics.getBody('switchable'), null);
+  assert.equal(ecs.hasComponent(entity, 'PhysicsState'), false);
+  assert.equal(ecs.hasComponent(entity, 'PhysicsTransform'), false);
 });
