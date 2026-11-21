@@ -35,7 +35,7 @@ function scene(runtime, objects) {
 
 test('registers typed gameplay Components and keeps runtime-only world state internal', () => {
   const { ecs } = createRuntime();
-  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider', 'AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings', 'AudioSource', 'CollisionState', 'InputState']) {
+  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider', 'AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings', 'AudioSource', 'CollisionState', 'InputState', 'MaterialRuntimeState', 'ParticleRuntimeState', 'TimeState']) {
     assert.equal(ecs.hasComponentType(type), true, type);
     assert.ok(ecs.getComponentDefinition(type).schema, type);
   }
@@ -111,15 +111,21 @@ test('animation, camera, lights and environment commands are mirrored in Entity 
     { type: 'animation', clipName: 'Run', loop: true },
     { type: 'animation_layer', clip: 'UpperBody', weight: 0.5, additive: true },
     { type: 'camera', x: 1, y: 2, z: 3, targetX: 0, targetY: 0, targetZ: 0, smoothing: 4 },
+    { type: 'camera_shake', intensity: 0.4, duration: 1 },
     { type: 'light', kind: 'point', x: 2, y: 3, z: 4, intensity: 2, color: '#ffffff', distance: 10 },
-    { type: 'environment', fogColor: '#112233', fogNear: 1, fogFar: 100 }
+    { type: 'environment', fogColor: '#112233', fogNear: 1, fogFar: 100 },
+    { type: 'material', shader: 'toon', roughness: 0.7, metalness: 0.2 },
+    { type: 'particles', emitterId: 'dust', count: 12, color: '#ffffff' }
   ]]]);
   assert.equal(runtime.scene.syncRuntimeCommands(commands), 1);
   const entity = runtime.ecs.getEntityForSceneObject('camera-owner');
   assert.equal(runtime.ecs.getComponent(entity, 'AnimationState').entries[0].command.clipName, 'Run');
-  assert.equal(runtime.ecs.getComponent(entity, 'CameraState').entry.command.x, 1);
+  assert.equal(runtime.ecs.getComponent(entity, 'CameraState').entries[0].command.x, 1);
+  assert.equal(runtime.ecs.getComponent(entity, 'CameraState').entries[1].command.type, 'camera_shake');
   assert.equal(runtime.ecs.getComponent(entity, 'LightSet').entries[0].command.kind, 'point');
   assert.equal(runtime.ecs.getComponent(entity, 'EnvironmentSettings').entries[0].command.fogFar, 100);
+  assert.equal(runtime.ecs.getComponent(entity, 'MaterialRuntimeState').entries[0].command.shader, 'toon');
+  assert.equal(runtime.ecs.getComponent(entity, 'ParticleRuntimeState').entries[0].command.emitterId, 'dust');
   assert.equal(commands.get('camera-owner')[2].type, 'camera');
   for (const type of ['AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings']) {
     assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false);
