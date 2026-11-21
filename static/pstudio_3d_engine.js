@@ -1482,6 +1482,18 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       return null;
     }
   }
+  function getWorkerTextureSupport(){
+    const has=name=>{try{return !!renderer?.extensions?.has?.(name);}catch(_){return false;}};
+    return{
+      webgl2:!!renderer?.capabilities?.isWebGL2,
+      astc:has('WEBGL_compressed_texture_astc'),
+      etc1:has('WEBGL_compressed_texture_etc1'),
+      etc2:has('WEBGL_compressed_texture_etc'),
+      dxt:has('WEBGL_compressed_texture_s3tc'),
+      bptc:has('EXT_texture_compression_bptc'),
+      pvrtc:has('WEBGL_compressed_texture_pvrtc')||has('WEBKIT_WEBGL_compressed_texture_pvrtc')
+    };
+  }
   async function parseGLBInWorker(blob,name){
     const worker=getGLTFWorker();
     if(!worker){const error=new Error('GLTF parsing Worker is unavailable.');error.code='PSTUDIO_WORKER_UNAVAILABLE';throw error;}
@@ -1491,7 +1503,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       gltfWorkerPending.set(id,{resolve,reject,onProgress:detail=>dispatchModelLoadProgress({name,...detail})});
       try{
         // Blob structured cloning shares its backing storage; the full ArrayBuffer is created inside the Worker.
-        worker.postMessage({id,op:'parse-glb',blob,assetKey:name});
+        worker.postMessage({id,op:'parse-glb',blob,assetKey:name,textureSupport:getWorkerTextureSupport()});
         dispatchModelLoadProgress({name,stage:'worker-parse-start',loaded:blob.size,total:blob.size,progress:0});
       }catch(error){
         gltfWorkerPending.delete(id);
@@ -1534,8 +1546,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const textures=new Array((packet.textures||[]).length),virtualTextureIds=new Set();
     for(let i=0;i<textures.length;i++){
       const desc=packet.textures[i],image=imageMap.get(desc.imageId);
-      if(!image)throw new Error('Texture '+i+' references a missing decoded image.');
-      const texture=new T.Texture(image);
+      let texture;
+      if(desc.compressed){
+        const mipmaps=(desc.mipmaps||[]).map(mipmap=>({
+          data:hydrateTypedArray(mipmap.data),width:mipmap.width,height:mipmap.height,
+          ...(mipmap.depth?{depth:mipmap.depth}:{})
+        }));
+        if(!mipmaps.length)throw new Error('Compressed texture '+i+' has no mip levels.');
+        texture=desc.array
+          ? new T.CompressedArrayTexture(mipmaps,desc.width,desc.height,desc.depth,desc.format,desc.type)
+          : new T.CompressedTexture(mipmaps,desc.width,desc.height,desc.format,desc.type);
+      }else{
+        if(!image)throw new Error('Texture '+i+' references a missing decoded image.');
+        texture=new T.Texture(image);
+      }
       texture.name=desc.name||'';
       texture.mapping=desc.mapping??T.UVMapping;
       texture.channel=Number(desc.channel)||0;
