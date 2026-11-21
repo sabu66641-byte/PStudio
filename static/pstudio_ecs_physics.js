@@ -108,6 +108,8 @@
         const ownerId = bodyOwners.get(entity);
         if (ownerId !== undefined) window.PStudioPhysics?.removeBody?.(ownerId);
         bodyOwners.delete(entity);
+        if (api.hasComponent(entity, 'PhysicsState')) api.removeComponent(entity, 'PhysicsState');
+        if (api.hasComponent(entity, 'PhysicsTransform')) api.removeComponent(entity, 'PhysicsTransform');
       }
     });
   }
@@ -150,7 +152,7 @@
           const ownerId = bodyOwners.get(entity) || 'ecs-' + entity;
           bodyOwners.set(entity, ownerId);
           if (!config.enabled) {
-            physics.setActive(ownerId, false);
+            if (physics.getBody(ownerId)) physics.setActive(ownerId, false);
             return;
           }
           physics.createBody(
@@ -158,6 +160,7 @@
             config.positionX, config.positionY, config.positionZ,
             config.radius, config.height, config.mass
           );
+          physics.setActive(ownerId, true);
           physics.setGravity(ownerId, config.gravityX, config.gravityY, config.gravityZ);
           physics.setController(ownerId, config.controllerEnabled ? {
             maxSpeed: config.maxSpeed,
@@ -186,7 +189,10 @@
         api.forEach(['PhysicsBody', 'PhysicsState', 'PhysicsTransform'], (entity, config, state, transform) => {
           const ownerId = bodyOwners.get(entity) || 'ecs-' + entity;
           const snapshot = physics.getBodyState(ownerId);
-          if (!snapshot) return;
+          if (!snapshot) {
+            state.active = false;
+            return;
+          }
           Object.assign(state, snapshot);
           transform.x = snapshot.x;
           transform.y = snapshot.y;
