@@ -1,6 +1,6 @@
 'use strict';
 
-const MAX_GLB_BYTES = 1024 * 1024 * 1024;
+const MAX_GLB_BYTES = 0xFFFFFFFF;
 const GLB_JSON_LIMIT = 32 * 1024 * 1024;
 
 function fail(message) {
@@ -57,7 +57,7 @@ async function imageDimensions(file, binStart, view, name) {
 async function inspectGLB(file) {
   if (!file || typeof file.slice !== 'function') fail('GLBファイルを読み込めません。');
   if (file.size < 20) fail('GLBファイルが短すぎます。');
-  if (file.size > MAX_GLB_BYTES) fail('GLBの上限は1GBです。');
+  if (file.size > MAX_GLB_BYTES) fail('GLBの上限は4GiB未満です。');
 
   const header = await file.slice(0, 12).arrayBuffer();
   if (header.byteLength !== 12) fail('GLBヘッダーが不足しています');
