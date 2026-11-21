@@ -154,13 +154,14 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
   assert.ok(materialStart>=0&&materialEnd>materialStart);
   const materialBlock=renderer.slice(materialStart,materialEnd);
   assert.ok(materialBlock.includes('materialStateSignature'));
-  assert.ok(materialBlock.includes('const materialTargets=['));
+  assert.ok(materialBlock.includes('const geometryTargets=['));
+  assert.ok(materialBlock.includes('const materialTargets=geometryTargets;'));
   assert.ok(materialBlock.includes('for(const object of materialTargets)'));
   assert.ok(!materialBlock.includes('instance.root.traverse'));
   assert.ok(renderer.includes('materialClones.get(cacheKey)'));
   assert.ok(renderer.includes("waterDetailRole?'water-detail:'+waterDetailRole:''"));
   assert.ok(renderer.includes("windRole?'wind:'+windRole:''"));
-  assert.ok(renderer.includes('const materialDefaults=new Map(),materialClones=new Map(),meshes=[]'));
+  assert.ok(renderer.includes('const materialDefaults=new Map(),materialClones=new Map(),meshes=[],geometryOriginals=new Map(),normalGeometryClones=new Map()'));
   assert.ok(renderer.includes('for(const object of instance.meshes||[])if(!object.userData.pstudioBatchedIntoStaticInstance&&object.userData.pstudioAutoLOD?.length>1)applyAutoLOD(object,objectCameraDistance(object))'));
   assert.ok(renderer.includes('for(const entry of instance.foliageBatches||[])'));
   assert.ok(renderer.includes('entry.mesh.userData.pstudioAutoLOD?.length>1'));
