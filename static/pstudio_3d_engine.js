@@ -2699,7 +2699,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function updateModelStreamingChunks(instance){
     if(!instance?.streamChunks?.length||!camera)return;
     const T=window.THREE;
-    instance.root.updateMatrixWorld(true);
+    instance.root.updateWorldMatrix(true,false);
     const factor=qualityPreset==='mobile' ? 0.72 : qualityPreset==='balanced' ? 0.86 : (adaptiveQualityEnabled ? [0.72,0.86,1.0][adaptiveQualityLevel] : 1.0);
     const cameraPosition=camera.getWorldPosition(new T.Vector3());
     const rootScale=instance.root.getWorldScale(new T.Vector3());
@@ -2878,12 +2878,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     return batches;
   }
   function updateFoliageInstanceBatches(instance){
-    if(!instance?.foliageBatches?.length)return;
-    const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
-    const matrix=new T.Matrix4();
-    for(const entry of instance.foliageBatches){
-      if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue;
-      const batch=entry.mesh,parent=entry.parent||root;parent.updateWorldMatrix(true,true);
+    const entries=instance?.animatedFoliageBatches;
+    if(!entries?.length)return;
+    const T=window.THREE,root=instance.root,matrix=new T.Matrix4();
+    for(const entry of entries){
+      if(!entry.mesh.visible||!(entry.parent||root).visible)continue;
+      const batch=entry.mesh,parent=entry.parent||root;parent.updateWorldMatrix(true,false);
       const inverseParent=parent.matrixWorld.clone().invert();
       for(let i=0;i<entry.sources.length;i++){const source=entry.sources[i];source.updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseParent,source.matrixWorld);batch.setMatrixAt(i,matrix);}
       batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
@@ -3036,7 +3036,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),
       activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,
       resourceLease,materialStateSignature:null,foliageBatches,streamChunks,
-      preparing:true,preparationCancelled:false,environmentQuality,occlusionEligible:meshes.length<=256
+      preparing:true,preparationCancelled:false,environmentQuality,occlusionEligible:meshes.length<=256,
+      animatedFoliageBatches:foliageBatches.filter(entry=>entry.isTree)
     };
   }
 
