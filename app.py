@@ -925,7 +925,7 @@ def _ecs_binding_name(component_name):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", component_name).lower()
 
 
-def validate_ast(tree, allow_game=False):
+def validate_ast(tree, allow_game=False, external_components=None):
     """Validate ps semantics. ECS declarations are currently browser-game-only."""
     functions = {}
     component_defs = {}
@@ -947,8 +947,14 @@ def validate_ast(tree, allow_game=False):
                 if field_name in fields:
                     raise Exception(f"意味エラー: Component '{name}' のField '{field_name}' が重複しています。")
                 value = field.get("value", {})
-                if value.get("type") not in ("Literal", "ArrayLiteral"):
-                    raise Exception(f"意味エラー: Component '{name}.{field_name}' の初期値はリテラルまたは配列にしてください。")
+                def is_literal_default(value_node):
+                    if value_node.get("type") == "Literal":
+                        return True
+                    if value_node.get("type") == "ArrayLiteral":
+                        return all(is_literal_default(element) for element in value_node.get("elements", []))
+                    return False
+                if not is_literal_default(value):
+                    raise Exception(f"意味エラー: Component '{name}.{field_name}' の初期値はリテラルまたはリテラル配列にしてください。")
                 fields[field_name] = value
             component_defs[name] = fields
         elif node.get("type") == "SystemDef":
@@ -985,7 +991,8 @@ def validate_ast(tree, allow_game=False):
         },
         "SceneObjectRef": {"sceneObjectId": {"type": "Literal", "value": '""'}},
     }
-    component_fields = {**builtin_component_fields, **component_defs}
+    external_components = external_components or {}
+    component_fields = {**builtin_component_fields, **external_components, **component_defs}
     binding_names = {}
     for component_name in component_fields:
         binding = _ecs_binding_name(component_name)
@@ -2827,8 +2834,31 @@ def game_prepare():
             if total_size > 512 * 1024:
                 raise Exception("ゲームスクリプト全体の上限は512KBです。")
             tree = parse(tokenize(source))
-            validate_ast(tree, allow_game=True)
             parsed[filename] = tree
+
+        project_components = {}
+        for filename, tree in parsed.items():
+            for node in tree.get("body", []):
+                if node.get("type") != "ComponentDef":
+                    continue
+                name = node["name"]
+                if name in project_components:
+                    raise Exception(f"Component '{name}' が複数の .ps ファイルで定義されています。")
+                project_components[name] = {
+                    field["variable"]: field["value"]
+                    for field in node.get("body", [])
+                    if field.get("type") == "AssignmentExpression"
+                }
+        for filename, tree in parsed.items():
+            local_names = {
+                node["name"] for node in tree.get("body", [])
+                if node.get("type") == "ComponentDef"
+            }
+            external = {
+                name: fields for name, fields in project_components.items()
+                if name not in local_names
+            }
+            validate_ast(tree, allow_game=True, external_components=external)
         return jsonify({"success": True, "scripts": parsed, "engine": "PStudio Runtime", "engine_version": "3.0.0"})
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
