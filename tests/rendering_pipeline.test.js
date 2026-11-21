@@ -149,7 +149,8 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
   assert.ok(materialStart>=0&&materialEnd>materialStart);
   const materialBlock=renderer.slice(materialStart,materialEnd);
   assert.ok(materialBlock.includes('materialStateSignature'));
-  assert.ok(materialBlock.includes('for(const object of instance.meshes||[])'));
+  assert.ok(materialBlock.includes('const materialTargets=['));
+  assert.ok(materialBlock.includes('for(const object of materialTargets)'));
   assert.ok(!materialBlock.includes('instance.root.traverse'));
   assert.ok(renderer.includes('materialClones.get(cacheKey)'));
   assert.ok(renderer.includes("waterDetailRole?'water-detail:'+waterDetailRole:''"));
@@ -503,7 +504,7 @@ test('ordinary opaque repeated GLTF meshes are automatically instanced without n
   for(const token of [
     'const isGeneric=!isTree&&!isModularPart',
     'supportsGenericStaticInstancing(materials[0],T)',
-    'PStudio_GPU_Instances_Generic_Static',
+    'group.isGeneric?\'Generic_Static\'',
     'pstudioGenericStaticInstances',
     'estimatedDrawCallsSaved:totalInstancedSources-batches.length'
   ])assert.ok(renderer.includes(token),token);
