@@ -21,16 +21,13 @@ function transferTypedArray(array) {
 function attributeArray(attribute) {
   if (!attribute) return null;
   if (attribute.isInterleavedBufferAttribute) {
-    const packed = new Float32Array(attribute.count * attribute.itemSize);
-    for (let i = 0; i < attribute.count; i++) {
-      for (let c = 0; c < attribute.itemSize; c++) {
-        const value = attribute.getComponent ? attribute.getComponent(i, c)
-          : c === 0 ? attribute.getX(i)
-          : c === 1 ? attribute.getY(i)
-          : c === 2 ? attribute.getZ(i)
-          : attribute.getW(i);
-        packed[i * attribute.itemSize + c] = value;
-      }
+    // Copy raw packed values, not normalized getters, so integer vertex formats
+    // retain their original normalization semantics after transfer.
+    const source=attribute.data.array;
+    const packed=new source.constructor(attribute.count*attribute.itemSize);
+    const stride=attribute.data.stride,offset=attribute.offset;
+    for(let i=0;i<attribute.count;i++){
+      for(let c=0;c<attribute.itemSize;c++)packed[i*attribute.itemSize+c]=source[i*stride+offset+c];
     }
     return { array: packed, normalized: !!attribute.normalized, itemSize: attribute.itemSize, name: attribute.name || '', gpuType: attribute.gpuType || 0 };
   }
@@ -139,6 +136,7 @@ async function serializeMaterial(material, materialIds, textures, textureIds, im
 }
 
 function objectKind(object) {
+  if (object.isInstancedMesh) return 'InstancedMesh';
   if (object.isSkinnedMesh) return 'SkinnedMesh';
   if (object.isMesh) return 'Mesh';
   if (object.isPoints) return 'Points';
@@ -180,7 +178,12 @@ function serializeNode(object, index, objectIds, geometryIds, materialIds, geome
       ? object.material.map(material => material ? materialIds.get(material) : null)
       : [materialIds.get(object.material)]) : [],
     morphTargetInfluences: object.morphTargetInfluences?.slice?.() || null,
-    morphTargetDictionary: safeJSON(object.morphTargetDictionary)
+    morphTargetDictionary: safeJSON(object.morphTargetDictionary),
+    instanceCount:object.isInstancedMesh?object.count:null,
+    instances:object.isInstancedMesh?{
+      matrix:transferTypedArray(object.instanceMatrix.array),
+      color:object.instanceColor?transferTypedArray(object.instanceColor.array):null
+    }:null
   };
 
   if (object.isCamera) {
