@@ -60,7 +60,7 @@ Do not send a server request every frame. Preserve the division between server-s
 - `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
 - `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
-- `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
+- `static/pstudio_assets.js`: OPFS-first binary asset storage with an IndexedDB metadata index and legacy Blob fallback. Preserve old IndexedDB records without a backend marker.
 
 ### Shared infrastructure
 
@@ -154,6 +154,22 @@ node --test tests/*.test.js
 ```
 
 The GitHub Actions workflow runs both suites. Python tests include actual generated C++17 compilation/execution when `g++` is installed. Passing these suites does not establish Android/WebGL or Render deployment correctness.
+
+## Persistent asset storage and standalone builds
+
+### Binary asset lifecycle
+
+`static/pstudio_assets.js` owns binary asset persistence. New writes attempt OPFS under the `pstudio-assets-v1` directory; small records in the existing IndexedDB database map the project asset name to an opaque OPFS filename and hold its size/type/metadata. The IndexedDB schema version remains unchanged. Old records containing a Blob and no backend marker are treated as IndexedDB records and remain readable.
+
+Writes are staged to a new OPFS file, then the IndexedDB metadata record is committed, and only afterward is the prior OPFS file reclaimed. Failed OPFS writes that indicate capability/permission/quota fallback use the IndexedDB Blob path. If both stores are quota-limited, the operation fails visibly. Storage estimates are browser-reported and must not be described as a fixed quota or unlimited capacity. `get(name,{cache:false})` returns a Blob/File without registering a large Blob in the in-memory CPU cache; `getStream(name)` exposes its ReadableStream when supported. Do not turn binary model data into base64 during storage or standalone packaging.
+
+The GLB size check matches the glTF 2.0 GLB header's uint32 total-length field. It is a format ceiling rather than a device capability guarantee; the renderer's estimated decoded CPU/GPU budgets remain separate safety gates. The JSON `.gltf` import path currently inlines external resources as data URLs and therefore retains its smaller explicit size cap until it is redesigned to bundle dependencies as files.
+
+### Standalone Web player
+
+`static/pstudio_build.js` validates the project's game scripts online with `/game/prepare` once at export time. It packages that validated AST, scene/project data, model Blob files and the runtime into a ZIP64 archive. `static/pstudio_player.html` and `static/pstudio_player.js` provide the editor-free player. The player injects a read-only packaged-asset adapter and supplies the bundled AST to `PStudioEngine.start()`, bypassing `/game/prepare` at runtime.
+
+ZIP64 entries use STORE rather than recompressing GLB/PNG/JPEG assets, UTF-8 paths, CRC32 and ZIP64 size/offset records. Package extraction and HTTP(S) hosting are required; `file://` is not supported. Three.js modules and some optional rendering modules are currently loaded from public CDN URLs, so the exported player is not yet fully offline/self-contained. The asset adapter is read-only; edit source/assets in PStudio and re-export.
 
 ## Change discipline
 
