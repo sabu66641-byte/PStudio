@@ -163,6 +163,25 @@ The renderer continues to own Three.js meshes, materials, GPU buffers, particle 
 
 The old Scene Object collider flag is projected to both Collider2D and MeshCollider for backward compatibility. The former drives the 2D collision path; the latter controls imported-mesh triangle collision generation. They are distinct Components because 2D and 3D collision geometry have different contracts.
 
+### Runtime state and service adapters (Phase 5)
+
+The Scene bridge also owns the following runtime-only state:
+
+- InputState: world-level keyboard, just-pressed, virtual-axis, touch and jump snapshots. The existing ps input built-ins read this Component; the browser event listeners remain the input service.
+- TimeState: world-level timeScale, scaled deltaTime and unscaledDeltaTime. set_time_scale() updates this Component, and the runtime reads it when calculating the next frame.
+- AnimationState: per-Entity animation, blend, layer, locomotion and IK command entries.
+- CameraState: per-Entity camera transform, camera effects and camera-shake command entries.
+- LightSet and EnvironmentSettings: per-Entity dynamic light and sky/fog/environment command entries.
+- MaterialRuntimeState and ParticleRuntimeState: per-Entity material/post-processing and particle command entries.
+- AudioSource: current per-Entity sound playback metadata (name, volume, loop, pause and playback position).
+- CollisionState: per-Entity 2D/3D overlap IDs. The bridge compares previous and current overlap sets and returns enter transitions; collision callbacks are dispatched once on entry, not on every overlapping frame.
+
+Runtime draw commands are generated in the existing ps callback path, mirrored into the corresponding ECS Components with their original command indices, then projected back to the renderer command list in the same order. This keeps the renderer contract stable while giving the ECS an inspectable owner for per-Entity runtime command state. It does not mean that a render command is a durable project object.
+
+The browser input listeners and Audio elements remain service resources. AudioSource mirrors active playback state; it does not replace the actual HTMLAudioElement. Three.js AnimationMixer, camera/light objects, GPU particles, render targets and GPU buffers remain renderer resources. ECS Components hold the Entity's configuration/intent/state, and service adapters perform the actual browser/GPU work.
+
+The current phase is intentionally a runtime ownership migration, not a new project serialization format. Project authoring, preview and saving continue to use the established Scene Object format until a dedicated versioned serializer/loader migration can preserve old projects and Standalone Player compatibility.
+
 ### What is not an ECS Component
 
 - Item and weapon definition registries are static catalog data; they are not mutable per-Entity state.
@@ -172,7 +191,7 @@ The old Scene Object collider flag is projected to both Collider2D and MeshColli
 
 ### Remaining migration boundary
 
-The current migration has not yet converted every engine subsystem. The Editor's persisted authoring fields remain the project-file source for backward compatibility; the Player/Standalone save format and OPFS branch still need a separate integration audit. Camera and light authoring/runtime state, animation state and animation graph ownership, audio sources/listeners, input action maps, collision-pair event state, global 3D world/environment settings, and broader project/package lifecycle still need their own ECS models and service adapters. Per-frame render command maps and GPU resource caches remain execution-service data rather than persistent Components. These migrations need independent compatibility tests across Editor preview, Play, project save/load and Standalone Player.
+The current migration has not converted every engine subsystem. Editor authoring fields remain the project-file source for backward compatibility; the Player/Standalone save format and OPFS branch still need a separate integration audit. Camera, light, environment, Animation, audio metadata, input snapshots, time scale and collision-pair runtime state now have ECS representations, but service resources remain outside ECS. Remaining work includes a versioned Editor/Project serializer with old-format migration, save-game persistence and Standalone Player integration, camera/listener ownership and project-level input action maps, scene-wide global environment settings, and end-to-end compatibility testing across Editor preview, Play, save/load and Standalone Player. Per-frame render command maps, GPU resource caches and service handles remain execution-service data rather than persistent Components.
 
 ## ECS and Physics frame contract
 
