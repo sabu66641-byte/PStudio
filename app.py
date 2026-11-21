@@ -1113,6 +1113,11 @@ def validate_ast(tree, allow_game=False, external_components=None):
             "touchY": {"type": "Literal", "value": "0.0"},
             "jumpPressed": {"type": "Literal", "value": "false"},
         },
+        "TimeState": {
+            "timeScale": {"type": "Literal", "value": "1.0"},
+            "deltaTime": {"type": "Literal", "value": "0.0"},
+            "unscaledDeltaTime": {"type": "Literal", "value": "0.0"},
+        },
         "GameplayWorld": {},
     }
     external_components = external_components or {}
