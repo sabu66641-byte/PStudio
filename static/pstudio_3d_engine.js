@@ -3236,6 +3236,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         environmentTexture?.dispose?.();environmentTexture=null;
         environmentSignature='';
       }
+      if(environmentTarget){environmentTarget.dispose?.();environmentTarget=null;}
       if(hdrEnvironmentTarget)scene.environment=hdrEnvironmentTarget.texture;
       else if(scenePresetTarget?.texture)scene.environment=scenePresetTarget.texture;
       else if(scenePresetTexture)scene.environment=scenePresetTexture;
