@@ -107,7 +107,7 @@ test('GLB maximum is exactly one GiB and oversize files are rejected before read
 test('main-thread and worker GLB validators share the existing runtime-safe GLB import limit', () => {
   assert.match(modelWorker, /const MAX_GLB_BYTES = 1024 \* 1024 \* 1024/);
   assert.match(modelWorker, /GLBの上限は1GBです/);
-  assert.match(html, /const PSTUDIO_MAX_GLB_BYTES=0xFFFFFFFF/);
+  assert.match(html, /const PSTUDIO_MAX_GLB_BYTES=1024\*1024\*1024/);
 });
 
 test('GLB validator rejects external resources and out-of-range buffer views', async () => {
