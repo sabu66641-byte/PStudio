@@ -166,6 +166,44 @@ test('AI navigation triangle graph uses ECS node entities and preserves shared-e
   assert.equal(runtime.gameplay.navNext('navtri_0', 'navtri_1'), 'navtri_1');
 });
 
+test('legacy PStudioGameplay API still works when ECS is unavailable', () => {
+  const window = {
+    PStudioPhysics: {
+      getPosition() { return { x: 0, y: 0, z: 0 }; },
+      getBody() { return { id: 'body' }; },
+      configureController() {},
+      moveCharacter() {}
+    }
+  };
+  const sandbox = { window, console, Math, Number, Map, Set, Date, Object, Array, TypeError, Error, Promise, JSON };
+  vm.runInNewContext(read('static/pstudio_gameplay.js'), sandbox, { filename: 'pstudio_gameplay.js' });
+  const game = window.PStudioGameplay;
+  game.setHP('hero', 35);
+  game.inventoryAdd('hero', 'Potion', 2);
+  assert.equal(game.getHP('hero'), 35);
+  assert.equal(game.inventoryCount('hero', 'Potion'), 2);
+  game.questDefine('legacy', '', '', 0);
+  assert.equal(game.questStart('legacy'), true);
+  assert.equal(game.questSetProgress('legacy', 1, 1), 1);
+  assert.equal(game.questIsComplete('legacy'), true);
+  game.navAddNode('start', 0, 0, 0);
+  game.navAddNode('end', 1, 0, 0);
+  game.navConnect('start', 'end');
+  assert.equal(game.navNext('start', 'end'), 'end');
+});
+
+test('persistent gameplay state survives Stop/Play Scene Object Entity recreation', () => {
+  const runtime = createRuntime();
+  const objects = scene(runtime, [{ id: 'hero', name: 'Hero', x: 0, y: 0, z: 0 }]);
+  runtime.gameplay.setHP('hero', 42);
+  runtime.gameplay.inventoryAdd('hero', 'Potion', 3);
+  assert.equal(runtime.bridge.snapshotSceneState(objects), 2);
+  runtime.ecs.clearSceneObjects();
+  runtime.ecs.syncSceneObjects(objects);
+  assert.equal(runtime.gameplay.getHP('hero'), 42);
+  assert.equal(runtime.gameplay.inventoryCount('hero', 'Potion'), 3);
+});
+
 test('the ECS gameplay bridge loads after ECS Physics and before the Inspector', () => {
   const html = read('templates/index.html');
   const ecsCore = html.indexOf('<script src="/static/pstudio_ecs.js"></script>');
