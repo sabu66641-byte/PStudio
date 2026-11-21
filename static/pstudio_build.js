@@ -180,7 +180,7 @@
       if (names.has(String(entry.name))) throw new Error('Duplicate ZIP entry: ' + entry.name);
       names.add(String(entry.name));
       const size = BigInt(blob.size);
-      const crc = await crc32Blob(blob);
+      const crc = await crc32Blob(blob, (processed, total) => onProgress?.({ stage: 'checksum', name: entry.name, processed, total }));
       const header = localHeader(nameBytes, crc, size);
       const localOffset = offset;
       parts.push(header, blob);
