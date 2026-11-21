@@ -7,6 +7,7 @@
   'use strict';
 
   const ecs = () => window.PStudioECS;
+  let inputWorldEntity = null;
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const bounded = (value, fallback, min, max) => Math.max(min, Math.min(max, finite(value, fallback)));
   const text = (value, fallback = '') => typeof value === 'string' ? value : fallback;
@@ -126,6 +127,25 @@
     persistent: false
   });
 
+  register('InputState', {
+    label: 'Input State',
+    category: 'Input',
+    description: 'World-scoped snapshot of keyboard, touch and virtual-control input.',
+    schema: {
+      pressedKeys: { type: 'array', default: [] },
+      justPressedKeys: { type: 'array', default: [] },
+      axisX: { type: 'number', default: 0, min: -1, max: 1 },
+      axisZ: { type: 'number', default: 0, min: -1, max: 1 },
+      touchActive: { type: 'boolean', default: false },
+      touchX: { type: 'number', default: 0 },
+      touchY: { type: 'number', default: 0 },
+      jumpPressed: { type: 'boolean', default: false }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
   register('AnimationState', {
     label: 'Animation State',
     category: 'Animation',
@@ -202,6 +222,43 @@
     internal: true,
     persistent: false
   });
+
+  function getInputWorldEntity() {
+    const api = ecs();
+    if (!api || !api.hasComponentType('InputState')) return null;
+    if (inputWorldEntity !== null) {
+      try { api.getComponent(inputWorldEntity, 'InputState'); return inputWorldEntity; }
+      catch (_) { inputWorldEntity = null; }
+    }
+    inputWorldEntity = api.createEntity({ InputState: {
+      pressedKeys: [], justPressedKeys: [], axisX: 0, axisZ: 0,
+      touchActive: false, touchX: 0, touchY: 0, jumpPressed: false
+    } });
+    return inputWorldEntity;
+  }
+
+  function syncInputState(snapshot) {
+    const api = ecs(), entity = getInputWorldEntity();
+    if (!api || !entity) return false;
+    const value = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    api.setComponent(entity, 'InputState', {
+      pressedKeys: Array.isArray(value.pressedKeys) ? [...new Set(value.pressedKeys.map(String))] : [],
+      justPressedKeys: Array.isArray(value.justPressedKeys) ? [...new Set(value.justPressedKeys.map(String))] : [],
+      axisX: bounded(value.axisX, 0, -1, 1),
+      axisZ: bounded(value.axisZ, 0, -1, 1),
+      touchActive: value.touchActive === true,
+      touchX: finite(value.touchX, 0),
+      touchY: finite(value.touchY, 0),
+      jumpPressed: value.jumpPressed === true
+    });
+    return true;
+  }
+
+  function getInputState() {
+    const api = ecs(), entity = getInputWorldEntity();
+    if (!api || !entity) return null;
+    return api.getComponent(entity, 'InputState');
+  }
 
   function sceneEntity(objectOrId) {
     const api = ecs();
@@ -473,6 +530,8 @@
 
   window.PStudioECSScene = Object.freeze({
     syncSceneObjects,
+    syncInputState,
+    getInputState,
     syncRuntimeCommands,
     syncAudioState,
     commitCollisionState,
