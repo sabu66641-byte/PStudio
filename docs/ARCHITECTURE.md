@@ -80,7 +80,8 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
-- `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
+- `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
+- `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
 - `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
@@ -102,14 +103,29 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 
 ## Core runtime ownership boundaries
 
-- The IDE owns project serialization, selected object state, Inspector fields and calls into the renderer.
-- The game runtime owns ps callback state and emits frame render commands.
+- The IDE owns project serialization, selected object state, typed Component Inspector UI, System controls and calls into the renderer.
+- The game runtime owns legacy ps callback state and emits frame render commands. ECS Systems are scheduled around the Physics step: update, prePhysics, then postPhysics.
 - The 3D renderer owns Three.js resources and rendering caches.
-- The physics module owns fixed-step body state and collision calculations.
-- ECS is integrated with scene entities and system iteration but is not yet a full migration of every legacy subsystem.
+- The physics module owns fixed-step body state and collision calculations. ECS PhysicsBody is configuration; the Physics solver remains authoritative for runtime body motion.
+- ECS owns typed Component data and generic System scheduling. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields.
+- Existing legacy ps callbacks, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
 Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state.
+
+## ECS and Physics frame contract
+
+For each runtime frame:
+1. Run ECS Systems in the `update` phase.
+2. Run `prePhysics` Systems to create/configure bodies from ECS PhysicsBody Components.
+3. Run the existing per-Scene-Object ps callbacks and generate render/Physics commands.
+4. Run the existing fixed-step `PStudioPhysics.step()` solver.
+5. Run ECS `postPhysics` Systems to copy PhysicsState and PhysicsTransform snapshots from the solver.
+6. Update collision events and render.
+
+`Transform` is synchronized with existing Scene Object fields, which include the editor's 2D pixel coordinate convention. Physics body positions are world units and are exposed through `PhysicsTransform` instead. This split is intentional until a single explicit world-transform conversion layer is adopted. Do not write Physics world-space positions directly into Scene Object Transform fields.
+
+The built-in `Velocity` System integrates non-Physics entities into ECS Transform. Entities with a PhysicsBody are excluded so the generic velocity integrator cannot compete with the fixed-step solver. PhysicsState and PhysicsTransform are runtime-only/read-only Components and are not serialized into the project.
 
 ## Rendering and physics contracts
 
