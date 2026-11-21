@@ -546,7 +546,16 @@
             u.uIntensity.value=godRaysIntensity;
           });
         }
-        composer.render();
+        try{
+          composer.render();
+        }catch(postError){
+          if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
+          godRaysEnabled=false;godRaysPass.enabled=false;
+          godRaysFallbackEnabled=!!bloomPass;
+          if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
+          console.warn('[PStudio] God Rays shader is unsupported; switching to bloom fallback.',postError);
+          composer.render();
+        }
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
         if(ssrPass)ssrPass.enabled=false;
@@ -591,6 +600,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
   }
   function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
   const MAX_TRAIL_POINTS=48;
+  const MAX_TRAIL_EFFECTS=64;
   function disposeTrailEffect(trail){
     if(!trail)return;
     if(trail.mesh?.parent)trail.mesh.parent.remove(trail.mesh);
@@ -631,6 +641,11 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     const width=Math.max(0.001,Math.min(1,Number(command.width)||0.05));
     let trail=trailEffects.get(key);
     if(!trail){
+      if(trailEffects.size>=MAX_TRAIL_EFFECTS){
+        const oldestKey=trailEffects.keys().next().value;
+        const oldest=trailEffects.get(oldestKey);
+        disposeTrailEffect(oldest);trailEffects.delete(oldestKey);
+      }
       const geometry=new T.BufferGeometry();
       const position=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2*3),3);
       const birth=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2),1);
@@ -4049,7 +4064,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
-      trails:{active:trailEffects.size,maxPoints:MAX_TRAIL_POINTS},
+      trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
       cameraShake:{active:!!cameraShakeState},
       godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity},
       models:modelInstances.size,
