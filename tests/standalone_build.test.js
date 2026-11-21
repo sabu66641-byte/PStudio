@@ -31,6 +31,15 @@ test('standalone player module remains syntactically valid as an ES module sourc
   assert.doesNotThrow(() => new Function(source));
 });
 
+test('standalone player loads all ECS bridges and resolves its static worker base', () => {
+  const runtimeFiles = playerSource.slice(playerSource.indexOf('const runtimeFiles'), playerSource.indexOf('];', playerSource.indexOf('const runtimeFiles')) + 2);
+  for (const name of ['pstudio_ecs.js', 'pstudio_ecs_physics.js', 'pstudio_ecs_gameplay.js', 'pstudio_ecs_scene.js']) {
+    assert.ok(runtimeFiles.includes(name), name);
+  }
+  assert.match(playerSource, /PStudioStaticBase\s*=\s*staticURL\.href/);
+  assert.match(renderer, /new URL\(\(window\.PStudioStaticBase\|\|'\/static\/'\)\s*\+\s*'pstudio_gltf_worker\.js',\s*document\.baseURI\)/);
+});
+
 test('standalone ZIP64 writer stores UTF-8 files, CRC32 and ZIP64 metadata correctly', async () => {
   const build = createBuild();
   assert.equal(await build.crc32Blob(new Blob(['123456789'])), 0xCBF43926);
