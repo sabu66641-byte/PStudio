@@ -123,3 +123,11 @@ test('external .gltf bundling remains capped separately to avoid giant base64 co
   assert.ok(html.includes("if(file.size>PSTUDIO_MAX_GLTF_BYTES)"));
   assert.ok(html.includes('大容量モデルは.glbで読み込んでください。'));
 });
+
+
+test('large GLB metadata inspection is implemented in a dedicated worker and retains a fallback validator',()=>{
+  const worker = fs.readFileSync('static/pstudio_model_worker.js','utf8');
+  assert.doesNotThrow(()=>new Function(worker));
+  for(const token of ["self.onmessage","message.op !== 'inspect-glb'","JSON.parse(jsonText)","bufferView","estimatedGpuBytes"])assert.ok(worker.includes(token),token);
+  for(const token of ["new window.Worker('/static/pstudio_model_worker.js')","worker.postMessage({id,op:'inspect-glb',file})","validateGLBFileMainThread(file,options)","worker-inspection"])assert.ok(html.includes(token),token);
+});
