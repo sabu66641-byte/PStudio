@@ -518,6 +518,7 @@ test('model build phase is reported and initial render errors do not release a c
   for(const token of ["onPhase('hierarchy-clone')","onPhase('material-and-shader-setup')","onPhase('streaming-chunk-build')","onPhase('gpu-instancing-build')","onPhase('bounds-and-lod-build')","onPhase('animation-initialization')","stage:'instance-render'","buildPhase='initial-scene-render'"])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes("dispatchModelLoadError({name:d.name,stage:'instance-render'"));
   assert.ok(!renderer.includes("if(lastCommands)render(lastCommands);\n                return created;"));
+  for(const token of ["u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value')","u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value')","u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value')"])assert.ok(renderer.includes(token),token);
 });
 test('optional renderer uniform writes tolerate missing or stale wrappers without aborting model setup',()=>{
   for(const token of ["!uniforms?.enabled","!uniforms.near","!uniforms?.uTime","syncPostFXUniforms"])assert.ok(renderer.includes(token),token);
