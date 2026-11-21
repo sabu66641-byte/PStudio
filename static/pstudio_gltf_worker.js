@@ -237,7 +237,11 @@ async function serializeGLTF(gltf) {
   const images = [];
 
   for (const object of objects) {
-    if (object.isMesh && object.geometry) serializeGeometry(object.geometry, geometryIds);
+    if (object.isMesh && object.geometry) {
+      if(!object.geometry.boundingBox)object.geometry.computeBoundingBox();
+      if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();
+      serializeGeometry(object.geometry, geometryIds);
+    }
     const list = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
     for (const material of list) {
       if (material) await serializeMaterial(material, materialIds, textures, textureIds, images, imageIds);
@@ -396,7 +400,9 @@ self.onmessage = async event => {
   if (!Number.isSafeInteger(message.id) || message.op !== 'parse-glb') return;
   TRANSFERS.clear();
   try {
+    self.postMessage({id:message.id,progress:{stage:'worker-parse-start',loaded:0,total:message.buffer?.byteLength||0,progress:0}});
     const packet = await parseGLB(message);
+    self.postMessage({id:message.id,progress:{stage:'worker-serialize-complete',loaded:message.buffer?.byteLength||0,total:message.buffer?.byteLength||0,progress:1,timings:packet.timings}});
     const transferList = [...TRANSFERS];
     self.postMessage({ id: message.id, ok: true, result: packet }, transferList);
   } catch (error) {
