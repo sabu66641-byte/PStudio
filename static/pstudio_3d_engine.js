@@ -3281,7 +3281,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       metalness:state.metalness??null,
       modelOverrides:overrides.map(item=>[
         item.name,item.roughness??null,item.metalness??null,item.color??null,
-        item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
+        item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null,item.toon??null
       ]),
       normalGeometrySignature
     }:null);
@@ -3344,6 +3344,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(Number.isFinite(defaults.emissiveIntensity))material.emissiveIntensity=defaults.emissiveIntensity;
         material.side=defaults.side;
         const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
+        const toonSettings=override?.toon||state?.toon||null;
+        if(toonSettings)window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
+        else if(material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(material,{enabled:false},object);
+        if(toonSettings&&Number(toonSettings.windStrength)>0)window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
@@ -3486,7 +3490,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
-      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined}));
+      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined,toon:d.toon&&typeof d.toon==='object'?d.toon:null}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
@@ -3495,6 +3499,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||!!d.ssao;const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
       if(d.type==='model_material')continue;
+        if(d.type==='toon_material'){ownerMaterial=Object.assign(ownerMaterial||{},{shader:'toon',toon:d.toon&&typeof d.toon==='object'?d.toon:{}});continue;}
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
           const emitterKey=String(ownerId)+':'+String(d.emitterId);
@@ -3711,7 +3716,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
             material=configureWaterMaterial(material);
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
-          }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
+          }else if(shaderMode==='toon')material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:ownerMaterial?.roughness??0.72,metalness:ownerMaterial?.metalness??0.04,side:T.DoubleSide});
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
@@ -3727,6 +3732,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
+        if(shaderMode==='toon'||ownerMaterial?.toon)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,Object.assign({},ownerMaterial?.toon||{},{enabled:true}),mesh);
+        else if(mesh.material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,{enabled:false},mesh);
+        const primitiveToon=ownerMaterial?.toon;
+        if(primitiveToon&&Number(primitiveToon.windStrength)>0)window.PStudioEnvironmentFX?.configureFoliage?.(mesh.material,mesh,{windStrength:primitiveToon.windStrength,windSpeed:primitiveToon.windSpeed});
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
         if(d.type!=='water'){
