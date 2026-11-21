@@ -11,6 +11,8 @@
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
+  let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
+  let shaderCompileQueue=Promise.resolve();
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
@@ -229,7 +231,7 @@
       window.PStudioResources?.setBudget?.('cpu',cpuBudget);
     }catch(error){console.warn('[PStudio] Device-aware resource budget setup failed; existing budgets remain active.',error);}
 
-    try{const gl=renderer.getContext(),extension=gl.getExtension?.('EXT_disjoint_timer_query_webgl2');if(extension&&typeof gl.createQuery==='function'&&typeof gl.getQueryParameter==='function'){gpuTimerGl=gl;gpuTimerExtension=extension;}else{gpuTimerGl=null;gpuTimerExtension=null;}}catch(error){gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timing extension unavailable; CPU timing fallback will be used.',error);}
+    try{const gl=renderer.getContext(),extension=gl.getExtension?.('EXT_disjoint_timer_query_webgl2');parallelShaderCompileSupported=!!gl.getExtension?.('KHR_parallel_shader_compile');if(extension&&typeof gl.createQuery==='function'&&typeof gl.getQueryParameter==='function'){gpuTimerGl=gl;gpuTimerExtension=extension;}else{gpuTimerGl=null;gpuTimerExtension=null;}}catch(error){gpuTimerGl=null;gpuTimerExtension=null;parallelShaderCompileSupported=false;console.warn('[PStudio] GPU timing/parallel shader extensions unavailable; CPU timing fallback will be used.',error);}
     if(renderer.info)renderer.info.autoReset=false;
     renderer.outputColorSpace=T.SRGBColorSpace;
     renderer.toneMapping=T.ACESFilmicToneMapping;
@@ -398,8 +400,13 @@
     const limit=Number(perfMemory?.jsHeapSizeLimit)||0;
     const modelBytes=[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0);
     const modelBudget=modelRuntimeBudgetBytes();
+    const resources=window.PStudioResources?.stats?.()||null;
+    const gpuBytes=Number(resources?.gpuBytes)||0,gpuBudget=Number(resources?.gpuBudgetBytes)||0;
+    const cpuBytes=Number(resources?.cpuBytes)||0,cpuBudget=Number(resources?.cpuBudgetBytes)||0;
     const heapRatio=limit>0?used/limit:0;
     const modelRatio=modelBudget>0?modelBytes/modelBudget:0;
+    const gpuRatio=gpuBudget>0?gpuBytes/gpuBudget:0;
+    const cpuRatio=cpuBudget>0?cpuBytes/cpuBudget:0;
     return{
       deviceMemoryGiB:deviceMemoryGiB(),
       usedJSHeapBytes:used||null,
@@ -408,8 +415,16 @@
       modelEstimateBytes:modelBytes,
       modelBudgetBytes:modelBudget,
       modelPressure:modelRatio,
+      estimatedGpuBytes:gpuBytes,
+      gpuBudgetBytes:gpuBudget,
+      gpuPressure:gpuRatio,
+      cpuResourceBytes:cpuBytes,
+      cpuBudgetBytes:cpuBudget,
+      cpuResourcePressure:cpuRatio,
       rendererMemory:renderer?.info?.memory?{geometries:renderer.info.memory.geometries||0,textures:renderer.info.memory.textures||0}:null,
-      resources:window.PStudioResources?.stats?.()||null,
+      resources,
+      modelPreparationPending,
+      stagedTextureUploads,
       safetyMode:memorySafetyApplied
     };
   }
@@ -418,7 +433,7 @@
     if(now-lastMemorySampleAt<2500)return;
     lastMemorySampleAt=now;
     const snapshot=memorySnapshot();
-    const pressure=Math.max(Number(snapshot.heapPressure)||0,Number(snapshot.modelPressure)||0);
+    const pressure=Math.max(Number(snapshot.heapPressure)||0,Number(snapshot.modelPressure)||0,Number(snapshot.gpuPressure)||0,Number(snapshot.cpuResourcePressure)||0);
     lastMemoryPressure=pressure;
     if(pressure>=.82&&!memorySafetyApplied){
       memorySafetyApplied=true;
@@ -775,17 +790,53 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     if(occlusionCursor>=candidates.length)occlusionCursor=0;
   }
+  function modelCameraDistance(instance){
+    if(!camera||!instance?.root)return Infinity;
+    const T=window.THREE;
+    instance.root.updateWorldMatrix(true,false);
+    const center=(instance.localBoundsCenter?.clone?.()||new T.Vector3()).applyMatrix4(instance.root.matrixWorld);
+    const scale=instance.root.getWorldScale(new T.Vector3());
+    const radius=Math.max(0,Number(instance.root.userData?.pstudioBoundsRadius)||0)*Math.max(Math.abs(scale.x),Math.abs(scale.y),Math.abs(scale.z));
+    return Math.max(0,camera.position.distanceTo(center)-radius*0.2);
+  }
+  function objectCameraDistance(object){
+    if(!camera||!object)return Infinity;
+    const T=window.THREE;object.updateWorldMatrix(true,false);
+    const geometry=object.geometry;
+    if(!geometry?.boundingSphere)geometry?.computeBoundingSphere?.();
+    const center=geometry?.boundingSphere?.center?.clone?.()||new T.Vector3();
+    center.applyMatrix4(object.matrixWorld);
+    const scale=object.getWorldScale(new T.Vector3());
+    const radius=Math.max(0,Number(geometry?.boundingSphere?.radius)||0)*Math.max(Math.abs(scale.x),Math.abs(scale.y),Math.abs(scale.z));
+    return Math.max(0,camera.position.distanceTo(center)-radius*0.2);
+  }
+  function updateModelLOD(instance){
+    if(!instance?.root||!camera)return;
+    const distance=modelCameraDistance(instance);
+    if(instance.lodLevels?.length>1){
+      const lodScale=qualityPreset==='mobile'?0.62:qualityPreset==='balanced'?0.82:(adaptiveQualityEnabled?[0.62,0.82,1.0][adaptiveQualityLevel]:1.0);
+      const distances=worldRenderConfig.lodDistances.map(value=>value*lodScale);
+      const index=distances.findIndex(value=>distance<value);
+      const selected=instance.lodLevels[Math.min(index<0?distances.length:index,instance.lodLevels.length-1)];
+      if(instance.activeLOD!==selected.level){
+        for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;
+        instance.activeLOD=selected.level;
+      }
+      for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;
+      return;
+    }
+    for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
+  }
   function updateWorldVisibility(){
     if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;
-    for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,camera.position.distanceTo(mesh.position));}
+    for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,objectCameraDistance(mesh));}
     for(const instance of modelInstances.values()){
-      const d=camera.position.distanceTo(instance.root.position),active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
+      const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
-      instance.root.visible=active&&(isSelected||!instance.root.userData.pstudioOccluded);
+      instance.root.visible=!instance.preparing&&active&&(isSelected||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
       updateModelStreamingChunks(instance);
-      if(instance.lodLevels?.length>1){const lodScale=qualityPreset==='mobile'?0.62:qualityPreset==='balanced'?0.82:(adaptiveQualityEnabled?[0.62,0.82,1.0][adaptiveQualityLevel]:1.0),activeLodDistances=worldRenderConfig.lodDistances.map(value=>value*lodScale),idx=activeLodDistances.findIndex(v=>d<v),selected=instance.lodLevels[Math.min(idx<0?activeLodDistances.length:idx,instance.lodLevels.length-1)];if(instance.activeLOD!==selected.level){for(const level of instance.lodLevels)for(const entry of level.entries)entry.object.visible=level.level===selected.level&&entry.visible;instance.activeLOD=selected.level;}for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;}
-      else for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d);
+      updateModelLOD(instance);
     }
     updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId)||source.mesh.userData.pstudioOccluded)continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
@@ -926,18 +977,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     const collisionSafePosition=resolveCameraCollision(target,smoothedPosition,excludedOwnerId);
     camera.position.copy(collisionSafePosition);camera.lookAt(smoothedTarget);if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();}
-    for(const instance of modelInstances.values()){
-      if(!instance.lodLevels||instance.lodLevels.length<2)continue;
-      const distance=camera.position.distanceTo(instance.root.position);
-      const targetIndex=worldRenderConfig.lodDistances.findIndex(v=>distance<v);
-      const selected=instance.lodLevels[Math.min(targetIndex<0?worldRenderConfig.lodDistances.length:targetIndex,instance.lodLevels.length-1)];
-      if(instance.activeLOD===selected.level)continue;
-      for(const level of instance.lodLevels){
-        const visible=level.level===selected.level;
-        for(const entry of level.entries)entry.object.visible=visible&&entry.visible;
-      }
-      instance.activeLOD=selected.level;
-    }
+    for(const instance of modelInstances.values())updateModelLOD(instance);
     applyPendingLightmaps();
     updateWorldVisibility();
     resize();
@@ -1187,7 +1227,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
-      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes};
+      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0};
       modelCache.set(name,asset);
       if(window.PStudioResources?.register){
         window.PStudioResources.register('model-gpu',name,asset,{
@@ -1604,6 +1644,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.modelRoot=clone;
       if(object.isMesh && object.material){
         meshes.push(object);
+        // Static meshes use Three.js native frustum culling. Skinned/morph meshes keep
+        // conservative visibility because their animated bounds may exceed bind-pose bounds.
+        object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0));
         scheduleAutoLOD(object,object.geometry);
         object.castShadow=true;
         object.receiveShadow=true;
@@ -1651,10 +1694,76 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
     const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
     if(mixer&&autoClip){const action=mixer.clipAction(autoClip);action.reset().setLoop(T.LoopRepeat,Infinity).play();}
-    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches,streamChunks};
+    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches,streamChunks,preparing:true,preparationCancelled:false};
+    clone.visible=false;
     modelInstances.set(key,instance);
     modelGroup.add(clone);
+    prepareModelInstance(instance);
     return instance;
+  }
+
+  function nextPreparationFrame(){return new Promise(resolve=>window.requestAnimationFrame(()=>resolve()));}
+  function collectModelTextures(root){
+    const textures=new Set();
+    const visit=(value,depth=0)=>{
+      if(!value||depth>3)return;
+      if(value.isTexture){textures.add(value);return;}
+      if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}
+      if(typeof value==='object'&&Object.prototype.hasOwnProperty.call(value,'value'))visit(value.value,depth+1);
+    };
+    root.traverse(object=>{
+      if(!object.isMesh||!object.material)return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        if(!material)continue;
+        for(const value of Object.values(material))visit(value);
+        for(const value of Object.values(material.uniforms||{}))visit(value);
+      }
+    });
+    return [...textures];
+  }
+  async function prepareModelInstance(instance){
+    if(!instance)return;
+    modelPreparationPending++;
+    try{
+      await nextPreparationFrame();
+      if(instance.preparationCancelled)return;
+      const textures=collectModelTextures(instance.root);
+      let uploaded=0;
+      for(const texture of textures){
+        if(instance.preparationCancelled)return;
+        try{renderer?.initTexture?.(texture);stagedTextureUploads++;}
+        catch(error){console.warn('[PStudio] Staged texture upload deferred to normal renderer path:',error);}
+        uploaded++;
+        dispatchModelLoadProgress({name:instance.name,stage:'gpu-textures',loaded:uploaded,total:textures.length,progress:textures.length?uploaded/textures.length:1});
+        if(uploaded<textures.length)await nextPreparationFrame();
+      }
+      if(instance.preparationCancelled)return;
+      if(parallelShaderCompileSupported&&typeof renderer?.compileAsync==='function'&&scene&&camera){
+        const compile=async()=>{
+          if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
+          const previousVisible=instance.root.visible;
+          instance.root.visible=true;
+          dispatchModelLoadProgress({name:instance.name,stage:'shader-precompile',progress:0});
+          try{await renderer.compileAsync(scene,camera);}
+          finally{instance.root.visible=previousVisible;}
+        };
+        const queued=shaderCompileQueue.then(compile,compile);
+        shaderCompileQueue=queued.catch(error=>console.warn('[PStudio] Parallel shader precompile was skipped:',error));
+        await queued;
+      }
+      if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
+      instance.preparing=false;
+      dispatchModelLoadProgress({name:instance.name,stage:'prepared',loaded:textures.length,total:textures.length,progress:1});
+      window.requestAnimationFrame(()=>{
+        if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
+        try{if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}}
+        catch(error){console.error('[PStudio] Prepared model render failed:',error);}
+      });
+    }catch(error){
+      console.warn('[PStudio] Model preparation used deferred renderer fallback:',error);
+      if(!instance.preparationCancelled&&modelInstances.get(instance.key)===instance)instance.preparing=false;
+    }finally{modelPreparationPending=Math.max(0,modelPreparationPending-1);}
   }
 
   function applyModelMaterial(instance, state) {
@@ -1760,6 +1869,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function removeModelInstance(key) {
     const instance=modelInstances.get(key);
     if(!instance) return;
+    instance.preparationCancelled=true;instance.preparing=false;
     if(instance.mixer) instance.mixer.stopAllAction();
     if(instance.root.parent) instance.root.parent.remove(instance.root);
     const disposedMaterials=new Set();
@@ -2111,7 +2221,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      modelPreparationPending,
+      stagedTextureUploads,
+      parallelShaderCompileSupported,
+      frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,gpuPressure:Number(memorySnapshot().gpuPressure)||0,cpuResourcePressure:Number(memorySnapshot().cpuResourcePressure)||0,modelPreparationPending,stagedTextureUploads,parallelShaderCompileSupported},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
