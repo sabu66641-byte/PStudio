@@ -929,11 +929,10 @@
     } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
-    window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);
     window.PStudioECS?.clearSceneObjects?.();
     window.PStudioECSInspector?.refresh?.();
     justPressed.clear();
