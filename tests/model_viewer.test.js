@@ -47,6 +47,26 @@ test('prepared model visibility diagnostics distinguish loading success from act
   assert.match(renderer,/visibility:instances\.map\(getModelVisibilityDiagnostics\)/);
 });
 
+test('camera zoom is wide-range, pinch-out zooms in, and distant models expand the far clip plane',()=>{
+  assert.match(renderer,/CAMERA_ZOOM_MIN=0\.035,CAMERA_ZOOM_MAX=32/);
+  assert.match(renderer,/pinchDistance\/Math\.max\(1,distance\)/);
+  assert.match(renderer,/adjustZoom:adjustCameraZoom/);
+  assert.match(renderer,/requiredFar=Math\.max\(1600,Math\.min\(1000000,desiredDistance\+worldRenderConfig\.maxDrawDistance\+64\)\)/);
+  assert.match(html,/camera-zoom-controls/);
+  assert.match(html,/adjustZoom\?\.\(1\.25\)/);
+  assert.match(html,/adjustZoom\?\.\(0\.8\)/);
+});
+test('inspector toggle controls expose their active state in text, color and aria-pressed',()=>{
+  for(const id of ['obj-collider-state','obj-bloom-state','obj-ssao-state','obj-particle-enabled-state'])assert.ok(html.includes('id="'+id+'"'),id);
+  assert.match(html,/function setToggleState\(id,enabled\)/);
+  assert.match(html,/function toggleSelectedManipulation\(\)/);
+  assert.match(html,/aria-pressed="true" onclick="toggleSelectedManipulation\(\)"/);
+  assert.match(html,/button\.setAttribute\('aria-pressed',String\(enabled\)\)/);
+});
+test('view mode selection is strongly visible and exposed to assistive state',()=>{
+  assert.match(html,/\.view-mode-btn\.active::before\{content:"✓ "/);
+  for(const mode of ['auto','2d','3d'])assert.ok(html.includes('id="view-mode-'+mode+'"'),mode);
+});
 test('camera collision ignores the object currently being framed, not other geometry', () => {
   assert.match(renderer, /cameraFocusOwnerId=String\(instance\.ownerId\)/);
   assert.match(renderer, /const isCameraFocus=/);
@@ -62,6 +82,16 @@ test('selecting a scene object marks it as the camera focus collision exclusion'
   assert.match(renderer, /if\(id!==null&&id!==undefined\)cameraFocusOwnerId=String\(id\)/);
 });
 
+test('touch-device auto quality starts with a balanced adaptive render scale',()=>{
+  assert.match(renderer,/selected==='mobile'&&isTouchDevice&&deviceMemoryGiB\(\)>2\)adaptiveQualityLevel=1/);
+  assert.match(renderer,/initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'/);
+});
+test('large GLB scenes bypass recursive CPU occlusion raycasts while keeping frustum culling',()=>{
+  assert.match(renderer,/occlusionEligible:meshes\.length<=256/);
+  assert.match(renderer,/hasHighComplexityModel=\[\.\.\.modelInstances\.values\(\)\]\.some/);
+  assert.match(renderer,/if\(hasHighComplexityModel\)/);
+  assert.match(renderer,/instance\.occlusionEligible===false\|\|!instance\.root\.userData\.pstudioOccluded/);
+});
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
   assert.match(renderer, /instance\.root\.visible=!instance\.preparing&&active&&\(isSelected\|\|!instance\.root\.userData\.pstudioOccluded\)/);
