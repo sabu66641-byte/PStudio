@@ -131,3 +131,11 @@ test('large GLB metadata inspection is implemented in a dedicated worker and ret
   for(const token of ["self.onmessage","message.op !== 'inspect-glb'","JSON.parse(jsonText)","bufferView","estimatedGpuBytes"])assert.ok(worker.includes(token),token);
   for(const token of ["new window.Worker('/static/pstudio_model_worker.js')","worker.postMessage({id,op:'inspect-glb',file})","validateGLBFileMainThread(file,options)","worker-inspection"])assert.ok(html.includes(token),token);
 });
+
+
+test('GLTF scene worker source parses as a standalone module body',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  const body=worker.replace(/^import .*;\s*$/gm,'');
+  assert.doesNotThrow(()=>new Function(body));
+  for(const token of ['async function parseGLB(message)','loader.parseAsync(buffer, \'\')','setMeshoptDecoder','setDRACOLoader','setKTX2Loader','message.textureSupport','serializeGLTF(gltf'])assert.ok(worker.includes(token),token);
+});
