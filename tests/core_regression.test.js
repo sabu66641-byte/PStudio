@@ -58,3 +58,14 @@ test('ps input builtins read the world-scoped ECS InputState snapshot',()=>{
   assert.match(bridge,/function syncInputState\(snapshot\)/);
   assert.match(bridge,/function getInputState\(\)/);
 });
+
+test('runtime time scale and delta time read and write through ECS TimeState',()=>{
+  const engine=fs.readFileSync(path.join(root,'static/pstudio_engine.js'),'utf8');
+  const bridge=fs.readFileSync(path.join(root,'static/pstudio_ecs_scene.js'),'utf8');
+  assert.match(engine,/setTimeScale\?\.\(runtime\.timeScale\)/);
+  assert.match(engine,/getTimeState\?\.\(\)/);
+  assert.match(engine,/syncTimeState\?\.\(\{timeScale,deltaTime:dt,unscaledDeltaTime\}\)/);
+  assert.match(bridge,/function syncTimeState\(snapshot\)/);
+  assert.match(bridge,/function getTimeState\(\)/);
+  assert.match(bridge,/function setTimeScale\(value\)/);
+});
