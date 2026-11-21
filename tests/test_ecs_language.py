@@ -193,6 +193,19 @@ class PsEcsLanguageTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, msg=response.get_json())
 
+    def test_world_time_state_is_available_to_ecs_systems(self):
+        source = (
+            "system TimeControl(TimeState)\n"
+            "    time_state.timeScale = 1.0\n"
+            "    time_state.deltaTime += 0.001\n"
+            "    time_state.unscaledDeltaTime += 0.001\n"
+        )
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"time.ps": source}},
+        )
+        self.assertEqual(response.status_code, 200, msg=response.get_json())
+
     def test_builtin_ecs_physics_components_cannot_be_redeclared(self):
         for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld", "ScriptState", "ScriptLifecycle", "ScriptSystemState", "LocomotionState", "SpriteRenderer", "MeshRenderer", "MaterialSettings", "PostProcessingSettings", "ParticleEmitter", "Collider2D", "MeshCollider", "AnimationState", "CameraState", "LightSet", "EnvironmentSettings", "AudioSource", "CollisionState", "InputState", "MaterialRuntimeState", "ParticleRuntimeState", "TimeState"):
             response = self.client.post(
