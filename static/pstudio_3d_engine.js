@@ -1592,7 +1592,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function registerVirtualTextureSource(texture,assetKey,virtualInfo){
     if(!texture?.isTexture||!virtualInfo?.workerImageKey)return null;
-    const id=String(virtualInfo.workerImageKey);
+    const sourceId=String(virtualInfo.workerImageKey),colorKey=texture.colorSpace===window.THREE.SRGBColorSpace?'srgb':'linear';
+    const id=sourceId+'@'+colorKey;
     if(virtualTextures.has(id))return virtualTextures.get(id);
     const atlas=initializeVirtualTextureAtlas(texture.colorSpace);
     if(!atlas)return null;
@@ -1609,7 +1610,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     pageTable.colorSpace=window.THREE.NoColorSpace;pageTable.needsUpdate=true;
     try{renderer.initTexture(pageTable);}catch(error){pageTable.dispose();return null;}
     const record={
-      id,assetKey:String(assetKey),workerImageKey:id,sourceWidth:width,sourceHeight:height,
+      id,sourceId,assetKey:String(assetKey),workerImageKey:sourceId,sourceWidth:width,sourceHeight:height,
       tileSize,tileColumns:columns,tileRows:rows,pageTableData:data,pageTableTexture:pageTable,
       atlas,colorSpace:texture.colorSpace,lastScanAt:0,lastCameraPosition:null,pages:new Set(),
       requestCount:0,residentCount:0
@@ -1876,7 +1877,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted),fallback:true});
       }
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
-      if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
+      if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene,assetKey:name});return null;}
       dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
       const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0,assetKey:name,virtualTextureIds:gltf.virtualTextureIds||[]};
       modelCache.set(name,asset);
@@ -1898,6 +1899,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     })().catch(error=>{
       const message=String(error?.message||error);
       if((modelRevisions.get(name)||0)===revision){
+        releaseVirtualTexturesForAsset(name);
         modelLoadErrors.set(name,message);
         console.error('[PStudio] Model load failed:',name,error);
         window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
