@@ -148,7 +148,7 @@ test('GLB material overrides restore source defaults and use per-instance geomet
 });
 
 test('model material instances do not capture geometry before LOD or lightmap setup', () => {
-  assert.match(renderer,/geometryRevision=overrides\.some\(item=>item\.recomputeNormals===true\)/);
+  assert.match(renderer,/normalGeometrySignature=overrides\.some\(item=>item\.recomputeNormals===true\)/);
   assert.doesNotMatch(renderer,/geometryOriginals\.set\(object,object\.geometry\)/);
   assert.match(renderer,/const original=object\.userData\?\.pstudioLightmapGeometry\?object\.geometry/);
   assert.match(renderer,/normalGeometryClones\?\.set\(original,normalized\)/);
