@@ -153,6 +153,8 @@
           bodyOwners.set(entity, ownerId);
           if (!config.enabled) {
             if (physics.getBody(ownerId)) physics.setActive(ownerId, false);
+            const state = api.getComponent(entity, 'PhysicsState');
+            if (state) state.active = false;
             return;
           }
           physics.createBody(
