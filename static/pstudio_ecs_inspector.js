@@ -648,12 +648,17 @@
                   category: 'ps',
                   description: 'Defined in ' + filename
                 });
-              } else if (existing.source === filename && existing.schema) {
-                const oldFields = Object.keys(existing.schema).sort();
-                const newFields = Object.keys(schema).sort();
-                if (oldFields.length !== newFields.length || oldFields.some((key, index) => key !== newFields[index])) {
-                  throw new Error('Component schema changed. Reload this project before applying: ' + name);
-                }
+              } else if (existing.source === filename) {
+                api.updateComponentDefinition(name, {
+                  create: () => JSON.parse(JSON.stringify(defaults)),
+                  schema,
+                  additionalProperties: false,
+                  source: filename,
+                  category: 'ps',
+                  description: 'Defined in ' + filename
+                });
+              } else {
+                throw new Error('Component name is already used by another definition: ' + name);
               }
             } else if (node.type === 'SystemDef') {
               const name = String(node.name || '');
