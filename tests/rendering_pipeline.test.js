@@ -514,6 +514,15 @@ test('model GPU resources are retained before asynchronous instance cloning and 
   assert.ok(catchStart>buildStart);
   assert.ok(renderer.slice(catchStart,catchStart+180).includes('resourceLease?.release?.()'),'failed builds release the lease');
 });
+test('model build phase is reported and initial render errors do not release a completed instance lease',()=>{
+  for(const token of ["onPhase('hierarchy-clone')","onPhase('material-and-shader-setup')","onPhase('streaming-chunk-build')","onPhase('gpu-instancing-build')","onPhase('bounds-and-lod-build')","onPhase('animation-initialization')","stage:'instance-render'","buildPhase='initial-scene-render'"])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes("dispatchModelLoadError({name:d.name,stage:'instance-render'"));
+  assert.ok(!renderer.includes("if(lastCommands)render(lastCommands);\n                return created;"));
+});
+test('optional renderer uniform writes tolerate missing or stale wrappers without aborting model setup',()=>{
+  for(const token of ["!uniforms?.enabled","!uniforms.near","!uniforms?.uTime","syncPostFXUniforms","Object.prototype.hasOwnProperty.call(uniform,'value')"])assert.ok(renderer.includes(token),token);
+  for(const token of ["setTime(water,'pstudioWaterHQ')","setTime(foliage,'pstudioFoliageHQ')","const depth=this.uniforms?.tDepth","u?.sceneDepth"])assert.ok(fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8').includes(token),token);
+});
 test('failed model instance builds are retained as explicit errors and can be retried',()=>{
   for(const token of ['modelBuildErrors.has(key)','modelBuildErrors.set(key,message)','retryModelAsset','getModelStatus',"stage:'instance-build'"])assert.ok(renderer.includes(token),token);
 });
