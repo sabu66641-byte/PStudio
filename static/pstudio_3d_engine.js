@@ -13,6 +13,7 @@
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
+  let worldFrustum=null,worldFrustumMatrix=null,worldFrustumSphere=null;
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
@@ -828,7 +829,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
   }
   function updateWorldVisibility(){
-    if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance;
+    if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance,T=window.THREE;
+    if(!worldFrustum){worldFrustum=new T.Frustum();worldFrustumMatrix=new T.Matrix4();worldFrustumSphere=new T.Sphere();}
+    camera.updateMatrixWorld(true);
+    worldFrustumMatrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+    worldFrustum.setFromProjectionMatrix(worldFrustumMatrix);
     for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,objectCameraDistance(mesh));}
     for(const instance of modelInstances.values()){
       const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
@@ -839,7 +844,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       updateModelLOD(instance);
     }
     updateOcclusionVisibility();
-    for(const batch of instancedBatches.values()){const sources=batch.userData.instanceSources||[],dummy=new window.THREE.Object3D(),owners=[],keys=[];let count=0;for(const source of sources){if(!isWithinWorldDrawDistance(source.mesh,max)||!isOwnerChunkActive(source.mesh.userData.ownerId)||source.mesh.userData.pstudioOccluded)continue;dummy.position.copy(source.mesh.position);dummy.quaternion.copy(source.mesh.quaternion);dummy.scale.copy(source.mesh.scale);dummy.updateMatrix();batch.setMatrixAt(count,dummy.matrix);owners[count]=source.mesh.userData.ownerId;keys[count]=source.sourceKey;count++;}batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();}
+    for(const batch of instancedBatches.values()){
+      const sources=batch.userData.instanceSources||[],dummy=new T.Object3D(),owners=[],keys=[];let count=0;
+      for(const source of sources){
+        const mesh=source.mesh;
+        if(!isWithinWorldDrawDistance(mesh,max)||!isOwnerChunkActive(mesh.userData.ownerId)||mesh.userData.pstudioOccluded)continue;
+        const geometry=mesh.geometry;
+        if(geometry&&!geometry.boundingSphere)geometry.computeBoundingSphere?.();
+        if(geometry?.boundingSphere){mesh.updateMatrix();worldFrustumSphere.copy(geometry.boundingSphere).applyMatrix4(mesh.matrix);if(!worldFrustum.intersectsSphere(worldFrustumSphere))continue;}
+        dummy.position.copy(mesh.position);dummy.quaternion.copy(mesh.quaternion);dummy.scale.copy(mesh.scale);dummy.updateMatrix();
+        batch.setMatrixAt(count,dummy.matrix);owners[count]=mesh.userData.ownerId;keys[count]=source.sourceKey;count++;
+      }
+      batch.count=count;batch.userData.instanceOwnerIds=owners;batch.userData.instanceSourceKeys=keys;
+      batch.instanceMatrix.needsUpdate=true;batch.visible=count>0;if(count)batch.computeBoundingSphere();
+    }
     updateProbeVolumeBlend();updateDirectionalShadowAnchor(new window.THREE.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]));
   }
 
