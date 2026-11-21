@@ -23,7 +23,7 @@
     const style = make('style');
     style.id = STYLE_ID;
     style.textContent = `
-      .ecs-inspector{padding:13px;border:1px solid var(--line);border-radius:8px;background:#151b23;margin:12px 0}
+      .ecs-inspector{min-width:275px;flex:0 0 275px;padding:13px;border:1px solid var(--line);border-radius:8px;background:#151b23;margin:12px 0}
       .ecs-inspector-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
       .ecs-inspector-title{font-size:11px;font-weight:850;letter-spacing:.08em;color:#d7e0eb}
       .ecs-muted{color:var(--subtle);font-size:10px}
@@ -370,7 +370,7 @@
     }
   }
 
-  function refresh() {
+  function refresh(selectedSceneObjectId) {
     const api = ecs();
     if (!api) return;
     ensureStyles();
@@ -411,9 +411,12 @@
     }
 
     const selectedObject = typeof window.selectedObject === 'function' ? window.selectedObject() : null;
-    const mappedId = selectedObject ? api.getEntityForSceneObject(selectedObject.id) : null;
-    if (mappedId) activeEntityId = mappedId;
-    if (!activeEntityId || !ids.includes(activeEntityId)) activeEntityId = ids[0] || null;
+    const requestedMappedId = selectedSceneObjectId !== undefined && selectedSceneObjectId !== null
+      ? api.getEntityForSceneObject(selectedSceneObjectId)
+      : null;
+    const selectedMappedId = selectedObject ? api.getEntityForSceneObject(selectedObject.id) : null;
+    if (requestedMappedId) activeEntityId = requestedMappedId;
+    else if (!activeEntityId || !ids.includes(activeEntityId)) activeEntityId = selectedMappedId || ids[0] || null;
     if (select) select.value = activeEntityId ? String(activeEntityId) : '';
     const info = byId('ecs-selected-info');
     if (info) {
@@ -439,7 +442,7 @@
     const original = window.selectSceneObject;
     const wrapped = function(id) {
       const result = original.apply(this, arguments);
-      refresh();
+      refresh(id);
       return result;
     };
     wrapped.__pstudioECSWrapped = true;
