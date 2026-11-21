@@ -101,6 +101,8 @@ test('camera collision skips recursive high-complexity model trees',()=>{
   assert.match(renderer,/pstudioHighComplexity=meshes\.length>256/);
   assert.match(renderer,/child\.userData\?\.pstudioHighComplexity\)collisionTargets\.push\(child\)/);
   assert.match(renderer,/intersectObjects\(collisionTargets,true\)/);
+  assert.doesNotMatch(renderer,/primitiveGroup\.updateMatrixWorld\(true\);\s*modelGroup\.updateMatrixWorld\(true\);\s*cameraCollisionRaycaster/);
+  assert.match(renderer,/instance\.root\.visible=!instance\.preparing&&active/);
 });
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
