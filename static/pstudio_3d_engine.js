@@ -1765,7 +1765,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(typeof window.Worker!=='function')return null;
     if(gltfWorker)return gltfWorker;
     try{
-      const worker=new window.Worker('/static/pstudio_gltf_worker.js',{type:'module',name:'PStudio-GLTF-Parser'});
+      const worker=new window.Worker(new URL((window.PStudioStaticBase||'/static/')+'pstudio_gltf_worker.js',document.baseURI),{type:'module',name:'PStudio-GLTF-Parser'});
       worker.onmessage=event=>{
         const message=event.data||{};
         const pending=gltfWorkerPending.get(message.id);
