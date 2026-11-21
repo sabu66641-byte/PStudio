@@ -73,7 +73,7 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
   const material = {
     isMeshStandardMaterial: true,
     userData: {},
-    onBeforeCompile(shader) { shader.fragmentShader += '\\n// retained PBR hook'; },
+    onBeforeCompile(shader) { shader.fragmentShader += '\n// retained PBR hook'; },
     customProgramCacheKey() { return 'existing-pbr-key'; }
   };
   fx.configureToon(material, {
@@ -93,7 +93,7 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
   });
   const shader = {
     uniforms: {},
-    fragmentShader: '#include <common>\\n#include <lights_fragment_end>\\n#include <opaque_fragment>'
+    fragmentShader: '#include <common>\n#include <lights_fragment_end>\n#include <opaque_fragment>'
   };
   material.onBeforeCompile(shader, {});
   for (const name of [
@@ -126,7 +126,7 @@ test('outline is an expanded back-face shell and is released with its source obj
   assert.equal(shell.material.side, 1);
   assert.equal(shell.castShadow, false);
   assert.equal(shell.receiveShadow, false);
-  const shader = { uniforms: {}, vertexShader: '#include <common>\\n#include <begin_vertex>\\n' };
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n' };
   shell.material.onBeforeCompile(shader, {});
   assert.ok(shader.vertexShader.includes('uPStudioOutlineExpansion'));
   assert.ok(shader.vertexShader.includes('normalize(objectNormal)*uPStudioOutlineExpansion'));
@@ -139,7 +139,7 @@ test('foliage wind speed and strength are shader uniforms, not CPU vertex rewrit
   const material = {
     isMeshStandardMaterial: true,
     userData: {},
-    onBeforeCompile(shader) { shader.fragmentShader += '\\n// pbr'; },
+    onBeforeCompile(shader) { shader.fragmentShader += '\n// pbr'; },
     customProgramCacheKey() { return 'base'; }
   };
   const object = {
@@ -152,7 +152,7 @@ test('foliage wind speed and strength are shader uniforms, not CPU vertex rewrit
   fx.configureFoliage(material, object, { windStrength: 1.25, windSpeed: 1.8 });
   const shader = {
     uniforms: {},
-    vertexShader: '#include <common>\\n#include <begin_vertex>\\n',
+    vertexShader: '#include <common>\n#include <begin_vertex>\n',
     fragmentShader: ''
   };
   material.onBeforeCompile(shader, {});
