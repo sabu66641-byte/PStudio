@@ -168,6 +168,9 @@ test('foliage wind speed and strength are shader uniforms, not CPU vertex rewrit
   assert.ok(shader.vertexShader.includes('uPStudioWindTime*uPStudioWindSpeed'));
   assert.ok(shader.vertexShader.includes('transformed.x+=sway'));
   assert.equal(material.userData.pstudioFoliageHQ.role, 'leaf');
+  fx.configureFoliage(material, object, { windStrength: 0, windSpeed: 1 });
+  assert.equal(shader.uniforms.uPStudioWindStrength.value, 0);
+  assert.equal(shader.uniforms.uPStudioWindSpeed.value, 1);
 });
 
 test('toon controls persist as per-model overrides and are forwarded to the renderer', () => {
