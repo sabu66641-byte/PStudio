@@ -482,7 +482,13 @@
   function updateViewModeButtons() {
     for (const mode of ['auto','2d','3d']) {
       const button = $('view-mode-' + mode);
-      if (button) { button.classList.toggle('active', renderMode === mode); button.setAttribute('aria-pressed', renderMode === mode ? 'true' : 'false'); }
+      if (button) {
+        const active=renderMode===mode;
+        button.classList.toggle('active',active);
+        button.setAttribute('aria-pressed',active?'true':'false');
+        button.setAttribute('aria-label','View mode '+mode.toUpperCase()+(active?' active':' inactive'));
+        button.title='View mode: '+mode.toUpperCase()+(active?' · ACTIVE':' · INACTIVE');
+      }
     }
   }
   function buildScenePreview3D() {
