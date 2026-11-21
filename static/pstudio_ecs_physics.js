@@ -55,6 +55,23 @@
     });
   }
 
+  if (!hasType('PhysicsTransform')) {
+    ecs.registerComponent('PhysicsTransform', {
+      label: 'Physics Transform',
+      category: 'Physics',
+      description: 'World-space position produced by the Physics solver. It is intentionally separate from the editor Transform coordinate space.',
+      persistent: false,
+      readonly: true,
+      internal: true,
+      additionalProperties: false,
+      schema: {
+        x: { type: 'number', default: 0, label: 'World Position X' },
+        y: { type: 'number', default: 0, label: 'World Position Y' },
+        z: { type: 'number', default: 0, label: 'World Position Z' }
+      }
+    });
+  }
+
   if (!hasType('PhysicsBody')) {
     ecs.registerComponent('PhysicsBody', {
       label: 'Physics Body',
@@ -83,8 +100,9 @@
         const reference = api.hasComponent(entity, 'SceneObjectRef')
           ? api.getComponent(entity, 'SceneObjectRef')
           : null;
-        if (reference) bodyOwners.set(entity, String(reference.sceneObjectId));
+        bodyOwners.set(entity, reference ? String(reference.sceneObjectId) : 'ecs-' + entity);
         if (!api.hasComponent(entity, 'PhysicsState')) api.addComponent(entity, 'PhysicsState');
+        if (!api.hasComponent(entity, 'PhysicsTransform')) api.addComponent(entity, 'PhysicsTransform');
       },
       onRemove(entity, value, api) {
         const ownerId = bodyOwners.get(entity);
@@ -121,15 +139,15 @@
       id: 'engine.physics.pre',
       name: 'Physics Body Synchronization',
       description: 'Creates/configures Physics bodies from ECS PhysicsBody Components before the fixed-step simulation.',
-      components: ['SceneObjectRef', 'PhysicsBody'],
+      components: ['PhysicsBody'],
       priority: -1000,
       phase: 'prePhysics',
       internal: true,
       update(dt, api) {
         const physics = window.PStudioPhysics;
         if (!physics) return;
-        api.forEach(['SceneObjectRef', 'PhysicsBody'], (entity, reference, config) => {
-          const ownerId = String(reference.sceneObjectId);
+        api.forEach(['PhysicsBody'], (entity, config) => {
+          const ownerId = bodyOwners.get(entity) || 'ecs-' + entity;
           bodyOwners.set(entity, ownerId);
           if (!config.enabled) {
             physics.setActive(ownerId, false);
@@ -158,17 +176,21 @@
       id: 'engine.physics.post',
       name: 'Physics State Synchronization',
       description: 'Copies fixed-step Physics results into the read-only ECS PhysicsState Component.',
-      components: ['SceneObjectRef', 'PhysicsBody', 'PhysicsState'],
+      components: ['PhysicsBody', 'PhysicsState', 'PhysicsTransform'],
       priority: 1000,
       phase: 'postPhysics',
       internal: true,
       update(dt, api) {
         const physics = window.PStudioPhysics;
         if (!physics) return;
-        api.forEach(['SceneObjectRef', 'PhysicsBody', 'PhysicsState'], (entity, reference, config, state) => {
-          const snapshot = physics.getBodyState(String(reference.sceneObjectId));
+        api.forEach(['PhysicsBody', 'PhysicsState', 'PhysicsTransform'], (entity, config, state, transform) => {
+          const ownerId = bodyOwners.get(entity) || 'ecs-' + entity;
+          const snapshot = physics.getBodyState(ownerId);
           if (!snapshot) return;
           Object.assign(state, snapshot);
+          transform.x = snapshot.x;
+          transform.y = snapshot.y;
+          transform.z = snapshot.z;
         });
       }
     });
@@ -176,6 +198,6 @@
 
   window.PStudioECSPhysics = {
     version: '1.0.0',
-    componentTypes: ['Velocity', 'PhysicsBody', 'PhysicsState']
+    componentTypes: ['Velocity', 'PhysicsBody', 'PhysicsState', 'PhysicsTransform']
   };
 })();
