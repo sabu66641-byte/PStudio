@@ -121,18 +121,18 @@ class CompilerScopeRegressionTests(unittest.TestCase):
         self.assertEqual(output, ["false"])
 
     def test_cpp_reserved_identifier_is_rejected_as_ps_semantic_error(self):
-        tree = app.parse(app.tokenize("class = 1\\n"))
-        with self.assertRaisesRegex(Exception, "C\\+\\+予約語"):
+        tree = app.parse(app.tokenize("class = 1\n"))
+        with self.assertRaisesRegex(Exception, r"C\+\+予約語"):
             app.validate_ast(tree)
 
     def test_boolean_literal_cannot_be_assigned_as_identifier(self):
-        tree = app.parse(app.tokenize("true = 1\\n"))
+        tree = app.parse(app.tokenize("true = 1\n"))
         with self.assertRaisesRegex(Exception, "論理値"):
             app.validate_ast(tree)
 
     def test_reserved_cpp_function_name_is_rejected(self):
-        tree = app.parse(app.tokenize("func namespace()\\n    return 1\\n"))
-        with self.assertRaisesRegex(Exception, "C\\+\\+予約語"):
+        tree = app.parse(app.tokenize("func namespace()\n    return 1\n"))
+        with self.assertRaisesRegex(Exception, r"C\+\+予約語"):
             app.validate_ast(tree)
 
 
