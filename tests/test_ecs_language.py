@@ -134,10 +134,6 @@ class PsEcsLanguageTests(unittest.TestCase):
         self.assertIn("トップレベル", response.get_json()["error"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_builtin_physics_components_are_available_to_game_systems(self):
         source = (
             "system Follow(Transform, PhysicsState)\n"
@@ -162,3 +158,7 @@ if __name__ == "__main__":
             )
             self.assertEqual(response.status_code, 400)
             self.assertIn("組み込みComponent", response.get_json()["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()
