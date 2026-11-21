@@ -801,7 +801,26 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     });
   }
   function updateDirectionalShadowAnchor(target){if(!camera)return;if(csm)return;if(!keyLight?.shadow)return;const sh=keyLight.shadow,extent=Math.min(240,worldRenderConfig.shadowDistance),texel=extent*2/Math.max(1,sh.mapSize.x),x=Math.round(target.x/texel)*texel,z=Math.round(target.z/texel)*texel,anchor=new window.THREE.Vector3(x,target.y,z);keyLight.position.set(x+5,target.y+9,z+6);keyLight.target.position.copy(anchor);keyLight.target.updateMatrixWorld();sh.camera.left=-extent;sh.camera.right=extent;sh.camera.top=extent;sh.camera.bottom=-extent;sh.camera.near=.5;sh.camera.far=extent*3;sh.camera.updateProjectionMatrix();sh.needsUpdate=true;}
-  function isWithinWorldDrawDistance(object,maxDistance){let radius=Number(object.userData?.pstudioBoundsRadius)||0;if(!radius&&object.geometry){if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere();radius=object.geometry.boundingSphere?.radius||0;}const scale=object.scale?Math.max(Math.abs(object.scale.x),Math.abs(object.scale.y),Math.abs(object.scale.z)):1;return camera.position.distanceTo(object.position)<=maxDistance+radius*scale;}
+  function isWithinWorldDrawDistance(object,maxDistance){
+    if(!object||!camera||!window.THREE)return false;
+    const T=window.THREE;
+    object.updateWorldMatrix?.(true,false);
+    const scaleVector=object.getWorldScale?.(new T.Vector3())||new T.Vector3(1,1,1);
+    const scale=Math.max(Math.abs(scaleVector.x),Math.abs(scaleVector.y),Math.abs(scaleVector.z),0.001);
+    let localCenter=object.userData?.pstudioBoundsCenter||null;
+    let radius=Math.max(0,Number(object.userData?.pstudioBoundsRadius)||0);
+    if(!localCenter?.isVector3&&object.geometry){
+      if(!object.geometry.boundingSphere)object.geometry.computeBoundingSphere?.();
+      localCenter=object.geometry.boundingSphere?.center||null;
+      if(!radius)radius=Math.max(0,Number(object.geometry.boundingSphere?.radius)||0);
+    }
+    const center=localCenter?.isVector3
+      ?localCenter.clone().applyMatrix4(object.matrixWorld)
+      :object.getWorldPosition(new T.Vector3());
+    const cameraPosition=camera.getWorldPosition(new T.Vector3());
+    const edgeDistance=Math.max(0,cameraPosition.distanceTo(center)-radius*scale);
+    return edgeDistance<=Math.max(0,Number(maxDistance)||0);
+  }
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
   function updateOcclusionVisibility(){
     if(!occlusionEnabled||!occlusionRaycaster||!camera)return;
@@ -1155,10 +1174,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!instance?.root||!camera||!window.THREE)return false;
     const T=window.THREE;
     instance.root.updateMatrixWorld(true);
-    const bounds=new T.Box3().setFromObject(instance.root);
-    if(bounds.isEmpty())return false;
-    const sphere=bounds.getBoundingSphere(new T.Sphere());
-    const radius=Number.isFinite(sphere.radius)?Math.max(0.25,sphere.radius):0.25;
+    const localCenter=instance.localBoundsCenter?.isVector3?instance.localBoundsCenter:instance.root.userData?.pstudioBoundsCenter;
+    let center,radius;
+    if(localCenter?.isVector3){
+      center=localCenter.clone().applyMatrix4(instance.root.matrixWorld);
+      const worldScale=instance.root.getWorldScale(new T.Vector3());
+      radius=Math.max(0.25,Number(instance.root.userData?.pstudioBoundsRadius)||0.25)*
+        Math.max(Math.abs(worldScale.x),Math.abs(worldScale.y),Math.abs(worldScale.z));
+    }else{
+      const bounds=new T.Box3().setFromObject(instance.root);
+      if(bounds.isEmpty())return false;
+      const sphere=bounds.getBoundingSphere(new T.Sphere());
+      center=sphere.center;
+      radius=Number.isFinite(sphere.radius)?Math.max(0.25,sphere.radius):0.25;
+    }
     const oldTarget=new T.Vector3(cameraTarget[0],cameraTarget[1],cameraTarget[2]);
     const direction=new T.Vector3(cameraBase[0],cameraBase[1],cameraBase[2]).sub(oldTarget);
     if(direction.lengthSq()<1e-8)direction.set(6,5,8);
@@ -1167,7 +1196,6 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const horizontalFov=2*Math.atan(Math.tan(verticalFov/2)*Math.max(0.1,camera.aspect||1));
     const limitingFov=Math.max(0.12,Math.min(verticalFov,horizontalFov));
     const distance=Math.max(0.75,(radius/Math.sin(limitingFov/2))*1.16);
-    const center=sphere.center;
     cameraTarget=[center.x,center.y,center.z];
     cameraBase=[center.x+direction.x*distance,center.y+direction.y*distance,center.z+direction.z*distance];
     cameraFocusOwnerId=String(instance.ownerId);
@@ -2569,22 +2597,26 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   async function buildModelStreamingChunks(root){
     const T=window.THREE,settings=root.userData?.pstudioStreamingConfig||{};
     const cellSize=Math.max(48,Math.min(256,Number(settings.cellSize)||96));
-    const loadDistance=Math.max(96,Math.min(1200,Number(settings.loadDistance)||300));
-    const unloadDistance=Math.max(loadDistance+16,Math.min(1600,Number(settings.unloadDistance)||340));
+    const configuredLoad=Number(settings.loadDistance),configuredUnload=Number(settings.unloadDistance);
+    const loadDistance=Number.isFinite(configuredLoad)&&configuredLoad>0?Math.max(96,Math.min(10000,configuredLoad)):300;
+    const unloadDistance=Number.isFinite(configuredUnload)&&configuredUnload>0
+      ?Math.max(loadDistance+16,Math.min(12000,configuredUnload)):Math.max(loadDistance+40,340);
     const groups=new Map(),chunks=[];
     root.updateMatrixWorld(true);
+    const inverseRoot=root.matrixWorld.clone().invert();
     let processed=0;
     for(const child of [...root.children]){
       const name=String(child.name||'');
       const streamable=/^PStudioInstance_/i.test(name)||/(?:^|[_ -])Wind[_ -]?Tree/i.test(name)||/Wind_Grass|Wildflower_Cover/i.test(name);
       if(!streamable)continue;
-      const bounds=new T.Box3().setFromObject(child);
+      const bounds=new T.Box3().setFromObject(child).applyMatrix4(inverseRoot);
       if(!bounds.isEmpty()){
         const center=bounds.getCenter(new T.Vector3());
         const cellX=Math.floor(center.x/cellSize),cellZ=Math.floor(center.z/cellSize);
         const id=cellX+':'+cellZ;
-        if(!groups.has(id))groups.set(id,{id,cellX,cellZ,children:[]});
-        groups.get(id).children.push(child);
+        if(!groups.has(id))groups.set(id,{id,cellX,cellZ,children:[],bounds:new T.Box3()});
+        const group=groups.get(id);
+        group.children.push(child);group.bounds.union(bounds);
       }
       if(++processed%2===0)await nextPreparationFrame();
     }
@@ -2592,9 +2624,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const chunk=new T.Group();
       chunk.name='PStudio_StreamChunk_'+group.id.replace(':','_');
       chunk.position.set((group.cellX+.5)*cellSize,0,(group.cellZ+.5)*cellSize);
+      const sphere=group.bounds.getBoundingSphere(new T.Sphere());
       chunk.userData.ownerId=root.userData.ownerId;
       chunk.userData.pstudioStreamChunkId=group.id;
-      chunk.userData.pstudioStreamRadius=cellSize*.74;
+      chunk.userData.pstudioStreamBoundsCenter=sphere.center.clone().sub(chunk.position);
+      chunk.userData.pstudioStreamRadius=Math.max(cellSize*.74,sphere.radius);
       chunk.userData.pstudioStreamLoadDistance=loadDistance;
       chunk.userData.pstudioStreamUnloadDistance=unloadDistance;
       chunk.userData.pstudioStreamActive=false;chunk.visible=false;
@@ -2614,13 +2648,19 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const T=window.THREE;
     instance.root.updateMatrixWorld(true);
     const factor=qualityPreset==='mobile' ? 0.72 : qualityPreset==='balanced' ? 0.86 : (adaptiveQualityEnabled ? [0.72,0.86,1.0][adaptiveQualityLevel] : 1.0);
-    const cameraPosition=camera.position;
+    const cameraPosition=camera.getWorldPosition(new T.Vector3());
+    const rootScale=instance.root.getWorldScale(new T.Vector3());
+    const scale=Math.max(Math.abs(rootScale.x),Math.abs(rootScale.y),Math.abs(rootScale.z));
     for(const chunk of instance.streamChunks){
-      const center=chunk.getWorldPosition(new T.Vector3());
-      const distance=Math.max(0,cameraPosition.distanceTo(center)-(chunk.userData.pstudioStreamRadius||0));
-      const wasActive=chunk.userData.pstudioStreamActive!==false;
+      chunk.updateWorldMatrix(true,false);
+      const localCenter=chunk.userData.pstudioStreamBoundsCenter;
+      const center=localCenter?.isVector3?localCenter.clone().applyMatrix4(chunk.matrixWorld):chunk.getWorldPosition(new T.Vector3());
+      const radius=(Number(chunk.userData.pstudioStreamRadius)||0)*scale;
+      const distance=Math.max(0,cameraPosition.distanceTo(center)-radius);
+      const wasActive=chunk.userData.pstudioStreamActive===true;
       const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance:chunk.userData.pstudioStreamLoadDistance;
-      const active=distance<=threshold*factor;
+      const inCameraFrustum=!!worldFrustum?.intersectsSphere?.(new T.Sphere(center,radius));
+      const active=inCameraFrustum||distance<=threshold*factor;
       chunk.visible=active;
       chunk.userData.pstudioStreamActive=active;
     }
@@ -2890,6 +2930,23 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     clone.updateMatrixWorld(true);
+    onPhase('bounds-and-lod-build');
+    const bounds=new T.Box3(),inverseRoot=clone.matrixWorld.clone().invert(),relativeMatrix=new T.Matrix4();
+    for(let i=0;i<pairs.length;i++){
+      const object=pairs[i].clone;
+      if(object.isMesh&&object.geometry){
+        if(!object.geometry.boundingBox)object.geometry.computeBoundingBox?.();
+        if(object.geometry.boundingBox){
+          relativeMatrix.multiplyMatrices(inverseRoot,object.matrixWorld);
+          bounds.union(object.geometry.boundingBox.clone().applyMatrix4(relativeMatrix));
+        }
+      }
+      if((i+1)%128===0)await nextPreparationFrame();
+    }
+    if(bounds.isEmpty())bounds.setFromCenterAndSize(new T.Vector3(),new T.Vector3(1,1,1));
+    const modelSphere=bounds.getBoundingSphere(new T.Sphere());
+    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
+    clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     onPhase('streaming-chunk-build');
     const streamChunks=await buildModelStreamingChunks(clone);
     onPhase('gpu-instancing-build');
@@ -2903,20 +2960,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(defaults&&batchMaterial)materialDefaults.set(batchMaterial,{...defaults});
       }
     }
-    onPhase('bounds-and-lod-build');
-    const bounds=new T.Box3();
-    for(let i=0;i<pairs.length;i++){
-      const object=pairs[i].clone;
-      if(object.isMesh&&object.geometry){
-        if(!object.geometry.boundingBox)object.geometry.computeBoundingBox?.();
-        if(object.geometry.boundingBox)bounds.union(object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld));
-      }
-      if((i+1)%128===0)await nextPreparationFrame();
-    }
-    if(bounds.isEmpty())bounds.setFromCenterAndSize(new T.Vector3(),new T.Vector3(1,1,1));
-    const modelSphere=bounds.getBoundingSphere(new T.Sphere());
-    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
-    clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     const lodMap=new Map();
     for(let i=0;i<pairs.length;i++){
       const object=pairs[i].clone;
@@ -2967,6 +3010,41 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     });
     return [...textures];
   }
+  function modelObjectEffectivelyVisible(object,root){
+    let node=object;
+    while(node){
+      if(node.visible===false)return false;
+      if(node===root)return true;
+      node=node.parent;
+    }
+    return false;
+  }
+  function getModelVisibilityDiagnostics(instance){
+    const root=instance?.root,T=window.THREE;
+    if(!root||!T)return null;
+    root.updateWorldMatrix(true,false);
+    const center=(instance.localBoundsCenter?.clone?.()||new T.Vector3()).applyMatrix4(root.matrixWorld);
+    const rootScale=root.getWorldScale(new T.Vector3());
+    const radius=(Number(root.userData?.pstudioBoundsRadius)||0)*Math.max(Math.abs(rootScale.x),Math.abs(rootScale.y),Math.abs(rootScale.z));
+    const cameraPosition=camera?.getWorldPosition(new T.Vector3())||new T.Vector3();
+    const cameraDistanceToBounds=camera?Math.max(0,cameraPosition.distanceTo(center)-radius):null;
+    let visibleMeshes=0,totalMeshes=0;
+    root.traverse(object=>{
+      if(!object.isMesh||!object.geometry)return;
+      totalMeshes++;
+      if(modelObjectEffectivelyVisible(object,root))visibleMeshes++;
+    });
+    const streamChunks=instance.streamChunks||[];
+    const activeStreamChunks=streamChunks.filter(chunk=>chunk.userData?.pstudioStreamActive===true).length;
+    return{
+      ownerId:String(instance.ownerId),rootVisible:!!root.visible,preparing:!!instance.preparing,
+      withinDrawDistance:camera?isWithinWorldDrawDistance(root,worldRenderConfig.maxDrawDistance):null,
+      boundsInCameraFrustum:!!(camera&&worldFrustum?.intersectsSphere?.(new T.Sphere(center,radius))),
+      cameraDistanceToBounds,maxDrawDistance:worldRenderConfig.maxDrawDistance,
+      boundsRadius:radius,meshCount:totalMeshes,visibleMeshes,
+      streamChunkCount:streamChunks.length,activeStreamChunks
+    };
+  }
   async function prepareModelInstance(instance){
     if(!instance)return;
     modelPreparationPending++;
@@ -2999,8 +3077,14 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       dispatchModelLoadProgress({name:instance.name,stage:'prepared',loaded:textures.length,total:textures.length,progress:1});
       window.requestAnimationFrame(()=>{
         if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
-        try{if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}}
-        catch(error){console.error('[PStudio] Prepared model render failed:',error);}
+        try{
+          if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}
+          const diagnostics=getModelVisibilityDiagnostics(instance);
+          try{window.dispatchEvent(new CustomEvent('pstudio-model-visibility',{detail:{name:instance.name,...diagnostics}}));}catch(_){}
+        }catch(error){
+          console.error('[PStudio] Prepared model render failed:',error);
+          dispatchModelLoadError({name:instance.name,stage:'scene-render',error:String(error?.message||error),stack:error?.stack||'',retryable:true});
+        }
       });
     }catch(error){
       const message=String(error?.message||error);
@@ -3546,7 +3630,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(command?.type==='model'&&String(command.name)===assetName&&modelBuildErrors.has(String(ownerId)+':'+i))buildError=modelBuildErrors.get(String(ownerId)+':'+i);
     }
     const state=error?'error':buildError?'instance-error':modelPromises.has(assetName)?'loading':instances.some(instance=>instance.preparing)?'preparing':instances.length?'ready':'not-loaded';
-    return{name:assetName,state,error:error||buildError,instances:instances.length,preparing:instances.filter(instance=>instance.preparing).length};
+    return{name:assetName,state,error:error||buildError,instances:instances.length,preparing:instances.filter(instance=>instance.preparing).length,visibility:instances.map(getModelVisibilityDiagnostics).filter(Boolean)};
   }
 
   function invalidateAsset(name) {
