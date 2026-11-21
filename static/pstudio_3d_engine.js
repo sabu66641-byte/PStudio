@@ -495,8 +495,26 @@
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
-        if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;const u=volumetricFogPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);u.tDepth.value=waterDepthTarget?.depthTexture||null;}}
-        if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;const u=volumetricCloudPass.uniforms;if(u&&camera){u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;}}
+        const syncPostFXUniforms=(pass,required,update)=>{
+          if(!pass||!camera)return;
+          const uniforms=pass.uniforms;
+          const ready=!!uniforms&&required.every(name=>uniforms[name]&&Object.prototype.hasOwnProperty.call(uniforms[name],'value'));
+          if(!ready){pass.enabled=false;return;}
+          update(uniforms);
+        };
+        if(volumetricFogPass){
+          volumetricFogPass.enabled=volumetricFogEnabled;
+          syncPostFXUniforms(volumetricFogPass,['uInverseProjection','uCameraWorld','uTime','uFogColor','tDepth'],u=>{
+            u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;
+            if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);u.tDepth.value=waterDepthTarget?.depthTexture||null;
+          });
+        }
+        if(volumetricCloudPass){
+          volumetricCloudPass.enabled=volumetricCloudsEnabled;
+          syncPostFXUniforms(volumetricCloudPass,['uInverseProjection','uCameraWorld','uTime','tDepth'],u=>{
+            u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;
+          });
+        }
         composer.render();
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
@@ -540,7 +558,12 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     a.aOrigin.needsUpdate=true;a.aVelocity.needsUpdate=true;a.aBirth.needsUpdate=true;a.aLife.needsUpdate=true;
   }
   function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
-  function updateGpuParticleSystems(){const ratio=renderer?.getPixelRatio?.()||1;for(const emitter of particleEmitters.values()){emitter.system.uniforms.uTime.value=particleClock;emitter.system.uniforms.uPixelRatio.value=ratio;}for(const effect of particleBursts.values()){effect.system.uniforms.uTime.value=particleClock;effect.system.uniforms.uPixelRatio.value=ratio;}}
+  function updateGpuParticleSystems(){
+    const ratio=renderer?.getPixelRatio?.()||1;
+    const update=system=>{const uniforms=system?.uniforms;if(!uniforms?.uTime||!uniforms?.uPixelRatio)return false;uniforms.uTime.value=particleClock;uniforms.uPixelRatio.value=ratio;return true;};
+    for(const emitter of particleEmitters.values())update(emitter?.system);
+    for(const effect of particleBursts.values())update(effect?.system);
+  }
 
   function configureWaterMaterial(material,object=null) {
     if(window.PStudioEnvironmentFX?.configureWater)return window.PStudioEnvironmentFX.configureWater(material,object,false);
@@ -905,9 +928,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function updateGPUInstanceFrustumPlanes(){
     const update=batch=>{
       const uniforms=batch?.material?.userData?.pstudioGPUFrustumUniforms;
-      if(!uniforms)return;
+      if(!uniforms?.enabled||!Object.prototype.hasOwnProperty.call(uniforms.enabled,'value')||!Array.isArray(uniforms.planes)||uniforms.planes.length<6)return;
       uniforms.enabled.value=gpuInstanceFrustumCullingEnabled?1:0;
-      if(worldFrustum)for(let i=0;i<6;i++)uniforms.planes[i].copy(worldFrustum.planes[i]);
+      if(worldFrustum)for(let i=0;i<6;i++)uniforms.planes[i]?.copy?.(worldFrustum.planes[i]);
     };
     for(const batch of instancedBatches.values())update(batch);
     for(const instance of modelInstances.values())for(const entry of instance.foliageBatches||[])update(entry.mesh);
@@ -1086,7 +1109,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!(active&&clusteredLightSet.has(light));
     const updateMaterial=material=>{
       const uniforms=material?.userData?.pstudioClusterLightingUniforms;
-      if(!uniforms)return;
+      if(!uniforms?.viewport?.set||!uniforms.near||!uniforms.far||!uniforms.enabled||
+        !['near','far','enabled'].every(key=>Object.prototype.hasOwnProperty.call(uniforms[key],'value')))return;
       uniforms.viewport.set(viewport.x,viewport.y);uniforms.near.value=near;uniforms.far.value=far;uniforms.enabled.value=active?1:0;
     };
     for(const instance of modelInstances.values())for(const material of instance.materialDefaults.keys())updateMaterial(material);
@@ -1502,7 +1526,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     try{window.PStudioEvents?.emit?.('model.load.progress',detail);}catch(_){}
   }
   function dispatchModelLoadError(detail){
-    const payload={name:String(detail?.name||''),stage:String(detail?.stage||'unknown'),error:String(detail?.error||'Unknown model loading error.'),retryable:detail?.retryable!==false};
+    const payload={name:String(detail?.name||''),stage:String(detail?.stage||'unknown'),error:String(detail?.error||'Unknown model loading error.'),stack:String(detail?.stack||'').slice(0,5000),retryable:detail?.retryable!==false};
     try{window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:payload}));}catch(_){}
     try{window.PStudioEvents?.emit?.('model.load.error',payload);}catch(_){}
     return payload;
@@ -2814,9 +2838,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     return{root:rootClone,pairs};
   }
 
-  async function createModelInstanceAsync(key,ownerId,name,asset,resourceLease=null){
+  async function createModelInstanceAsync(key,ownerId,name,asset,resourceLease=null,onPhase=()=>{}){
     const T=window.THREE;
+    onPhase('hierarchy-clone');
     const {root:clone,pairs}=await cloneModelHierarchyAsync(asset.scene);
+    onPhase('material-and-shader-setup');
     const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
     let environmentQuality=null;
     for(let i=0;i<pairs.length;i++){
@@ -2864,7 +2890,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     clone.updateMatrixWorld(true);
+    onPhase('streaming-chunk-build');
     const streamChunks=await buildModelStreamingChunks(clone);
+    onPhase('gpu-instancing-build');
     const foliageBatches=await buildFoliageInstanceBatches(clone,asset.animations||[]);
     for(const entry of foliageBatches){
       const sourceMaterials=Array.isArray(entry.sources?.[0]?.material)?entry.sources[0].material:[entry.sources?.[0]?.material];
@@ -2875,6 +2903,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(defaults&&batchMaterial)materialDefaults.set(batchMaterial,{...defaults});
       }
     }
+    onPhase('bounds-and-lod-build');
     const bounds=new T.Box3();
     for(let i=0;i<pairs.length;i++){
       const object=pairs[i].clone;
@@ -2900,6 +2929,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if((i+1)%192===0)await nextPreparationFrame();
     }
     const lodLevels=[...lodMap.entries()].sort((a,b)=>a[0]-b[0]).map(([level,entries])=>({level,entries}));
+    onPhase('animation-initialization');
     const mixer=asset.animations.length?new T.AnimationMixer(clone):null;
     const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
     const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
@@ -3152,7 +3182,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     let frameDelta=1/60;
     for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
     particleClock+=frameDelta;
-    for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u)u.uPStudioTime.value=particleClock;}window.PStudioEnvironmentFX?.update?.(particleClock);
+    for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u?.uPStudioTime&&Object.prototype.hasOwnProperty.call(u.uPStudioTime,'value'))u.uPStudioTime.value=particleClock;}window.PStudioEnvironmentFX?.update?.(particleClock);
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     const pendingFrameInstances=[];
     let cameraCommand=null,environment=null,cameraOwnerId=null;
@@ -3236,6 +3266,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
             if(!modelInstancePromises.has(key)){
               const buildGeneration=modelBuildGeneration;
               const assetRevision=modelRevisions.get(d.name)||0;
+              let buildPhase='resource-retain';
               let resourceLease=null;
               try{
                 // Pin the source asset before the first async yield in hierarchy cloning.
@@ -3249,7 +3280,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
                 continue;
               }
               const build=(async()=>{
-                const created=await createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease);
+                const created=await createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease,phase=>{buildPhase=phase;});
+                buildPhase='request-validation';
                 if(!created?.root)throw new Error('3D model instance creation returned no scene root.');
                 created.root.visible=false;
                 const latest=lastCommands?.get(ownerId)||[];
@@ -3264,15 +3296,25 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
                 modelBuildErrors.delete(key);
                 modelInstances.set(key,created);
                 modelGroup.add(created.root);
+                buildPhase='gpu-preparation-scheduling';
                 prepareModelInstance(created);
-                if(lastCommands)render(lastCommands);
+                if(lastCommands){
+                  buildPhase='initial-scene-render';
+                  try{render(lastCommands);}
+                  catch(renderError){
+                    const renderMessage=String(renderError?.message||renderError);
+                    console.error('[PStudio] Model instance was built, but the first scene render failed:',d.name,renderError);
+                    dispatchModelLoadError({name:d.name,stage:'instance-render',error:renderMessage,stack:renderError?.stack||'',retryable:true});
+                  }
+                }
                 return created;
               })().catch(error=>{
                 resourceLease?.release?.();
                 const message=String(error?.message||error);
-                modelBuildErrors.set(key,message);
-                console.error('[PStudio] Asynchronous model instance build failed:',d.name,error);
-                dispatchModelLoadError({name:d.name,stage:'instance-build',error:message,retryable:true});
+                const detailedMessage='['+buildPhase+'] '+message;
+                modelBuildErrors.set(key,detailedMessage);
+                console.error('[PStudio] Asynchronous model instance build failed at '+buildPhase+':',d.name,error);
+                dispatchModelLoadError({name:d.name,stage:'instance-build',error:detailedMessage,stack:error?.stack||'',retryable:true});
                 return null;
               }).finally(()=>{if(modelInstancePromises.get(key)===build)modelInstancePromises.delete(key);});
               modelInstancePromises.set(key,build);
