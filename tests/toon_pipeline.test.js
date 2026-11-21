@@ -126,10 +126,11 @@ test('outline is an expanded back-face shell and is released with its source obj
   assert.equal(shell.material.side, 1);
   assert.equal(shell.castShadow, false);
   assert.equal(shell.receiveShadow, false);
-  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n' };
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n#include <skinning_vertex>\n' };
   shell.material.onBeforeCompile(shader, {});
   assert.ok(shader.vertexShader.includes('uPStudioOutlineExpansion'));
   assert.ok(shader.vertexShader.includes('normalize(objectNormal)*uPStudioOutlineExpansion'));
+  assert.ok(fxSource.includes("#include <skinning_vertex>"));
   fx.releaseObject(source);
   assert.equal(source.children.length, 0);
 });
