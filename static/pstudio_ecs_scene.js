@@ -113,6 +113,19 @@
     persistent: false
   });
 
+  register('MeshCollider', {
+    label: 'Mesh Collider',
+    category: 'Physics',
+    description: 'Per-Entity imported mesh collision participation.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      source: { type: 'enum', options: ['render-mesh'], default: 'render-mesh' }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
   function sceneEntity(objectOrId) {
     const api = ecs();
     const id = typeof objectOrId === 'object' && objectOrId ? objectOrId.id : objectOrId;
@@ -171,6 +184,10 @@
       collider: {
         enabled: !!object.collider,
         shape: object.shape === 'circle' ? 'circle' : 'rect'
+      },
+      meshCollider: {
+        enabled: !!object.collider && !!object.model,
+        source: 'render-mesh'
       }
     };
   }
@@ -190,6 +207,7 @@
       ensure(entity, 'PostProcessingSettings', values.post);
       ensure(entity, 'ParticleEmitter', values.emitter);
       ensure(entity, 'Collider2D', values.collider);
+      ensure(entity, 'MeshCollider', values.meshCollider);
       synchronized++;
     }
     return synchronized;
@@ -210,7 +228,8 @@
     const post = getComponent(object.id, 'PostProcessingSettings');
     const emitter = getComponent(object.id, 'ParticleEmitter');
     const collider = getComponent(object.id, 'Collider2D');
-    if (!sprite && !mesh && !material && !post && !emitter && !collider) return null;
+    const meshCollider = getComponent(object.id, 'MeshCollider');
+    if (!sprite && !mesh && !material && !post && !emitter && !collider && !meshCollider) return null;
     return {
       spriteRenderer: sprite || {
         visible: object.visible !== false,
@@ -238,7 +257,8 @@
         lifetime: finite(object.particleEmitter?.lifetime, 1),
         maxCount: finite(object.particleEmitter?.maxCount, 200)
       },
-      collider2D: collider || { enabled: !!object.collider, shape: object.shape === 'circle' ? 'circle' : 'rect' }
+      collider2D: collider || { enabled: !!object.collider, shape: object.shape === 'circle' ? 'circle' : 'rect' },
+      meshCollider: meshCollider || { enabled: !!object.collider && !!object.model, source: 'render-mesh' }
     };
   }
 
