@@ -151,6 +151,27 @@
   function astForScript(scriptName) {
     return runtime?.asts?.[scriptName] || null;
   }
+  function getRuntimePresentation(object) {
+    const state=window.PStudioECSScene?.getRenderState?.(object);
+    if(state)return state;
+    return {
+      spriteRenderer:{visible:object?.visible!==false,shape:object?.shape==='circle'?'circle':'rect',width:finite(object?.w,64),height:finite(object?.h,64),color:object?.color||'#d1d5db',sprite:object?.sprite||''},
+      meshRenderer:{enabled:!!object?.model,model:String(object?.model||''),scale:finite(object?.modelScale,1)},
+      material:{shaderFragment:String(object?.shaderFragment||''),toonSettings:object?.toonMaterialSettings||null,modelOverrides:Array.isArray(object?.modelMaterialOverrides)?object.modelMaterialOverrides:[]},
+      postProcessing:{enabled:!!object?.postProcessing,bloom:!!object?.postProcessing?.bloom,ssao:!!object?.postProcessing?.ssao,strength:finite(object?.postProcessing?.strength,0.45)},
+      particleEmitter:{enabled:object?.particleEmitter?.enabled===true,rate:finite(object?.particleEmitter?.rate,12),color:object?.particleEmitter?.color||'#ffffff',speed:finite(object?.particleEmitter?.speed,2),lifetime:finite(object?.particleEmitter?.lifetime,1),maxCount:finite(object?.particleEmitter?.maxCount,200)},
+      collider2D:{enabled:!!object?.collider,shape:object?.shape==='circle'?'circle':'rect'}
+    };
+  }
+  function getCollisionObject(object) {
+    const state=getRuntimePresentation(object);
+    return Object.assign({},object,{
+      collider:!!state.collider2D.enabled,
+      shape:state.collider2D.shape||state.spriteRenderer.shape,
+      w:finite(state.spriteRenderer.width,object.w||64),
+      h:finite(state.spriteRenderer.height,object.h||64)
+    });
+  }
   function getScriptState(objectId) {
     const key=String(objectId),bridge=window.PStudioECSGameplay;
     const live=bridge?.getSceneComponent?.(key,'ScriptState');
@@ -538,9 +559,17 @@
     if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);commitScriptState(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');}
   }
   function updateCollisions() {
-    const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
+    const objs=(sceneObjects||[]).map(getCollisionObject)
+      .filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
     const now=new Set();
-    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
+    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){
+      const a=objs[i],b=objs[j];
+      if(collides(a,b)){
+        const key=[a.id,b.id].sort().join('|');
+        now.add(key);
+        if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}
+      }
+    }
     collisionPairs=now;
   }
 
@@ -718,37 +747,47 @@
         commitScriptState(o.id,c.env);
         commitScriptLifecycle(o.id,lifecycle);
         const objectDraws=c.draw.slice();
-        if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
-        if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
-        if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
-        if(o.model&&!objectDraws.some(d=>d.type==='model')){
-          const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-          const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
+        const presentation=getRuntimePresentation(o);
+        const sprite=presentation.spriteRenderer,mesh=presentation.meshRenderer,material=presentation.material,
+          post=presentation.postProcessing,emitter=presentation.particleEmitter;
+        if(material.toonSettings)objectDraws.unshift({type:'toon_material',toon:material.toonSettings});
+        if(post.enabled)objectDraws.unshift({type:'postfx',bloom:!!post.bloom,ssao:!!post.ssao,strength:finite(post.strength,0.45)});
+        if(emitter.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+sprite.width/2-480)/100,y:(270-((Number(o.y)||0)+sprite.height/2))/100,z:(Number(o.z)||0)/100,rate:emitter.rate,color:emitter.color||'#ffffff',speed:emitter.speed,lifetime:emitter.lifetime,maxCount:emitter.maxCount,dt});
+        if(material.modelOverrides?.length)for(const override of material.modelOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
+        if(material.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:material.shaderFragment});
+        if(mesh.enabled&&!objectDraws.some(d=>d.type==='model')){
+          const mx=((Number(o.x)||0)+sprite.width/2-480)/100;
+          const my=(270-((Number(o.y)||0)+sprite.height/2))/100;
+          objectDraws.unshift({type:'model',name:String(mesh.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(mesh.scale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
         }
         commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
 
-      // Scene-only render settings (models and particle emitters) remain active without scripts.
+      // Scene-only render settings are read from per-Entity presentation Components.
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
-        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled&&!o.toonMaterialSettings))continue;
-        const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-        const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
+        if(o.script)continue;
+        const presentation=getRuntimePresentation(o);
+        const sprite=presentation.spriteRenderer,mesh=presentation.meshRenderer,material=presentation.material,
+          post=presentation.postProcessing,emitter=presentation.particleEmitter;
+        const hasVisualConfig=mesh.enabled||post.enabled||emitter.enabled||!!material.toonSettings||
+          !!material.shaderFragment||(material.modelOverrides||[]).length>0;
+        if(!hasVisualConfig)continue;
+        const x=((Number(o.x)||0)+sprite.width/2-480)/100;
+        const y=(270-((Number(o.y)||0)+sprite.height/2))/100;
         const z=(Number(o.z)||0)/100;
         const list=[];
-        if(o.toonMaterialSettings)list.push({type:'toon_material',toon:o.toonMaterialSettings});
-        if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
-        if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
+        if(material.toonSettings)list.push({type:'toon_material',toon:material.toonSettings});
+        if(post.enabled)list.push({type:'postfx',bloom:!!post.bloom,ssao:!!post.ssao,strength:finite(post.strength,0.45)});
+        for(const override of material.modelOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
+        if(material.shaderFragment)list.push({type:'material',shader:'custom',fragmentShader:material.shaderFragment});
+        if(emitter.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:emitter.rate,color:emitter.color||'#ffffff',speed:emitter.speed,lifetime:emitter.lifetime,maxCount:emitter.maxCount,dt});
+        if(mesh.enabled)list.push({type:'model',name:String(mesh.model),x,y,z,scale:Math.max(0.001,Number(mesh.scale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
         if(list.length)commands.set(o.id,list);
       }
 
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);const ownerPresentation=owner?getRuntimePresentation(owner):null;if(ownerPresentation?.meshRenderer.enabled&&ownerPresentation.collider2D.enabled){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ecsAfterPhysics = window.PStudioECS;
@@ -772,7 +811,6 @@
         }
 
         if(transform.landed){
-          runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
           updateLocomotionSequence(id);
         }
 
@@ -998,8 +1036,9 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
+      window.PStudioECSScene?.syncSceneObjects?.(sceneObjects || []);
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
-      for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
+      if(!window.PStudioECSGameplay?.isAvailable?.())for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
       window.PStudioECSInspector?.refresh?.();
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
