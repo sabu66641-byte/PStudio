@@ -2814,7 +2814,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     return{root:rootClone,pairs};
   }
 
-  async function createModelInstanceAsync(key,ownerId,name,asset){
+  async function createModelInstanceAsync(key,ownerId,name,asset,resourceLease=null){
     const T=window.THREE;
     const {root:clone,pairs}=await cloneModelHierarchyAsync(asset.scene);
     const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
@@ -2901,7 +2901,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     const lodLevels=[...lodMap.entries()].sort((a,b)=>a[0]-b[0]).map(([level,entries])=>({level,entries}));
     const mixer=asset.animations.length?new T.AnimationMixer(clone):null;
-    const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
     const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
     const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
     if(mixer&&autoClip){const action=mixer.clipAction(autoClip);action.reset().setLoop(T.LoopRepeat,Infinity).play();}
@@ -3237,8 +3236,20 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
             if(!modelInstancePromises.has(key)){
               const buildGeneration=modelBuildGeneration;
               const assetRevision=modelRevisions.get(d.name)||0;
+              let resourceLease=null;
+              try{
+                // Pin the source asset before the first async yield in hierarchy cloning.
+                resourceLease=window.PStudioResources?.retain?.('model-gpu',d.name)||null;
+              }catch(error){
+                const message=String(error?.message||error);
+                modelBuildErrors.set(key,message);
+                console.error('[PStudio] Failed to retain model asset before instance build:',d.name,error);
+                dispatchModelLoadError({name:d.name,stage:'instance-build',error:message,retryable:true});
+                usedModels.add(key);
+                continue;
+              }
               const build=(async()=>{
-                const created=await createModelInstanceAsync(key,ownerId,d.name,asset);
+                const created=await createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease);
                 if(!created?.root)throw new Error('3D model instance creation returned no scene root.');
                 created.root.visible=false;
                 const latest=lastCommands?.get(ownerId)||[];
@@ -3247,6 +3258,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
                   created.preparationCancelled=true;
                   for(const material of created.materialDefaults.keys())material.dispose?.();
                   created.resourceLease?.release?.();
+                  resourceLease?.release?.();
                   return null;
                 }
                 modelBuildErrors.delete(key);
@@ -3256,6 +3268,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
                 if(lastCommands)render(lastCommands);
                 return created;
               })().catch(error=>{
+                resourceLease?.release?.();
                 const message=String(error?.message||error);
                 modelBuildErrors.set(key,message);
                 console.error('[PStudio] Asynchronous model instance build failed:',d.name,error);
