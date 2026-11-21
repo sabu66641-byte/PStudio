@@ -872,7 +872,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
     updateBatchedAutoLOD();
   }
-  function enableGPUFrustumCullingForBatch(batch){  function enableGPUFrustumCullingForBatch(batch){
+  function enableGPUFrustumCullingForBatch(batch){
     if(!batch?.isInstancedMesh||batch.userData?.pstudioGPUFrustumConfigured)return false;
     const T=window.THREE,oldMaterial=batch.material;
     if(!oldMaterial||Array.isArray(oldMaterial))return false;
@@ -2542,7 +2542,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.isInstancedMesh)object.computeBoundingSphere?.();
   }
 
-  async function buildModelStreamingChunks(root){  async function buildModelStreamingChunks(root){
+  async function buildModelStreamingChunks(root){
     const T=window.THREE,settings=root.userData?.pstudioStreamingConfig||{};
     const cellSize=Math.max(48,Math.min(256,Number(settings.cellSize)||96));
     const loadDistance=Math.max(96,Math.min(1200,Number(settings.loadDistance)||300));
@@ -2753,7 +2753,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     return batches;
   }
-  function updateFoliageInstanceBatches(instance){  function updateFoliageInstanceBatches(instance){
+  function updateFoliageInstanceBatches(instance){
     if(!instance?.foliageBatches?.length)return;
     const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
     const matrix=new T.Matrix4();
