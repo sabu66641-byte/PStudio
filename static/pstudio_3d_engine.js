@@ -2650,6 +2650,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;
     markModelGeometryChanged(object);
+    if(object.userData?.pstudioOutlineShell)object.userData.pstudioOutlineShell.mesh.geometry=object.geometry;
     object.userData.pstudioActiveAutoLOD=selected;
     if(object.isInstancedMesh)object.computeBoundingSphere?.();
   }
