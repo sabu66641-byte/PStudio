@@ -26,7 +26,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execut
 - `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
 - `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
-- `static/pstudio_assets.js` — IndexedDB storage for binary model assets.
+- `static/pstudio_assets.js` — OPFS-first persistent binary asset storage with backward-compatible IndexedDB records, quota checks, and streaming Blob reads.
+- `static/pstudio_build.js` — ZIP64 standalone Web-game exporter; stores GLB files as binary ZIP entries instead of base64.
+- `static/pstudio_player.html` / `static/pstudio_player.js` — editor-free game player that executes prevalidated browser ASTs and reads packaged assets.
 - `discord_runtime.py` — Discord REST/Gateway runtime used by the normal server-side ps path.
 - `network.py` — standalone HTTP/HTTPS helper module. It is not currently exposed as a browser game-script API.
 - `tests/` — Python compiler/server tests and Node.js subsystem/regression suites.
@@ -61,6 +63,25 @@ node --test tests/*.test.js
 ```
 
 The GitHub Actions workflow runs both commands on pushes to `main` and pull requests. Python tests include actual C++17 compilation and execution when `g++` is available. These automated tests do not replace browser, Android, WebGL, IndexedDB or deployed-site smoke tests.
+
+
+## Large-asset storage and standalone Web builds
+
+PStudio uses a hybrid persistent binary-asset store:
+
+- New model assets are written to the browser Origin Private File System (OPFS) when `navigator.storage.getDirectory()` is available and permitted.
+- The IndexedDB `pstudio-binary-assets/models` object store remains the metadata index and compatibility backend. Existing IndexedDB Blob records without a backend marker remain readable without migration.
+- If OPFS is unavailable, blocked by browser policy, or rejects a write, PStudio falls back to storing the Blob in IndexedDB. A storage quota failure is reported; no browser storage backend is unlimited.
+- Storage usage and quota are browser/origin-specific. PStudio requests persistent storage where supported and uses `navigator.storage.estimate()` before writes. Browser eviction, OS free space, profile policy, and device memory still apply.
+- The GLB import ceiling remains 1 GiB to preserve the current decoder's memory-safety envelope: the GLTFLoader worker materializes the source Blob as an ArrayBuffer during parsing. OPFS improves persistent storage options, not the model decoder's RAM ceiling. Runtime CPU/GPU budgets can still reject a model whose decoded footprint is unsafe. External `.gltf` packages remain separately capped at 30 MiB because the current importer embeds external dependencies as data URLs.
+
+### Export a standalone game
+
+Use **Export Web Build** in the Scene toolbar. PStudio validates the project's game scripts through `/game/prepare`, then packages the validated AST, scene/project data, model assets and player runtime into a ZIP64 archive. Binary assets remain binary ZIP entries and are not converted to base64. Extract the archive and serve `index.html` over HTTP(S) or upload the extracted folder to a static host. Opening it as `file://` is not supported because browser modules, workers and fetch require an origin.
+
+The player has no editor UI and does not call the PStudio editor or `/game/prepare` endpoint at runtime. The current player loads Three.js and selected optional rendering modules from public CDN URLs, so network access is required for 3D features. The package is read-only: changes to scripts or assets must be made in PStudio and exported again. The ZIP64 writer supports archives beyond the classic ZIP 4 GiB file-size limit; final download size remains constrained by browser/device memory and the browser's Blob download implementation.
+
+Automated tests cover OPFS-first writes, mocked 50 MiB Blob storage and streaming reads, IndexedDB fallback/legacy records, ZIP64 headers/CRC/path safety, and standalone player bootstrap contracts. These do not replace real-device OPFS permission/quota checks, large-file imports, WebGL/Android smoke tests, or opening an exported archive on a target hosting service.
 
 ## Run locally
 
@@ -384,6 +405,28 @@ Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory
 
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
 
+
+### Stylized NPR toon materials and GPU foliage wind (PStudio 3.0 Step 2)
+
+The renderer now provides an opt-in hybrid PBR/NPR material path. It keeps the Three.js standard/physical BRDF, clustered lighting, image-based lighting and shadow integration, then applies three-color toon ramps, a view-dependent rim response, outline ink and a lightweight pseudo-subsurface term. The pseudo-SSS term is an art-directed lighting approximation, not physical subsurface transport. PBR remains the default; use `set_shader("toon")` or `set_toon_material(...)` only on objects that need the stylized treatment.
+
+The browser game-script API is:
+
+```ps
+set_shader("toon")
+set_toon_material(
+    "#46516f", "#9eafd0", "#ffffff",
+    0.32, 0.68,
+    "#b8dcff", 0.42, 2.6,
+    "#182235", 0.12,
+    "#f0a5a0", 0.12,
+    0.35, 1.0
+)
+```
+
+Arguments, in order: shadow, midtone and highlight colors; shadow and highlight thresholds; rim color, intensity and power; outline color and width; pseudo-SSS color and intensity; GPU wind strength and speed. Colors use `#RRGGBB`. Numeric values are bounded by the runtime before reaching shader uniforms. `set_toon_material` also selects the toon path for subsequent primitives and imported models owned by the script.
+
+The shared Object Inspector exposes the toon/rim/outline/pseudo-SSS controls plus foliage wind controls for both script-owned 3D primitives and GLB models. GLB material-specific overrides expose the same controls per named material; the shared Object Inspector applies its settings across the selected object's 3D materials. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. Outlines use expanded back-face shell passes for regular, skinned and instanced meshes. Multi-material GLBs retain each material slot's alpha-test/transparent texture masking; shells use depth testing, no depth writes, and do not participate in raycasts or shadow passes. Verify the actual WebGL shader compile and visual result on each target GPU.
 
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 

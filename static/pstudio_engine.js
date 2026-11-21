@@ -340,6 +340,18 @@
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
       case 'set_shader': if(a.length===1){const mode=String(a[0]).toLowerCase();if(!['standard','toon','unlit','normal','wireframe'].includes(mode))throw new PsRuntimeError('Shader preset must be standard, toon, unlit, normal or wireframe.');c.draw.push({type:'material',shader:mode});return null;} break;
+      case 'set_toon_material': if(a.length===14){
+        const color=(value,fallback)=>/^#[0-9a-f]{6}$/i.test(String(value))?String(value):fallback;
+        const bounded=(value,min,max)=>Math.max(min,Math.min(max,finite(value)));
+        c.draw.push({type:'toon_material',toon:{
+          enabled:true,shadowColor:color(a[0],'#46516f'),midColor:color(a[1],'#9eafd0'),highlightColor:color(a[2],'#ffffff'),
+          shadowThreshold:bounded(a[3],0.02,0.95),highlightThreshold:bounded(a[4],0.05,0.99),
+          rimColor:color(a[5],'#b8dcff'),rimIntensity:bounded(a[6],0,4),rimPower:bounded(a[7],0.5,8),
+          outlineColor:color(a[8],'#182235'),outlineWidth:bounded(a[9],0.005,0.45),
+          sssColor:color(a[10],'#f0a5a0'),sssIntensity:bounded(a[11],0,1.5),
+          windStrength:bounded(a[12],0,2.5),windSpeed:bounded(a[13],0,4)
+        }});return null;
+      } break;
       case 'set_model_material': if(a.length===4){c.draw.push({type:'model_material',name:String(a[0]),roughness:Math.max(0,Math.min(1,finite(a[1]))),metalness:Math.max(0,Math.min(1,finite(a[2]))),color:String(a[3])});return null;} break;
       case 'set_postprocessing': if(a.length===3){c.draw.push({type:'postfx',bloom:truthy(a[0]),ssao:truthy(a[1]),strength:finite(a[2])});return null;} break;
       case 'particle_emitter': if(a.length===6){c.draw.push({type:'particle_emitter',emitterId:String(a[0]),x:readPosition(0),y:readPosition(1),z:readPosition(2),rate:Math.max(0,finite(a[1])),color:String(a[2]),speed:Math.max(0,finite(a[3])),lifetime:Math.max(0.05,Math.min(20,finite(a[4]))),maxCount:Math.max(1,Math.min(1200,Math.floor(finite(a[5])))),dt:c.dt});return null;} break;
@@ -507,8 +519,9 @@
           ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
           : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
       const objectCommands=[];
+      if(o.toonMaterialSettings)objectCommands.push({type:'toon_material',toon:o.toonMaterialSettings});
       if(o.postProcessing)objectCommands.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity});
+      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
       if(o.shaderFragment)objectCommands.push({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
       if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
       objectCommands.push(draw);commands.set(o.id,objectCommands);
@@ -596,9 +609,10 @@
         if(c.funcs.update)callFunction(c,'update',[dt]);
         runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
+        if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
         if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
         if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
         if(o.model&&!objectDraws.some(d=>d.type==='model')){
           const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
@@ -612,13 +626,14 @@
       // Scene-only render settings (models and particle emitters) remain active without scripts.
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
-        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled))continue;
+        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled&&!o.toonMaterialSettings))continue;
         const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
         const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
         const z=(Number(o.z)||0)/100;
         const list=[];
+        if(o.toonMaterialSettings)list.push({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
         if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
         if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
         if(list.length)commands.set(o.id,list);
@@ -693,12 +708,19 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation)\s*\(/.test(source));
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
       }
-      const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
+      let data;
+      if(window.PStudioPlayerManifest?.scripts&&typeof window.PStudioPlayerManifest.scripts==='object'){
+        data={success:true,scripts:window.PStudioPlayerManifest.scripts};
+      }else{
+        const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});
+        data=await res.json();
+      }
+      if(!data?.success||!data.scripts)throw new Error(data?.error||'Script validation failed');
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
@@ -756,8 +778,8 @@
       'worker-inspection':'GLB構造を検査中',
       'validated':'GLBの構造検査完了',
       'main-thread-fallback':'互換検査へ切替中',
-      'storage':'IndexedDBへ保存中',
-      'stored':'IndexedDBへの保存完了'
+      'storage':'OPFS / IndexedDBへ保存中',
+      'stored':detail.backend==='opfs'?'OPFSへの保存完了':'IndexedDBへの保存完了'
     };
     const info=detail.info||{};
     const nodes=Number(info.nodeCount),meshes=Number(info.meshCount);

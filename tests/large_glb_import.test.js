@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+const modelWorker = fs.readFileSync(path.join(root, 'static/pstudio_model_worker.js'), 'utf8');
 const start = html.indexOf('const PSTUDIO_MAX_GLB_BYTES=');
 const end = html.indexOf('async function importGLTFFile', start);
 assert.ok(start >= 0 && end > start, 'GLB import validator source must exist');
@@ -101,6 +102,12 @@ test('GLB maximum is exactly one GiB and oversize files are rejected before read
   assert.equal(PSTUDIO_MAX_GLB_BYTES, 1024 * 1024 * 1024);
   const fake = { size: PSTUDIO_MAX_GLB_BYTES + 1, slice() { throw new Error('should not read'); } };
   await assert.rejects(validateGLBFile(fake), /1GB/);
+});
+
+test('main-thread and worker GLB validators share the existing runtime-safe GLB import limit', () => {
+  assert.match(modelWorker, /const MAX_GLB_BYTES = 1024 \* 1024 \* 1024/);
+  assert.match(modelWorker, /GLBの上限は1GBです/);
+  assert.match(html, /const PSTUDIO_MAX_GLB_BYTES=1024\*1024\*1024/);
 });
 
 test('GLB validator rejects external resources and out-of-range buffer views', async () => {
