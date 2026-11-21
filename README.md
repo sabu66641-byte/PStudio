@@ -335,7 +335,7 @@ Import a binary glTF `.glb` or JSON glTF `.gltf` model in the ASSETS area, then 
 | `solve_ik(root_bone, end_bone, x, y, z, iterations, weight)` | Apply CCD-style bone-chain IK to a named GLB skeleton |
 | `blend_animations(clip_a, clip_b, weight)` | Blend two looping clips; weight 0 selects the first and 1 selects the second |
 
-The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Switching between clips uses a short cross-fade instead of abruptly stopping the previous action. Compressed texture formats requiring separately configured decoders are not included in this build.
+The model loader uses the matching Three.js GLTFLoader and SkeletonUtils clone support. GLB files and bundled GLTF JSON are stored in IndexedDB, not embedded into the project JSON. Relative external buffers and images selected alongside a `.gltf` file are embedded during import. A model can contain multiple animation clips; clip matching is case-insensitive and accepts a partial name. Switching between clips uses a short cross-fade instead of abruptly stopping the previous action. Meshopt, Draco and KTX2/Basis compression are supported through the GLTF worker decoder pipeline when the browser and required CDN decoder modules are available; the renderer-compatible main-thread parser remains a fallback.
 
 ## 3D RPG Starter Example
 
@@ -563,3 +563,39 @@ After a model instance is constructed, it stays hidden while unique material tex
 Static imported mesh sub-objects use Three.js frustum culling. Skinned and morph-target meshes remain conservatively visible because their animated bounds may exceed their undeformed geometry bounds. Primitive InstancedMesh batches additionally test individual source bounds against the camera frustum before compacting visible instance transforms. Foliage and modular architecture continue to use chunk-local GPU instancing. Authored LOD0, LOD1, etc. groups and generated static-mesh LOD now use model/mesh bounding-sphere centers for distance decisions rather than relying only on the scene-object origin.
 
 Memory diagnostics expose JavaScript heap pressure and PStudio CPU/GPU resource-cache budget pressure alongside renderer geometry/texture counts. The browser does not expose exact per-texture VRAM allocation, so GPU pressure is an estimate from registered resource sizes, not a hardware VRAM measurement. Automatic safety mode protects retained model data and adjusts expensive screen-space effects/render scale; it does not delete source assets or silently replace model geometry. A 1 GB import ceiling is a file-acceptance limit, not a guarantee that a 1 GB model can be decoded or rendered on a particular device.
+
+## Rendering Engine 2.0 — Worker GLTF, Virtual Textures and Clustered Forward Lighting
+
+### Worker-first GLTF asset pipeline
+
+The primary binary GLB path now runs Three.js r160 GLTFLoader `parseAsync()` inside a dedicated module Worker. The editor passes the IndexedDB Blob to that Worker instead of first expanding the entire file into an ArrayBuffer on the editor thread. The Worker uses Meshopt decoding and configures Draco and KTX2/Basis transcoders when their modules and worker environments are available.
+
+The parsed Three.js scene is serialized into a transferable packet: scene-node hierarchy and transforms, typed geometry buffers, index and morph attributes, material properties and texture references, skeletons and inverse bind matrices, InstancedMesh transforms, cameras, lights and animation clips. ArrayBuffers and ImageBitmaps are transferred rather than copied through application-owned JSON/base64 representations. The main thread reconstructs the Three.js objects in bounded batches across animation frames because live Three.js objects and the WebGL context cannot be transferred as structured-clone objects.
+
+The renderer builds model instances, duplicates material state, creates world-stream chunks and forms foliage/architecture instance batches incrementally. Static and deforming meshes keep their original geometry and animation data; the pipeline does not simplify source meshes merely to get through loading. Failed worker initialization, unsupported decoder conditions, or packet transport failures use the renderer-compatible main-thread GLTFLoader path where possible.
+
+### Staged GPU preparation
+
+New model instances remain hidden while the renderer initializes their unique textures one per animation frame. On devices exposing `KHR_parallel_shader_compile`, Three.js `compileAsync()` prepares the new model's shaders before it becomes visible. The model's visible scene is then committed on a subsequent animation frame.
+
+This spreads work across frames but cannot subdivide every indivisible GPU command: one oversized texture or one compressed mip-level upload can still take a long frame. GPU upload is performed by the main-thread renderer because the WebGL context belongs to that renderer; the Worker performs parsing, decompression/transcoding and packet preparation, not WebGL calls.
+
+### Virtual texture pages
+
+For large raster images decoded from GLB (currently the PNG/JPEG ImageBitmap route, with a longest dimension above 2048 pixels), the GLTF Worker retains the full-resolution source bitmap and transfers a small fallback bitmap to the renderer. Visible mesh UV samples request 256×256 source tiles. The Worker extracts the requested tile with OffscreenCanvas, and the renderer uploads it into a bounded GPU atlas using Three.js r160 `copyTextureToTexture()` partial updates. A page table directs supported PBR material texture slots to resident atlas pages, while absent or coarse pages fall back to the low-resolution source texture. The atlas uses a bounded LRU page cache; evicted page-table entries are invalidated.
+
+The current page request selection is a CPU-side sampled triangle-centroid visibility estimate, not GPU feedback or a complete virtual-texturing system. The atlas currently has no per-page mip chain or anisotropic page-border stitching, and KTX2 compressed textures are transferred as compressed mip levels rather than virtualized into pages. If OffscreenCanvas/ImageBitmap support is missing, the importer uses the regular full-image texture path instead. These are explicit quality/performance boundaries, not silent texture-quality changes.
+
+### Clustered forward point lighting
+
+On WebGL2 devices that support float texture sampling, the renderer can assign up to 96 dynamic point lights to a 16 × 9 × 16 screen/depth cluster grid, with up to 24 light indices per cluster. CPU-side cluster construction uses camera-space light bounds and logarithmic depth slices; the material shader samples only the current fragment's cluster and evaluates its local point lights on the GPU. When this path is unavailable or disabled, native Three.js point-light rendering remains active.
+
+This first clustered path supplements the existing directional/hemisphere/environment lighting with clustered direct diffuse point-light contribution. It does not yet replace the full Three.js BRDF for clustered specular highlights, point-light shadows, spot lights, area lights or physically complete all-light transport. Use `PStudio3D.setClusteredLighting(true|false)` to select the path, and inspect `PStudio3D.getStats().clusteredLighting` for availability and active-cluster counts.
+
+### GPU instance culling and memory visibility
+
+Instanced batches retain their original instance mapping for scene selection. A vertex-shader bounding-sphere test rejects individual instances outside the camera frustum; regular static meshes use Three.js frustum culling, while skinned and morph-target meshes keep conservative visibility bounds. LOD decisions use world-space model/mesh bounds, and foliage/architecture batch construction is spread across animation frames.
+
+Renderer diagnostics expose staged preparation, virtual-texture page counts, clustered-light counts, renderer geometry/texture counts and PStudio CPU/GPU resource-cache estimates. WebGL does not expose exact per-allocation VRAM usage, so GPU cache pressure remains a registered-size estimate rather than a hardware VRAM reading. The 1 GB GLB import limit is a storage/acceptance ceiling, not a promise that every 1 GB asset can be rendered on every device.
+
+**Validation boundary:** source syntax and static regression assertions are included in the repository's Node test suite. Real GPU shader compilation, visual equivalence across complex glTF variants, browser-specific decoder-worker behavior, and low-memory Android stress tests still require runtime testing on actual supported browsers and devices.
