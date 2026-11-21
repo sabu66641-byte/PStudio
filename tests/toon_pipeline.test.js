@@ -187,6 +187,8 @@ test('shared Inspector NPR settings apply to primitive script owners and wind-on
   assert.ok(html.includes('id="obj-toon-controls"'));
   assert.ok(html.includes('applySelectedToonMaterial()'));
   assert.match(html, /o\.toonMaterialSettings=toon/);
+  assert.match(html, /sourceObjectToon=item\.toonMaterialSettings/);
+  assert.match(html, /restored\.toonMaterialSettings=\{/);
   assert.match(runtime, /type:'toon_material',toon:o\.toonMaterialSettings/);
   assert.match(renderer, /shader:toon\.enabled===false\?/);
   assert.match(renderer, /primitiveToon&&primitiveToon\.enabled!==false/);
