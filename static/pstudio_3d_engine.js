@@ -855,6 +855,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
       shader.uniforms.uPStudioFrustumPlanes={value:uniforms.planes};
       shader.uniforms.uPStudioFrustumCenter=uniforms.center;
+      shader.uniforms.uPStudioFrustumCenter=uniforms.center;
       shader.uniforms.uPStudioFrustumRadius=uniforms.radius;
       shader.uniforms.uPStudioFrustumEnabled=uniforms.enabled;
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
