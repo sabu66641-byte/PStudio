@@ -240,3 +240,39 @@ test('hasActiveSystems avoids scheduling systems without their required Componen
   ecs.destroyEntity(entity);
   assert.equal(ecs.hasActiveSystems(), false);
 });
+
+
+test('Component definitions can be safely refreshed with new defaults and are rolled back on incompatible schemas', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Movement', {
+    schema: { speed: { type: 'number', default: 2, min: 0 } },
+    additionalProperties: false,
+    create: () => ({ speed: 2 })
+  });
+  const entity = ecs.createEntity({ Movement: {} });
+  ecs.updateComponentDefinition('Movement', {
+    schema: {
+      speed: { type: 'number', default: 5, min: 0 },
+      enabled: { type: 'boolean', default: true }
+    },
+    additionalProperties: false,
+    create: () => ({ speed: 5, enabled: true })
+  });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Movement'))),
+    { speed: 2, enabled: true }
+  );
+  const next = ecs.createEntity({ Movement: {} });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(next, 'Movement'))),
+    { speed: 5, enabled: true }
+  );
+  assert.throws(
+    () => ecs.updateComponentDefinition('Movement', {
+      schema: { speed: { type: 'integer', required: true } },
+      additionalProperties: false
+    }),
+    /must be integer/
+  );
+  assert.equal(ecs.getComponentDefinition('Movement').schema.speed.type, 'number');
+});
