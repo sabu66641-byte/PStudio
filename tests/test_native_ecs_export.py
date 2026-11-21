@@ -20,10 +20,15 @@ class NativeEcsExportTests(unittest.TestCase):
                 "component EnemyAI\n"
                 "    speed = 3.0\n"
                 "    health = 100\n"
+                "    label = \"Enemy\"\n"
             ),
             "systems.ps": (
                 "system MoveEnemy(Transform, EnemyAI)\n"
                 "    transform.x += enemy_ai.speed * dt\n"
+                "    if enemy_ai.label\n"
+                "        transform.z = 1\n"
+                "    for step in range(2)\n"
+                "        transform.y += enemy_ai.speed\n"
                 "    if enemy_ai.health <= 0\n"
                 "        transform.y = 0\n"
             ),
@@ -96,6 +101,8 @@ class NativeEcsExportTests(unittest.TestCase):
             self.assertEqual(executed.returncode, 0, msg=executed.stderr)
             self.assertIn("entities=1", executed.stdout)
             self.assertIn("x=0.05", executed.stdout)
+            self.assertIn("y=6", executed.stdout)
+            self.assertIn("z=1", executed.stdout)
 
     def test_export_rejects_non_native_functions_in_systems(self):
         scripts = {
