@@ -2776,8 +2776,24 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         catch(error){console.error('[PStudio] Prepared model render failed:',error);}
       });
     }catch(error){
+      const message=String(error?.message||error);
       console.warn('[PStudio] Model preparation used deferred renderer fallback:',error);
-      if(!instance.preparationCancelled&&modelInstances.get(instance.key)===instance)instance.preparing=false;
+      if(!instance.preparationCancelled&&modelInstances.get(instance.key)===instance){
+        // The model was hidden while its GPU preparation was pending. If shader
+        // compilation fails, release that gate and explicitly redraw the idle editor.
+        instance.preparing=false;
+        dispatchModelLoadProgress({name:instance.name,stage:'gpu-preparation-fallback',reason:message});
+        if(!window.PStudioEngine?.isRunning?.()){
+          window.requestAnimationFrame(()=>{
+            if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
+            try{if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}}
+            catch(renderError){
+              console.error('[PStudio] Model fallback render failed:',instance.name,renderError);
+              dispatchModelLoadError({name:instance.name,stage:'gpu-preparation-fallback-render',error:renderError?.message||String(renderError),retryable:true});
+            }
+          });
+        }
+      }
     }finally{modelPreparationPending=Math.max(0,modelPreparationPending-1);}
   }
 

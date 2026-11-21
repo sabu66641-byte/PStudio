@@ -506,3 +506,15 @@ test('updated renderer and game runtime sources remain syntactically valid',()=>
   assert.doesNotThrow(()=>new Function(renderer));
   assert.doesNotThrow(()=>new Function(engine));
 });
+
+
+test('GPU preparation failures release the hidden-model gate and redraw the editor scene',()=>{
+  const start=renderer.indexOf('async function prepareModelInstance(instance)');
+  const end=renderer.indexOf('function applyModelMaterial(instance, state)',start);
+  assert.ok(start>=0&&end>start);
+  const block=renderer.slice(start,end);
+  const catchStart=block.indexOf('}catch(error){');
+  assert.ok(catchStart>=0);
+  const fallback=block.slice(catchStart);
+  for(const token of ['instance.preparing=false',"stage:'gpu-preparation-fallback'","window.requestAnimationFrame(()=>",'if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}'])assert.ok(fallback.includes(token),token);
+});
