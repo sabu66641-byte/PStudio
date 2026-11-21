@@ -757,6 +757,23 @@
     status.textContent='ASSET · '+String(detail.name)+' · '+(labels[detail.stage]||String(detail.stage||'アセットを処理中'))+summary;
     status.title=status.textContent;
   });
+  window.addEventListener('pstudio-model-visibility',event=>{
+    const detail=event.detail||{},name=String(detail.name||'モデル');
+    const visibleMeshes=Math.max(0,Number(detail.visibleMeshes)||0);
+    const activeChunks=Number(detail.activeStreamChunks)||0,totalChunks=Number(detail.streamChunkCount)||0;
+    if(visibleMeshes>0&&detail.rootVisible&&detail.withinDrawDistance){
+      setOutput?.('3Dモデル「'+name+'」をシーンに配置しました。描画メッシュ: '+visibleMeshes+'/'+(Number(detail.meshCount)||visibleMeshes)+
+        (totalChunks?' / ストリーミング範囲: '+activeChunks+'/'+totalChunks+' チャンク':''),'success');
+      return;
+    }
+    const reason=detail.preparing?'GPU準備がまだ完了していません。':
+      !detail.withinDrawDistance?'モデルの境界球が描画距離外と判定されています。':
+      !detail.boundsInCameraFrustum?'モデルの範囲が現在のカメラ視野に入っていません。Frameで選択モデルへ移動できます。':
+      'メッシュまたはストリーミングチャンクが非表示になっています。';
+    setOutput?.('3Dモデル「'+name+'」の読み込みは完了しましたが、現在の描画対象を確認できません。\n'+reason+
+      '\nroot visible: '+String(!!detail.rootVisible)+' / meshes: '+visibleMeshes+'/'+(Number(detail.meshCount)||0)+
+      ' / chunks: '+activeChunks+'/'+totalChunks,'error');
+  });
   window.addEventListener('pstudio-model-error',event=>{
     const detail=event.detail||{},name=String(detail.name||'モデル');
     const stack=String(detail.stack||'').split('\n').slice(0,10).join('\n');
