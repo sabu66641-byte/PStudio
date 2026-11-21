@@ -1304,13 +1304,12 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const worker=getGLTFWorker();
     if(!worker){const error=new Error('GLTF parsing Worker is unavailable.');error.code='PSTUDIO_WORKER_UNAVAILABLE';throw error;}
     dispatchModelLoadProgress({name,stage:'worker-read',loaded:0,total:blob.size,progress:0});
-    const buffer=await blob.arrayBuffer();
-    if(buffer.byteLength!==blob.size)throw new Error('GLB binary read returned an incomplete buffer.');
     const id=++gltfWorkerSequence;
     return await new Promise((resolve,reject)=>{
       gltfWorkerPending.set(id,{resolve,reject,onProgress:detail=>dispatchModelLoadProgress({name,...detail})});
       try{
-        worker.postMessage({id,op:'parse-glb',buffer},[buffer]);
+        // Blob structured cloning shares its backing storage; the full ArrayBuffer is created inside the Worker.
+        worker.postMessage({id,op:'parse-glb',blob});
         dispatchModelLoadProgress({name,stage:'worker-parse-start',loaded:blob.size,total:blob.size,progress:0});
       }catch(error){
         gltfWorkerPending.delete(id);
@@ -1326,6 +1325,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!Constructor)throw new Error('Unsupported worker geometry array type: '+record.type);
     return new Constructor(record.buffer,0,record.length);
   }
+  function colorFromArray(value){return Array.isArray(value)?new window.THREE.Color().setRGB(value[0],value[1],value[2]):0xffffff;}
   function hydrateBufferAttribute(record){
     if(!record)return null;
     const attribute=new window.THREE.BufferAttribute(hydrateTypedArray(record.data),record.itemSize,!!record.normalized);
@@ -1436,12 +1436,14 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const nodes=new Array(packet.nodes.length);
     for(let i=0;i<packet.nodes.length;i++){
       const desc=packet.nodes[i],geometry=desc.geometryId===null?null:geometries[desc.geometryId];
-      const nodeMaterials=(desc.materialIds||[]).map(id=>materials[id]).filter(Boolean);
-      const material=nodeMaterials.length>1?nodeMaterials:nodeMaterials[0]||null;
+      const sourceMaterialIds=desc.materialIds||[];
+      const nodeMaterials=sourceMaterialIds.map(id=>id===null||id===undefined?undefined:(materials[id]||undefined));
+      const material=sourceMaterialIds.length>1?nodeMaterials:(nodeMaterials[0]||null);
       let object;
       switch(desc.kind){
         case 'Mesh': object=new T.Mesh(geometry,material);break;
         case 'SkinnedMesh': object=new T.SkinnedMesh(geometry,material);break;
+        case 'InstancedMesh': object=new T.InstancedMesh(geometry,material,desc.instanceCount||1);break;
         case 'Points': object=new T.Points(geometry,material);break;
         case 'LineSegments': object=new T.LineSegments(geometry,material);break;
         case 'LineLoop': object=new T.LineLoop(geometry,material);break;
@@ -1449,11 +1451,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         case 'Bone': object=new T.Bone();break;
         case 'PerspectiveCamera': object=new T.PerspectiveCamera(desc.fov,desc.aspect,desc.near,desc.far);break;
         case 'OrthographicCamera': object=new T.OrthographicCamera(desc.left,desc.right,desc.top,desc.bottom,desc.near,desc.far);break;
-        case 'DirectionalLight': object=new T.DirectionalLight(desc.color||0xffffff,desc.intensity??1);break;
-        case 'PointLight': object=new T.PointLight(desc.color||0xffffff,desc.intensity??1,desc.distance??0,desc.decay??2);break;
-        case 'SpotLight': object=new T.SpotLight(desc.color||0xffffff,desc.intensity??1,desc.distance??0,desc.angle??Math.PI/3,desc.penumbra??0,desc.decay??2);break;
-        case 'HemisphereLight': object=new T.HemisphereLight(desc.color||0xffffff,desc.groundColor||0x444444,desc.intensity??1);break;
-        case 'AmbientLight': object=new T.AmbientLight(desc.color||0xffffff,desc.intensity??1);break;
+        case 'DirectionalLight': object=new T.DirectionalLight(colorFromArray(desc.color),desc.intensity??1);break;
+        case 'PointLight': object=new T.PointLight(colorFromArray(desc.color),desc.intensity??1,desc.distance??0,desc.decay??2);break;
+        case 'SpotLight': object=new T.SpotLight(colorFromArray(desc.color),desc.intensity??1,desc.distance??0,desc.angle??Math.PI/3,desc.penumbra??0,desc.decay??2);break;
+        case 'HemisphereLight': object=new T.HemisphereLight(colorFromArray(desc.color),colorFromArray(desc.groundColor),desc.intensity??1);break;
+        case 'AmbientLight': object=new T.AmbientLight(colorFromArray(desc.color),desc.intensity??1);break;
         case 'Group': object=new T.Group();break;
         default: object=new T.Group();break;
       }
@@ -1470,6 +1472,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       object.userData=desc.userData||{};
       if(desc.morphTargetInfluences&&object.morphTargetInfluences)for(let j=0;j<Math.min(desc.morphTargetInfluences.length,object.morphTargetInfluences.length);j++)object.morphTargetInfluences[j]=desc.morphTargetInfluences[j];
       if(desc.morphTargetDictionary)object.morphTargetDictionary=desc.morphTargetDictionary;
+      if(desc.instances&&object.isInstancedMesh){
+        const matrices=hydrateTypedArray(desc.instances.matrix);
+        if(matrices.length!==object.instanceMatrix.array.length)throw new Error('InstancedMesh matrix buffer length mismatch.');
+        object.instanceMatrix.array.set(matrices);object.instanceMatrix.needsUpdate=true;
+        if(desc.instances.color){object.instanceColor=new T.InstancedBufferAttribute(hydrateTypedArray(desc.instances.color),3);object.instanceColor.needsUpdate=true;}
+        object.computeBoundingBox?.();object.computeBoundingSphere?.();
+      }
       if(desc.zoom!==undefined&&object.isCamera)object.zoom=desc.zoom;
       if(desc.filmGauge!==undefined&&object.isPerspectiveCamera)object.filmGauge=desc.filmGauge;
       if(desc.filmOffset!==undefined&&object.isPerspectiveCamera)object.filmOffset=desc.filmOffset;
