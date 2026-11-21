@@ -498,6 +498,22 @@ test('cluster overflow preserves lights in the native renderer instead of droppi
 test('GLB packet hydration failures recover through the compatible main-thread loader',()=>{
   for(const token of ["loadStage='worker-hydrate'","disposeWorkerPacket(workerPacket)","loadStage='main-thread-fallback'","gltf=await parseGLTFOnMainThread(blob,assetName)","GLB JSON chunk is invalid","dispatchModelLoadError"])assert.ok(renderer.includes(token),token);
 });
+test('model GPU resources are retained before asynchronous instance cloning and released on failure',()=>{
+  const retainAt=renderer.indexOf("resourceLease=window.PStudioResources?.retain?.('model-gpu',d.name)");
+  const buildAt=renderer.indexOf("createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease)");
+  const cloneAt=renderer.indexOf("async function cloneModelHierarchyAsync");
+  assert.ok(retainAt>=0&&buildAt>retainAt,'resource lease is acquired before instance creation');
+  assert.ok(cloneAt>0);
+  const createStart=renderer.indexOf('async function createModelInstanceAsync');
+  const createEnd=renderer.indexOf('function nextPreparationFrame',createStart);
+  const createBlock=renderer.slice(createStart,createEnd);
+  assert.ok(createBlock.includes('resourceLease=null'));
+  assert.ok(!createBlock.includes("retain?.('model-gpu',name)"),'no late retain after asynchronous preparation');
+  const buildStart=renderer.indexOf('const build=(async()=>{',retainAt);
+  const catchStart=renderer.indexOf('})().catch(error=>{',buildStart);
+  assert.ok(catchStart>buildStart);
+  assert.ok(renderer.slice(catchStart,catchStart+180).includes('resourceLease?.release?.()'),'failed builds release the lease');
+});
 test('failed model instance builds are retained as explicit errors and can be retried',()=>{
   for(const token of ['modelBuildErrors.has(key)','modelBuildErrors.set(key,message)','retryModelAsset','getModelStatus',"stage:'instance-build'"])assert.ok(renderer.includes(token),token);
 });
