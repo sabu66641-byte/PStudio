@@ -732,8 +732,10 @@
     const label=modelProgressLabel(detail.stage);
     const loaded=Number(detail.loaded),total=Number(detail.total);
     const hasCounts=Number.isFinite(loaded)&&Number.isFinite(total)&&total>0;
+    const rawProgress=Number(detail.progress);
+    const progress=Number.isFinite(rawProgress)?rawProgress:(hasCounts?loaded/total:0);
     const count=hasCounts
-      ?' · '+Math.min(loaded,total)+'/'+total+' ('+Math.round(Math.max(0,Math.min(1,Number(detail.progress)||0))*100)+'%)':'';
+      ?' · '+Math.min(loaded,total)+'/'+total+' ('+Math.round(Math.max(0,Math.min(1,progress))*100)+'%)':'';
     status.textContent='MODEL · '+String(detail.name)+' · '+label+count;
     status.title=status.textContent;
   });
