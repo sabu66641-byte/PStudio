@@ -794,6 +794,7 @@ GAME_FUNCTIONS = {
     "draw_grid": 2, "set_camera": 6, "set_camera_follow": 7,
     "set_background": 1, "set_fog": 3, "set_light": 4, "set_material": 2,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3, "set_shader": 1,
+    "set_toon_material": 14,
     "draw_terrain": 7, "draw_water": 7, "emit_particles": 7,
     "set_model_material": 4, "set_postprocessing": 3,
     "particle_emitter": 6, "stop_particle_emitter": 1, "solve_ik": 7, "animation_layer": 3,

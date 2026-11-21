@@ -385,6 +385,28 @@ Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
 
 
+### Stylized NPR toon materials and GPU foliage wind (PStudio 3.0 Step 2)
+
+The renderer now provides an opt-in hybrid PBR/NPR material path. It keeps the Three.js standard/physical BRDF, clustered lighting, image-based lighting and shadow integration, then applies three-color toon ramps, a view-dependent rim response, outline ink and a lightweight pseudo-subsurface term. The pseudo-SSS term is an art-directed lighting approximation, not physical subsurface transport. PBR remains the default; use `set_shader("toon")` or `set_toon_material(...)` only on objects that need the stylized treatment.
+
+The browser game-script API is:
+
+```ps
+set_shader("toon")
+set_toon_material(
+    "#46516f", "#9eafd0", "#ffffff",
+    0.32, 0.68,
+    "#b8dcff", 0.42, 2.6,
+    "#182235", 0.12,
+    "#f0a5a0", 0.12,
+    0.35, 1.0
+)
+```
+
+Arguments, in order: shadow, midtone and highlight colors; shadow and highlight thresholds; rim color, intensity and power; outline color and width; pseudo-SSS color and intensity; GPU wind strength and speed. Colors use `#RRGGBB`. Numeric values are bounded by the runtime before reaching shader uniforms. `set_toon_material` also selects the toon path for subsequent primitives and imported models owned by the script.
+
+The shared Object Inspector exposes the toon/rim/outline/pseudo-SSS controls plus foliage wind controls for both script-owned 3D primitives and GLB models. GLB material-specific overrides expose the same controls per named material; the shared Object Inspector applies its settings across the selected object's 3D materials. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. Outlines use expanded back-face shell passes for regular, skinned and instanced meshes. Multi-material GLBs retain each material slot's alpha-test/transparent texture masking; shells use depth testing, no depth writes, and do not participate in raycasts or shadow passes. Verify the actual WebGL shader compile and visual result on each target GPU.
+
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 
 The 3D renderer uses Three.js r160 with ACES filmic tone mapping, sRGB output, PMREM-filtered image-based lighting and directional shadow mapping. Quality presets are available through the renderer API:
