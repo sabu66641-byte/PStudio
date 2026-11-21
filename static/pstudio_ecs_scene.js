@@ -230,10 +230,13 @@
       try { api.getComponent(inputWorldEntity, 'InputState'); return inputWorldEntity; }
       catch (_) { inputWorldEntity = null; }
     }
-    inputWorldEntity = api.createEntity({ InputState: {
-      pressedKeys: [], justPressedKeys: [], axisX: 0, axisZ: 0,
-      touchActive: false, touchX: 0, touchY: 0, jumpPressed: false
-    } });
+    inputWorldEntity = api.createEntity({
+      InputState: {
+        pressedKeys: [], justPressedKeys: [], axisX: 0, axisZ: 0,
+        touchActive: false, touchX: 0, touchY: 0, jumpPressed: false
+      },
+      ...(api.hasComponentType('ScriptSystemState') ? { ScriptSystemState: { values: {} } } : {})
+    });
     return inputWorldEntity;
   }
 
