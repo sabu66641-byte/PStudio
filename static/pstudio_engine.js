@@ -151,21 +151,63 @@
   function astForScript(scriptName) {
     return runtime?.asts?.[scriptName] || null;
   }
-  function makeContext(object, dt) {
+  function getScriptState(objectId) {
+    const key=String(objectId),bridge=window.PStudioECSGameplay;
+    const live=bridge?.getSceneComponent?.(key,'ScriptState');
+    if(live&&live.values&&typeof live.values==='object'&&!Array.isArray(live.values))return live.values;
+    const fallback=runtime?.states?.get(objectId)||runtime?.states?.get(key)||Object.create(null);
+    const component=bridge?.ensureSceneComponent?.(key,'ScriptState',{values:fallback});
+    if(component?.values&&typeof component.values==='object'&&!Array.isArray(component.values)){
+      runtime?.states?.delete?.(objectId);runtime?.states?.delete?.(key);
+      return component.values;
+    }
+    return fallback;
+  }
+  function commitScriptState(objectId,values) {
+    const key=String(objectId),bridge=window.PStudioECSGameplay;
+    if(bridge?.getSceneComponent?.(key,'ScriptState'))return bridge.commitSceneComponent(key,'ScriptState',{values});
+    runtime?.states?.set?.(objectId,values);
+    return false;
+  }
+  function getScriptLifecycle(objectId) {
+    const key=String(objectId),bridge=window.PStudioECSGameplay;
+    const component=bridge?.ensureSceneComponent?.(key,'ScriptLifecycle',{
+      initialized:runtime?.initialized?.has?.(objectId)||runtime?.initialized?.has?.(key)||false,
+      started:runtime?.started?.has?.(objectId)||runtime?.started?.has?.(key)||false
+    });
+    if(component)return component;
     return {
-      object, dt, draw: [], steps: 0, callDepth: 0,
-      env: runtime.states.get(object.id) || Object.create(null),
-      funcs: Object.create(null),
-      output: []
+      initialized:runtime?.initialized?.has?.(objectId)||runtime?.initialized?.has?.(key)||false,
+      started:runtime?.started?.has?.(objectId)||runtime?.started?.has?.(key)||false
     };
   }
-  function setupContext(object, dt=0) {
-    const c = makeContext(object, dt);
-    const ast = astForScript(object.script);
-    if (!ast) return c;
-    for (const node of ast.body || []) if (node.type === 'FunctionDef') c.funcs[node.name] = node;
-    return c;
+  function commitScriptLifecycle(objectId,state) {
+    const key=String(objectId),bridge=window.PStudioECSGameplay;
+    if(bridge?.getSceneComponent?.(key,'ScriptLifecycle'))return bridge.commitSceneComponent(key,'ScriptLifecycle',state);
+    if(state.initialized)runtime?.initialized?.add?.(objectId);
+    if(state.started)runtime?.started?.add?.(objectId);
+    return false;
   }
+  function updateLocomotionSequence(objectId) {
+    if(!runtime)return 0;
+    runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
+    const bridge=window.PStudioECSGameplay,key=String(objectId);
+    const state=bridge?.ensureSceneComponent?.(key,'LocomotionState',{landSequence:0});
+    if(state){
+      state.landSequence=runtime.nextLandSequence;
+      bridge.commitSceneComponent(key,'LocomotionState',state);
+      runtime.landSequences?.delete?.(objectId);
+      return state.landSequence;
+    }
+    runtime.landSequences?.set?.(objectId,runtime.nextLandSequence);
+    return runtime.nextLandSequence;
+  }
+  function getLocomotionSequence(objectId) {
+    const bridge=window.PStudioECSGameplay,key=String(objectId);
+    const state=bridge?.getSceneComponent?.(key,'LocomotionState');
+    return state?state.landSequence:(runtime?.landSequences?.get?.(objectId)||0);
+  }
+
   function getVar(c, env, name) {
     if (Object.prototype.hasOwnProperty.call(env, name)) return env[name];
     if (name === 'true') return true;
@@ -476,9 +518,9 @@
     return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   }
   function dispatchCollision(object, other) {
-    const state=runtime.states.get(object.id);if(!state)return;
-    const c=setupContext(object,0);c.steps=0;
-    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
+    const state=getScriptState(object.id);if(!state)return;
+    const c=setupContext(object,0);c.env=state;c.steps=0;
+    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);commitScriptState(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');}
   }
   function updateCollisions() {
     const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
@@ -646,18 +688,20 @@
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         const script=astForScript(o.script);if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
-        if(!runtime.initialized.has(o.id)){
-          runtime.initialized.add(o.id);
+        const lifecycle=getScriptLifecycle(o.id);
+        if(!lifecycle.initialized){
+          lifecycle.initialized=true;
           const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');
           if(topLevel.length)execBlock(c,topLevel,c.env);
         }
-        if(!runtime.started.has(o.id)){
-          runtime.started.add(o.id);
+        if(!lifecycle.started){
+          lifecycle.started=true;
           if(c.funcs.start)callFunction(c,'start',[]);
         }
         c.dt=dt;
         if(c.funcs.update)callFunction(c,'update',[dt]);
-        runtime.states.set(o.id,c.env);
+        commitScriptState(o.id,c.env);
+        commitScriptLifecycle(o.id,lifecycle);
         const objectDraws=c.draw.slice();
         if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
@@ -714,7 +758,7 @@
 
         if(transform.landed){
           runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
-          runtime.landSequences.set(id,runtime.nextLandSequence);
+          updateLocomotionSequence(id);
         }
 
         for(const draw of draws){
@@ -739,7 +783,7 @@
             draw.grounded=transform.grounded;
             draw.speed=transform.horizontalSpeed;
             draw.velocityY=transform.velocityY;
-            draw.landSequence=runtime.landSequences.get(id)||0;
+            draw.landSequence=getLocomotionSequence(id);
           }
         }
       }
@@ -874,15 +918,29 @@
               const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
               const stateKey=systemId+':'+entity;
               const c=makeContext(object,dt);
-              c.env=runtime.ecsStates.get(stateKey)||Object.create(null);
+              let systemState=api.hasComponent(entity,'ScriptSystemState')
+                ?api.getComponent(entity,'ScriptSystemState')
+                :api.addComponent(entity,'ScriptSystemState',{values:{}});
+              const stored=systemState.values&&typeof systemState.values==='object'&&!Array.isArray(systemState.values)
+                ?systemState.values:Object.create(null);
+              c.env=stored[systemId]||runtime.ecsStates.get(stateKey)||Object.create(null);
               c.env.entity=entity;c.env.dt=dt;
-              componentNames.forEach((component,index)=>{c.env[ecsBindingName(component)]=values[index];});
+              const bindingNames=componentNames.map(ecsBindingName);
+              componentNames.forEach((component,index)=>{c.env[bindingNames[index]]=values[index];});
               c.funcs=Object.create(null);
               for(const fn of asts[filename]?.body||[])if(fn.type==='FunctionDef')c.funcs[fn.name]=fn;
               c.steps=0;
               try{execBlock(c,node.body||[],c.env);}
               catch(signal){if(!(signal&&signal.kind===RETURN))throw signal;}
-              runtime.ecsStates.set(stateKey,c.env);
+              const persistentValues=Object.create(null);
+              for(const [key,value] of Object.entries(c.env)){
+                if(key==='entity'||key==='dt'||bindingNames.includes(key))continue;
+                persistentValues[key]=value;
+              }
+              stored[systemId]=persistentValues;
+              systemState.values=stored;
+              api.setComponent(entity,'ScriptSystemState',systemState);
+              runtime.ecsStates.delete(stateKey);
               if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
             });
           }
