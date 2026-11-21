@@ -490,3 +490,19 @@ test('cluster overflow preserves lights in the native renderer instead of droppi
   assert.ok(renderer.includes('clusteredLightSet.has(light)'));
   assert.ok(renderer.includes('nativeFallbackPointLights:'));
 });
+
+
+test('GLB packet hydration failures recover through the compatible main-thread loader',()=>{
+  for(const token of ["loadStage='worker-hydrate'","disposeWorkerPacket(workerPacket)","loadStage='main-thread-fallback'","gltf=await parseGLTFOnMainThread(blob,assetName)","GLB JSON chunk is invalid","dispatchModelLoadError"])assert.ok(renderer.includes(token),token);
+});
+test('failed model instance builds are retained as explicit errors and can be retried',()=>{
+  for(const token of ['modelBuildErrors.has(key)','modelBuildErrors.set(key,message)','retryModelAsset','getModelStatus',"stage:'instance-build'"])assert.ok(renderer.includes(token),token);
+});
+test('the 3D editor exposes model load progress, stage errors and a mode-aware Refresh action',()=>{
+  for(const token of ['pstudio-model-load-progress','pstudio-model-error','refreshSceneView'])assert.ok(engine.includes(token),token);
+  assert.ok(html.includes('window.PStudioEngine?.refreshSceneView?.()'));
+});
+test('updated renderer and game runtime sources remain syntactically valid',()=>{
+  assert.doesNotThrow(()=>new Function(renderer));
+  assert.doesNotThrow(()=>new Function(engine));
+});

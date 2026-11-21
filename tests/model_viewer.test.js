@@ -77,3 +77,15 @@ test('the generic 3D renderer retains its quality, LOD, BVH and lightmap systems
   assert.match(engine, /type:'model'/);
   assert.match(engine, /function buildScenePreview3D\(\)/);
 });
+
+
+test('JSON glTF assets are routed around the GLB-only worker parser',()=>{
+  assert.ok(renderer.includes('const isJSONGLTF='));
+  assert.ok(renderer.includes("if(isJSONGLTF)"));
+  assert.ok(renderer.includes('gltf=await parseGLTFOnMainThread(blob,assetName)'));
+  assert.ok(renderer.includes("stage:'main-thread-gltf-json-start'"));
+});
+test('scene-add feedback describes registration rather than claiming async load completion',()=>{
+  assert.ok(html.includes('読み込み状況とエラーはOUTPUTに表示されます'));
+  assert.ok(engine.includes("status.textContent='MODEL ERROR · '+name"));
+});

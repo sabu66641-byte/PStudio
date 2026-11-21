@@ -599,3 +599,10 @@ Instanced batches retain their original instance mapping for scene selection. A 
 Renderer diagnostics expose staged preparation, virtual-texture page counts, clustered-light counts, renderer geometry/texture counts and PStudio CPU/GPU resource-cache estimates. WebGL does not expose exact per-allocation VRAM usage, so GPU cache pressure remains a registered-size estimate rather than a hardware VRAM reading. The 1 GB GLB import limit is a storage/acceptance ceiling, not a promise that every 1 GB asset can be rendered on every device.
 
 **Validation boundary:** source syntax and static regression assertions are included in the repository's Node test suite. Real GPU shader compilation, visual equivalence across complex glTF variants, browser-specific decoder-worker behavior, and low-memory Android stress tests still require runtime testing on actual supported browsers and devices.
+
+
+## Model loading diagnostics and recovery
+
+GLB files use the dedicated GLTF module Worker. JSON glTF files bundled into the asset store use the regular Three.js GLTFLoader Blob-URL path; they are not sent to the GLB-header parser. A Worker packet that parses but cannot be rehydrated into the live Three.js scene is released and retried through the main-thread loader when the failure is not a malformed-file or memory-allocation failure. Decoder instances created for the fallback are disposed after parsing.
+
+Model loading stages are surfaced in the Scene status line. Worker parsing, packet hydration, instance creation, texture preparation, and initial-render failures produce an OUTPUT error with a retry path. Scene Refresh now refreshes the active 2D or 3D view and re-enters the model loading path for previously failed models. A failed instance build is retained as an explicit error state rather than being silently retried on every render.
