@@ -111,6 +111,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - ECS owns typed Component data and generic System scheduling. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields.
 - Scene-bound gameplay state is owned by ECS Components: Health, Inventory, Equipment, AIState and CombatState. PStudioGameplay keeps its public function API as a compatibility facade; in the normal runtime path it delegates to the Scene Object Entity instead of maintaining a second Map-based source of truth.
 - World-scoped gameplay state is represented by ECS Entities/Components: Quest and NavigationNode use standalone data Entities, while GameplayWorld owns active UI and dialogue state. Small Maps retained by the gameplay facade are ID indexes or fallback storage only when ECS is unavailable.
+- Per-Entity .ps runtime variables and lifecycle flags are stored in ScriptState and ScriptLifecycle; declared .ps System local variables are stored in ScriptSystemState; locomotion landing sequence values use LocomotionState. The former runtime.states, initialized, started, ecsStates and landSequences collections are compatibility fallback paths, not the normal runtime source of truth.
 - itemDefinitions and weaponDefinitions remain registries because they are static authoring data, not per-Entity runtime state. DOM panels remain view code; they read the gameplay API and do not own gameplay state.
 - Before stopGame clears Scene Object Entities, the gameplay bridge takes an in-memory snapshot of the persistent gameplay Components. The next Play run restores those values when the matching Entity/Component is re-created. This preserves the old page-session behavior without writing live runtime values into project files.
 - Existing per-Scene-Object ps callback execution, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
@@ -141,6 +142,8 @@ The pstudio_ecs_gameplay.js bridge maintains a temporary in-memory snapshot for 
 - GameplayWorld is a singleton-style ECS Entity for active gameplay UI and dialogue state.
 
 These world Entities are not Scene Objects. They survive clearSceneObjects() and are intentionally runtime-only (persistent: false).
+
+Script runtime Components are also runtime-only and are attached only when needed. ScriptSystemState is pre-attached before System scheduling starts; cleanup removes it after unregistering Systems, so the scheduler does not mutate its Component structure while iterating.
 
 ### What is not an ECS Component
 
