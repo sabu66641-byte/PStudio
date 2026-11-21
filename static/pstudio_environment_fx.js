@@ -428,6 +428,8 @@
     }
     shell.position.set(0,0,0);shell.quaternion.set(0,0,0,1);shell.scale.set(1,1,1);
     shell.frustumCulled=object.frustumCulled;
+    shell.castShadow=false;shell.receiveShadow=false;
+    shell.raycast=()=>{};
     shell.renderOrder=(Number(object.renderOrder)||0)-0.1;
     shell.userData.pstudioOutlineShell=true;
     object.add(shell);
