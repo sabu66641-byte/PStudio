@@ -1180,6 +1180,10 @@ def validate_ast(tree, allow_game=False, external_components=None):
                     raise Exception(f"意味エラー (行 {node.get('line', '?')}): Member代入先が不正です。")
                 target_type = expr(target, env)
                 value_type = expr(node.get("value"), env)
+                if node.get("type") == "MemberAssignment" and target_type is not None and value_type is not None:
+                    compatible = target_type == value_type or (target_type == "float" and value_type == "int")
+                    if not compatible:
+                        raise Exception(f"意味エラー: Component Fieldへの代入型が一致しません ({target_type} <- {value_type})。")
                 if node.get("type") == "MemberCompoundAssignment":
                     if node.get("op") not in COMPOUND_OPERATORS:
                         raise Exception("意味エラー: 未対応のMember複合代入演算子です。")
