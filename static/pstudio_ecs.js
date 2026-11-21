@@ -830,7 +830,10 @@
     clearEntities,
     setEnabled(value) { enabled = !!value; emit('enabled-changed', { enabled }); return enabled; },
     isEnabled() { return enabled; },
-    hasActiveSystems() { return enabled && orderedSystems.some(system => system.enabled); },
+    hasActiveSystems() {
+      return enabled && orderedSystems.some(system => system.enabled &&
+        (!system.components.length || system.components.every(type => componentStores.get(type)?.size > 0)));
+    },
     on(type, callback) {
       if (typeof callback !== 'function') throw new TypeError('ECS listener must be a function.');
       const key = String(type);
