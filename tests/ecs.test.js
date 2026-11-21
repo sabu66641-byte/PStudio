@@ -201,3 +201,14 @@ test('restores serialized custom Components when Scene Objects are synchronized'
   assert.equal(ecs.getComponent(entity, 'Health').current, 80);
   assert.ok(ecs.getComponentTypes().includes('Velocity'));
 });
+
+
+test('ECS Inspector module syntax is valid and loads after the ECS core', () => {
+  const inspector = fs.readFileSync('static/pstudio_ecs_inspector.js', 'utf8');
+  const html = fs.readFileSync('templates/index.html', 'utf8');
+  assert.doesNotThrow(() => new vm.Script(inspector));
+  const coreTag = html.indexOf('<script src="/static/pstudio_ecs.js"></script>');
+  const inspectorTag = html.indexOf('<script src="/static/pstudio_ecs_inspector.js"></script>');
+  assert.ok(coreTag >= 0, 'ECS core script tag must exist');
+  assert.ok(inspectorTag > coreTag, 'ECS Inspector must load after ECS core');
+});
