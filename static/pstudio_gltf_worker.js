@@ -12,9 +12,18 @@ function safeJSON(value) {
 
 function transferTypedArray(array) {
   if (!array || !ArrayBuffer.isView(array)) return null;
-  const copy = array.slice ? array.slice() : new array.constructor(array);
-  TRANSFERS.add(copy.buffer);
-  return { type: copy.constructor.name, buffer: copy.buffer, length: copy.length };
+  const Constructor=array.constructor;
+  let view=array;
+  if(!(array.buffer instanceof ArrayBuffer)){
+    view=new Constructor(array);
+  }
+  TRANSFERS.add(view.buffer);
+  return {
+    type: view.constructor.name,
+    buffer: view.buffer,
+    byteOffset: view.byteOffset||0,
+    length: view.length
+  };
 }
 
 function attributeArray(attribute) {
