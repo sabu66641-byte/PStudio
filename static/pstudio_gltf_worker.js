@@ -1,9 +1,8 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+// GLTFLoader imports the bare specifier "three". Module workers do not inherit the
+// document import map, so use a self-contained ESM bundle for the parser.
+import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js?bundle';
 import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js';
-import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/DRACOLoader.js';
-
-const CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/';
 const TRANSFERS = new Set();
 const VIRTUAL_IMAGES = new Map();
 
@@ -357,8 +356,8 @@ async function serializeGLTF(gltf) {
   };
 }
 
-async function parseGLB(message) {
-  const buffer = message.buffer;
+async async function parseGLB(message) {
+  const buffer = message.buffer || (message.blob?.arrayBuffer ? await message.blob.arrayBuffer() : null);
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 20) throw new Error('Invalid GLB buffer.');
   const jsonLengthView = new DataView(buffer);
   if (jsonLengthView.getUint32(0, true) !== 0x46546c67 || jsonLengthView.getUint32(4, true) !== 2) {
@@ -377,10 +376,9 @@ async function parseGLB(message) {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
   if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) {
-    const draco = new DRACOLoader();
-    draco.setDecoderPath(CDN + 'libs/draco/');
-    draco.setWorkerLimit(2);
-    loader.setDRACOLoader(draco);
+    const error = new Error('This GLB uses Draco compression; the decoder will run through the renderer-compatible main-thread loader path.');
+    error.code = 'PSTUDIO_MAIN_THREAD_REQUIRED';
+    throw error;
   }
 
   const started = performance.now();
@@ -446,9 +444,9 @@ self.onmessage = async event => {
     }
     if (message.op !== 'parse-glb') return;
     TRANSFERS.clear();
-    self.postMessage({id:message.id,progress:{stage:'worker-parse-start',loaded:0,total:message.buffer?.byteLength||0,progress:0}});
+    self.postMessage({id:message.id,progress:{stage:'worker-parse-start',loaded:0,total:message.blob?.size||message.buffer?.byteLength||0,progress:0}});
     const packet = await parseGLB(message);
-    self.postMessage({id:message.id,progress:{stage:'worker-serialize-complete',loaded:message.buffer?.byteLength||0,total:message.buffer?.byteLength||0,progress:1,timings:packet.timings}});
+    self.postMessage({id:message.id,progress:{stage:'worker-serialize-complete',loaded:message.blob?.size||message.buffer?.byteLength||0,total:message.blob?.size||message.buffer?.byteLength||0,progress:1,timings:packet.timings}});
     const transferList = [...TRANSFERS];
     self.postMessage({ id: message.id, ok: true, result: packet }, transferList);
   } catch (error) {
