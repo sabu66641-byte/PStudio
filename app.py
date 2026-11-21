@@ -1762,13 +1762,15 @@ def _native_cpp_expr(node, local_names, binding_names):
     if kind == "UnaryExpr":
         op = node.get("op")
         right = _native_cpp_expr(node.get("right"), local_names, binding_names)
-        return f"(!({right}))" if op == "!" else f"({op}{right})"
+        return f"(!pstudio::ecs::truthy({right}))" if op == "!" else f"({op}{right})"
     if kind == "PostfixExpr":
         return f"({_native_cpp_expr(node['value'], local_names, binding_names)}{node['op']})"
     if kind == "BinaryExpr":
         op = node.get("op")
         left = _native_cpp_expr(node["left"], local_names, binding_names)
         right = _native_cpp_expr(node["right"], local_names, binding_names)
+        if op in ("&&", "||"):
+            return f"(pstudio::ecs::truthy({left}) {op} pstudio::ecs::truthy({right}))"
         if op == "/":
             return f"pstudio::ecs::ps_div({left}, {right})"
         if op == "%":
@@ -1797,7 +1799,7 @@ def _native_generate_system_body(nodes, local_names, binding_names, indent=3, se
         kind = node.get("type")
         if kind == "IfStatement":
             condition = _native_cpp_expr(node["condition"], local_names, binding_names)
-            output.append(pad + f"if ({condition}) {{")
+            output.append(pad + f"if (pstudio::ecs::truthy({condition})) {{")
             output.extend(_native_generate_system_body(node.get("body", []), local_names, binding_names, indent + 1, sequence))
             output.append(pad + "}")
             index += 1
@@ -1805,7 +1807,7 @@ def _native_generate_system_body(nodes, local_names, binding_names, indent=3, se
                 branch = nodes[index]
                 if branch["type"] == "ElifStatement":
                     condition = _native_cpp_expr(branch["condition"], local_names, binding_names)
-                    output[-1] = pad + f"}} else if ({condition}) {{"
+                    output[-1] = pad + f"}} else if (pstudio::ecs::truthy({condition})) {{"
                 else:
                     output[-1] = pad + "} else {"
                 output.extend(_native_generate_system_body(branch.get("body", []), local_names, binding_names, indent + 1, sequence))
@@ -1852,7 +1854,7 @@ def _native_generate_system_body(nodes, local_names, binding_names, indent=3, se
             guard = f"pstudio_internal_while_guard_{sequence[0]}"
             condition = _native_cpp_expr(node["condition"], local_names, binding_names)
             output.append(pad + f"std::size_t {guard} = 0;")
-            output.append(pad + f"while ({condition}) {{")
+            output.append(pad + f"while (pstudio::ecs::truthy({condition})) {{")
             output.append(pad + f"    if (++{guard} > 1000) throw std::runtime_error(\"ps while iteration limit exceeded\");")
             output.extend(_native_generate_system_body(node.get("body", []), local_names, binding_names, indent + 1, sequence))
             output.append(pad + "}")
