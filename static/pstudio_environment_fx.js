@@ -673,6 +673,43 @@
     return pass;
   }
 
+  function createGodRaysPass(FX,Three) {
+    if(!FX?.ShaderPass||!Three?.Vector2)return null;
+    const shader={
+      uniforms:{
+        tDiffuse:{value:null},
+        uLightPosition:{value:new Three.Vector2(0.5,0.78)},
+        uIntensity:{value:0},
+        uDensity:{value:0.92},
+        uDecay:{value:0.965},
+        uWeight:{value:0.82},
+        uThreshold:{value:0.58}
+      },
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse;uniform vec2 uLightPosition;',
+        'uniform float uIntensity;uniform float uDensity;uniform float uDecay;uniform float uWeight;uniform float uThreshold;',
+        'varying vec2 vUv;',
+        'void main(){',
+        'vec4 source=texture2D(tDiffuse,vUv);',
+        'vec2 delta=(vUv-uLightPosition)*(uDensity/20.0);',
+        'vec2 coord=vUv;float illuminationDecay=1.0;vec3 shafts=vec3(0.0);',
+        'for(int i=0;i<20;i++){coord-=delta;vec3 sampleColor=texture2D(tDiffuse,clamp(coord,vec2(0.001),vec2(0.999))).rgb;',
+        'float luminance=dot(sampleColor,vec3(0.2126,0.7152,0.0722));',
+        'float bright=smoothstep(uThreshold,uThreshold+0.38,luminance);',
+        'shafts+=sampleColor*bright*illuminationDecay;illuminationDecay*=uDecay;}',
+        'vec3 result=source.rgb+shafts*(uWeight/20.0)*uIntensity;',
+        'gl_FragColor=vec4(result,source.a);',
+        '#include <tonemapping_fragment>',
+        '#include <colorspace_fragment>',
+        '}'
+      ].join('\\n')
+    };
+    const pass=new FX.ShaderPass(shader);
+    pass.enabled=false;
+    return pass;
+  }
+
   function createVolumetricFogPass(FX,Three) {
     if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
     const shader={
@@ -711,7 +748,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     configureToon,
     releaseObject(object){releaseOutline(object);},
