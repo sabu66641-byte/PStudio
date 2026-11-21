@@ -179,6 +179,16 @@
       meshCollider:{enabled:!!object?.collider&&!!object?.model,source:'render-mesh'}
     };
   }
+  function getInputSnapshot() {
+    return window.PStudioECSScene?.getInputState?.() || {
+      pressedKeys:[...new Set([...keys,...virtualKeys].map(normalizeKey))],
+      justPressedKeys:[...justPressed].map(normalizeKey),
+      axisX:clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x),
+      axisZ:clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z),
+      touchActive,touchX:pointerPosition.x,touchY:pointerPosition.y,
+      jumpPressed:keys.has(' ')||virtualKeys.has(' ')
+    };
+  }
   function getCollisionObject(object) {
     const state=getRuntimePresentation(object);
     return Object.assign({},object,{
@@ -313,17 +323,17 @@
       case 'rotate_x': if (a.length===1) { o.rotationX=(Number(o.rotationX)||0)+finite(a[0]); return o.rotationX; } break;
       case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
       case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
-      case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]);return keys.has(k)||virtualKeys.has(k);} break;
-      case 'was_key_pressed': if (a.length===1) return justPressed.has(normalizeKey(a[0])); break;
+      case 'is_key_down': if (a.length===1) return getInputSnapshot().pressedKeys.includes(normalizeKey(a[0])); break;
+      case 'was_key_pressed': if (a.length===1) return getInputSnapshot().justPressedKeys.includes(normalizeKey(a[0])); break;
       case 'get_axis': if (a.length===1) {
-        const axis=String(a[0]).toLowerCase();
-        if(axis==='horizontal'||axis==='x')return clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x);
-        if(axis==='vertical'||axis==='z')return clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z);
+        const axis=String(a[0]).toLowerCase(),input=getInputSnapshot();
+        if(axis==='horizontal'||axis==='x')return clampAxis(input.axisX);
+        if(axis==='vertical'||axis==='z')return clampAxis(input.axisZ);
         break;
       }
-      case 'is_touched': if (!a.length) return touchActive; break;
-      case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
-      case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
+      case 'is_touched': if (!a.length) return getInputSnapshot().touchActive; break;
+      case 'get_touch_x': if (!a.length) return getInputSnapshot().touchX; break;
+      case 'get_touch_y': if (!a.length) return getInputSnapshot().touchY; break;
       case 'play_sound': if(a.length===3)return playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
       case 'stop_sound': if(a.length===1)return stopOwnerSound(o.id,String(a[0])); break;
       case 'set_sound_volume': if(a.length===2)return setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
@@ -780,6 +790,14 @@
     const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
     try {
       const commands=new Map();
+      window.PStudioECSScene?.syncInputState?.({
+        pressedKeys:[...new Set([...keys,...virtualKeys].map(normalizeKey))],
+        justPressedKeys:[...justPressed].map(normalizeKey),
+        axisX:clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x),
+        axisZ:clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z),
+        touchActive,touchX:pointerPosition.x,touchY:pointerPosition.y,
+        jumpPressed:keys.has(' ')||virtualKeys.has(' ')
+      });
       for(const object of sceneObjects||[]){
         const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;
         window.PStudioPhysics?.setActive?.(object.id,active);
@@ -1119,7 +1137,7 @@
     } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();justPressed.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);window.PStudioECSScene?.syncInputState?.({pressedKeys:[],justPressedKeys:[],axisX:0,axisZ:0,touchActive:false,touchX:0,touchY:0,jumpPressed:false});
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
