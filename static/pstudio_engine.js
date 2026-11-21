@@ -545,10 +545,37 @@
   function drawScene(commandsByObject) {
     ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
-    for(const o of sceneObjects||[]){const img=o.sprite?imageByName(o.sprite):null;if(img)ctx.drawImage(img,o.x,o.y,o.w,o.h);else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h);}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name||'',o.x,o.y-8);}
-    for(const list of commandsByObject.values())for(const d of list){if(d.type==='rect'){ctx.fillStyle=d.color;ctx.fillRect(d.x,d.y,d.w,d.h)}else if(d.type==='circle'){ctx.fillStyle=d.color;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}else if(d.type==='sprite'){const im=imageByName(d.name);if(im)ctx.drawImage(im,d.x,d.y);}}
-    const selected=(sceneObjects||[]).find(o=>o.id===selectedObjectId);if(selected){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(selected.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+selected.w/2,selected.y+selected.h/2,Math.max(selected.w,selected.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(selected.x-4,selected.y-4,selected.w+8,selected.h+8)}ctx.setLineDash([])}
+    for(const o of sceneObjects||[]){
+      const state=getRuntimePresentation(o),sprite=state.spriteRenderer;
+      if(sprite.visible===false)continue;
+      const width=Math.max(1,finite(sprite.width,64)),height=Math.max(1,finite(sprite.height,64));
+      const img=sprite.sprite?imageByName(sprite.sprite):null;
+      if(img)ctx.drawImage(img,o.x,o.y,width,height);
+      else{
+        ctx.fillStyle=sprite.color||'#d1d5db';
+        if(sprite.shape==='circle'){ctx.beginPath();ctx.arc(o.x+width/2,o.y+height/2,Math.max(width,height)/2,0,Math.PI*2);ctx.fill();}
+        else ctx.fillRect(o.x,o.y,width,height);
+      }
+      ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name||'',o.x,o.y-8);
+    }
+    for(const list of commandsByObject.values())for(const d of list){
+      if(d.type==='rect'){ctx.fillStyle=d.color;ctx.fillRect(d.x,d.y,d.w,d.h);}
+      else if(d.type==='circle'){ctx.fillStyle=d.color;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill();}
+      else if(d.type==='sprite'){const im=imageByName(d.name);if(im)ctx.drawImage(im,d.x,d.y);}
+    }
+    const selected=(sceneObjects||[]).find(o=>o.id===selectedObjectId);
+    if(selected){
+      const sprite=getRuntimePresentation(selected).spriteRenderer;
+      if(sprite.visible!==false){
+        const width=Math.max(1,finite(sprite.width,64)),height=Math.max(1,finite(sprite.height,64));
+        ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+        if(sprite.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+width/2,selected.y+height/2,Math.max(width,height)/2+4,0,Math.PI*2);ctx.stroke();}
+        else ctx.strokeRect(selected.x-4,selected.y-4,width+8,height+8);
+        ctx.setLineDash([]);
+      }
+    }
   }
+
   function collides(a,b) {
     if(a.shape==='circle'&&b.shape==='circle'){const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;const r=(Math.max(a.w,a.h)+Math.max(b.w,b.h))/2;return (ax-bx)**2+(ay-by)**2<=r*r;}
     if(a.shape==='circle'||b.shape==='circle'){const c=a.shape==='circle'?a:b,r=a.shape==='circle'?b:a;const cx=c.x+c.w/2,cy=c.y+c.h/2,nx=Math.max(r.x,Math.min(cx,r.x+r.w)),ny=Math.max(r.y,Math.min(cy,r.y+r.h));return (cx-nx)**2+(cy-ny)**2<=(Math.max(c.w,c.h)/2)**2;}
