@@ -892,6 +892,10 @@
       }
       // Restore Component values after all declarations have been registered.
       ecs.syncSceneObjects?.(sceneObjects || []);
+      // Pre-attach per-Entity System state before the scheduler begins iterating.
+      for(const entity of ecs.getEntities?.()||[]){
+        if(!ecs.hasComponent(entity,'ScriptSystemState'))ecs.addComponent(entity,'ScriptSystemState',{values:{}});
+      }
       // Backward compatibility: scenes without an explicit ECS assignment list keep
       // the first-bridge behavior. An explicit [] means no custom Component is attached.
       for(const object of sceneObjects||[]){
@@ -918,10 +922,9 @@
               const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
               const stateKey=systemId+':'+entity;
               const c=makeContext(object,dt);
-              let systemState=api.hasComponent(entity,'ScriptSystemState')
-                ?api.getComponent(entity,'ScriptSystemState')
-                :api.addComponent(entity,'ScriptSystemState',{values:{}});
-              const stored=systemState.values&&typeof systemState.values==='object'&&!Array.isArray(systemState.values)
+              const systemState=api.hasComponent(entity,'ScriptSystemState')
+                ?api.getComponent(entity,'ScriptSystemState'):null;
+              const stored=systemState&&systemState.values&&typeof systemState.values==='object'&&!Array.isArray(systemState.values)
                 ?systemState.values:Object.create(null);
               c.env=stored[systemId]||runtime.ecsStates.get(stateKey)||Object.create(null);
               c.env.entity=entity;c.env.dt=dt;
@@ -937,10 +940,12 @@
                 if(key==='entity'||key==='dt'||bindingNames.includes(key))continue;
                 persistentValues[key]=value;
               }
-              stored[systemId]=persistentValues;
-              systemState.values=stored;
-              api.setComponent(entity,'ScriptSystemState',systemState);
-              runtime.ecsStates.delete(stateKey);
+              if(systemState){
+                stored[systemId]=persistentValues;
+                systemState.values=stored;
+                api.setComponent(entity,'ScriptSystemState',systemState);
+                runtime.ecsStates.delete(stateKey);
+              }else runtime.ecsStates.set(stateKey,persistentValues);
               if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
             });
           }
