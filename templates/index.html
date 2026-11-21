@@ -796,6 +796,17 @@ if(sourceOverrides){
   return {name:rawName,roughness:bounded(override.roughness,0.7,1),metalness:bounded(override.metalness,0,1),color:colorValue(override.color),doubleSide:override.doubleSide===true,recomputeNormals:override.recomputeNormals===true,emissive:colorValue(override.emissive),emissiveIntensity:bounded(override.emissiveIntensity,0,8)};
  });
 }
+const savedComponents=Array.isArray(item.ecsComponents)?item.ecsComponents:[];
+if(savedComponents.length>64)throw new Error('ECS Componentは1オブジェクトにつき64個までです。');
+const savedComponentTypes=new Set();let savedComponentBytes=0;
+restored.ecsComponents=savedComponents.map(entry=>{
+ if(!entry||typeof entry!=='object'||typeof entry.type!=='string'||!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(entry.type)||['constructor','prototype','Transform','SceneObjectRef'].includes(entry.type)||savedComponentTypes.has(entry.type))throw new Error('ECS Component定義が不正または重複しています。');
+ if(!entry.data||typeof entry.data!=='object'||Array.isArray(entry.data))throw new Error('ECS ComponentデータはJSONオブジェクトである必要があります。');
+ const encoded=JSON.stringify(entry.data);savedComponentBytes+=encoded.length;
+ if(savedComponentBytes>65536)throw new Error('ECS Componentデータは1オブジェクトあたり64 KB以下にしてください。');
+ savedComponentTypes.add(entry.type);
+ return {type:entry.type,data:JSON.parse(encoded)};
+});
 return restored;});const active=typeof archive.project.active==='string'&&Object.prototype.hasOwnProperty.call(files,archive.project.active)?archive.project.active:Object.keys(files).find(name=>files[name].type==='ps');return{files,assets,objects,environment,active,binaries};}
 async function importProjectBackup(file){
  if(!file)return;
