@@ -163,7 +163,7 @@ The GitHub Actions workflow runs both suites. Python tests include actual genera
 
 Writes are staged to a new OPFS file, then the IndexedDB metadata record is committed, and only afterward is the prior OPFS file reclaimed. Failed OPFS writes that indicate capability/permission/quota fallback use the IndexedDB Blob path. If both stores are quota-limited, the operation fails visibly. Storage estimates are browser-reported and must not be described as a fixed quota or unlimited capacity. `get(name,{cache:false})` returns a Blob/File without registering a large Blob in the in-memory CPU cache; `getStream(name)` exposes its ReadableStream when supported. Do not turn binary model data into base64 during storage or standalone packaging.
 
-The GLB size check matches the glTF 2.0 GLB header's uint32 total-length field. It is a format ceiling rather than a device capability guarantee; the renderer's estimated decoded CPU/GPU budgets remain separate safety gates. The JSON `.gltf` import path currently inlines external resources as data URLs and therefore retains its smaller explicit size cap until it is redesigned to bundle dependencies as files.
+The GLB import ceiling remains 1 GiB because the current GLTFLoader worker materializes the source Blob as an ArrayBuffer during parsing. OPFS increases persistent-storage options, not the decoder's RAM ceiling. The renderer's estimated decoded CPU/GPU budgets remain separate safety gates. The JSON `.gltf` import path currently inlines external resources as data URLs and therefore retains its smaller explicit size cap until it is redesigned to bundle dependencies as files.
 
 ### Standalone Web player
 
