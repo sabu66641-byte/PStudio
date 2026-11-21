@@ -30,3 +30,17 @@ test('Play runtime obtains rendering and collider configuration from ECS present
     assert.ok(bridge.includes("register('"+type+"'"),type);
   }
 });
+
+test('2D draw path and collision enter tracking use ECS-owned presentation and contacts',()=>{
+  const engine=fs.readFileSync(path.join(root,'static/pstudio_engine.js'),'utf8');
+  const bridge=fs.readFileSync(path.join(root,'static/pstudio_ecs_scene.js'),'utf8');
+  assert.match(engine,/const state=getRuntimePresentation\(o\),sprite=state\.spriteRenderer/);
+  assert.match(engine,/sprite\.visible===false/);
+  assert.match(engine,/sprite\.shape==='circle'/);
+  assert.match(engine,/bridge\?\.syncCollisionContacts/);
+  assert.match(engine,/syncRuntimeCommands\?\.\(commands\)/);
+  assert.match(bridge,/function syncCollisionContacts\(ownerIds, pairs, dimension\)/);
+  assert.match(bridge,/commitCollisionState\(id, dimension, \[\.\.\.peers\]\)/);
+  assert.match(engine,/syncOwnerAudioState\(ownerId\)/);
+  assert.match(engine,/PStudioECSScene\?\.syncAudioState\?\.\(String\(ownerId\),entries\)/);
+});
