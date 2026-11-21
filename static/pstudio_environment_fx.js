@@ -700,8 +700,6 @@
         'shafts+=sampleColor*bright*illuminationDecay;illuminationDecay*=uDecay;}',
         'vec3 result=source.rgb+shafts*(uWeight/20.0)*uIntensity;',
         'gl_FragColor=vec4(result,source.a);',
-        '#include <tonemapping_fragment>',
-        '#include <colorspace_fragment>',
         '}'
       ].join('\n')
     };
