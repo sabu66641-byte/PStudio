@@ -2,13 +2,14 @@ import os
 import re
 import io
 import json
+import math
 import zipfile
 import subprocess
 import threading
 import tempfile
 from functools import wraps
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 
 MAX_PROCESS_STDOUT_BYTES = 1024 * 1024
 MAX_PROCESS_STDERR_BYTES = 256 * 1024
@@ -3329,6 +3330,74 @@ def game_prepare():
 # ====================================================
 # /compile
 # ====================================================
+
+@app.route("/native/ecs/export", methods=["POST"])
+def native_ecs_export():
+    """Export validated ps ECS declarations as a portable C++17/CMake source package."""
+    data = request.get_json(silent=True) or {}
+    scripts = data.get("scripts", {})
+    if not isinstance(scripts, dict) or not scripts:
+        return jsonify({"success": False, "error": "scripts は .ps ファイル名とソースの辞書で指定してください。"}), 400
+    if len(scripts) > 32:
+        return jsonify({"success": False, "error": "プロジェクト内の .ps ファイルは最大32個です。"}), 400
+
+    parsed = {}
+    total_size = 0
+    try:
+        for filename, source in scripts.items():
+            if not isinstance(filename, str) or not filename.endswith(".ps"):
+                raise Exception("スクリプト名は .ps ファイルにしてください。")
+            if not isinstance(source, str):
+                raise Exception(f"{filename}: ソースコードは文字列で指定してください。")
+            total_size += len(source.encode("utf-8"))
+            if total_size > 512 * 1024:
+                raise Exception("ゲームスクリプト全体の上限は512KBです。")
+            parsed[filename] = parse(tokenize(source))
+
+        project_components = {}
+        for filename, tree in parsed.items():
+            for node in tree.get("body", []):
+                if node.get("type") != "ComponentDef":
+                    continue
+                name = node["name"]
+                if name in project_components:
+                    raise Exception(f"Component '{name}' が複数の .ps ファイルで定義されています。")
+                project_components[name] = {
+                    field["variable"]: field["value"]
+                    for field in node.get("body", [])
+                    if field.get("type") == "AssignmentExpression"
+                }
+
+        for filename, tree in parsed.items():
+            local_names = {
+                node["name"] for node in tree.get("body", [])
+                if node.get("type") == "ComponentDef"
+            }
+            external = {
+                name: fields for name, fields in project_components.items()
+                if name not in local_names
+            }
+            validate_ast(tree, allow_game=True, external_components=external)
+
+        generated = generate_native_ecs_sources(parsed)
+        header_path = os.path.join(os.path.dirname(__file__), "native", "include", "pstudio", "ecs.hpp")
+        with open(header_path, "r", encoding="utf-8") as header_file:
+            generated["native/include/pstudio/ecs.hpp"] = header_file.read()
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as package:
+            for name, content in generated.items():
+                package.writestr(name, content)
+        archive.seek(0)
+        return send_file(
+            archive,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="pstudio-native-ecs-cmake.zip"
+        )
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
 
 @app.route("/compile", methods=["POST"])
 def compile_code():
