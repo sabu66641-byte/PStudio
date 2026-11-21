@@ -813,7 +813,8 @@
       for(const field of item.node.body||[]){
         const value=ecsLiteralValue(field.value);
         defaults[field.variable]=value;
-        const type=typeof value==='boolean'?'boolean':typeof value==='string'?'string':Array.isArray(value)?'array':Number.isInteger(value)?'integer':'number';
+        const rawLiteral=String(field.value?.value??'');
+        const type=typeof value==='boolean'?'boolean':typeof value==='string'?'string':Array.isArray(value)?'array':Number.isInteger(value)&&!/[.eE]/.test(rawLiteral)?'integer':'number';
         schema[field.variable]={type,default:cloneEcsDefault(value),label:field.variable};
       }
       definitions.set(name,{defaults,schema,source:item.filename});
