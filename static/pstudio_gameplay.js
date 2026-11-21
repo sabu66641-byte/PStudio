@@ -145,7 +145,7 @@
     const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);if(!source||!target||!physics?.getBody?.(sourceId))return 'idle';
     if(!isAlive(sourceId)){setAIState(sourceId,'dead');physics.moveCharacter(sourceId,0,0);return 'dead';}
     const a=position(source,physics),b=position(target,physics),dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz),sight=Math.max(0,number(sightRange,12)),range=Math.max(0,number(attackRange,1.8));
-    let state='idle';if(!isAlive(target.id))state='idle';else if(dist>sight)state='idle';else if(getHP(sourceId)<getMaxHP(sourceId)*0.18){state='retreat';const n=Math.max(0.001,dist);physics.moveCharacter(sourceId,-dx/n,-dz/n);}else if(dist>range){state='chase';if(navNodes.size){const nearest=p=>{let best='',score=Infinity;for(const id of navNodes.keys()){const node=getNavNode(id);if(!node)continue;const d=Math.hypot(node.x-p.x,node.y-p.y,node.z-p.z);if(d<score){score=d;best=id;}}return best;};const start=nearest(a),goal=nearest(b),nextNode=navNext(start,goal),node=navNodes.get(nextNode||goal);if(node){const px=node.x-a.x,pz=node.z-a.z,len=Math.hypot(px,pz);physics.moveCharacter(sourceId,len>0.3?px/len:0,len>0.3?pz/len:0);}else follow(sourceId,targetName,speed,range,objects,physics);}else follow(sourceId,targetName,speed,range,objects,physics);}else{state='attack';physics.moveCharacter(sourceId,0,0);strike(sourceId,targetName,range,8,650,objects,physics);}
+    let state='idle';if(!isAlive(target.id))state='idle';else if(dist>sight)state='idle';else if(getHP(sourceId)<getMaxHP(sourceId)*0.18){state='retreat';const n=Math.max(0.001,dist);physics.moveCharacter(sourceId,-dx/n,-dz/n);}else if(dist>range){state='chase';if(navNodes.size){const nearest=p=>{let best='',score=Infinity;for(const id of navNodes.keys()){const node=getNavNode(id);if(!node)continue;const d=Math.hypot(node.x-p.x,node.y-p.y,node.z-p.z);if(d<score){score=d;best=id;}}return best;};const start=nearest(a),goal=nearest(b),nextNode=navNext(start,goal),node=getNavNode(nextNode||goal);if(node){const px=node.x-a.x,pz=node.z-a.z,len=Math.hypot(px,pz);physics.moveCharacter(sourceId,len>0.3?px/len:0,len>0.3?pz/len:0);}else follow(sourceId,targetName,speed,range,objects,physics);}else follow(sourceId,targetName,speed,range,objects,physics);}else{state='attack';physics.moveCharacter(sourceId,0,0);strike(sourceId,targetName,range,8,650,objects,physics);}
     if(state==='idle')physics.moveCharacter(sourceId,0,0);setAIState(sourceId,state);return state;
   }
   function getAIState(id){return ecsGameplay()?.getSceneComponent?.(String(id),'AIState')?.state||aiStates.get(id)||'idle';}
@@ -196,7 +196,33 @@
     else b.links.add(String(first));
     return true;
   }
-  function navBuildGrid(x,z,width,depth,cell){const step=Math.max(0.5,number(cell,2)),cols=Math.max(1,Math.min(50,Math.floor(number(width)/step))),rows=Math.max(1,Math.min(50,Math.floor(number(depth)/step)));if(cols*rows>2500)return 0;navClear();for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;navAddNode(id,number(x)+(ix/cols)*number(width),0,number(z)+(iz/rows)*number(depth));}for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){const id='grid_'+ix+'_'+iz;if(ix<cols)navConnect(id,'grid_'+(ix+1)+'_'+iz);if(iz<rows)navConnect(id,'grid_'+ix+'_'+(iz+1));}return navNodes.size;}
+  function navBuildGrid(x,z,width,depth,cell){
+    const step=Math.max(0.5,number(cell,2)),cols=Math.max(1,Math.min(50,Math.floor(number(width)/step))),rows=Math.max(1,Math.min(50,Math.floor(number(depth)/step)));
+    if(cols*rows>2500)return 0;
+    navClear();
+    for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){
+      const id='grid_'+ix+'_'+iz;
+      navAddNode(id,number(x)+(ix/cols)*number(width),0,number(z)+(iz/rows)*number(depth));
+    }
+    if(ecsGameplay()?.isAvailable?.()){
+      const adjacency=new Map([...navNodes.keys()].map(id=>[id,[]]));
+      for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){
+        const id='grid_'+ix+'_'+iz;
+        if(ix<cols)adjacency.get(id).push('grid_'+(ix+1)+'_'+iz);
+        if(iz<rows)adjacency.get(id).push('grid_'+ix+'_'+(iz+1));
+        if(ix>0)adjacency.get(id).push('grid_'+(ix-1)+'_'+iz);
+        if(iz>0)adjacency.get(id).push('grid_'+ix+'_'+(iz-1));
+      }
+      for(const [id,links] of adjacency){const node=getNavNode(id);node.links=links;commitNavNode(id,node);}
+    }else{
+      for(let iz=0;iz<=rows;iz++)for(let ix=0;ix<=cols;ix++){
+        const id='grid_'+ix+'_'+iz;
+        if(ix<cols)navConnect(id,'grid_'+(ix+1)+'_'+iz);
+        if(iz<rows)navConnect(id,'grid_'+ix+'_'+(iz+1));
+      }
+    }
+    return navNodes.size;
+  }
   function navBlock(id,blocked=true){const node=getNavNode(id);if(!node)return false;if(Array.isArray(node.links)){node.blocked=!!blocked;commitNavNode(id,node);}else if(blocked)blockedNavNodes.add(String(id));else blockedNavNodes.delete(String(id));return true;}
   function navNext(start,goal){
     start=String(start);goal=String(goal);const startNode=getNavNode(start),goalNode=getNavNode(goal);
@@ -223,12 +249,21 @@
         ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]],
         nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0],len=Math.hypot(nx,ny,nz);
       if(len<1e-8||Math.abs(ny/len)<slope)continue;
-      const id='navtri_'+nodes.length,p={id,x:(a[0]+b[0]+c[0])/3,y:(a[1]+b[1]+c[1])/3,z:(a[2]+b[2]+c[2])/3};
-      navAddNode(id,p.x,p.y,p.z);nodes.push({id,vertices:[a,b,c]});
+      const id='navtri_'+nodes.length,p={id,x:(a[0]+b[0]+c[0])/3,y:(a[1]+b[1]+c[1])/3,z:(a[2]+b[2]+c[2])/3,links:[]};
+      navAddNode(id,p.x,p.y,p.z);nodes.push(p);
       for(let e=0;e<3;e++){
         const v1=[a,b,c][e],v2=[a,b,c][(e+1)%3],k1=v1.map(v=>Math.round(v*1000)).join(','),k2=v2.map(v=>Math.round(v*1000)).join(','),key=[k1,k2].sort().join('|');
-        if(edgeMap.has(key))navConnect(id,edgeMap.get(key));else edgeMap.set(key,id);
+        if(edgeMap.has(key)){
+          const other=nodes[edgeMap.get(key)];
+          if(!p.links.includes(other.id))p.links.push(other.id);
+          if(!other.links.includes(id))other.links.push(id);
+        }else edgeMap.set(key,nodes.length-1);
       }
+    }
+    for(const node of nodes){
+      const stored=getNavNode(node.id);
+      if(stored&&Array.isArray(stored.links)){stored.links=node.links;commitNavNode(node.id,stored);}
+      else if(stored){stored.links=new Set(node.links);navNodes.set(node.id,stored);}
     }
     return nodes.length;
   }
