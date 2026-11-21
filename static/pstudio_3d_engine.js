@@ -853,7 +853,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const updateBatchedAutoLOD=()=>{
       for(const entry of instance.foliageBatches||[]){
         if(entry.isTree&&Number.isInteger(entry.level)&&instance.activeLOD!==null)continue;
-        if(!entry.isTree)applyAutoLOD(entry.mesh,objectCameraDistance(entry.mesh));
+        if(!entry.isTree&&entry.mesh.userData.pstudioAutoLOD?.length>1)applyAutoLOD(entry.mesh,objectCameraDistance(entry.mesh));
       }
     };
     if(instance.lodLevels?.length>1){
@@ -869,7 +869,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       updateBatchedAutoLOD();
       return;
     }
-    for(const object of instance.meshes||[])if(!object.userData.pstudioBatchedIntoStaticInstance&&object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
+    for(const object of instance.meshes||[])if(!object.userData.pstudioBatchedIntoStaticInstance&&object.userData.pstudioAutoLOD?.length>1)applyAutoLOD(object,objectCameraDistance(object));
     updateBatchedAutoLOD();
   }
   function enableGPUFrustumCullingForBatch(batch){
@@ -2533,7 +2533,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function applyAutoLOD(object,distance){
     const baseGeometry=object?.userData?.pstudioAutoLODBaseGeometry||object?.geometry;
     const levels=object?.userData?.pstudioAutoLOD||baseGeometry?.userData?.pstudioAutoLODLevels;
-    if(!object||!levels?.length)return;
+    if(!object||!levels||levels.length<2)return;
     let selected=0;
     for(let i=1;i<levels.length;i++)if(distance>=levels[i].distance)selected=i;
     if(object.userData.pstudioActiveAutoLOD===selected)return;
@@ -2998,6 +2998,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function applyModelMaterial(instance, state) {
     if(!instance?.materialDefaults)return;
     const overrides=Array.isArray(state?.modelOverrides)?state.modelOverrides:[];
+    const signature=JSON.stringify(state?{
+      roughness:state.roughness??null,
+      metalness:state.metalness??null,
+      modelOverrides:overrides.map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
+    }:null);
+    if(instance.materialStateSignature===signature)return;
     for(const entry of instance.foliageBatches||[]){
       if(!entry.isGeneric||!entry.sources?.length)continue;
       const needsPerNodeMaterials=overrides.some(item=>item.name!=='*'&&
@@ -3022,17 +3028,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         }
       }
     }
-    const signature=JSON.stringify(state?{
-      roughness:state.roughness??null,
-      metalness:state.metalness??null,
-      modelOverrides:overrides.map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
-    }:null);
+    instance.materialStateSignature=signature;
     const materialTargets=[
       ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
       ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
     ];
-    if(instance.materialStateSignature===signature)return;
-    instance.materialStateSignature=signature;
     for(const object of materialTargets){
       if(!object.material)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
