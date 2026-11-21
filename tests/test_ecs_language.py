@@ -136,3 +136,29 @@ class PsEcsLanguageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_builtin_physics_components_are_available_to_game_systems(self):
+        source = (
+            "system Follow(Transform, PhysicsState)\n"
+            "    if physics_state.grounded\n"
+            "        transform.y += physics_state.velocityY * dt\n"
+            "system Configure(PhysicsBody)\n"
+            "    physics_body.mass += 0.1\n"
+            "system ReadWorld(PhysicsTransform)\n"
+            "    physics_transform.x += dt\n"
+        )
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"physics.ps": source}},
+        )
+        self.assertEqual(response.status_code, 200, msg=response.get_json())
+
+    def test_builtin_ecs_physics_components_cannot_be_redeclared(self):
+        for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform"):
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": { "bad.ps": f"component {name}\n    x = 1\n" }},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("組み込みComponent", response.get_json()["error"])
