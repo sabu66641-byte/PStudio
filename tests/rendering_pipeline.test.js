@@ -429,7 +429,7 @@ test('large model scene hydration and instance creation yield between bounded ba
   for(const token of [
     'async function hydrateGLTFWorkerPacket','await checkpoint(\'scene-hydrate-geometry\'',
     'async function cloneModelHierarchyAsync','async function createModelInstanceAsync',
-    'await buildModelStreamingChunks(clone)','await buildFoliageInstanceBatches(clone)',
+    'await buildModelStreamingChunks(clone)','await buildFoliageInstanceBatches(clone,asset.animations||[])',
     'await nextPreparationFrame()','modelInstancePromises'
   ])assert.ok(renderer.includes(token),token);
 });
@@ -498,6 +498,65 @@ test('GLB packet hydration failures recover through the compatible main-thread l
 test('failed model instance builds are retained as explicit errors and can be retried',()=>{
   for(const token of ['modelBuildErrors.has(key)','modelBuildErrors.set(key,message)','retryModelAsset','getModelStatus',"stage:'instance-build'"])assert.ok(renderer.includes(token),token);
 });
+
+test('ordinary opaque repeated GLTF meshes are automatically instanced without naming conventions',()=>{
+  for(const token of [
+    'const isGeneric=!isTree&&!isModularPart',
+    'supportsGenericStaticInstancing(materials[0],T)',
+    'PStudio_GPU_Instances_Generic_Static',
+    'pstudioGenericStaticInstances',
+    'estimatedDrawCallsSaved:totalInstancedSources-batches.length'
+  ])assert.ok(renderer.includes(token),token);
+});
+test('generic static instancing excludes animated ancestry and visual-special-case materials',()=>{
+  for(const token of [
+    'collectAnimatedNodeTargets(animations)',
+    'hasAnimatedAncestor(object,root,animatedTargets)',
+    'bakedLightProbeVolume?.length',
+    'object.userData?.pstudioWaterSurface',
+    'object.customDepthMaterial',
+    'material.transmission??0',
+    'object.children.length>0'
+  ])assert.ok(renderer.includes(token),token);
+});
+test('GPU instance batches preserve per-group render and shadow state and static transforms use static buffers',()=>{
+  for(const token of [
+    'batch.castShadow=group.castShadow',
+    'batch.receiveShadow=group.receiveShadow',
+    'batch.renderOrder=group.renderOrder',
+    'batch.layers.mask=group.layersMask',
+    'group.isTree?T.DynamicDrawUsage:T.StaticDrawUsage',
+    'batch.computeBoundingSphere()'
+  ])assert.ok(renderer.includes(token),token);
+});
+test('automatic LOD generation is deduplicated per shared geometry and disposed with the owning asset',()=>{
+  for(const token of [
+    'const autoLODGeometryJobs=new WeakMap()',
+    'autoLODGeometryJobs.get(geometry)',
+    'geometry.userData.pstudioAutoLODLevels=levels',
+    'pstudioLODDisposed',
+    'for(const geometry of ownedLODs)',
+    'object.userData.pstudioAutoLODBaseGeometry'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(!renderer.includes('for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.()'));
+});
+test('BVH scheduling skips small meshes and permanently falls back after a construction failure',()=>{
+  for(const token of [
+    'elementCount<768',
+    'pstudioBVHSkippedSmall',
+    'pstudioBVHFailed',
+    'geometry.computeBoundsTree({maxLeafTris:12})',
+    'this geometry will use standard raycasting'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('scheduleGeometryBVH(object.geometry)'));
+});
+test('asset-import and GLB model stages are surfaced in the editor status line',()=>{
+  for(const token of [
+    'pstudio-asset-import-progress','worker-inspection','IndexedDBへ保存中',
+    'pstudio-model-load-progress','gpu-textures','instance-clone-and-materials'
+  ])assert.ok(engine.includes(token),token);
+});
+
 test('the 3D editor exposes model load progress, stage errors and a mode-aware Refresh action',()=>{
   for(const token of ['pstudio-model-load-progress','pstudio-model-error','refreshSceneView'])assert.ok(engine.includes(token),token);
   assert.ok(html.includes('window.PStudioEngine?.refreshSceneView?.()'));
