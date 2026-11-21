@@ -225,7 +225,7 @@ function serializeNode(object, index, objectIds, geometryIds, materialIds, geome
   return node;
 }
 
-async function serializeGLTF(gltf) {
+async function serializeGLTF(gltf,assetKey='') {
   const root = gltf.scene;
   const objects = [];
   root.traverse(object => objects.push(object));
@@ -332,11 +332,39 @@ async function serializeGLTF(gltf) {
       }
       imageId = images.length;
       imageIds.set(image, imageId);
-      TRANSFERS.add(bitmap);
-      images.push({ id: imageId, width: bitmap.width, height: bitmap.height, bitmap });
+      const sourceWidth=bitmap.width,sourceHeight=bitmap.height;
+      let imageRecord;
+      if(Math.max(sourceWidth,sourceHeight)>2048&&typeof OffscreenCanvas==='function'){
+        try{
+          const scale=Math.min(1,512/Math.max(sourceWidth,sourceHeight));
+          const fallbackWidth=Math.max(1,Math.round(sourceWidth*scale));
+          const fallbackHeight=Math.max(1,Math.round(sourceHeight*scale));
+          const canvas=new OffscreenCanvas(fallbackWidth,fallbackHeight);
+          const context=canvas.getContext('2d',{alpha:true,colorSpace:'srgb'});
+          if(!context)throw new Error('Could not create virtual texture fallback canvas.');
+          context.drawImage(bitmap,0,0,sourceWidth,sourceHeight,0,0,fallbackWidth,fallbackHeight);
+          const fallbackBitmap=await createImageBitmap(canvas);
+          const workerImageKey=String(assetKey)+'::'+String(imageId);
+          VIRTUAL_IMAGES.set(workerImageKey,bitmap);
+          TRANSFERS.add(fallbackBitmap);
+          imageRecord={
+            id:imageId,width:fallbackBitmap.width,height:fallbackBitmap.height,
+            bitmap:fallbackBitmap,
+            virtual:{workerImageKey,sourceWidth,sourceHeight,pageSize:256}
+          };
+        }catch(error){
+          TRANSFERS.add(bitmap);
+          imageRecord={id:imageId,width:bitmap.width,height:bitmap.height,bitmap};
+        }
+      }else{
+        TRANSFERS.add(bitmap);
+        imageRecord={id:imageId,width:bitmap.width,height:bitmap.height,bitmap};
+      }
+      images.push(imageRecord);
     }
     textures[id] = {
       id, imageId, name: texture.name || '', mapping: texture.mapping,
+      virtual:images[imageId]?.virtual||null,
       channel: texture.channel ?? 0, wrapS: texture.wrapS, wrapT: texture.wrapT,
       magFilter: texture.magFilter, minFilter: texture.minFilter,
       format: texture.format, type: texture.type, colorSpace: texture.colorSpace || '',
@@ -387,7 +415,7 @@ async function parseGLB(message) {
   const started = performance.now();
   const gltf = await loader.parseAsync(buffer, '');
   const parsedAt = performance.now();
-  const packet = await serializeGLTF(gltf);
+  const packet = await serializeGLTF(gltf,message.assetKey||'');
   const serializedAt = performance.now();
   packet.timings = {
     parseMs: parsedAt - started,
@@ -438,6 +466,16 @@ self.onmessage = async event => {
       self.postMessage({ id: message.id, ok: true, result: { width, height, buffer: copy.buffer, length: copy.length } }, [copy.buffer]);
       return;
     }
+    if (message.op === 'release-asset') {
+      const prefix=String(message.assetKey||'')+'::';
+      for(const [key,bitmap] of VIRTUAL_IMAGES){
+        if(!key.startsWith(prefix))continue;
+        try{bitmap?.close?.();}catch(_){}
+        VIRTUAL_IMAGES.delete(key);
+      }
+      self.postMessage({id:message.id,ok:true,result:{released:true}});
+      return;
+    }
     if (message.op === 'release-image') {
       const bitmap = VIRTUAL_IMAGES.get(String(message.textureId));
       try { bitmap?.close?.(); } catch (_) {}
@@ -448,11 +486,15 @@ self.onmessage = async event => {
     if (message.op !== 'parse-glb') return;
     TRANSFERS.clear();
     self.postMessage({id:message.id,progress:{stage:'worker-parse-start',loaded:0,total:message.blob?.size||message.buffer?.byteLength||0,progress:0}});
-    const packet = await parseGLB(message);
+    const packet = await parseGLB({...message,assetKey:message.assetKey||''});
     self.postMessage({id:message.id,progress:{stage:'worker-serialize-complete',loaded:message.blob?.size||message.buffer?.byteLength||0,total:message.blob?.size||message.buffer?.byteLength||0,progress:1,timings:packet.timings}});
     const transferList = [...TRANSFERS];
     self.postMessage({ id: message.id, ok: true, result: packet }, transferList);
   } catch (error) {
+    if(message.op==='parse-glb'&&message.assetKey){
+      const prefix=String(message.assetKey)+'::';
+      for(const [key,bitmap] of VIRTUAL_IMAGES){if(key.startsWith(prefix)){try{bitmap?.close?.();}catch(_){}VIRTUAL_IMAGES.delete(key);}}
+    }
     const messageText=String(error?.message||error);
     const code=String(error?.code||(messageText.startsWith('GLTF_WORKER_')?messageText.split(/[ :]/)[0]:''));
     self.postMessage({ id: message.id, ok: false, error: messageText, code });
