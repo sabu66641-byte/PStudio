@@ -107,7 +107,9 @@ test('JSON glTF assets are routed around the GLB-only worker parser',()=>{
   assert.ok(renderer.includes('gltf=await parseGLTFOnMainThread(blob,assetName)'));
   assert.ok(renderer.includes("stage:'main-thread-gltf-json-start'"));
 });
-test('scene-add feedback describes registration rather than claiming async load completion',()=>{
-  assert.ok(html.includes('読み込み状況とエラーはOUTPUTに表示されます'));
+test('scene-add feedback describes registration, stable camera state and visibility diagnostics',()=>{
+  assert.ok(html.includes('カメラ位置は維持されます'));
+  assert.ok(html.includes('表示診断はOUTPUTに表示されます'));
   assert.ok(engine.includes("status.textContent='MODEL ERROR · '+name"));
+  assert.ok(engine.includes("pstudio-model-visibility"));
 });
