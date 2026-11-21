@@ -250,6 +250,7 @@ test('Component definitions can be safely refreshed with new defaults and are ro
     create: () => ({ speed: 2 })
   });
   const entity = ecs.createEntity({ Movement: {} });
+  ecs.setComponent(entity, 'Movement', { speed: 2.5 });
   ecs.updateComponentDefinition('Movement', {
     schema: {
       speed: { type: 'number', default: 5, min: 0 },
@@ -260,7 +261,7 @@ test('Component definitions can be safely refreshed with new defaults and are ro
   });
   assert.deepEqual(
     JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Movement'))),
-    { speed: 2, enabled: true }
+    { speed: 2.5, enabled: true }
   );
   const next = ecs.createEntity({ Movement: {} });
   assert.deepEqual(
@@ -269,7 +270,10 @@ test('Component definitions can be safely refreshed with new defaults and are ro
   );
   assert.throws(
     () => ecs.updateComponentDefinition('Movement', {
-      schema: { speed: { type: 'integer', required: true } },
+      schema: {
+        speed: { type: 'integer', required: true },
+        enabled: { type: 'boolean', default: true }
+      },
       additionalProperties: false
     }),
     /must be integer/
