@@ -117,19 +117,23 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
 
 test('outline is an expanded back-face shell and is released with its source object', () => {
   const fx = createFX();
-  const material = { isMeshStandardMaterial: true, userData: {}, customProgramCacheKey() { return 'pbr'; } };
+  const material = { isMeshStandardMaterial: true, userData: {}, alphaTest: 0.5, map: { uuid: 'base-color' }, alphaMap: { uuid: 'alpha-mask' }, customProgramCacheKey() { return 'pbr'; } };
   const SourceMesh = createFXMeshClass();
-  const source = new SourceMesh({}, null);
+  const source = new SourceMesh({}, material);
   fx.configureToon(material, { enabled: true, outlineColor: '#102030', outlineWidth: 0.14 }, source);
   assert.equal(source.children.length, 1);
   const shell = source.children[0];
   assert.equal(shell.material.side, 1);
+  assert.equal(shell.material.alphaTest, 0.5);
+  assert.equal(shell.material.map, material.map);
+  assert.equal(shell.material.alphaMap, material.alphaMap);
   assert.equal(shell.castShadow, false);
   assert.equal(shell.receiveShadow, false);
-  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n#include <skinning_vertex>\n' };
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n#include <skinning_vertex>\n', fragmentShader: '#include <color_fragment>\n' };
   shell.material.onBeforeCompile(shader, {});
   assert.ok(shader.vertexShader.includes('uPStudioOutlineExpansion'));
   assert.ok(shader.vertexShader.includes('normalize(objectNormal)*uPStudioOutlineExpansion'));
+  assert.ok(shader.fragmentShader.includes('diffuseColor.rgb=vec3(1.0);'));
   assert.ok(fxSource.includes("#include <skinning_vertex>"));
   fx.releaseObject(source);
   assert.equal(source.children.length, 0);
