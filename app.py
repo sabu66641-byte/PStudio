@@ -923,8 +923,8 @@ def _validate_cpp_identifier(name, line=None):
 
 def _ecs_binding_name(component_name):
     """Convert ComponentName to the stable lower_snake_case binding used in system bodies."""
-    separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\\1_\\2", component_name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\\1_\\2", separated).lower()
+    separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", component_name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", separated).lower()
 
 
 def validate_ast(tree, allow_game=False, external_components=None):
