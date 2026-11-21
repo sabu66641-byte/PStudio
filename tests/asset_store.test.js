@@ -179,7 +179,7 @@ test('large GLB limit is one GiB and Blob storage keeps the original Blob withou
       return request;
     }
   });
-  assert.equal(store.maxModelBytes, 0xFFFFFFFF);
+  assert.equal(store.maxModelBytes, 1024 * 1024 * 1024);
   const blob = new Blob([new Uint8Array(128)], { type: 'model/gltf-binary' });
   await store.put('large-scene.glb', blob, { metadata: { estimatedRuntimeBytes: 512 } });
   assert.equal(db.records.get('large-scene.glb').blob, blob);
@@ -302,11 +302,11 @@ test('legacy IndexedDB records without a backend marker remain readable', async 
   assert.deepEqual(await store.getMetadata('legacy.glb'), { legacy: true });
 });
 
-test('asset store rejects a model above the glTF 4 GiB container limit before storage access', async () => {
+test('asset store rejects a model above the existing one GiB runtime-safe limit before storage access', async () => {
   const { store } = createStore(undefined);
   await assert.rejects(
-    store.put('oversize.glb', { size: 0xFFFFFFFF + 1, type: 'model/gltf-binary' }),
-    /4GiB/
+    store.put('oversize.glb', { size: 1024 * 1024 * 1024 + 1, type: 'model/gltf-binary' }),
+    /1GB/
   );
 });
 
