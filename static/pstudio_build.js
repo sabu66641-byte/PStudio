@@ -314,8 +314,12 @@
       const entries = await buildEntries();
       if (typeof setOutput === 'function') setOutput('Packing ' + entries.length + ' files into a ZIP64 archive…', 'info');
       const archive = await createZip64(entries, detail => {
-        if (detail.stage === 'archive' && typeof setOutput === 'function') {
-          setOutput('Packaging ' + detail.completed + '/' + detail.total + ': ' + detail.name, 'info');
+        if (typeof setOutput !== 'function') return;
+        if (detail.stage === 'checksum') {
+          const percent = detail.total > 0 ? Math.round(detail.processed / detail.total * 100) : 100;
+          setOutput('Checking ' + detail.name + ' · CRC32 ' + percent + '%', 'info');
+        } else if (detail.stage === 'archive') {
+          setOutput('Packing ' + detail.completed + '/' + detail.total + ': ' + detail.name, 'info');
         }
       });
       const url = URL.createObjectURL(archive);
