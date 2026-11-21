@@ -269,6 +269,55 @@
     return key;
   }
 
+  function updateComponentDefinition(type, options) {
+    assertStructureMutable();
+    const key = requireComponentType(type);
+    const previous = componentDefinitions.get(key);
+    const settings = options || {};
+    for (const hook of ['create', 'normalize', 'validate', 'onAdd', 'onRemove']) {
+      if (settings[hook] !== undefined && typeof settings[hook] !== 'function') {
+        throw new TypeError('Component option "' + hook + '" must be a function.');
+      }
+    }
+    const next = {
+      ...previous,
+      create: settings.create === undefined ? previous.create : settings.create,
+      normalize: settings.normalize === undefined ? previous.normalize : settings.normalize,
+      validate: settings.validate === undefined ? previous.validate : settings.validate,
+      onAdd: settings.onAdd === undefined ? previous.onAdd : settings.onAdd,
+      onRemove: settings.onRemove === undefined ? previous.onRemove : settings.onRemove,
+      schema: settings.schema === undefined ? previous.schema : normalizeComponentSchema(settings.schema),
+      additionalProperties: settings.additionalProperties === undefined ? previous.additionalProperties : settings.additionalProperties !== false,
+      persistent: settings.persistent === undefined ? previous.persistent : settings.persistent !== false,
+      readonly: settings.readonly === undefined ? previous.readonly : settings.readonly === true,
+      internal: settings.internal === undefined ? previous.internal : settings.internal === true,
+      source: settings.source === undefined ? previous.source : String(settings.source || ''),
+      label: settings.label === undefined ? previous.label : String(settings.label || key),
+      description: settings.description === undefined ? previous.description : String(settings.description || ''),
+      category: settings.category === undefined ? previous.category : String(settings.category || 'General')
+    };
+    if (typeof next.create !== 'function' && next.create !== null) throw new TypeError('Component option "create" must be a function.');
+    if (typeof next.normalize !== 'function' && next.normalize !== null) throw new TypeError('Component option "normalize" must be a function.');
+    if (typeof next.validate !== 'function' && next.validate !== null) throw new TypeError('Component option "validate" must be a function.');
+    if (typeof next.onAdd !== 'function' && next.onAdd !== null) throw new TypeError('Component option "onAdd" must be a function.');
+    if (typeof next.onRemove !== 'function' && next.onRemove !== null) throw new TypeError('Component option "onRemove" must be a function.');
+
+    const store = componentStores.get(key);
+    const normalizedValues = new Map();
+    componentDefinitions.set(key, next);
+    try {
+      for (const entity of store.entities) {
+        normalizedValues.set(entity, normalizeComponent(key, store.get(entity), entity));
+      }
+    } catch (error) {
+      componentDefinitions.set(key, previous);
+      throw error;
+    }
+    for (const [entity, data] of normalizedValues) store.set(entity, data);
+    emit('component-definition-updated', { type: key });
+    return key;
+  }
+
   function addComponent(entity, type, value) {
     assertStructureMutable();
     const id = requireEntity(entity);
@@ -801,6 +850,7 @@
 
   const api = {
     registerComponent,
+    updateComponentDefinition,
     unregisterComponent,
     hasComponentType(type) { return componentDefinitions.has(String(type || '')); },
     getComponentTypes,
