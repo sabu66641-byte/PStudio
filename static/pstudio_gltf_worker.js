@@ -79,7 +79,9 @@ async function serializeMaterial(material, materialIds, textures, textureIds, im
   const textureSlots = {};
   for (const slot of MATERIAL_TEXTURE_SLOTS) {
     const texture = material[slot];
-    if (texture?.isTexture) textureSlots[slot] = await serializeTexture(texture, textureIds, images, imageIds);
+    if (!texture?.isTexture) continue;
+    if (!textures.has(texture)) textures.set(texture, textures.size);
+    textureSlots[slot] = textures.get(texture);
   }
   return {
     id,
@@ -398,10 +400,8 @@ self.onmessage = async event => {
     const transferList = [...TRANSFERS];
     self.postMessage({ id: message.id, ok: true, result: packet }, transferList);
   } catch (error) {
-    self.postMessage({
-      id: message.id, ok: false,
-      error: String(error?.message || error),
-      code: String(error?.code || '')
-    });
+    const messageText=String(error?.message||error);
+    const code=String(error?.code||(messageText.startsWith('GLTF_WORKER_')?messageText.split(/[ :]/)[0]:''));
+    self.postMessage({ id: message.id, ok: false, error: messageText, code });
   }
 };
