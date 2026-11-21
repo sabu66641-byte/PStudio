@@ -423,13 +423,13 @@
           '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
           'attribute vec3 normal;',
           '#endif'
-        ].join('\\n'));
+        ].join('\n'));
         shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
           '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
           'vec3 objectNormal = normal;',
           '#endif',
           'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
-        ].join('\\n'));
+        ].join('\n'));
       };
       material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
       cached={material,refs:0};
