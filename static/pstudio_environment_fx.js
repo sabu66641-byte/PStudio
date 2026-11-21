@@ -493,7 +493,7 @@
           'uniform float uPStudioToonOutlineWidth;',
           'uniform vec3 uPStudioToonSSSColor;',
           'uniform float uPStudioToonSSSIntensity;'
-        ].join('\\n'));
+        ].join('\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <lights_fragment_end>',[
           'float pStudioToonDirect=max(0.0,dot(reflectedLight.directDiffuse,vec3(0.2126,0.7152,0.0722)));',
           'float pStudioToonIndirect=max(0.0,dot(reflectedLight.indirectDiffuse,vec3(0.2126,0.7152,0.0722)));',
@@ -507,12 +507,12 @@
           'float pStudioToonRim=pow(1.0-pStudioToonNdotV,max(0.5,uPStudioToonRimPower))*uPStudioToonRimIntensity*uPStudioToonEnabled;',
           'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity*uPStudioToonEnabled;',
           'reflectedLight.indirectDiffuse+=uPStudioToonSSSColor*pStudioToonSubsurface;',
-        ].join('\\n'));
+        ].join('\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
           'if(uPStudioToonEnabled>0.5){',
           'gl_FragColor.rgb+=uPStudioToonRimColor*pStudioToonRim*0.82;',
           '}'
-        ].join('\\n'));
+        ].join('\n'));
       };
       material.customProgramCacheKey=()=>'pstudio-npr-toon-v1'+(previousKey?previousKey():'');
       record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'view-normal-edge-ink',version:1};
