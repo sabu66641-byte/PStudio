@@ -531,10 +531,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     material.onBeforeCompile=shader=>{
       shader.uniforms.uPStudioTime=uniforms.uPStudioTime;
       shader.uniforms.uPStudioWaveAmplitude=uniforms.uPStudioWaveAmplitude;
-      shader.vertexShader=shader.vertexShader.replace('#include <common>',`#include <common>
-uniform float uPStudioTime;
-uniform float uPStudioWaveAmplitude;
-`);
+      shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform vec3 uPStudioFrustumCenter;\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
 float pstudioWaveA=sin(position.x*0.42+position.z*0.27+uPStudioTime*0.82);
 float pstudioWaveB=sin(position.x*0.78-position.z*0.51-uPStudioTime*0.57);
@@ -850,16 +847,18 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!batch.geometry.boundingSphere)batch.geometry.computeBoundingSphere?.();
     const uniforms={
       planes:Array.from({length:6},()=>new T.Vector4()),
+      center:{value:batch.geometry.boundingSphere?.center?.clone?.()||new T.Vector3()},
       radius:{value:Number(batch.geometry.boundingSphere?.radius)||0},
       enabled:{value:gpuInstanceFrustumCullingEnabled?1:0}
     };
     material.onBeforeCompile=function(shader,rendererRef){
       if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
       shader.uniforms.uPStudioFrustumPlanes={value:uniforms.planes};
+      shader.uniforms.uPStudioFrustumCenter=uniforms.center;
       shader.uniforms.uPStudioFrustumRadius=uniforms.radius;
       shader.uniforms.uPStudioFrustumEnabled=uniforms.enabled;
       shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
-      const cullingCode='#include <project_vertex>\n#ifdef USE_INSTANCING\nif(uPStudioFrustumEnabled>0.5){\n  mat4 pstudioWorldInstance=modelMatrix*instanceMatrix;\n  vec3 pstudioWorldCenter=pstudioWorldInstance[3].xyz;\n  float pstudioWorldScale=max(length(pstudioWorldInstance[0].xyz),max(length(pstudioWorldInstance[1].xyz),length(pstudioWorldInstance[2].xyz)));\n  float pstudioWorldRadius=uPStudioFrustumRadius*pstudioWorldScale;\n  bool pstudioInsideFrustum=true;\n  for(int pstudioPlane=0;pstudioPlane<6;pstudioPlane++){\n    if(dot(uPStudioFrustumPlanes[pstudioPlane].xyz,pstudioWorldCenter)+uPStudioFrustumPlanes[pstudioPlane].w < -pstudioWorldRadius){pstudioInsideFrustum=false;}\n  }\n  if(!pstudioInsideFrustum)gl_Position=vec4(2.0,2.0,2.0,1.0);\n}\n#endif\n';
+      const cullingCode='#include <project_vertex>\n#ifdef USE_INSTANCING\nif(uPStudioFrustumEnabled>0.5){\n  mat4 pstudioWorldInstance=modelMatrix*instanceMatrix;\n  vec3 pstudioWorldCenter=(pstudioWorldInstance*vec4(uPStudioFrustumCenter,1.0)).xyz;\n  float pstudioWorldScale=max(length(pstudioWorldInstance[0].xyz),max(length(pstudioWorldInstance[1].xyz),length(pstudioWorldInstance[2].xyz)));\n  float pstudioWorldRadius=uPStudioFrustumRadius*pstudioWorldScale;\n  bool pstudioInsideFrustum=true;\n  for(int pstudioPlane=0;pstudioPlane<6;pstudioPlane++){\n    if(dot(uPStudioFrustumPlanes[pstudioPlane].xyz,pstudioWorldCenter)+uPStudioFrustumPlanes[pstudioPlane].w < -pstudioWorldRadius){pstudioInsideFrustum=false;}\n  }\n  if(!pstudioInsideFrustum)gl_Position=vec4(2.0,2.0,2.0,1.0);\n}\n#endif\n';
       shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>',cullingCode);
     };
     material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-gpu-instance-frustum-v1';};
@@ -1763,7 +1762,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(fragmentCode)shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\n'+fragmentCode);
       for(const entry of slots){
         const slot=entry.slot,uv=VIRTUAL_TEXTURE_UV_VARYINGS[slot];
-        const pattern=new RegExp('texture2D\\\\(\\\\s*'+slot+'\\\\s*,\\\\s*'+uv+'\\\\s*\\\\)','g');
+        const pattern=new RegExp('texture2D\\s*\\(\\s*'+slot+'\\s*,\\s*'+uv+'\\s*\\)','g');
         const replacement='uPStudioVT_'+slot+'_sample('+uv+')';
         if(slot==='displacementMap')shader.vertexShader=shader.vertexShader.replace(pattern,replacement);
         else shader.fragmentShader=shader.fragmentShader.replace(pattern,replacement);
@@ -1834,7 +1833,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(let i=virtualTextureQueue.length-1;i>=0;i--){
       if(virtualTextureQueue[i].assetKey===key){virtualTexturePending.delete(virtualTextureQueue[i].key);virtualTextureQueue.splice(i,1);}
     }
-    requestGLTFWorkerMessage('release-asset',{assetKey:key}).catch(()=>{});
+    if(gltfWorker)requestGLTFWorkerMessage('release-asset',{assetKey:key}).catch(()=>{});
   }
 
   function requestModelAsset(name) {
@@ -2486,11 +2485,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(parallelShaderCompileSupported&&typeof renderer?.compileAsync==='function'&&scene&&camera){
         const compile=async()=>{
           if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
-          const previousVisible=instance.root.visible;
-          instance.root.visible=true;
           dispatchModelLoadProgress({name:instance.name,stage:'shader-precompile',progress:0});
-          try{await renderer.compileAsync(scene,camera);}
-          finally{instance.root.visible=previousVisible;}
+          await renderer.compileAsync(instance.root,camera,scene);
         };
         const queued=shaderCompileQueue.then(compile,compile);
         shaderCompileQueue=queued.catch(error=>console.warn('[PStudio] Parallel shader precompile was skipped:',error));
@@ -2715,7 +2711,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if (d.type==='model') {
           let instance=modelInstances.get(key);
           let asset=modelCache.get(d.name);
-          if(!asset) { requestModelAsset(d.name); continue; }
+          if(!asset) { if(!modelLoadErrors.has(d.name))requestModelAsset(d.name); continue; }
           if(!instance || instance.name!==d.name) {
             if(instance)removeModelInstance(key);
             if(!modelInstancePromises.has(key)){
