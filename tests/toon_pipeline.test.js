@@ -118,25 +118,33 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
 test('outline is an expanded back-face shell and is released with its source object', () => {
   const fx = createFX();
   const material = { isMeshStandardMaterial: true, userData: {}, alphaTest: 0.5, map: { uuid: 'base-color' }, alphaMap: { uuid: 'alpha-mask' }, customProgramCacheKey() { return 'pbr'; } };
+  const secondMaterial = { isMeshStandardMaterial: true, userData: {}, alphaTest: 0.25, map: { uuid: 'leaf-color' }, transparent: true, opacity: 0.85 };
   const SourceMesh = createFXMeshClass();
-  const source = new SourceMesh({}, material);
+  const source = new SourceMesh({}, [material, secondMaterial]);
   fx.configureToon(material, { enabled: true, outlineColor: '#102030', outlineWidth: 0.14 }, source);
   assert.equal(source.children.length, 1);
   const shell = source.children[0];
-  assert.equal(shell.material.side, 1);
-  assert.equal(shell.material.alphaTest, 0.5);
-  assert.equal(shell.material.map, material.map);
-  assert.equal(shell.material.alphaMap, material.alphaMap);
+  assert.ok(Array.isArray(shell.material));
+  assert.equal(shell.material[0].side, 1);
+  assert.equal(shell.material[0].alphaTest, 0.5);
+  assert.equal(shell.material[0].map, material.map);
+  assert.equal(shell.material[0].alphaMap, material.alphaMap);
+  assert.equal(shell.material[1].alphaTest, 0.25);
+  assert.equal(shell.material[1].map, secondMaterial.map);
+  assert.equal(shell.material[1].transparent, true);
+  assert.equal(shell.material[1].opacity, 0.85);
   assert.equal(shell.castShadow, false);
   assert.equal(shell.receiveShadow, false);
   const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>\n#include <skinning_vertex>\n', fragmentShader: '#include <color_fragment>\n' };
-  shell.material.onBeforeCompile(shader, {});
+  shell.material[0].onBeforeCompile(shader, {});
   assert.ok(shader.vertexShader.includes('uPStudioOutlineExpansion'));
   assert.ok(shader.vertexShader.includes('normalize(objectNormal)*uPStudioOutlineExpansion'));
   assert.ok(shader.fragmentShader.includes('diffuseColor.rgb=vec3(1.0);'));
   assert.ok(fxSource.includes("#include <skinning_vertex>"));
   fx.releaseObject(source);
   assert.equal(source.children.length, 0);
+  assert.equal(shell.material[0].disposed, true);
+  assert.equal(shell.material[1].disposed, true);
 });
 
 test('foliage wind speed and strength are shader uniforms, not CPU vertex rewrites', () => {
