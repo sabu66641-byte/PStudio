@@ -748,7 +748,7 @@
     }
   }
   function ecsBindingName(name){
-    return String(name).replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase();
+    return String(name).replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2').replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase();
   }
   function ecsSystemRuntimeId(filename,systemName){
     const source=String(filename)+'\\0'+String(systemName);
