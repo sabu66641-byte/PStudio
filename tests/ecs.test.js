@@ -159,3 +159,84 @@ test('clears scene bindings without removing registered systems', () => {
   assert.equal(ecs.stats().systemCount, 1);
   ecs.update(0.016);
 });
+
+
+test('Component schemas apply defaults and reject invalid fields and types', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Vitals', {
+    schema: {
+      health: { type: 'integer', default: 100, min: 0, max: 100 },
+      active: { type: 'boolean', default: true },
+      speed: { type: 'number', default: 2.5, min: 0 }
+    },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ Vitals: {} });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Vitals'))),
+    { health: 100, active: true, speed: 2.5 }
+  );
+  ecs.setComponent(entity, 'Vitals', { health: 80, active: false, speed: 4 });
+  assert.equal(ecs.getComponent(entity, 'Vitals').health, 80);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 101, active: true, speed: 1 }), /exceeds max/);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 'high', active: true, speed: 1 }), /must be integer/);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 50, active: true, speed: 1, unknown: 1 }), /Unknown Component field/);
+  const definition = ecs.getComponentDefinition('Vitals');
+  assert.equal(definition.schema.health.type, 'integer');
+  assert.equal(definition.category, 'General');
+});
+
+test('Systems run in update, prePhysics and postPhysics phases with mutable priority', () => {
+  const ecs = createECS();
+  const order = [];
+  ecs.registerSystem({ id: 'test.main', priority: 10, phase: 'update', update() { order.push('update'); } });
+  ecs.registerSystem({ id: 'test.pre', priority: -10, phase: 'prePhysics', update() { order.push('pre'); } });
+  ecs.registerSystem({ id: 'test.post', priority: 0, phase: 'postPhysics', update() { order.push('post'); } });
+  ecs.update(0.016);
+  ecs.updatePhase('prePhysics', 0.016);
+  ecs.updatePhase('postPhysics', 0.016);
+  assert.deepEqual(order, ['update', 'pre', 'post']);
+  assert.equal(ecs.setSystemPhase('test.main', 'postPhysics'), 'postPhysics');
+  assert.equal(ecs.setSystemPriority('test.main', -20), -20);
+  ecs.updatePhase('postPhysics', 0.016);
+  assert.deepEqual(order.slice(3), ['update', 'post']);
+  assert.throws(() => ecs.setSystemPhase('test.main', 'render'), /Invalid ECS System phase/);
+});
+
+test('Scene Object synchronization restores persistent typed Components but skips runtime-only Components', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Health', {
+    schema: { current: { type: 'integer', default: 50, min: 0 } },
+    additionalProperties: false,
+    source: 'components.ps'
+  });
+  ecs.registerComponent('RuntimeCache', {
+    schema: { hits: { type: 'integer', default: 0 } },
+    persistent: false
+  });
+  const sceneObject = {
+    id: 'restored',
+    ecsComponents: [
+      { type: 'Health', data: { current: 75 } },
+      { type: 'RuntimeCache', data: { hits: 9 } }
+    ]
+  };
+  ecs.syncSceneObjects([sceneObject]);
+  const entity = ecs.getEntityForSceneObject('restored');
+  assert.equal(ecs.getComponent(entity, 'Health').current, 75);
+  assert.equal(ecs.hasComponent(entity, 'RuntimeCache'), false);
+  const entries = ecs.getEntityComponents(entity);
+  assert.equal(entries.find(item => item.type === 'Health').persistent, true);
+  assert.equal(ecs.getComponentDefinition('Health').source, 'components.ps');
+});
+
+test('hasActiveSystems avoids scheduling systems without their required Component stores', () => {
+  const ecs = createECS();
+  ecs.registerComponent('UnusedData');
+  ecs.registerSystem({ id: 'test.only-unused', components: ['UnusedData'], update() {} });
+  assert.equal(ecs.hasActiveSystems(), false);
+  const entity = ecs.createEntity({ UnusedData: {} });
+  assert.equal(ecs.hasActiveSystems(), true);
+  ecs.destroyEntity(entity);
+  assert.equal(ecs.hasActiveSystems(), false);
+});
