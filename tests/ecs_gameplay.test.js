@@ -34,7 +34,7 @@ function scene(runtime, objects) {
 
 test('registers typed gameplay Components and keeps runtime-only world state internal', () => {
   const { ecs } = createRuntime();
-  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld']) {
+  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState']) {
     assert.equal(ecs.hasComponentType(type), true, type);
     assert.ok(ecs.getComponentDefinition(type).schema, type);
   }
@@ -42,6 +42,28 @@ test('registers typed gameplay Components and keeps runtime-only world state int
   assert.equal(ecs.getComponentDefinition('Quest').persistent, false);
   assert.equal(ecs.getComponentDefinition('NavigationNode').internal, true);
   assert.equal(ecs.getComponentDefinition('GameplayWorld').persistent, false);
+});
+
+test('ps runtime locals and lifecycle flags have per-Entity ECS ownership', () => {
+  const runtime = createRuntime();
+  scene(runtime, [{ id: 'npc', name: 'NPC', x: 0, y: 0, z: 0 }]);
+  const entity = runtime.ecs.getEntityForSceneObject('npc');
+  runtime.bridge.ensureSceneComponent('npc', 'ScriptState', { values: { counter: 4 } });
+  runtime.bridge.ensureSceneComponent('npc', 'ScriptLifecycle', { initialized: true, started: false });
+  runtime.bridge.ensureSceneComponent('npc', 'LocomotionState', { landSequence: 7 });
+  const script = runtime.bridge.getSceneComponent('npc', 'ScriptState');
+  const lifecycle = runtime.bridge.getSceneComponent('npc', 'ScriptLifecycle');
+  const locomotion = runtime.bridge.getSceneComponent('npc', 'LocomotionState');
+  assert.equal(script.values.counter, 4);
+  assert.equal(lifecycle.initialized, true);
+  assert.equal(lifecycle.started, false);
+  assert.equal(locomotion.landSequence, 7);
+  runtime.ecs.addComponent(entity, 'ScriptSystemState', { values: { 'ps.test': { localCounter: 9 } } });
+  assert.equal(runtime.ecs.getComponent(entity, 'ScriptSystemState').values['ps.test'].localCounter, 9);
+  for (const type of ['ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState']) {
+    assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false);
+    assert.equal(runtime.ecs.getComponentDefinition(type).internal, true);
+  }
 });
 
 test('Health API is backed by a Scene Object Health Component', () => {
