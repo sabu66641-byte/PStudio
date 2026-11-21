@@ -8,6 +8,12 @@ class PsEcsLanguageTests(unittest.TestCase):
         app.app.config.update(TESTING=True)
         self.client = app.app.test_client()
 
+    def test_component_binding_names_match_browser_snake_case(self):
+        self.assertEqual(app._ecs_binding_name("EnemyAI"), "enemy_ai")
+        self.assertEqual(app._ecs_binding_name("Transform"), "transform")
+        self.assertEqual(app._ecs_binding_name("WorldTransform"), "world_transform")
+        self.assertEqual(app._ecs_binding_name("XMLParser"), "xml_parser")
+
     def test_parser_builds_component_and_system_ast_with_member_assignment(self):
         source = (
             "component EnemyAI\n"
