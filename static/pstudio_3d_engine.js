@@ -894,6 +894,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(!active)continue;
       updateModelStreamingChunks(instance);
       updateModelLOD(instance);
+      requestVisibleVirtualTextureTiles(instance);
     }
     updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){
@@ -1232,6 +1233,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeModelAsset(asset) {
     if(!asset?.scene)return;
+    if(asset.assetKey)releaseVirtualTexturesForAsset(asset.assetKey);
     const geometries=new Set(),materials=new Set(),textures=new Set(),imageBitmaps=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
@@ -1355,7 +1357,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(!image.bitmap)throw new Error('Worker returned an image without transferable pixel data.');
       imageMap.set(image.id,image.bitmap);
     }
-    const textures=new Array((packet.textures||[]).length);
+    const textures=new Array((packet.textures||[]).length),virtualTextureIds=new Set();
     for(let i=0;i<textures.length;i++){
       const desc=packet.textures[i],image=imageMap.get(desc.imageId);
       if(!image)throw new Error('Texture '+i+' references a missing decoded image.');
@@ -1382,6 +1384,10 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       texture.matrixAutoUpdate=desc.matrixAutoUpdate!==false;
       if(Array.isArray(desc.matrix))texture.matrix.fromArray(desc.matrix);
       if(desc.userData)texture.userData=desc.userData;
+      if(desc.virtual){
+        const virtualRecord=registerVirtualTextureSource(texture,name,desc.virtual);
+        if(virtualRecord){texture.userData.pstudioVirtualTexture=virtualRecord;virtualTextureIds.add(virtualRecord.id);}
+      }
       texture.needsUpdate=true;
       textures[i]=texture;
       await checkpoint('scene-hydrate-textures',i+1,textures.length);
@@ -1516,7 +1522,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!root)throw new Error('GLTF Worker scene root could not be rebuilt.');
     const animations=(packet.animations||[]).map(data=>T.AnimationClip.parse(data));
     root.updateMatrixWorld(true);
-    return {scene:root,animations,packetTimings:packet.timings||null};
+    return {scene:root,animations,packetTimings:packet.timings||null,virtualTextureIds:[...virtualTextureIds]};
   }
   async function parseGLTFOnMainThread(blob,name){
     const loader=new window.PStudioGLTFLoader();
@@ -1872,7 +1878,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
-      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0};
+      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0,assetKey:name,virtualTextureIds:gltf.virtualTextureIds||[]};
       modelCache.set(name,asset);
       if(window.PStudioResources?.register){
         window.PStudioResources.register('model-gpu',name,asset,{
@@ -2385,6 +2391,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           });
         }
         bindObjectProbeLighting(object);
+        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured)setupVirtualTextureMaterial(configured);
       }
       if((i+1)%96===0){
         dispatchModelLoadProgress({name,stage:'instance-clone-and-materials',loaded:i+1,total:pairs.length,progress:(i+1)/pairs.length});
@@ -2449,6 +2456,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(!material)continue;
         for(const value of Object.values(material))visit(value);
         for(const value of Object.values(material.uniforms||{}))visit(value);
+        for(const slot of Object.keys(VIRTUAL_TEXTURE_UV_VARYINGS)){
+          const record=material[slot]?.userData?.pstudioVirtualTexture;
+          if(record){visit(record.atlas?.texture);visit(record.pageTableTexture);}
+        }
       }
     });
     return [...textures];
