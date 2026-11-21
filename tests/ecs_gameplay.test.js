@@ -151,6 +151,19 @@ test('AudioSource and CollisionState store per-Entity playback and contact metad
   assert.equal(runtime.ecs.getComponentDefinition('CollisionState').persistent, false);
 });
 
+test('TimeState owns world time scale and scaled/unscaled delta time', () => {
+  const runtime = createRuntime();
+  assert.ok(runtime.scene.getTimeState());
+  assert.equal(runtime.scene.getTimeState().timeScale, 1);
+  assert.equal(runtime.scene.setTimeScale(2.5), 2.5);
+  assert.equal(runtime.scene.syncTimeState({ timeScale: 2.5, deltaTime: 0.05, unscaledDeltaTime: 0.02 }), true);
+  const time = runtime.scene.getTimeState();
+  assert.equal(time.timeScale, 2.5);
+  assert.equal(time.deltaTime, 0.05);
+  assert.equal(time.unscaledDeltaTime, 0.02);
+  assert.equal(runtime.ecs.getComponentDefinition('TimeState').persistent, false);
+});
+
 test('InputState snapshots keyboard, touch and virtual controls on a world Entity', () => {
   const runtime = createRuntime();
   assert.equal(runtime.scene.syncInputState({
