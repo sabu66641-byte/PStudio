@@ -162,10 +162,10 @@
   register('CameraState', {
     label: 'Camera State',
     category: 'Scene',
-    description: 'Camera command currently owned by this Entity.',
+    description: 'Camera transform, camera effects and shake commands owned by this Entity.',
     schema: {
       enabled: { type: 'boolean', default: false },
-      entry: { type: 'json', default: null }
+      entries: { type: 'array', default: [] }
     },
     additionalProperties: false,
     internal: true,
@@ -192,6 +192,46 @@
     schema: {
       enabled: { type: 'boolean', default: false },
       entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('MaterialRuntimeState', {
+    label: 'Material Runtime State',
+    category: 'Rendering',
+    description: 'Per-Entity material, toon and post-processing commands emitted by ps scripts.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('ParticleRuntimeState', {
+    label: 'Particle Runtime State',
+    category: 'Rendering',
+    description: 'Per-Entity particle emission and stop commands emitted by ps scripts.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('TimeState', {
+    label: 'Time State',
+    category: 'Runtime',
+    description: 'World time-scale and delta-time snapshot.',
+    schema: {
+      timeScale: { type: 'number', default: 1, min: 0, max: 4 },
+      deltaTime: { type: 'number', default: 0, min: 0, max: 1 },
+      unscaledDeltaTime: { type: 'number', default: 0, min: 0, max: 1 }
     },
     additionalProperties: false,
     internal: true,
@@ -371,41 +411,50 @@
     let synchronized = 0;
     const groups = {
       animation: new Set(['animation', 'animation_blend', 'animation_layer', 'locomotion', 'ik']),
+      camera: new Set(['camera', 'camera_fx', 'camera_shake']),
       lights: new Set(['light']),
-      environment: new Set(['environment'])
+      environment: new Set(['environment']),
+      material: new Set(['material', 'model_material', 'toon_material', 'postfx']),
+      particles: new Set(['particle_emitter', 'particle_emitter_stop', 'particles'])
     };
     for (const [ownerId, draws] of commandsByObject) {
       const entity = sceneEntity(ownerId);
       if (!entity || !Array.isArray(draws)) continue;
-      const animationEntries = [], lightEntries = [], environmentEntries = [];
-      let cameraEntry = null;
+      const animationEntries = [], cameraEntries = [], lightEntries = [], environmentEntries = [],
+        materialEntries = [], particleEntries = [];
       for (let index = 0; index < draws.length; index++) {
         const command = draws[index];
         if (!command || typeof command !== 'object') continue;
         if (groups.animation.has(command.type)) animationEntries.push({ index, command: clone(command) });
-        else if (command.type === 'camera') cameraEntry = { index, command: clone(command) };
+        else if (groups.camera.has(command.type)) cameraEntries.push({ index, command: clone(command) });
         else if (groups.lights.has(command.type)) lightEntries.push({ index, command: clone(command) });
         else if (groups.environment.has(command.type)) environmentEntries.push({ index, command: clone(command) });
+        else if (groups.material.has(command.type)) materialEntries.push({ index, command: clone(command) });
+        else if (groups.particles.has(command.type)) particleEntries.push({ index, command: clone(command) });
       }
       const write = (type, value) => {
         if (api.hasComponent(entity, type)) api.setComponent(entity, type, value);
         else if (value.enabled || value.sounds?.length || value.overlaps2D?.length || value.overlaps3D?.length) api.addComponent(entity, type, value);
       };
       write('AnimationState', { enabled: animationEntries.length > 0, entries: animationEntries });
-      write('CameraState', { enabled: !!cameraEntry, entry: cameraEntry });
+      write('CameraState', { enabled: cameraEntries.length > 0, entries: cameraEntries });
       write('LightSet', { enabled: lightEntries.length > 0, entries: lightEntries });
       write('EnvironmentSettings', { enabled: environmentEntries.length > 0, entries: environmentEntries });
+      write('MaterialRuntimeState', { enabled: materialEntries.length > 0, entries: materialEntries });
+      write('ParticleRuntimeState', { enabled: particleEntries.length > 0, entries: particleEntries });
       const stateEntries = [
         ['AnimationState', animationEntries],
-        ['CameraState', cameraEntry ? [cameraEntry] : []],
+        ['CameraState', cameraEntries],
         ['LightSet', lightEntries],
-        ['EnvironmentSettings', environmentEntries]
+        ['EnvironmentSettings', environmentEntries],
+        ['MaterialRuntimeState', materialEntries],
+        ['ParticleRuntimeState', particleEntries]
       ];
       const replacements = new Map();
       for (const [type, fallback] of stateEntries) {
         if (!api.hasComponent(entity, type)) continue;
         const data = api.getComponent(entity, type);
-        const entries = type === 'CameraState' ? (data.entry ? [data.entry] : []) : data.entries || [];
+        const entries = data.entries || [];
         for (const entry of entries) {
           if (entry && Number.isInteger(entry.index) && entry.index >= 0 && entry.index < draws.length) {
             replacements.set(entry.index, clone(entry.command));
