@@ -28,8 +28,8 @@ test('Play lifecycle registers ps-defined Components and Systems through PStudio
   assert.match(runtime, /ecs\.registerComponent\(name,/);
   assert.match(runtime, /ecs\.registerSystem\(/);
   assert.match(runtime, /api\.forEach\(componentNames/);
-  assert.match(runtime, /const bindingNames=componentNames\\.map\\(ecsBindingName\\)/);
-  assert.match(runtime, /c\\.env\\[bindingNames\\[index\\]\\]=values\\[index\\]/);
+  assert.match(runtime, /const bindingNames=componentNames\.map\(ecsBindingName\)/);
+  assert.match(runtime, /c\.env\[bindingNames\[index\]\]=values\[index\]/);
   assert.match(runtime, /registerEcsRuntime\(data\.scripts\)/);
   assert.match(runtime, /cleanupEcsRuntime\(\)/);
 });
