@@ -476,3 +476,17 @@ test('instanced GPU frustum rejection uses instance transforms and model-space b
 test('virtual texture and clustered-light allocations are included in renderer memory telemetry',()=>{
   for(const token of ['virtualTextureAtlasBytes','clusteredLightingBytes','atlasBytes:','gpuPressure','getMemoryStats:memorySnapshot'])assert.ok(renderer.includes(token),token);
 });
+
+
+test('GLTF worker transfers shared attribute backing buffers with byte offsets rather than copying each attribute',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  assert.ok(worker.includes('byteOffset: view.byteOffset||0'));
+  assert.ok(worker.includes('TRANSFERS.add(view.buffer)'));
+  assert.ok(renderer.includes('new Constructor(record.buffer,Number(record.byteOffset)||0,record.length)'));
+});
+test('cluster overflow preserves lights in the native renderer instead of dropping them',()=>{
+  assert.ok(renderer.includes('fitsEveryCluster'));
+  assert.ok(renderer.includes('if(!fitsEveryCluster)continue'));
+  assert.ok(renderer.includes('clusteredLightSet.has(light)'));
+  assert.ok(renderer.includes('nativeFallbackPointLights:'));
+});
