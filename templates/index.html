@@ -853,6 +853,7 @@ async function importProjectBackup(file){
   const nextState={files:next.files,assets:next.assets,objects:next.objects,environment:next.environment,active:next.active};
   localStorage.setItem(PROJECT_KEY,JSON.stringify(nextState));
 
+  window.PStudioECS?.clearSceneObjects?.();
   projectFiles=next.files;
   projectAssets=next.assets;
   sceneObjects=next.objects;
@@ -869,6 +870,7 @@ async function importProjectBackup(file){
   persistProject();
   updateLineNumbers();
   updateCursor();
+  window.PStudioECSInspector?.refresh?.();
   toast('プロジェクトを復元しました');
   setOutput('Project backup restored successfully.','success');
  }catch(error){
@@ -891,6 +893,7 @@ async function importProjectBackup(file){
    console.error('PStudio project storage rollback failed:',storageRollbackError);
   }
 
+  window.PStudioECS?.clearSceneObjects?.();
   projectFiles=previousState.files;
   projectAssets=previousState.assets;
   sceneObjects=previousState.objects;
@@ -913,6 +916,7 @@ async function importProjectBackup(file){
     switchWorkspaceView('game');
    }
    for(const name of touchedNames)window.PStudio3D?.invalidateAsset?.(name);
+   window.PStudioECSInspector?.refresh?.();
   }catch(uiRollbackError){
    rollbackComplete=false;
    console.error('PStudio UI rollback failed:',uiRollbackError);
