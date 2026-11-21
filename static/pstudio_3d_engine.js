@@ -2494,7 +2494,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
       autoLODQueue.shift();scheduleAutoLODPump();
     };
-    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump,{timeout:1500});
+    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump);
     else window.setTimeout(()=>pump(null),250);
   }
   function scheduleAutoLOD(object,geometry){
