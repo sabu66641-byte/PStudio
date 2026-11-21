@@ -7,6 +7,9 @@
 
   const ecs = () => window.PStudioECS;
   let worldEntity = null;
+  const runtimeSnapshots = new Map();
+  const SCENE_GAMEPLAY_COMPONENTS = new Set(['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState']);
+  const clone = value => JSON.parse(JSON.stringify(value));
 
   function register(type, options) {
     const api = ecs();
@@ -168,9 +171,18 @@
 
   function ensureSceneComponent(objectId, type, initialValue) {
     const api = ecs();
-    const entity = getSceneEntity(objectId);
+    const key = String(objectId);
+    const entity = getSceneEntity(key);
     if (!api || !entity || !api.hasComponentType(type)) return null;
-    if (!api.hasComponent(entity, type)) api.addComponent(entity, type, initialValue || {});
+    if (!api.hasComponent(entity, type)) {
+      const snapshot = runtimeSnapshots.get(key);
+      const restored = snapshot && Object.prototype.hasOwnProperty.call(snapshot, type) ? clone(snapshot[type]) : null;
+      api.addComponent(entity, type, restored || initialValue || {});
+      if (snapshot) {
+        delete snapshot[type];
+        if (!Object.keys(snapshot).length) runtimeSnapshots.delete(key);
+      }
+    }
     return api.getComponent(entity, type);
   }
 
@@ -244,6 +256,29 @@
     return api.query([type]).map(entity => ({ entity, data: api.getComponent(entity, type) }));
   }
 
+  function snapshotSceneState(sceneObjects) {
+    const api = ecs();
+    if (!api || !Array.isArray(sceneObjects)) return 0;
+    const active = new Set();
+    let saved = 0;
+    for (const object of sceneObjects) {
+      if (!object || object.id === undefined || object.id === null) continue;
+      const key = String(object.id);
+      active.add(key);
+      const entity = getSceneEntity(key);
+      if (!entity) continue;
+      const snapshot = Object.create(null);
+      for (const entry of api.getEntityComponents(entity)) {
+        if (!SCENE_GAMEPLAY_COMPONENTS.has(entry.type)) continue;
+        snapshot[entry.type] = clone(entry.data);
+        saved++;
+      }
+      if (Object.keys(snapshot).length) runtimeSnapshots.set(key, snapshot);
+    }
+    for (const key of [...runtimeSnapshots.keys()]) if (!active.has(key)) runtimeSnapshots.delete(key);
+    return saved;
+  }
+
   function resetCombatTransient() {
     const api = ecs();
     if (!api || !api.hasComponentType('CombatState')) return 0;
@@ -273,6 +308,7 @@
     destroyDataEntity,
     queryData,
     resetCombatTransient,
+    snapshotSceneState,
     version: '1.0.0'
   });
 })();
