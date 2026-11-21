@@ -1567,6 +1567,230 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return gltfWorkerCapabilitiesPromise;
   }
 
+  function initializeVirtualTextureAtlas(colorSpace){
+    const key=colorSpace===window.THREE.SRGBColorSpace?'srgb':'linear';
+    if(virtualTextureAtlases.has(key))return virtualTextureAtlases.get(key);
+    if(!renderer||typeof renderer.copyTextureToTexture!=='function')return null;
+    const T=window.THREE,size=deviceMemoryGiB()>=8?4096:2048,pageSize=256,pagesPerAxis=size/pageSize;
+    const data=new Uint8Array(size*size*4);
+    const texture=new T.DataTexture(data,size,size,T.RGBAFormat,T.UnsignedByteType);
+    texture.name='PStudio_VT_Atlas_'+key;
+    texture.colorSpace=key==='srgb'?T.SRGBColorSpace:T.NoColorSpace;
+    texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearFilter;
+    texture.generateMipmaps=false;texture.flipY=false;texture.unpackAlignment=1;texture.needsUpdate=true;
+    try{renderer.initTexture(texture);texture.image.data=null;}
+    catch(error){texture.dispose();console.warn('[PStudio] Virtual texture atlas init failed:',error);return null;}
+    const atlas={key,size,pageSize,pagesPerAxis,capacity:pagesPerAxis*pagesPerAxis,texture,slots:new Array(pagesPerAxis*pagesPerAxis).fill(null),clock:0,bytes:size*size*4};
+    virtualTextureAtlases.set(key,atlas);
+    return atlas;
+  }
+  function registerVirtualTextureSource(texture,assetKey,virtualInfo){
+    if(!texture?.isTexture||!virtualInfo?.workerImageKey)return null;
+    const id=String(virtualInfo.workerImageKey);
+    if(virtualTextures.has(id))return virtualTextures.get(id);
+    const atlas=initializeVirtualTextureAtlas(texture.colorSpace);
+    if(!atlas)return null;
+    const width=Math.max(1,Number(virtualInfo.sourceWidth)||0),height=Math.max(1,Number(virtualInfo.sourceHeight)||0);
+    const tileSize=Math.max(64,Math.min(256,Number(virtualInfo.pageSize)||256));
+    const columns=Math.ceil(width/tileSize),rows=Math.ceil(height/tileSize);
+    const maxSize=Number(renderer?.capabilities?.maxTextureSize)||4096;
+    if(columns>maxSize||rows>maxSize)return null;
+    const data=new Uint8Array(columns*rows*4);
+    const pageTable=new window.THREE.DataTexture(data,columns,rows,window.THREE.RGBAFormat,window.THREE.UnsignedByteType);
+    pageTable.name='PStudio_VT_PageTable_'+id;
+    pageTable.magFilter=window.THREE.NearestFilter;pageTable.minFilter=window.THREE.NearestFilter;
+    pageTable.generateMipmaps=false;pageTable.flipY=false;pageTable.unpackAlignment=1;
+    pageTable.colorSpace=window.THREE.NoColorSpace;pageTable.needsUpdate=true;
+    try{renderer.initTexture(pageTable);}catch(error){pageTable.dispose();return null;}
+    const record={
+      id,assetKey:String(assetKey),workerImageKey:id,sourceWidth:width,sourceHeight:height,
+      tileSize,tileColumns:columns,tileRows:rows,pageTableData:data,pageTableTexture:pageTable,
+      atlas,colorSpace:texture.colorSpace,lastScanAt:0,lastCameraPosition:null,pages:new Set(),
+      requestCount:0,residentCount:0
+    };
+    virtualTextures.set(id,record);
+    texture.userData=texture.userData||{};
+    texture.userData.pstudioVirtualTexture=record;
+    return record;
+  }
+  function virtualTexturePageKey(record,x,y){return record.id+'|'+x+'|'+y;}
+  function scheduleVirtualTexturePump(){
+    if(virtualTexturePumpScheduled||!virtualTextureQueue.length||!renderer)return;
+    virtualTexturePumpScheduled=true;
+    window.requestAnimationFrame(async()=>{
+      virtualTexturePumpScheduled=false;
+      const job=virtualTextureQueue.shift();
+      if(!job)return;
+      virtualTexturePending.delete(job.key);
+      const record=virtualTextures.get(job.recordId);
+      if(record&&record.assetKey===job.assetKey){
+        try{
+          const result=await requestGLTFWorkerMessage('extract-tile',{
+            textureId:record.workerImageKey,x:job.x*record.tileSize,y:job.y*record.tileSize,
+            width:record.tileSize,height:record.tileSize
+          });
+          if(!virtualTextures.has(record.id))return;
+          const T=window.THREE,width=Math.max(1,Math.min(record.tileSize,Number(result.width)||record.tileSize));
+          const height=Math.max(1,Math.min(record.tileSize,Number(result.height)||record.tileSize));
+          let pixels=new Uint8Array(result.buffer);
+          if(width!==record.tileSize||height!==record.tileSize){
+            const padded=new Uint8Array(record.tileSize*record.tileSize*4);
+            for(let y=0;y<record.tileSize;y++)for(let x=0;x<record.tileSize;x++){
+              const source=(Math.min(height-1,y)*width+Math.min(width-1,x))*4,target=(y*record.tileSize+x)*4;
+              padded[target]=pixels[source];padded[target+1]=pixels[source+1];padded[target+2]=pixels[source+2];padded[target+3]=pixels[source+3];
+            }
+            pixels=padded;
+          }
+          const atlas=record.atlas,key=virtualTexturePageKey(record,job.x,job.y);
+          let slotIndex=virtualTexturePageCache.get(key);
+          if(slotIndex===undefined){
+            slotIndex=atlas.slots.findIndex(slot=>slot===null);
+            if(slotIndex<0){
+              slotIndex=0;
+              for(let i=1;i<atlas.slots.length;i++)if(atlas.slots[i].lastUsed<atlas.slots[slotIndex].lastUsed)slotIndex=i;
+              const previous=atlas.slots[slotIndex];
+              if(previous){
+                const parts=previous.key.split('|'),oldRecord=virtualTextures.get(parts[0]);
+                if(oldRecord){
+                  const oldPageIndex=(Number(parts[2])*oldRecord.tileColumns+Number(parts[1]))*4;
+                  oldRecord.pageTableData[oldPageIndex+2]=0;oldRecord.pageTableTexture.needsUpdate=true;
+                  oldRecord.pages.delete(previous.key);oldRecord.residentCount=Math.max(0,oldRecord.residentCount-1);
+                }
+                virtualTexturePageCache.delete(previous.key);
+              }
+            }
+            virtualTexturePageCache.set(key,slotIndex);
+            atlas.slots[slotIndex]={key,lastUsed:++atlas.clock};
+          }
+          atlas.slots[slotIndex].lastUsed=++atlas.clock;
+          const tile=new T.DataTexture(pixels,record.tileSize,record.tileSize,T.RGBAFormat,T.UnsignedByteType);
+          tile.name='PStudio_VT_TileUpload';tile.colorSpace=record.colorSpace||T.NoColorSpace;
+          tile.magFilter=T.LinearFilter;tile.minFilter=T.LinearFilter;tile.generateMipmaps=false;tile.flipY=false;tile.unpackAlignment=1;tile.needsUpdate=true;
+          const slotX=slotIndex%atlas.pagesPerAxis,slotY=Math.floor(slotIndex/atlas.pagesPerAxis);
+          renderer.copyTextureToTexture(new T.Vector2(slotX*record.tileSize,slotY*record.tileSize),tile,atlas.texture,0);
+          tile.dispose();
+          const pageIndex=(job.y*record.tileColumns+job.x)*4;
+          record.pageTableData[pageIndex]=slotX;record.pageTableData[pageIndex+1]=slotY;
+          record.pageTableData[pageIndex+2]=255;record.pageTableData[pageIndex+3]=255;
+          record.pageTableTexture.needsUpdate=true;
+          record.pages.add(key);record.residentCount++;record.requestCount++;virtualTextureTileUploads++;
+          try{window.PStudioEvents?.emit('render.virtual-texture.page-uploaded',{id:record.id,x:job.x,y:job.y,slotX,slotY});}catch(_){}
+        }catch(error){console.warn('[PStudio] Virtual texture tile stream failed:',error);}
+      }
+      scheduleVirtualTexturePump();
+    });
+  }
+  function requestVirtualTexturePage(record,x,y,priority=0){
+    if(!record)return false;
+    const tx=Math.max(0,Math.min(record.tileColumns-1,Math.floor(x))),ty=Math.max(0,Math.min(record.tileRows-1,Math.floor(y)));
+    const pageIndex=(ty*record.tileColumns+tx)*4;
+    if(record.pageTableData[pageIndex+2]===255)return false;
+    const key=virtualTexturePageKey(record,tx,ty);
+    if(virtualTexturePending.has(key))return false;
+    virtualTexturePending.add(key);
+    virtualTextureQueue.push({key,recordId:record.id,assetKey:record.assetKey,x:tx,y:ty,priority});
+    virtualTextureQueue.sort((a,b)=>b.priority-a.priority);
+    virtualTextureRequests++;scheduleVirtualTexturePump();return true;
+  }
+  function virtualTextureWrap(value,mode){
+    const T=window.THREE;
+    if(mode===T.RepeatWrapping)return value-Math.floor(value);
+    if(mode===T.MirroredRepeatWrapping){const cell=Math.floor(value),fraction=value-cell;return Math.abs(cell%2)===1?1-fraction:fraction;}
+    return Math.max(0,Math.min(0.999999,value));
+  }
+  function setupVirtualTextureMaterial(material){
+    const record=material?.map?.userData?.pstudioVirtualTexture;
+    if(!record||material.userData?.pstudioVTShaderSetup)return false;
+    const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+    const uniforms={
+      atlas:record.atlas.texture,pageTable:record.pageTableTexture,
+      sourceSize:new window.THREE.Vector2(record.sourceWidth,record.sourceHeight),
+      tileCount:new window.THREE.Vector2(record.tileColumns,record.tileRows),
+      atlasSize:record.atlas.size,pageSize:record.tileSize,
+      wrapS:material.map.wrapS===window.THREE.RepeatWrapping?1:material.map.wrapS===window.THREE.MirroredRepeatWrapping?2:0,
+      wrapT:material.map.wrapT===window.THREE.RepeatWrapping?1:material.map.wrapT===window.THREE.MirroredRepeatWrapping?2:0
+    };
+    material.onBeforeCompile=function(shader,rendererRef){
+      if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
+      shader.uniforms.uPStudioVTAtlas={value:uniforms.atlas};
+      shader.uniforms.uPStudioVTPageTable={value:uniforms.pageTable};
+      shader.uniforms.uPStudioVTSourceSize={value:uniforms.sourceSize};
+      shader.uniforms.uPStudioVTTileCount={value:uniforms.tileCount};
+      shader.uniforms.uPStudioVTAtlasSize={value:uniforms.atlasSize};
+      shader.uniforms.uPStudioVTPageSize={value:uniforms.pageSize};
+      shader.uniforms.uPStudioVTWrapS={value:uniforms.wrapS};
+      shader.uniforms.uPStudioVTWrapT={value:uniforms.wrapT};
+      const source='#include <common>\nuniform sampler2D uPStudioVTAtlas;uniform sampler2D uPStudioVTPageTable;uniform vec2 uPStudioVTSourceSize;uniform vec2 uPStudioVTTileCount;uniform float uPStudioVTAtlasSize;uniform float uPStudioVTPageSize;uniform float uPStudioVTWrapS;uniform float uPStudioVTWrapT;\nfloat pstudioVTWrap(float v,float mode){if(mode<0.5)return clamp(v,0.0,0.999999);if(mode<1.5)return fract(v);float cell=floor(v);float f=fract(v);return mod(abs(cell),2.0)>0.5?1.0-f:f;}\nvec4 pstudioVTSampleMap(vec2 uv){vec2 wrapped=vec2(pstudioVTWrap(uv.x,uPStudioVTWrapS),pstudioVTWrap(uv.y,uPStudioVTWrapT));vec2 pixel=wrapped*uPStudioVTSourceSize;float footprint=max(length(dFdx(uv*uPStudioVTSourceSize)),length(dFdy(uv*uPStudioVTSourceSize)));if(footprint>1.5)return texture2D(map,uv);vec2 tile=floor(pixel/uPStudioVTPageSize);vec4 page=texture2D(uPStudioVTPageTable,(tile+vec2(0.5))/uPStudioVTTileCount);if(page.b<0.5)return texture2D(map,uv);vec2 slot=floor(page.rg*255.0+0.5);vec2 local=clamp(mod(pixel,uPStudioVTPageSize),vec2(0.5),vec2(uPStudioVTPageSize-0.5));vec2 atlasUV=(slot*uPStudioVTPageSize+local)/uPStudioVTAtlasSize;return texture2D(uPStudioVTAtlas,atlasUV);}\n';
+      shader.fragmentShader=shader.fragmentShader.replace('#include <common>',source);
+      shader.fragmentShader=shader.fragmentShader.replace(/texture2D\s*\(\s*map\s*,\s*vMapUv\s*\)/g,'pstudioVTSampleMap(vMapUv)');
+    };
+    material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-vt-map-v1';};
+    material.userData.pstudioVTUniforms=uniforms;
+    material.userData.pstudioVTShaderSetup=true;
+    return true;
+  }
+  function requestVisibleVirtualTextureTiles(instance){
+    if(!camera||!instance?.root?.visible)return;
+    const now=window.performance?.now?.()??Date.now();
+    if(now-(instance.lastVirtualTextureScanAt||0)<700)return;
+    if(instance.lastVirtualTextureCamera?.distanceToSquared(camera.position)<0.36&&now-(instance.lastVirtualTextureScanAt||0)<1500)return;
+    instance.lastVirtualTextureScanAt=now;
+    if(!instance.lastVirtualTextureCamera)instance.lastVirtualTextureCamera=new window.THREE.Vector3();
+    instance.lastVirtualTextureCamera.copy(camera.position);
+    const T=window.THREE,viewProjection=new T.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+    const objects=[...(instance.meshes||[]),...(instance.foliageBatches||[]).map(entry=>entry.mesh)];
+    let sampled=0;
+    for(const object of objects){
+      if(sampled>=900||!object.visible||!object.geometry||!object.material)continue;
+      let parent=object.parent,visible=true;
+      while(parent&&parent!==instance.root){if(!parent.visible){visible=false;break;}parent=parent.parent;}
+      if(!visible)continue;
+      object.updateWorldMatrix(true,false);
+      const mvp=viewProjection.clone().multiply(object.matrixWorld),position=object.geometry.attributes.position,index=object.geometry.index;
+      if(!position)continue;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        const record=material?.map?.userData?.pstudioVirtualTexture;
+        const texture=material?.map;
+        if(!record||!texture)continue;
+        const channel=Number(texture.channel)||0,uv=object.geometry.attributes[channel===0?'uv':'uv'+channel]||object.geometry.attributes.uv;
+        if(!uv)continue;
+        if(texture.matrixAutoUpdate)texture.updateMatrix();
+        const count=index?index.count:position.count,triangleCount=Math.floor(count/3);
+        const stride=Math.max(1,Math.ceil(triangleCount/Math.max(1,Math.floor((900-sampled)/2))));
+        const p0=new T.Vector3(),p1=new T.Vector3(),p2=new T.Vector3(),center=new T.Vector3(),clip=new T.Vector4(),uvCenter=new T.Vector2();
+        for(let tri=0;tri<triangleCount&&sampled<900;tri+=stride){
+          const base=tri*3,a=index?index.getX(base):base,b=index?index.getX(base+1):base+1,c=index?index.getX(base+2):base+2;
+          p0.fromBufferAttribute(position,a);p1.fromBufferAttribute(position,b);p2.fromBufferAttribute(position,c);
+          center.copy(p0).add(p1).add(p2).multiplyScalar(1/3);
+          clip.set(center.x,center.y,center.z,1).applyMatrix4(mvp);sampled++;
+          if(clip.w<=0||Math.abs(clip.x)>clip.w||Math.abs(clip.y)>clip.w||clip.z< -clip.w||clip.z>clip.w)continue;
+          uvCenter.set((uv.getX(a)+uv.getX(b)+uv.getX(c))/3,(uv.getY(a)+uv.getY(b)+uv.getY(c))/3).applyMatrix3(texture.matrix);
+          const u=virtualTextureWrap(uvCenter.x,texture.wrapS),v=virtualTextureWrap(uvCenter.y,texture.wrapT);
+          const tx=Math.floor(u*record.sourceWidth/record.tileSize),ty=Math.floor(v*record.sourceHeight/record.tileSize);
+          const priority=1-Math.min(1,Math.hypot(clip.x/clip.w,clip.y/clip.w)/1.4142);
+          requestVirtualTexturePage(record,tx,ty,priority);
+        }
+      }
+    }
+  }
+  function releaseVirtualTexturesForAsset(assetKey){
+    const key=String(assetKey||'');
+    for(const [id,record] of virtualTextures){
+      if(record.assetKey!==key)continue;
+      for(const pageKey of record.pages){
+        const slotIndex=virtualTexturePageCache.get(pageKey);
+        if(slotIndex!==undefined){record.atlas.slots[slotIndex]=null;virtualTexturePageCache.delete(pageKey);}
+      }
+      for(let i=0;i<record.pageTableData.length;i+=4)record.pageTableData[i+2]=0;
+      record.pageTableTexture?.dispose?.();virtualTextures.delete(id);
+    }
+    for(let i=virtualTextureQueue.length-1;i>=0;i--){
+      if(virtualTextureQueue[i].assetKey===key){virtualTexturePending.delete(virtualTextureQueue[i].key);virtualTextureQueue.splice(i,1);}
+    }
+    requestGLTFWorkerMessage('release-asset',{assetKey:key}).catch(()=>{});
+  }
+
   function requestModelAsset(name) {
     if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
     if (modelPromises.has(name)) return modelPromises.get(name);
