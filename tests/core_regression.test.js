@@ -44,3 +44,17 @@ test('2D draw path and collision enter tracking use ECS-owned presentation and c
   assert.match(engine,/syncOwnerAudioState\(ownerId\)/);
   assert.match(engine,/PStudioECSScene\?\.syncAudioState\?\.\(String\(ownerId\),entries\)/);
 });
+
+test('ps input builtins read the world-scoped ECS InputState snapshot',()=>{
+  const engine=fs.readFileSync(path.join(root,'static/pstudio_engine.js'),'utf8');
+  const bridge=fs.readFileSync(path.join(root,'static/pstudio_ecs_scene.js'),'utf8');
+  assert.match(engine,/syncInputState\?\.\(\{/);
+  assert.match(engine,/function getInputSnapshot\(\)/);
+  assert.match(engine,/getInputSnapshot\(\)\.pressedKeys\.includes/);
+  assert.match(engine,/getInputSnapshot\(\)\.justPressedKeys\.includes/);
+  assert.match(engine,/input\.axisX/);
+  assert.match(engine,/input\.axisZ/);
+  assert.match(engine,/getInputSnapshot\(\)\.touchActive/);
+  assert.match(bridge,/function syncInputState\(snapshot\)/);
+  assert.match(bridge,/function getInputState\(\)/);
+});
