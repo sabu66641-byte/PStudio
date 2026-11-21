@@ -14,6 +14,7 @@
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
   let worldFrustum=null,worldFrustumMatrix=null,worldFrustumSphere=null;
+  let gpuInstanceFrustumCullingEnabled=true;
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
@@ -833,12 +834,52 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }
     for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
   }
+  function enableGPUFrustumCullingForBatch(batch){
+    if(!batch?.isInstancedMesh||batch.userData?.pstudioGPUFrustumConfigured)return false;
+    const T=window.THREE,oldMaterial=batch.material;
+    if(!oldMaterial||Array.isArray(oldMaterial))return false;
+    const material=oldMaterial.clone();
+    const previousCompile=material.onBeforeCompile;
+    const previousKey=material.customProgramCacheKey?.bind(material);
+    if(!batch.geometry.boundingSphere)batch.geometry.computeBoundingSphere?.();
+    const uniforms={
+      planes:Array.from({length:6},()=>new T.Vector4()),
+      radius:{value:Number(batch.geometry.boundingSphere?.radius)||0},
+      enabled:{value:gpuInstanceFrustumCullingEnabled?1:0}
+    };
+    material.onBeforeCompile=function(shader,rendererRef){
+      if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
+      shader.uniforms.uPStudioFrustumPlanes={value:uniforms.planes};
+      shader.uniforms.uPStudioFrustumRadius=uniforms.radius;
+      shader.uniforms.uPStudioFrustumEnabled=uniforms.enabled;
+      shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
+      const cullingCode='#include <project_vertex>\n#ifdef USE_INSTANCING\nif(uPStudioFrustumEnabled>0.5){\n  mat4 pstudioWorldInstance=modelMatrix*instanceMatrix;\n  vec3 pstudioWorldCenter=pstudioWorldInstance[3].xyz;\n  float pstudioWorldScale=max(length(pstudioWorldInstance[0].xyz),max(length(pstudioWorldInstance[1].xyz),length(pstudioWorldInstance[2].xyz)));\n  float pstudioWorldRadius=uPStudioFrustumRadius*pstudioWorldScale;\n  bool pstudioInsideFrustum=true;\n  for(int pstudioPlane=0;pstudioPlane<6;pstudioPlane++){\n    if(dot(uPStudioFrustumPlanes[pstudioPlane].xyz,pstudioWorldCenter)+uPStudioFrustumPlanes[pstudioPlane].w < -pstudioWorldRadius){pstudioInsideFrustum=false;}\n  }\n  if(!pstudioInsideFrustum)gl_Position=vec4(2.0,2.0,2.0,1.0);\n}\n#endif\n';
+      shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>',cullingCode);
+    };
+    material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-gpu-instance-frustum-v1';};
+    material.userData.pstudioGPUFrustumUniforms=uniforms;
+    batch.material=material;
+    batch.userData.pstudioGPUFrustumConfigured=true;
+    return true;
+  }
+  function updateGPUInstanceFrustumPlanes(){
+    const update=batch=>{
+      const uniforms=batch?.material?.userData?.pstudioGPUFrustumUniforms;
+      if(!uniforms)return;
+      uniforms.enabled.value=gpuInstanceFrustumCullingEnabled?1:0;
+      if(worldFrustum)for(let i=0;i<6;i++)uniforms.planes[i].copy(worldFrustum.planes[i]);
+    };
+    for(const batch of instancedBatches.values())update(batch);
+    for(const instance of modelInstances.values())for(const entry of instance.foliageBatches||[])update(entry.mesh);
+  }
+
   function updateWorldVisibility(){
     if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance,T=window.THREE;
     if(!worldFrustum){worldFrustum=new T.Frustum();worldFrustumMatrix=new T.Matrix4();worldFrustumSphere=new T.Sphere();}
     camera.updateMatrixWorld(true);
     worldFrustumMatrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     worldFrustum.setFromProjectionMatrix(worldFrustumMatrix);
+    updateGPUInstanceFrustumPlanes();
     for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,objectCameraDistance(mesh));}
     for(const instance of modelInstances.values()){
       const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
@@ -854,9 +895,6 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       for(const source of sources){
         const mesh=source.mesh;
         if(!isWithinWorldDrawDistance(mesh,max)||!isOwnerChunkActive(mesh.userData.ownerId)||mesh.userData.pstudioOccluded)continue;
-        const geometry=mesh.geometry;
-        if(geometry&&!geometry.boundingSphere)geometry.computeBoundingSphere?.();
-        if(geometry?.boundingSphere){mesh.updateMatrix();worldFrustumSphere.copy(geometry.boundingSphere).applyMatrix4(mesh.matrix);if(!worldFrustum.intersectsSphere(worldFrustumSphere))continue;}
         dummy.position.copy(mesh.position);dummy.quaternion.copy(mesh.quaternion);dummy.scale.copy(mesh.scale);dummy.updateMatrix();
         batch.setMatrixAt(count,dummy.matrix);owners[count]=mesh.userData.ownerId;keys[count]=source.sourceKey;count++;
       }
@@ -1097,6 +1135,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         batch.userData.capacity=items.length;
         batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
         batch.castShadow=true;batch.receiveShadow=true;
+        enableGPUFrustumCullingForBatch(batch);
         instancedBatches.set(batchKey,batch);primitiveGroup.add(batch);
       }
       batch.count=items.length;
@@ -1947,6 +1986,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
       batch.instanceMatrix.needsUpdate=true;
       batch.computeBoundingSphere();
+      enableGPUFrustumCullingForBatch(batch);
       batches.push({mesh:batch,sources,level,isTree:group.isTree,parent});
       if(++groupIndex%2===0)await nextPreparationFrame();
     }
@@ -2639,6 +2679,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       geometries:renderer.info?.memory?.geometries||0,
       textures:renderer.info?.memory?.textures||0,
       instancedBatches:instancedBatches.size,
+      gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       models:modelInstances.size,
@@ -2653,6 +2694,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed)drawFrame();return changed;},
     bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
+    setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
     getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
