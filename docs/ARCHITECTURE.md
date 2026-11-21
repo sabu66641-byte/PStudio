@@ -82,7 +82,8 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
-- `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
+- `static/pstudio_ecs_gameplay.js`: typed gameplay Components, world-scoped ECS state, compatibility accessors and Play/Stop state snapshots.
+- `static/pstudio_gameplay.js`: compatibility-facing gameplay API; entity and world runtime state is stored in ECS when available, while static item/weapon definitions and no-ECS fallback behavior remain local.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
 
@@ -108,10 +109,49 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations. ECS PhysicsBody is configuration; the Physics solver remains authoritative for runtime body motion.
 - ECS owns typed Component data and generic System scheduling. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields.
-- Existing legacy ps callbacks, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
+- Scene-bound gameplay state is owned by ECS Components: Health, Inventory, Equipment, AIState and CombatState. PStudioGameplay keeps its public function API as a compatibility facade; in the normal runtime path it delegates to the Scene Object Entity instead of maintaining a second Map-based source of truth.
+- World-scoped gameplay state is represented by ECS Entities/Components: Quest and NavigationNode use standalone data Entities, while GameplayWorld owns active UI and dialogue state. Small Maps retained by the gameplay facade are ID indexes or fallback storage only when ECS is unavailable.
+- itemDefinitions and weaponDefinitions remain registries because they are static authoring data, not per-Entity runtime state. DOM panels remain view code; they read the gameplay API and do not own gameplay state.
+- Before stopGame clears Scene Object Entities, the gameplay bridge takes an in-memory snapshot of the persistent gameplay Components. The next Play run restores those values when the matching Entity/Component is re-created. This preserves the old page-session behavior without writing live runtime values into project files.
+- Existing per-Scene-Object ps callback execution, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
 Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state.
+
+## Gameplay ECS ownership contract (Phase 3)
+
+The ECS gameplay bridge is loaded after the ECS core and Physics bridge, and before the typed Inspector.
+
+### Scene-bound Components
+
+- Health: maximum/current HP and whether the values were explicitly configured.
+- Inventory: item/count entries.
+- Equipment: slot/item entries.
+- AIState: the current high-level AI state (idle, chase, attack, retreat, dead).
+- CombatState: combo timing/weapon/count and per-target attack cooldowns.
+
+The Component schema is validated by the ECS core. PStudioGameplay retains the existing public API (setHP, damage, inventoryAdd, equipItem, enemyAI, etc.) and resolves the Scene Object ID to its ECS Entity. Existing .ps callers therefore do not need to be rewritten for this migration. State is not duplicated in a parallel Map when the Scene Object has a live ECS Entity.
+
+The pstudio_ecs_gameplay.js bridge maintains a temporary in-memory snapshot for the Scene-bound gameplay Components when Play stops. It is not a project-file write and is not a durable save-game implementation; refreshing the page clears this transient snapshot.
+
+### World-scoped Components and entities
+
+- Quest is one standalone ECS Entity per quest ID. It stores definition, prerequisite, progress, completion and reward state.
+- NavigationNode is one standalone ECS Entity per graph node. Links and blocked state are Component data. The facade's navNodes/questEntities Maps are lookup indexes, not data owners.
+- GameplayWorld is a singleton-style ECS Entity for active gameplay UI and dialogue state.
+
+These world Entities are not Scene Objects. They survive clearSceneObjects() and are intentionally runtime-only (persistent: false).
+
+### What is not an ECS Component
+
+- Item and weapon definition registries are static catalog data; they are not mutable per-Entity state.
+- DOM HUD/panels are presentation. The UI calls PStudioGameplay and does not hold the authoritative inventory, quest or dialogue state.
+- Physics integration still adapts ECS Components to the fixed-step Physics service; the Physics solver remains the runtime authority for body simulation.
+- The 3D renderer, GPU resources, asset loaders, event bus, job queue, storage backends and module registry remain engine services. They are connected by adapters/events where useful, rather than being incorrectly represented as one Component per service.
+
+### Remaining migration boundary
+
+This phase moves the generic gameplay state above into ECS, but does not yet replace the per-Scene-Object ps callback interpreter or its per-object environment. It also does not yet model all Scene presentation fields (MeshRenderer/Camera/Light/Material/Animation) as typed Components, migrate collision-pair dispatch, or unify project serialization/save-game snapshots with the standalone player. Those are separate migrations with independent compatibility tests. Keep the current renderer/Physics service ownership until an explicit Component-to-service adapter is tested end-to-end.
 
 ## ECS and Physics frame contract
 
