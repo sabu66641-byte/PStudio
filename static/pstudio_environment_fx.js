@@ -389,7 +389,7 @@
     const cached=outlineMaterialCache.get(record.key);
     if(cached){
       cached.refs=Math.max(0,cached.refs-1);
-      if(cached.refs===0){cached.material.dispose?.();outlineMaterialCache.delete(record.key);}
+      if(cached.refs===0){if(Array.isArray(cached.material))cached.material.forEach(item=>item?.dispose?.());else cached.material.dispose?.();outlineMaterialCache.delete(record.key);}
     }
     delete object.userData.pstudioOutlineShell;
   }
@@ -401,12 +401,12 @@
     const width=Math.max(0.005,Math.min(0.45,Number(settings.width)||0));
     if(!enabled||width<=0){releaseOutline(object);return;}
     const color=String(settings.color||'#182235');
-    const suppliedMaterial=settings.sourceMaterial||null;
-    const sourceMaterial=suppliedMaterial&&(!Array.isArray(object.material)||object.material.length===1)?suppliedMaterial:null;
-    const useAlphaTextures=!!(sourceMaterial&&(sourceMaterial.alphaTest>0||sourceMaterial.transparent));
-    const alphaMap=useAlphaTextures?(sourceMaterial.alphaMap||null):null;
-    const map=useAlphaTextures?(sourceMaterial.map||null):null;
-    const cacheKey=[color,width.toFixed(4),map?.uuid||'',alphaMap?.uuid||'',sourceMaterial?.alphaTest||0,sourceMaterial?.opacity??1,sourceMaterial?.transparent?1:0].join('|');
+    const sourceMaterials=Array.isArray(object.material)?object.material:[settings.sourceMaterial||object.material];
+    const materialStates=sourceMaterials.map(sourceMaterial=>{
+      const useAlphaTextures=!!(sourceMaterial&&(sourceMaterial.alphaTest>0||sourceMaterial.transparent||sourceMaterial.alphaHash));
+      return {sourceMaterial,useAlphaTextures,map:useAlphaTextures?(sourceMaterial?.map||null):null,alphaMap:useAlphaTextures?(sourceMaterial?.alphaMap||null):null};
+    });
+    const cacheKey=JSON.stringify([color,width.toFixed(4),materialStates.map(state=>({map:state.map?.uuid||'',alphaMap:state.alphaMap?.uuid||'',alphaTest:state.sourceMaterial?.alphaTest||0,opacity:state.sourceMaterial?.opacity??1,transparent:!!state.sourceMaterial?.transparent,alphaHash:!!state.sourceMaterial?.alphaHash}))]);
     const currentOutline=object.userData?.pstudioOutlineShell;
     if(currentOutline?.key===cacheKey){
       currentOutline.mesh.geometry=object.geometry;
@@ -417,30 +417,35 @@
     releaseOutline(object);
     let cached=outlineMaterialCache.get(cacheKey);
     if(!cached){
-      const material=new Three.MeshBasicMaterial({
-        color,map,alphaMap,alphaTest:sourceMaterial?.alphaTest||0,
-        transparent:!!(useAlphaTextures&&sourceMaterial?.transparent),opacity:sourceMaterial?.opacity??1,
-        alphaToCoverage:!!sourceMaterial?.alphaToCoverage,
-        side:Three.BackSide,depthWrite:false,depthTest:true,
-        toneMapped:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1
+      const materials=materialStates.map(({sourceMaterial,useAlphaTextures,map,alphaMap})=>{
+        const material=new Three.MeshBasicMaterial({
+          color,map,alphaMap,alphaTest:sourceMaterial?.alphaTest||0,
+          transparent:!!(useAlphaTextures&&sourceMaterial?.transparent),opacity:sourceMaterial?.opacity??1,
+          alphaToCoverage:!!sourceMaterial?.alphaToCoverage,alphaHash:!!sourceMaterial?.alphaHash,
+          vertexColors:!!sourceMaterial?.vertexColors,
+          side:Three.BackSide,depthWrite:false,depthTest:true,
+          toneMapped:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1
+        });
+        material.onBeforeCompile=function(shader){
+          shader.uniforms.uPStudioOutlineExpansion={value:width};
+          shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
+            'uniform float uPStudioOutlineExpansion;',
+            '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
+            'attribute vec3 normal;',
+            '#endif'
+          ].join('\\n'));
+          shader.vertexShader=addAfter(shader.vertexShader,'#include <skinning_vertex>',[
+            '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
+            'vec3 objectNormal = normal;',
+            '#endif',
+            'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
+          ].join('\\n'));
+          if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
+        };
+        material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+        return material;
       });
-      material.onBeforeCompile=function(shader){
-        shader.uniforms.uPStudioOutlineExpansion={value:width};
-        shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
-          'uniform float uPStudioOutlineExpansion;',
-          '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
-          'attribute vec3 normal;',
-          '#endif'
-        ].join('\n'));
-        shader.vertexShader=addAfter(shader.vertexShader,'#include <skinning_vertex>',[
-          '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
-          'vec3 objectNormal = normal;',
-          '#endif',
-          'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
-        ].join('\n'));
-        if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
-      };
-      material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+      const material=Array.isArray(object.material)?materials:materials[0];
       cached={material,refs:0};
       outlineMaterialCache.set(cacheKey,cached);
     }
