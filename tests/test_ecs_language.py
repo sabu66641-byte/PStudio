@@ -165,6 +165,21 @@ class PsEcsLanguageTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, msg=response.get_json())
 
+    def test_builtin_scene_presentation_components_are_available_to_game_systems(self):
+        source = (
+            "system RenderState(SpriteRenderer, MeshRenderer, PostProcessingSettings, ParticleEmitter, MeshCollider)\n"
+            "    sprite_renderer.width += 1.0\n"
+            "    mesh_renderer.scale += 0.1\n"
+            "    post_processing_settings.bloom = true\n"
+            "    particle_emitter.rate += 1.0\n"
+            "    mesh_collider.enabled = true\n"
+        )
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"scene.ps": source}},
+        )
+        self.assertEqual(response.status_code, 200, msg=response.get_json())
+
     def test_builtin_ecs_physics_components_cannot_be_redeclared(self):
         for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld", "ScriptState", "ScriptLifecycle", "ScriptSystemState", "LocomotionState", "SpriteRenderer", "MeshRenderer", "MaterialSettings", "PostProcessingSettings", "ParticleEmitter", "Collider2D", "MeshCollider"):
             response = self.client.post(
