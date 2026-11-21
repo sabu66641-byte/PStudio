@@ -257,19 +257,15 @@ test('OPFS permission or capability failure falls back to legacy IndexedDB Blob 
 
 test('OPFS quota write failure retries the same asset through IndexedDB', async () => {
   const db = makeWritableDatabase();
-  const brokenOPFS = {
-    async getDirectoryHandle() {
+  const brokenDirectory = {
+    async getFileHandle() {
       return {
-        async getFileHandle() {
-          return {
-            async createWritable() {
-              const error = new Error('disk quota'); error.name = 'QuotaExceededError'; throw error;
-            }
-          };
-        },
-        async removeEntry() {}
+        async createWritable() {
+          const error = new Error('disk quota'); error.name = 'QuotaExceededError'; throw error;
+        }
       };
-    }
+    },
+    async removeEntry() {}
   };
   const { store } = createStore({
     indexedDB: {
@@ -279,7 +275,7 @@ test('OPFS quota write failure retries the same asset through IndexedDB', async 
         return request;
       }
     },
-    navigator: { storage: { getDirectory: async () => ({ getDirectoryHandle: async () => brokenOPFS }), estimate: async () => ({ usage: 0, quota: 1024 * 1024 * 1024 }) } },
+    navigator: { storage: { getDirectory: async () => ({ getDirectoryHandle: async () => brokenDirectory }), estimate: async () => ({ usage: 0, quota: 1024 * 1024 * 1024 }) } },
     dispatchEvent() {}
   });
   const blob = new Blob([new Uint8Array([9, 8, 7])], { type: 'model/gltf-binary' });
