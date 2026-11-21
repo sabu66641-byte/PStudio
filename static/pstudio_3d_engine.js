@@ -1455,7 +1455,6 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!root)throw new Error('GLTF Worker scene root could not be rebuilt.');
     const animations=(packet.animations||[]).map(data=>T.AnimationClip.parse(data));
     root.updateMatrixWorld(true);
-    for(const bitmap of imageMap.values())bitmap.__pstudioTransferred=true;
     return {scene:root,animations,packetTimings:packet.timings||null};
   }
   async function parseGLTFOnMainThread(blob,name){
