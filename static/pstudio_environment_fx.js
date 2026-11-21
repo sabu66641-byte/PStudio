@@ -406,7 +406,7 @@
       const useAlphaTextures=!!(sourceMaterial&&(sourceMaterial.alphaTest>0||sourceMaterial.transparent||sourceMaterial.alphaHash));
       return {sourceMaterial,useAlphaTextures,map:useAlphaTextures?(sourceMaterial?.map||null):null,alphaMap:useAlphaTextures?(sourceMaterial?.alphaMap||null):null};
     });
-    const cacheKey=JSON.stringify([color,width.toFixed(4),materialStates.map(state=>({map:state.map?.uuid||'',alphaMap:state.alphaMap?.uuid||'',alphaTest:state.sourceMaterial?.alphaTest||0,opacity:state.sourceMaterial?.opacity??1,transparent:!!state.sourceMaterial?.transparent,alphaHash:!!state.sourceMaterial?.alphaHash}))]);
+    const cacheKey=JSON.stringify([color,width.toFixed(4),materialStates.map(state=>({map:state.map?.uuid||'',alphaMap:state.alphaMap?.uuid||'',alphaTest:state.sourceMaterial?.alphaTest||0,opacity:state.sourceMaterial?.opacity??1,transparent:!!state.sourceMaterial?.transparent,alphaHash:!!state.sourceMaterial?.alphaHash,alphaToCoverage:!!state.sourceMaterial?.alphaToCoverage,vertexColors:!!state.sourceMaterial?.vertexColors}))]);
     const currentOutline=object.userData?.pstudioOutlineShell;
     if(currentOutline?.key===cacheKey){
       currentOutline.mesh.geometry=object.geometry;
