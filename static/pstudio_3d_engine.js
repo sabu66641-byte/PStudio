@@ -31,6 +31,9 @@
   let selectionGroup = null;
   const modelCache = new Map();
   const modelPromises = new Map();
+  let gltfWorker=null,gltfWorkerSequence=0,sharedKTX2Loader=null;
+  const gltfWorkerPending=new Map();
+
   const modelRevisions = new Map();
   const modelInstances = new Map();
   const modelLoadErrors = new Map();
@@ -1211,6 +1214,279 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function dispatchModelLoadProgress(detail){
     try{window.dispatchEvent(new CustomEvent('pstudio-model-load-progress',{detail}));}catch(_){}
   }
+
+  function getGLTFWorker(){
+    if(typeof window.Worker!=='function')return null;
+    if(gltfWorker)return gltfWorker;
+    try{
+      const worker=new window.Worker('/static/pstudio_gltf_worker.js',{type:'module',name:'PStudio-GLTF-Parser'});
+      worker.onmessage=event=>{
+        const message=event.data||{};
+        const pending=gltfWorkerPending.get(message.id);
+        if(!pending)return;
+        if(message.progress){pending.onProgress?.(message.progress);return;}
+        gltfWorkerPending.delete(message.id);
+        if(message.ok)pending.resolve(message.result);
+        else{
+          const error=new Error(String(message.error||'Worker GLTF parsing failed.'));
+          error.code=String(message.code||'');
+          pending.reject(error);
+        }
+      };
+      worker.onerror=event=>{
+        const error=new Error(event?.message||'GLTF parsing Worker failed to load.');
+        error.code='PSTUDIO_WORKER_UNAVAILABLE';
+        for(const pending of gltfWorkerPending.values())pending.reject(error);
+        gltfWorkerPending.clear();
+        if(gltfWorker===worker)gltfWorker=null;
+        try{worker.terminate();}catch(_){}
+      };
+      worker.onmessageerror=()=>{
+        const error=new Error('GLTF Worker returned a message that could not be deserialized.');
+        error.code='PSTUDIO_WORKER_TRANSPORT';
+        for(const pending of gltfWorkerPending.values())pending.reject(error);
+        gltfWorkerPending.clear();
+      };
+      gltfWorker=worker;
+      return worker;
+    }catch(error){
+      console.warn('[PStudio] GLTF worker is unavailable; main-thread parser fallback will be used.',error);
+      return null;
+    }
+  }
+  async function parseGLBInWorker(blob,name){
+    const worker=getGLTFWorker();
+    if(!worker){const error=new Error('GLTF parsing Worker is unavailable.');error.code='PSTUDIO_WORKER_UNAVAILABLE';throw error;}
+    dispatchModelLoadProgress({name,stage:'worker-read',loaded:0,total:blob.size,progress:0});
+    const buffer=await blob.arrayBuffer();
+    if(buffer.byteLength!==blob.size)throw new Error('GLB binary read returned an incomplete buffer.');
+    const id=++gltfWorkerSequence;
+    return await new Promise((resolve,reject)=>{
+      gltfWorkerPending.set(id,{resolve,reject,onProgress:detail=>dispatchModelLoadProgress({name,...detail})});
+      try{
+        worker.postMessage({id,op:'parse-glb',buffer},[buffer]);
+        dispatchModelLoadProgress({name,stage:'worker-parse-start',loaded:blob.size,total:blob.size,progress:0});
+      }catch(error){
+        gltfWorkerPending.delete(id);
+        error.code=error.code||'PSTUDIO_WORKER_TRANSPORT';
+        reject(error);
+      }
+    });
+  }
+  function hydrateTypedArray(record){
+    if(!record?.buffer||!Number.isSafeInteger(record.length)||record.length<0)throw new Error('Worker geometry attribute data is invalid.');
+    const constructors={Int8Array,Uint8Array,Uint8ClampedArray,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array};
+    const Constructor=constructors[record.type];
+    if(!Constructor)throw new Error('Unsupported worker geometry array type: '+record.type);
+    return new Constructor(record.buffer,0,record.length);
+  }
+  function hydrateBufferAttribute(record){
+    if(!record)return null;
+    const attribute=new window.THREE.BufferAttribute(hydrateTypedArray(record.data),record.itemSize,!!record.normalized);
+    attribute.name=String(record.name||'');
+    if(record.gpuType!==undefined)attribute.gpuType=record.gpuType;
+    return attribute;
+  }
+  async function hydrateGLTFWorkerPacket(packet,name){
+    const T=window.THREE;
+    if(!packet||!Array.isArray(packet.nodes)||!packet.nodes.length)throw new Error('GLTF Worker returned an empty scene packet.');
+    const yieldFrame=()=>new Promise(resolve=>window.requestAnimationFrame(()=>resolve()));
+    const notify=(stage,loaded,total)=>dispatchModelLoadProgress({name,stage,loaded,total,progress:total?loaded/total:1});
+    let count=0;
+    const checkpoint=async(stage,total)=>{
+      count++;
+      if((count&31)===0){notify(stage,count,total);await yieldFrame();}
+    };
+
+    const imageMap=new Map();
+    for(const image of packet.images||[]){
+      if(!image.bitmap)throw new Error('Worker returned an image without transferable pixel data.');
+      imageMap.set(image.id,image.bitmap);
+    }
+    const textures=new Array((packet.textures||[]).length);
+    for(let i=0;i<textures.length;i++){
+      const desc=packet.textures[i],image=imageMap.get(desc.imageId);
+      if(!image)throw new Error('Texture '+i+' references a missing decoded image.');
+      const texture=new T.Texture(image);
+      texture.name=desc.name||'';
+      texture.mapping=desc.mapping??T.UVMapping;
+      texture.channel=Number(desc.channel)||0;
+      texture.wrapS=desc.wrapS??T.ClampToEdgeWrapping;
+      texture.wrapT=desc.wrapT??T.ClampToEdgeWrapping;
+      texture.magFilter=desc.magFilter??T.LinearFilter;
+      texture.minFilter=desc.minFilter??T.LinearMipmapLinearFilter;
+      if(desc.format!==undefined)texture.format=desc.format;
+      if(desc.type!==undefined)texture.type=desc.type;
+      texture.colorSpace=desc.colorSpace==='srgb'?T.SRGBColorSpace:desc.colorSpace==='srgb-linear'?(T.LinearSRGBColorSpace||T.NoColorSpace):T.NoColorSpace;
+      texture.generateMipmaps=desc.generateMipmaps!==false;
+      texture.premultiplyAlpha=!!desc.premultiplyAlpha;
+      texture.flipY=!!desc.flipY;
+      texture.unpackAlignment=desc.unpackAlignment||4;
+      texture.anisotropy=Math.max(1,Math.min(16,Number(desc.anisotropy)||1));
+      texture.offset.fromArray(desc.offset||[0,0]);
+      texture.repeat.fromArray(desc.repeat||[1,1]);
+      texture.center.fromArray(desc.center||[0,0]);
+      texture.rotation=Number(desc.rotation)||0;
+      texture.matrixAutoUpdate=desc.matrixAutoUpdate!==false;
+      if(Array.isArray(desc.matrix))texture.matrix.fromArray(desc.matrix);
+      if(desc.userData)texture.userData=desc.userData;
+      texture.needsUpdate=true;
+      textures[i]=texture;
+      await checkpoint('scene-hydrate-textures',i+1,textures.length);
+    }
+    notify('scene-hydrate-textures',textures.length,textures.length);
+
+    const materials=new Array((packet.materials||[]).length);
+    for(let i=0;i<materials.length;i++){
+      const desc=packet.materials[i],params={};
+      const color=value=>Array.isArray(value)?new T.Color().setRGB(value[0],value[1],value[2]):undefined;
+      if(desc.color)params.color=color(desc.color);
+      if(desc.emissive)params.emissive=color(desc.emissive);
+      for(const key of ['roughness','metalness','opacity','alphaTest','transparent','depthWrite','depthTest','side','vertexColors','flatShading','wireframe','blending','toneMapped','premultipliedAlpha','displacementScale','displacementBias','emissiveIntensity','shininess','clearcoat','clearcoatRoughness','ior','transmission','thickness','attenuationDistance','sheen','sheenRoughness','iridescence','iridescenceIOR','anisotropy','specularIntensity']){
+        if(desc[key]!==undefined&&desc[key]!==null)params[key]=desc[key];
+      }
+      if(desc.specular)params.specular=color(desc.specular);
+      if(desc.attenuationColor)params.attenuationColor=color(desc.attenuationColor);
+      if(desc.sheenColor)params.sheenColor=color(desc.sheenColor);
+      if(desc.specularColor)params.specularColor=color(desc.specularColor);
+      if(Array.isArray(desc.iridescenceThicknessRange))params.iridescenceThicknessRange=desc.iridescenceThicknessRange;
+      if(Array.isArray(desc.normalScale))params.normalScale=new T.Vector2(...desc.normalScale);
+      const Constructors={MeshPhysicalMaterial:T.MeshPhysicalMaterial,MeshStandardMaterial:T.MeshStandardMaterial,MeshBasicMaterial:T.MeshBasicMaterial,MeshLambertMaterial:T.MeshLambertMaterial,MeshPhongMaterial:T.MeshPhongMaterial,MeshToonMaterial:T.MeshToonMaterial,LineBasicMaterial:T.LineBasicMaterial,PointsMaterial:T.PointsMaterial};
+      const Constructor=Constructors[desc.type]||T.MeshStandardMaterial;
+      const material=new Constructor(params);
+      material.name=desc.name||'';
+      material.userData=desc.userData||{};
+      for(const [slot,textureId] of Object.entries(desc.textureSlots||{})){
+        if(textures[textureId])material[slot]=textures[textureId];
+      }
+      materials[i]=material;
+      await checkpoint('scene-hydrate-materials',i+1,materials.length);
+    }
+    notify('scene-hydrate-materials',materials.length,materials.length);
+
+    const geometries=new Array((packet.geometries||[]).length);
+    for(let i=0;i<geometries.length;i++){
+      const desc=packet.geometries[i],geometry=new T.BufferGeometry();
+      geometry.name=desc.name||'';
+      for(const [attributeName,attributeDesc] of Object.entries(desc.attributes||{})){
+        const attribute=hydrateBufferAttribute(attributeDesc);
+        if(attribute)geometry.setAttribute(attributeName,attribute);
+      }
+      for(const [attributeName,list] of Object.entries(desc.morphAttributes||{})){
+        geometry.morphAttributes[attributeName]=list.map(hydrateBufferAttribute).filter(Boolean);
+      }
+      geometry.morphTargetsRelative=!!desc.morphTargetsRelative;
+      if(desc.index)geometry.setIndex(hydrateBufferAttribute(desc.index));
+      for(const group of desc.groups||[])geometry.addGroup(group.start,group.count,group.materialIndex);
+      geometry.setDrawRange(desc.drawRange?.start||0,desc.drawRange?.count<0?Infinity:(desc.drawRange?.count??Infinity));
+      if(desc.boundingBox){geometry.boundingBox=new T.Box3(new T.Vector3(...desc.boundingBox.min),new T.Vector3(...desc.boundingBox.max));}
+      if(desc.boundingSphere){geometry.boundingSphere=new T.Sphere(new T.Vector3(...desc.boundingSphere.center),desc.boundingSphere.radius);}
+      if(desc.userData)geometry.userData=desc.userData;
+      geometries[i]=geometry;
+      await checkpoint('scene-hydrate-geometry',i+1,geometries.length);
+    }
+    notify('scene-hydrate-geometry',geometries.length,geometries.length);
+
+    const nodes=new Array(packet.nodes.length);
+    for(let i=0;i<packet.nodes.length;i++){
+      const desc=packet.nodes[i],geometry=desc.geometryId===null?null:geometries[desc.geometryId];
+      const nodeMaterials=(desc.materialIds||[]).map(id=>materials[id]).filter(Boolean);
+      const material=nodeMaterials.length>1?nodeMaterials:nodeMaterials[0]||null;
+      let object;
+      switch(desc.kind){
+        case 'Mesh': object=new T.Mesh(geometry,material);break;
+        case 'SkinnedMesh': object=new T.SkinnedMesh(geometry,material);break;
+        case 'Points': object=new T.Points(geometry,material);break;
+        case 'LineSegments': object=new T.LineSegments(geometry,material);break;
+        case 'LineLoop': object=new T.LineLoop(geometry,material);break;
+        case 'Line': object=new T.Line(geometry,material);break;
+        case 'Bone': object=new T.Bone();break;
+        case 'PerspectiveCamera': object=new T.PerspectiveCamera(desc.fov,desc.aspect,desc.near,desc.far);break;
+        case 'OrthographicCamera': object=new T.OrthographicCamera(desc.left,desc.right,desc.top,desc.bottom,desc.near,desc.far);break;
+        case 'DirectionalLight': object=new T.DirectionalLight(desc.color||0xffffff,desc.intensity??1);break;
+        case 'PointLight': object=new T.PointLight(desc.color||0xffffff,desc.intensity??1,desc.distance??0,desc.decay??2);break;
+        case 'SpotLight': object=new T.SpotLight(desc.color||0xffffff,desc.intensity??1,desc.distance??0,desc.angle??Math.PI/3,desc.penumbra??0,desc.decay??2);break;
+        case 'HemisphereLight': object=new T.HemisphereLight(desc.color||0xffffff,desc.groundColor||0x444444,desc.intensity??1);break;
+        case 'AmbientLight': object=new T.AmbientLight(desc.color||0xffffff,desc.intensity??1);break;
+        case 'Group': object=new T.Group();break;
+        default: object=new T.Group();break;
+      }
+      object.name=desc.name||'';
+      object.position.fromArray(desc.position||[0,0,0]);
+      object.quaternion.fromArray(desc.quaternion||[0,0,0,1]);
+      object.scale.fromArray(desc.scale||[1,1,1]);
+      if(desc.matrix&&desc.matrixAutoUpdate===false){object.matrix.fromArray(desc.matrix);object.matrixAutoUpdate=false;}
+      object.visible=desc.visible!==false;
+      object.renderOrder=desc.renderOrder||0;
+      object.frustumCulled=desc.frustumCulled!==false;
+      object.castShadow=!!desc.castShadow;
+      object.receiveShadow=!!desc.receiveShadow;
+      object.userData=desc.userData||{};
+      if(desc.morphTargetInfluences&&object.morphTargetInfluences)for(let j=0;j<Math.min(desc.morphTargetInfluences.length,object.morphTargetInfluences.length);j++)object.morphTargetInfluences[j]=desc.morphTargetInfluences[j];
+      if(desc.morphTargetDictionary)object.morphTargetDictionary=desc.morphTargetDictionary;
+      if(desc.zoom!==undefined&&object.isCamera)object.zoom=desc.zoom;
+      if(desc.filmGauge!==undefined&&object.isPerspectiveCamera)object.filmGauge=desc.filmGauge;
+      if(desc.filmOffset!==undefined&&object.isPerspectiveCamera)object.filmOffset=desc.filmOffset;
+      if(desc.focus!==undefined&&object.isPerspectiveCamera)object.focus=desc.focus;
+      if(desc.view&&object.isCamera)object.view=desc.view;
+      object.userData.pstudioWorkerNodeId=desc.id;
+      nodes[desc.id]=object;
+      await checkpoint('scene-hydrate-nodes',i+1,nodes.length);
+    }
+    notify('scene-hydrate-nodes',nodes.length,nodes.length);
+
+    for(let i=0;i<packet.nodes.length;i++){
+      const desc=packet.nodes[i],object=nodes[i];
+      for(const childId of desc.children||[])if(nodes[childId]&&nodes[childId].parent!==object)object.add(nodes[childId]);
+      if(desc.target>=0&&object.isLight&&nodes[desc.target])object.target=nodes[desc.target];
+    }
+    for(const desc of packet.nodes){
+      if(!desc.skeleton)continue;
+      const mesh=nodes[desc.id],bones=desc.skeleton.bones.map(id=>nodes[id]).filter(Boolean);
+      if(!mesh?.isSkinnedMesh||!bones.length)continue;
+      const inverses=(desc.skeleton.boneInverses||[]).map(value=>new T.Matrix4().fromArray(value));
+      const skeleton=new T.Skeleton(bones,inverses);
+      const bindMatrix=new T.Matrix4().fromArray(desc.skeleton.bindMatrix);
+      mesh.bind(skeleton,bindMatrix);
+      mesh.bindMode=desc.skeleton.bindMode||'attached';
+      if(desc.skeleton.bindMatrixInverse)mesh.bindMatrixInverse.fromArray(desc.skeleton.bindMatrixInverse);
+    }
+    const root=nodes[packet.rootIndex]||nodes[0];
+    if(!root)throw new Error('GLTF Worker scene root could not be rebuilt.');
+    const animations=(packet.animations||[]).map(data=>T.AnimationClip.parse(data));
+    root.updateMatrixWorld(true);
+    for(const bitmap of imageMap.values())bitmap.__pstudioTransferred=true;
+    return {scene:root,animations,packetTimings:packet.timings||null};
+  }
+  async function parseGLTFOnMainThread(blob,name){
+    const loader=new window.PStudioGLTFLoader();
+    if(window.PStudioMeshoptDecoder)loader.setMeshoptDecoder(window.PStudioMeshoptDecoder);
+    if(window.PStudioDRACOLoader){
+      const draco=new window.PStudioDRACOLoader();
+      draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      draco.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
+      loader.setDRACOLoader(draco);
+    }
+    if(window.PStudioKTX2Loader&&renderer){
+      try{
+        if(!sharedKTX2Loader){
+          sharedKTX2Loader=new window.PStudioKTX2Loader();
+          sharedKTX2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+          sharedKTX2Loader.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
+          sharedKTX2Loader.detectSupport(renderer);
+        }
+        loader.setKTX2Loader(sharedKTX2Loader);
+      }catch(error){console.warn('[PStudio] KTX2 support could not be initialized:',error);}
+    }
+    const url=URL.createObjectURL(blob);
+    try{
+      return await new Promise((resolve,reject)=>loader.load(url,resolve,event=>{
+        const loaded=Number(event?.loaded)||0,total=Number(event?.total)||blob.size;
+        dispatchModelLoadProgress({name,stage:'main-thread-fetch',loaded,total,progress:total?loaded/total:0});
+      },reject));
+    }finally{URL.revokeObjectURL(url);}
+  }
+
   function requestModelAsset(name) {
     if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
     if (modelPromises.has(name)) return modelPromises.get(name);
@@ -1231,20 +1507,25 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         const cpuNeeded=(estimatedCpuBytes/1024/1024).toFixed(0),cpuSafe=(cpuBudget/1024/1024).toFixed(0);
         throw new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のGLBはIndexedDBに保存済みです。メモリに余裕のある端末、またはテクスチャを軽量化したモデルで読み込んでください。');
       }
-      const loader=new window.PStudioGLTFLoader();
-      const url=URL.createObjectURL(blob);
-      let gltf;
+      let gltf,workerPacket=null;
       const decodeStarted=window.performance?.now?.()??Date.now();
-      dispatchModelLoadProgress({name,stage:'scene-decode-start',loaded:0,total:blob.size,progress:0});
+      dispatchModelLoadProgress({name,stage:'worker-glb-parse',loaded:0,total:blob.size,progress:0});
       try{
-        gltf=await new Promise((resolve,reject)=>{
-          loader.load(url,resolve,event=>{
-            const loaded=Number(event?.loaded)||0,total=Number(event?.total)||blob.size;
-            dispatchModelLoadProgress({name,stage:'fetching',loaded,total,progress:total>0?Math.max(0,Math.min(1,loaded/total)):0});
-          },reject);
-        });
-      }finally{URL.revokeObjectURL(url);}
-      dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted)});
+        workerPacket=await parseGLBInWorker(blob,name);
+        dispatchModelLoadProgress({name,stage:'worker-glb-parsed',loaded:blob.size,total:blob.size,progress:1,durationMs:workerPacket.timings?.totalWorkerMs??null});
+        gltf=await hydrateGLTFWorkerPacket(workerPacket,name);
+        dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted),workerTimings:workerPacket.timings||null});
+        workerPacket=null;
+      }catch(error){
+        const fallbackCodes=new Set(['PSTUDIO_WORKER_UNAVAILABLE','PSTUDIO_WORKER_TRANSPORT','PSTUDIO_MAIN_THREAD_REQUIRED','GLTF_WORKER_IMAGEBITMAP_UNAVAILABLE','GLTF_WORKER_IMAGE_TRANSFER_UNAVAILABLE']);
+        if(!fallbackCodes.has(String(error?.code||''))&&!String(error?.message||'').startsWith('Failed to fetch dynamically imported module')){
+          throw error;
+        }
+        console.warn('[PStudio] Falling back to the main-thread GLTFLoader:',error);
+        dispatchModelLoadProgress({name,stage:'main-thread-parser-fallback',reason:String(error?.message||error)});
+        gltf=await parseGLTFOnMainThread(blob,name);
+        dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted),fallback:true});
+      }
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
