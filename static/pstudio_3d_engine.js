@@ -1234,6 +1234,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       const loader=new window.PStudioGLTFLoader();
       const url=URL.createObjectURL(blob);
       let gltf;
+      const decodeStarted=window.performance?.now?.()??Date.now();
+      dispatchModelLoadProgress({name,stage:'scene-decode-start',loaded:0,total:blob.size,progress:0});
       try{
         gltf=await new Promise((resolve,reject)=>{
           loader.load(url,resolve,event=>{
@@ -1242,6 +1244,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           },reject);
         });
       }finally{URL.revokeObjectURL(url);}
+      dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted)});
       if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
       if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene});return null;}
       dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
