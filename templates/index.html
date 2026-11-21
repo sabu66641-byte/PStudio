@@ -1444,7 +1444,7 @@ function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(tex
 function renderGamePreview(){const canvas=document.getElementById('game-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}for(const o of sceneObjects){const asset=projectAssets.find(a=>a.name===o.sprite&&a.kind==='image');if(asset){let img=imageCache.get(asset.name);if(!img){img=new Image();img.onload=()=>renderGamePreview();img.src=asset.data;imageCache.set(asset.name,img)}if(img.complete&&img.naturalWidth)ctx.drawImage(img,o.x,o.y,o.w,o.h)}else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h)}if(o.id===selectedObjectId){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(o.x-4,o.y-4,o.w+8,o.h+8)}ctx.setLineDash([])}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name,o.x,o.y-10)}document.getElementById('game-status').textContent=`${sceneObjects.length} objects · 960 × 540 · Local preview`}
 const imageCache=new Map();
 
-function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;selectSceneObject(id);persistProject()}
+function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false,ecsComponents:[]});selectedObjectId=id;selectSceneObject(id);persistProject()}
 function addModelToScene(assetName){
  const asset=projectAssets.find(a=>a.name===assetName&&(a.kind==='model'||/\.(?:glb|gltf)$/i.test(a.name)));
  if(!asset){toast('アセットが見つかりません。再インポートしてください');return;}
@@ -1452,7 +1452,7 @@ function addModelToScene(assetName){
  const scriptName=ensureModelScript(asset);
  const id='model-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
  const base=assetName.replace(/\.[^.]+$/,'');
- sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:scriptName,color:'#d1d5db',shape:'rect',collider:false});
+ sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:scriptName,color:'#d1d5db',shape:'rect',collider:false,ecsComponents:[]});
  selectedObjectId=id;
  switchWorkspaceView('game');
  selectSceneObject(id);
@@ -2593,5 +2593,7 @@ try {
 <script src="/static/pstudio_engine.js?v=20261122-step4-cinematic1"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
+<script src="/static/pstudio_ecs_physics.js"></script>
+<script src="/static/pstudio_ecs_inspector.js"></script>
 </body>
 </html>
