@@ -507,7 +507,6 @@
           'float pStudioToonRim=pow(1.0-pStudioToonNdotV,max(0.5,uPStudioToonRimPower))*uPStudioToonRimIntensity*uPStudioToonEnabled;',
           'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity*uPStudioToonEnabled;',
           'reflectedLight.indirectDiffuse+=uPStudioToonSSSColor*pStudioToonSubsurface;',
-          'reflectedLight.indirectDiffuse+=uPStudioToonRimColor*pStudioToonRim*0.18;'
         ].join('\\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
           'if(uPStudioToonEnabled>0.5){',
