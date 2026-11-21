@@ -18,6 +18,49 @@
     return true;
   }
 
+  register('ScriptState', {
+    label: 'Script Runtime State',
+    category: 'Runtime',
+    description: 'Per-Entity ps script variables owned by the ECS runtime.',
+    schema: { values: { type: 'json', default: {} } },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('ScriptLifecycle', {
+    label: 'Script Lifecycle',
+    category: 'Runtime',
+    description: 'Per-Entity ps script initialization and start flags.',
+    schema: {
+      initialized: { type: 'boolean', default: false },
+      started: { type: 'boolean', default: false }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('ScriptSystemState', {
+    label: 'Script System State',
+    category: 'Runtime',
+    description: 'Per-Entity local variables for each declared ps System.',
+    schema: { values: { type: 'json', default: {} } },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('LocomotionState', {
+    label: 'Locomotion Runtime State',
+    category: 'Runtime',
+    description: 'Per-Entity locomotion event counters used by animation playback.',
+    schema: { landSequence: { type: 'integer', default: 0, min: 0 } },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
   register('Health', {
     label: 'Health',
     category: 'Gameplay',
