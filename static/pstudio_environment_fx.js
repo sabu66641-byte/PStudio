@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), toonMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), toonMaterials = new Set(), outlineMaterialCache = new Map(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -380,6 +380,60 @@
   }
 
 
+
+  function releaseOutline(object) {
+    const record=object?.userData?.pstudioOutlineShell;
+    if(!record)return;
+    if(record.mesh?.parent)record.mesh.parent.remove(record.mesh);
+    const cached=outlineMaterialCache.get(record.key);
+    if(cached){
+      cached.refs=Math.max(0,cached.refs-1);
+      if(cached.refs===0){cached.material.dispose?.();outlineMaterialCache.delete(record.key);}
+    }
+    delete object.userData.pstudioOutlineShell;
+  }
+
+  function configureOutline(object,settings={}) {
+    const Three=T();
+    if(!Three||!object?.isMesh||!object.geometry)return;
+    const enabled=settings.enabled!==false;
+    const width=Math.max(0.005,Math.min(0.45,Number(settings.width)||0));
+    if(!enabled||width<=0){releaseOutline(object);return;}
+    const color=String(settings.color||'#182235');
+    const cacheKey=color+'|'+width.toFixed(4);
+    if(object.userData?.pstudioOutlineShell?.key===cacheKey)return;
+    releaseOutline(object);
+    let cached=outlineMaterialCache.get(cacheKey);
+    if(!cached){
+      const material=new Three.MeshBasicMaterial({
+        color,side:Three.BackSide,depthWrite:false,depthTest:true,
+        toneMapped:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1
+      });
+      material.onBeforeCompile=function(shader){
+        shader.uniforms.uPStudioOutlineExpansion={value:width};
+        shader.vertexShader=addAfter(shader.vertexShader,'#include <common>','uniform float uPStudioOutlineExpansion;');
+        shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>','transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;');
+      };
+      material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+      cached={material,refs:0};
+      outlineMaterialCache.set(cacheKey,cached);
+    }
+    cached.refs++;
+    const shell=object.isSkinnedMesh&&object.skeleton
+      ?new Three.SkinnedMesh(object.geometry,cached.material)
+      :new Three.Mesh(object.geometry,cached.material);
+    if(shell.isSkinnedMesh&&object.skeleton){
+      shell.bind(object.skeleton,object.bindMatrix);
+      shell.bindMode=object.bindMode;
+    }
+    shell.position.set(0,0,0);shell.quaternion.set(0,0,0,1);shell.scale.set(1,1,1);
+    shell.frustumCulled=object.frustumCulled;
+    shell.renderOrder=(Number(object.renderOrder)||0)-0.1;
+    shell.userData.pstudioOutlineShell=true;
+    object.add(shell);
+    object.userData.pstudioOutlineShell={key:cacheKey,mesh:shell};
+  }
+
   function configureToon(material,settings={},object=null) {
     const Three=T();
     if(!Three||!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
@@ -455,9 +509,6 @@
         ].join('\\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
           'if(uPStudioToonEnabled>0.5){',
-          'float pStudioInkFacing=abs(dot(normalize(normal),normalize(-vViewPosition)));',
-          'float pStudioInkEdge=1.0-smoothstep(uPStudioToonOutlineWidth,uPStudioToonOutlineWidth+0.018,pStudioInkFacing);',
-          'gl_FragColor.rgb=mix(gl_FragColor.rgb,uPStudioToonOutlineColor,pStudioInkEdge);',
           'gl_FragColor.rgb+=uPStudioToonRimColor*pStudioToonRim*0.82;',
           '}'
         ].join('\\n'));
@@ -482,6 +533,7 @@
     u.sssColor.value.set(value.sssColor);
     u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
     record.enabled=u.enabled.value>0.5;
+    if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth});
     if(Number(value.windStrength)>0&&object)configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
     return material;
   }
@@ -624,6 +676,7 @@
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     configureToon,
+    releaseObject(object){releaseOutline(object);},
     releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);toonMaterials.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
     getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,toonMaterials:toonMaterials.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
   };
