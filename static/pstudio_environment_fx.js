@@ -433,13 +433,13 @@
             '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
             'attribute vec3 normal;',
             '#endif'
-          ].join('\\n'));
+          ].join('\n'));
           shader.vertexShader=addAfter(shader.vertexShader,'#include <skinning_vertex>',[
             '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
             'vec3 objectNormal = normal;',
             '#endif',
             'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
-          ].join('\\n'));
+          ].join('\n'));
           if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
         };
         material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
