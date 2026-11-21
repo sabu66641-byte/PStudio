@@ -99,14 +99,14 @@ test('staged validator rejects incorrect GLB headers and mismatched declared len
 
 test('GLB maximum is exactly one GiB and oversize files are rejected before reading', async () => {
   const { validateGLBFile, PSTUDIO_MAX_GLB_BYTES } = makeValidator();
-  assert.equal(PSTUDIO_MAX_GLB_BYTES, 0xFFFFFFFF);
+  assert.equal(PSTUDIO_MAX_GLB_BYTES, 1024 * 1024 * 1024);
   const fake = { size: PSTUDIO_MAX_GLB_BYTES + 1, slice() { throw new Error('should not read'); } };
-  await assert.rejects(validateGLBFile(fake), /4GiB/);
+  await assert.rejects(validateGLBFile(fake), /1GB/);
 });
 
-test('main-thread and worker GLB validators share the glTF uint32 container limit', () => {
-  assert.match(modelWorker, /const MAX_GLB_BYTES = 0xFFFFFFFF/);
-  assert.match(modelWorker, /GLBの上限は4GiB未満です/);
+test('main-thread and worker GLB validators share the existing runtime-safe GLB import limit', () => {
+  assert.match(modelWorker, /const MAX_GLB_BYTES = 1024 \* 1024 \* 1024/);
+  assert.match(modelWorker, /GLBの上限は1GBです/);
   assert.match(html, /const PSTUDIO_MAX_GLB_BYTES=0xFFFFFFFF/);
 });
 
