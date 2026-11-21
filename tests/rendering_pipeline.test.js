@@ -406,5 +406,5 @@ test('per-instance frustum culling filters instanced draw batches against the ca
 });
 
 test('GLTF scene decode timing is reported separately from binary fetch and GPU preparation',()=>{
-  for(const token of ['scene-decode-start','scene-decoded','durationMs','gpu-textures','shader-precompile','stage:\\'prepared\\''])assert.ok(renderer.includes(token),token);
+  for(const token of ['scene-decode-start','scene-decoded','durationMs','gpu-textures','shader-precompile',"stage:'prepared'"])assert.ok(renderer.includes(token),token);
 });
