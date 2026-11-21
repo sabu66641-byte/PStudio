@@ -180,13 +180,13 @@ Resource manager regression tests can be run with `node --test tests/resource_ma
 
 **Current boundary:** This stage manages cached binary assets and decoded 3D model lifetimes. It does not yet intercept every Three.js allocation, track browser-wide memory, measure actual GPU usage, or manage all image/audio/animation resources. Those integrations will be added incrementally rather than pretending the current counters represent total process memory.
 
-## Entity Component System (ECS) 1.0
+## Entity Component System (ECS) 1.1
 
 The ECS core is exposed as `window.PStudioECS`. It separates entity identity, component data and update systems. Component storage uses dense arrays with sparse entity-index maps, so systems can iterate only the entities that contain the components they need instead of scanning every Scene Object for every behavior.
 
-- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`.
-- **Components:** `registerComponent(type, options?)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
-- **Systems:** `registerSystem({ id, components, priority, update })`, `setSystemEnabled`, `unregisterSystem`. Lower priority values run first; equal priorities preserve registration order.
+- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`, `getEntities(includeInactive?)`.
+- **Components:** `registerComponent(type, options?)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`, `getComponentTypes()`, `getEntityComponents(entity)`.
+- **Systems:** `registerSystem({ id, components, priority, update })`, `setSystemPriority(id, priority)`, `getSystems()`, `setSystemEnabled`, `unregisterSystem`. Lower priority values run first; equal priorities preserve registration order.
 - **Iteration:** `forEach(componentTypes, callback)` iterates matching entities without allocating a query result array. `query(componentTypes)` returns matching entity IDs in ascending order.
 - **Deferred structure changes:** creating/destroying entities or adding/removing components during `forEach` is rejected to avoid corrupting an active iteration. Queue these changes with `ecs.defer(() => { ... })`; deferred actions run after the current system update.
 - **Lifecycle and diagnostics:** `on(event, callback)`, `stats()`, `setEnabled(boolean)`, `clearEntities()`.
@@ -210,7 +210,7 @@ PStudioECS.registerSystem({
 });
 ```
 
-**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. `PStudioECS` is currently a JavaScript-side engine API; direct Entity/Component/System declarations from the ps language and Inspector controls are a later integration step. The existing ps API remains unchanged. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
+**Current boundary:** ECS participates in the runtime update loop and can drive generic Transform changes. The Inspector can inspect Scene Object entities, create Scene-backed entities, register generic Component types, edit Component JSON, add/remove individual Components, and change registered System priorities/enabled states. The Inspector does not execute user-authored System code. ECS does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems; those remain separate until each migration has a tested ownership contract. Direct Entity/Component/System declarations from the ps language are a later integration step. The existing ps API remains unchanged. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
 
 Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
 
@@ -606,3 +606,10 @@ Renderer diagnostics expose staged preparation, virtual-texture page counts, clu
 GLB files use the dedicated GLTF module Worker. JSON glTF files bundled into the asset store use the regular Three.js GLTFLoader Blob-URL path; they are not sent to the GLB-header parser. A Worker packet that parses but cannot be rehydrated into the live Three.js scene is released and retried through the main-thread loader when the failure is not a malformed-file or memory-allocation failure. Decoder instances created for the fallback are disposed after parsing.
 
 Model loading stages are surfaced in the Scene status line. Worker parsing, packet hydration, instance creation, texture preparation, and initial-render failures produce an OUTPUT error with a retry path. Scene Refresh now refreshes the active 2D or 3D view and re-enters the model loading path for previously failed models. A failed instance build is retained as an explicit error state rather than being silently retried on every render.
+
+
+### ECS Inspector 1.1
+
+The Entity Component System panel is part of the Scene Object Inspector. Scene Objects are synchronized to ECS entities in the editor, so a selected object has a stable Entity mapping during that editing session. The **+ Entity** action uses the existing Scene Object creation flow, preserving project/scene serialization. Custom Component types can be registered from the Inspector; Component values are edited as JSON and saved to the owning Scene Object. Core `Transform` and `SceneObjectRef` Components are protected from removal because the current Scene bridge depends on them. The System Scheduler lists registered Systems, supports enabling/disabling them, and updates numeric priority; lower values run first and equal values remain stable by registration order.
+
+Standalone entities created directly with `PStudioECS.createEntity()` remain runtime ECS entities and are not represented as visible Scene Objects. Project persistence for independent, non-Scene entities and a graphical System code editor are not part of this stage.
