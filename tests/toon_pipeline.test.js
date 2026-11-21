@@ -202,7 +202,7 @@ test('shared Inspector NPR settings apply to primitive script owners and wind-on
 test('PBR remains the default, while toon mode uses a standard material with the additive FX pipeline', () => {
   assert.match(renderer, /shaderMode=ownerMaterial\?\.shader\|\|'standard'/);
   assert.match(renderer, /shaderMode==='toon'\)material=new T\.MeshStandardMaterial/);
-  assert.match(fxSource, /reflectedLight\.directDiffuse\*=mix/);
+  assert.match(fxSource, /reflectedLight\.directDiffuse\*=pStudioToonRamp/);
   assert.ok(fxSource.includes('#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)'));
   assert.match(fxSource, /attribute vec3 normal/);
   assert.match(renderer, /setupLightingMaterial\(material\)/);
