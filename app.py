@@ -940,7 +940,7 @@ def validate_ast(tree, allow_game=False, external_components=None):
         if node.get("type") == "ComponentDef":
             name = node.get("name", "")
             _validate_cpp_identifier(name, node.get("line"))
-            if name in ("Transform", "SceneObjectRef"):
+            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform"):
                 raise Exception(f"意味エラー: '{name}' はPStudio組み込みComponentのため再定義できません。")
             if name in component_defs:
                 raise Exception(f"意味エラー: Component '{name}' が重複定義されています。")
@@ -996,6 +996,49 @@ def validate_ast(tree, allow_game=False, external_components=None):
             "scaleZ": {"type": "Literal", "value": "1.0"},
         },
         "SceneObjectRef": {"sceneObjectId": {"type": "Literal", "value": '""'}},
+        "Velocity": {
+            "x": {"type": "Literal", "value": "0.0"},
+            "y": {"type": "Literal", "value": "0.0"},
+            "z": {"type": "Literal", "value": "0.0"},
+        },
+        "PhysicsTransform": {
+            "x": {"type": "Literal", "value": "0.0"},
+            "y": {"type": "Literal", "value": "0.0"},
+            "z": {"type": "Literal", "value": "0.0"},
+        },
+        "PhysicsState": {
+            "x": {"type": "Literal", "value": "0.0"},
+            "y": {"type": "Literal", "value": "0.0"},
+            "z": {"type": "Literal", "value": "0.0"},
+            "velocityX": {"type": "Literal", "value": "0.0"},
+            "velocityY": {"type": "Literal", "value": "0.0"},
+            "velocityZ": {"type": "Literal", "value": "0.0"},
+            "horizontalSpeed": {"type": "Literal", "value": "0.0"},
+            "grounded": {"type": "Literal", "value": "false"},
+            "controlled": {"type": "Literal", "value": "false"},
+            "jumped": {"type": "Literal", "value": "false"},
+            "landed": {"type": "Literal", "value": "false"},
+            "airTime": {"type": "Literal", "value": "0.0"},
+            "active": {"type": "Literal", "value": "true"},
+        },
+        "PhysicsBody": {
+            "enabled": {"type": "Literal", "value": "true"},
+            "positionX": {"type": "Literal", "value": "0.0"},
+            "positionY": {"type": "Literal", "value": "0.0"},
+            "positionZ": {"type": "Literal", "value": "0.0"},
+            "radius": {"type": "Literal", "value": "0.35"},
+            "height": {"type": "Literal", "value": "1.8"},
+            "mass": {"type": "Literal", "value": "1.0"},
+            "gravityX": {"type": "Literal", "value": "0.0"},
+            "gravityY": {"type": "Literal", "value": "-9.81"},
+            "gravityZ": {"type": "Literal", "value": "0.0"},
+            "controllerEnabled": {"type": "Literal", "value": "false"},
+            "maxSpeed": {"type": "Literal", "value": "5.0"},
+            "acceleration": {"type": "Literal", "value": "24.0"},
+            "airControl": {"type": "Literal", "value": "0.25"},
+            "stepHeight": {"type": "Literal", "value": "0.35"},
+            "maxSlope": {"type": "Literal", "value": "50.0"},
+        },
     }
     external_components = external_components or {}
     component_fields = {**builtin_component_fields, **external_components, **component_defs}
