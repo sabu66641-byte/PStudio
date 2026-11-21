@@ -51,6 +51,7 @@
   let clusteredLightSet=new Set();
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
+  const modelBuildErrors = new Map();
   let lastCommands = null;
   let selectedOwnerId = null;
   let selectionSignature = '';
@@ -1464,6 +1465,22 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
   function dispatchModelLoadProgress(detail){
     try{window.dispatchEvent(new CustomEvent('pstudio-model-load-progress',{detail}));}catch(_){}
+    try{window.PStudioEvents?.emit?.('model.load.progress',detail);}catch(_){}
+  }
+  function dispatchModelLoadError(detail){
+    const payload={name:String(detail?.name||''),stage:String(detail?.stage||'unknown'),error:String(detail?.error||'Unknown model loading error.'),retryable:detail?.retryable!==false};
+    try{window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:payload}));}catch(_){}
+    try{window.PStudioEvents?.emit?.('model.load.error',payload);}catch(_){}
+    return payload;
+  }
+  function disposeWorkerPacket(packet){
+    const closed=new Set();
+    for(const image of packet?.images||[]){
+      const bitmap=image?.bitmap;
+      if(!bitmap||closed.has(bitmap))continue;
+      closed.add(bitmap);
+      try{bitmap.close?.();}catch(_){}
+    }
   }
 
   function getGLTFWorker(){
@@ -1748,8 +1765,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   async function parseGLTFOnMainThread(blob,name){
     const loader=new window.PStudioGLTFLoader();
     if(window.PStudioMeshoptDecoder)loader.setMeshoptDecoder(window.PStudioMeshoptDecoder);
+    let draco=null;
     if(window.PStudioDRACOLoader){
-      const draco=new window.PStudioDRACOLoader();
+      draco=new window.PStudioDRACOLoader();
       draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
       draco.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
       loader.setDRACOLoader(draco);
@@ -1771,9 +1789,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         const loaded=Number(event?.loaded)||0,total=Number(event?.total)||blob.size;
         dispatchModelLoadProgress({name,stage:'main-thread-fetch',loaded,total,progress:total?loaded/total:0});
       },reject));
-    }finally{URL.revokeObjectURL(url);}
+    }finally{
+      URL.revokeObjectURL(url);
+      draco?.dispose?.();
+    }
   }
-
 
   function requestGLTFWorkerMessage(op,payload={},transferList=[]){
     const worker=getGLTFWorker();
@@ -2061,84 +2081,114 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   }
 
   function requestModelAsset(name) {
-    if (modelCache.has(name)) return Promise.resolve(modelCache.get(name));
-    if (modelPromises.has(name)) return modelPromises.get(name);
-    const revision=modelRevisions.get(name)||0;
+    const assetName=String(name||'');
+    if(modelCache.has(assetName))return Promise.resolve(modelCache.get(assetName));
+    if(modelPromises.has(assetName))return modelPromises.get(assetName);
+    const revision=modelRevisions.get(assetName)||0;
     const promise=(async()=>{
-      if (!window.PStudioGLTFLoader) throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
-      if (!window.PStudioAssetStore) throw new Error('3D asset storage is unavailable.');
-      // A large Blob is fetched through an object URL. This avoids allocating a second
-      // application-owned ArrayBuffer before GLTFLoader starts its own binary pipeline.
-      const blob=await window.PStudioAssetStore.get(name,{cache:false});
-      if (!blob) throw new Error('Model asset not found: '+name+' (import a .glb or .gltf file first)');
-      const metadata=await window.PStudioAssetStore.getMetadata?.(name)||null;
-      const estimatedRuntimeBytes=Math.max(Number(metadata?.estimatedRuntimeBytes)||0,Number(blob.size)||0);
-      const estimatedCpuBytes=Math.max(Number(metadata?.estimatedCpuBytes)||0,Number(blob.size)||0);
-      const safeBudget=modelRuntimeBudgetBytes(),cpuBudget=modelCpuHeapBudgetBytes();
-      if(estimatedRuntimeBytes>safeBudget||estimatedCpuBytes>cpuBudget){
-        const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0),budget=(safeBudget/1024/1024).toFixed(0);
-        const cpuNeeded=(estimatedCpuBytes/1024/1024).toFixed(0),cpuSafe=(cpuBudget/1024/1024).toFixed(0);
-        throw new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のGLBはIndexedDBに保存済みです。メモリに余裕のある端末、またはテクスチャを軽量化したモデルで読み込んでください。');
-      }
-      let gltf,workerPacket=null;
-      const decodeStarted=window.performance?.now?.()??Date.now();
-      dispatchModelLoadProgress({name,stage:'worker-glb-parse',loaded:0,total:blob.size,progress:0});
+      let loadStage='blob-read',gltf=null,workerPacket=null,assetRecord=null;
       try{
-        workerPacket=await parseGLBInWorker(blob,name);
-        dispatchModelLoadProgress({name,stage:'worker-glb-parsed',loaded:blob.size,total:blob.size,progress:1,durationMs:workerPacket.timings?.totalWorkerMs??null});
-        gltf=await hydrateGLTFWorkerPacket(workerPacket,name);
-        dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted),workerTimings:workerPacket.timings||null});
-        workerPacket=null;
-      }catch(error){
-        const fallbackCodes=new Set(['PSTUDIO_WORKER_UNAVAILABLE','PSTUDIO_WORKER_TRANSPORT','PSTUDIO_MAIN_THREAD_REQUIRED','GLTF_WORKER_IMAGEBITMAP_UNAVAILABLE','GLTF_WORKER_IMAGE_TRANSFER_UNAVAILABLE']);
-        if(!fallbackCodes.has(String(error?.code||''))&&!String(error?.message||'').startsWith('Failed to fetch dynamically imported module')){
+        if(!window.PStudioGLTFLoader)throw new Error('GLTFLoader is unavailable. Check the Three.js module connection.');
+        if(!window.PStudioAssetStore)throw new Error('3D asset storage is unavailable.');
+        const blob=await window.PStudioAssetStore.get(assetName,{cache:false});
+        if(!blob)throw new Error('Model asset not found: '+assetName+' (import a .glb or .gltf file first)');
+        const metadata=await window.PStudioAssetStore.getMetadata?.(assetName)||null;
+        const estimatedRuntimeBytes=Math.max(Number(metadata?.estimatedRuntimeBytes)||0,Number(blob.size)||0);
+        const estimatedCpuBytes=Math.max(Number(metadata?.estimatedCpuBytes)||0,Number(blob.size)||0);
+        const safeBudget=modelRuntimeBudgetBytes(),cpuBudget=modelCpuHeapBudgetBytes();
+        if(estimatedRuntimeBytes>safeBudget||estimatedCpuBytes>cpuBudget){
+          const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0),budget=(safeBudget/1024/1024).toFixed(0);
+          const cpuNeeded=(estimatedCpuBytes/1024/1024).toFixed(0),cpuSafe=(cpuBudget/1024/1024).toFixed(0);
+          const error=new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のモデルはIndexedDBに保存済みです。メモリに余裕のある端末、またはモデルのテクスチャ・メッシュ構成を見直して再試行してください。');
+          error.code='PSTUDIO_MODEL_MEMORY_BUDGET';
           throw error;
         }
-        console.warn('[PStudio] Falling back to the main-thread GLTFLoader:',error);
-        dispatchModelLoadProgress({name,stage:'main-thread-parser-fallback',reason:String(error?.message||error)});
-        gltf=await parseGLTFOnMainThread(blob,name);
-        dispatchModelLoadProgress({name,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted),fallback:true});
-      }
-      if (!gltf || !gltf.scene) throw new Error('The model file contains no scene: '+name);
-      if((modelRevisions.get(name)||0)!==revision){disposeModelAsset({scene:gltf.scene,assetKey:name});return null;}
-      dispatchModelLoadProgress({name,stage:'decoding',loaded:blob.size,total:blob.size,progress:1});
-      const asset={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0,assetKey:name,virtualTextureIds:gltf.virtualTextureIds||[]};
-      modelCache.set(name,asset);
-      if(window.PStudioResources?.register){
-        window.PStudioResources.register('model-gpu',name,asset,{
-          category:'gpu',
-          sizeBytes:Math.max(Number(metadata?.estimatedGpuBytes)||0,Math.ceil(blob.size*1.6)),
-          metadata:{sourceBytes:blob.size,estimatedRuntimeBytes,estimate:'GLB metadata geometry plus decoded texture and GPU allocation'},
-          dispose:disposeModelAsset,
-          onEvict:()=>{
-            if(modelCache.get(name)===asset)modelCache.delete(name);
-            modelCollisionCache.delete(name);
-            for(const cacheKey of transformedCollisionCache.keys())if(cacheKey.startsWith(name+'|'))transformedCollisionCache.delete(cacheKey);
+        const isJSONGLTF=/\.gltf$/i.test(assetName)||String(blob.type||'').toLowerCase().includes('gltf+json');
+        const decodeStarted=window.performance?.now?.()??Date.now();
+        if(isJSONGLTF){
+          // JSON glTF has no GLB header; parse its bundled Blob URL through the standard loader.
+          loadStage='main-thread-gltf-json';
+          dispatchModelLoadProgress({name:assetName,stage:'main-thread-gltf-json-start',loaded:0,total:blob.size,progress:0});
+          gltf=await parseGLTFOnMainThread(blob,assetName);
+        }else{
+          loadStage='worker-parse';
+          dispatchModelLoadProgress({name:assetName,stage:'worker-glb-parse',loaded:0,total:blob.size,progress:0});
+          try{
+            workerPacket=await parseGLBInWorker(blob,assetName);
+            dispatchModelLoadProgress({name:assetName,stage:'worker-glb-parsed',loaded:blob.size,total:blob.size,progress:1,durationMs:workerPacket.timings?.totalWorkerMs??null});
+            loadStage='worker-hydrate';
+            gltf=await hydrateGLTFWorkerPacket(workerPacket,assetName);
+            workerPacket=null;
+          }catch(workerError){
+            const message=String(workerError?.message||workerError);
+            const invalidGLB=/Invalid GLB buffer|GLB 2\.0 header validation failed|GLB JSON chunk is invalid/i.test(message);
+            const memoryFailure=/out of memory|memory allocation|allocation failed|exceeded.{0,24}memory/i.test(message);
+            if(invalidGLB||memoryFailure)throw workerError;
+            dispatchModelLoadProgress({name:assetName,stage:'main-thread-parser-fallback',reason:message,failedStage:loadStage});
+            disposeWorkerPacket(workerPacket);
+            workerPacket=null;
+            requestGLTFWorkerMessage('release-asset',{assetKey:assetName}).catch(()=>{});
+            loadStage='main-thread-fallback';
+            gltf=await parseGLTFOnMainThread(blob,assetName);
           }
-        });
+        }
+        if(!gltf?.scene)throw new Error('The model file contains no scene: '+assetName);
+        if((modelRevisions.get(assetName)||0)!==revision){
+          disposeModelAsset({scene:gltf.scene,assetKey:assetName});
+          return null;
+        }
+        dispatchModelLoadProgress({name:assetName,stage:'scene-decoded',loaded:blob.size,total:blob.size,progress:1,durationMs:Math.max(0,(window.performance?.now?.()??Date.now())-decodeStarted)});
+        assetRecord={scene:gltf.scene,animations:gltf.animations||[],memoryEstimateBytes:estimatedRuntimeBytes,gpuEstimateBytes:Number(metadata?.estimatedGpuBytes)||0,assetKey:assetName,virtualTextureIds:gltf.virtualTextureIds||[]};
+        modelCache.set(assetName,assetRecord);
+        if(window.PStudioResources?.register){
+          try{
+            window.PStudioResources.register('model-gpu',assetName,assetRecord,{
+              category:'gpu',
+              sizeBytes:Math.max(Number(metadata?.estimatedGpuBytes)||0,Math.ceil(blob.size*1.6)),
+              metadata:{sourceBytes:blob.size,estimatedRuntimeBytes,estimate:'GLB metadata geometry plus decoded texture and GPU allocation'},
+              dispose:disposeModelAsset,
+              onEvict:()=>{
+                if(modelCache.get(assetName)===assetRecord)modelCache.delete(assetName);
+                modelCollisionCache.delete(assetName);
+                for(const cacheKey of transformedCollisionCache.keys())if(cacheKey.startsWith(assetName+'|'))transformedCollisionCache.delete(cacheKey);
+              }
+            });
+          }catch(resourceError){
+            if(modelCache.get(assetName)===assetRecord)modelCache.delete(assetName);
+            disposeModelAsset(assetRecord);
+            assetRecord=null;
+            throw new Error('モデルは解析できましたが、リソース管理への登録に失敗しました: '+String(resourceError?.message||resourceError));
+          }
+        }
+        modelLoadErrors.delete(assetName);
+        dispatchModelLoadProgress({name:assetName,stage:'ready',loaded:blob.size,total:blob.size,progress:1});
+        return assetRecord;
+      }catch(error){
+        const message=String(error?.message||error);
+        if(workerPacket)disposeWorkerPacket(workerPacket);
+        if((modelRevisions.get(assetName)||0)===revision){
+          if(assetRecord&&modelCache.get(assetName)===assetRecord)modelCache.delete(assetName);
+          if(assetRecord)try{disposeModelAsset(assetRecord);}catch(disposeError){console.warn('[PStudio] Failed model cleanup:',disposeError);}
+          releaseVirtualTexturesForAsset(assetName);
+          modelLoadErrors.set(assetName,message);
+          console.error('[PStudio] Model load failed:',assetName,'at',loadStage,error);
+          dispatchModelLoadError({name:assetName,stage:loadStage,error:message,retryable:error?.code!=='PSTUDIO_MODEL_MEMORY_BUDGET'});
+        }
+        return null;
       }
-      dispatchModelLoadProgress({name,stage:'ready',loaded:blob.size,total:blob.size,progress:1});
-      return asset;
-    })().catch(error=>{
-      const message=String(error?.message||error);
-      if((modelRevisions.get(name)||0)===revision){
-        releaseVirtualTexturesForAsset(name);
-        modelLoadErrors.set(name,message);
-        console.error('[PStudio] Model load failed:',name,error);
-        window.dispatchEvent(new CustomEvent('pstudio-model-error',{detail:{name,error:message}}));
-      }
-      return null;
-    }).then(asset=>{
-      if(asset)modelLoadErrors.delete(name);
-      if(asset && renderer && lastCommands) {
-        try { render(lastCommands); } catch(error) { console.error('[PStudio] Model render failed:',error); }
+    })().then(asset=>{
+      if(asset)modelLoadErrors.delete(assetName);
+      if(asset&&renderer&&lastCommands){
+        try{render(lastCommands);}catch(error){
+          console.error('[PStudio] Model render failed:',assetName,error);
+          dispatchModelLoadError({name:assetName,stage:'first-render',error:error?.message||String(error),retryable:true});
+        }
       }
       return asset;
     }).finally(()=>{
-      // Failed or cancelled loads must be retryable; never leave a resolved-null promise cached.
-      if(modelPromises.get(name)===promise)modelPromises.delete(name);
+      if(modelPromises.get(assetName)===promise)modelPromises.delete(assetName);
     });
-    modelPromises.set(name,promise);
+    modelPromises.set(assetName,promise);
     return promise;
   }
 
@@ -2847,6 +2897,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     });
     disposedMaterials.forEach(material=>{window.PStudioEnvironmentFX?.releaseMaterial?.(material);material.dispose();});
     modelInstances.delete(key);
+    modelBuildErrors.delete(key);
     instance.resourceLease?.release?.();
   }
 
@@ -2938,11 +2989,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           if(!asset) { if(!modelLoadErrors.has(d.name))requestModelAsset(d.name); continue; }
           if(!instance || instance.name!==d.name) {
             if(instance)removeModelInstance(key);
+            if(modelBuildErrors.has(key)){usedModels.add(key);continue;}
             if(!modelInstancePromises.has(key)){
               const buildGeneration=modelBuildGeneration;
               const assetRevision=modelRevisions.get(d.name)||0;
               const build=(async()=>{
                 const created=await createModelInstanceAsync(key,ownerId,d.name,asset);
+                if(!created?.root)throw new Error('3D model instance creation returned no scene root.');
                 created.root.visible=false;
                 const latest=lastCommands?.get(ownerId)||[];
                 const stillRequested=latest.some(command=>command.type==='model'&&command.name===d.name);
@@ -2952,14 +3005,17 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
                   created.resourceLease?.release?.();
                   return null;
                 }
+                modelBuildErrors.delete(key);
                 modelInstances.set(key,created);
                 modelGroup.add(created.root);
                 prepareModelInstance(created);
                 if(lastCommands)render(lastCommands);
                 return created;
               })().catch(error=>{
+                const message=String(error?.message||error);
+                modelBuildErrors.set(key,message);
                 console.error('[PStudio] Asynchronous model instance build failed:',d.name,error);
-                dispatchModelLoadProgress({name:d.name,stage:'instance-build-error',error:String(error?.message||error)});
+                dispatchModelLoadError({name:d.name,stage:'instance-build',error:message,retryable:true});
                 return null;
               }).finally(()=>{if(modelInstancePromises.get(key)===build)modelInstancePromises.delete(key);});
               modelInstancePromises.set(key,build);
@@ -3142,7 +3198,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   }
   function clear() {
     if (!renderer) return;
-    modelBuildGeneration++;modelInstancePromises.clear();
+    modelBuildGeneration++;modelInstancePromises.clear();modelBuildErrors.clear();
     activeCameraOwnerId=null;
     for(const key of [...modelInstances.keys()])removeModelInstance(key);
     for(const batch of instancedBatches.values()){if(batch.parent)batch.parent.remove(batch);batch.geometry?.dispose?.();batch.material?.dispose?.();}instancedBatches.clear();
@@ -3159,8 +3215,45 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(renderer)drawFrame();
   }
 
+  function retryModelAsset(name){
+    const assetName=String(name||'').trim();
+    if(!assetName)return false;
+    if(modelPromises.has(assetName))return true;
+    modelLoadErrors.delete(assetName);
+    let referenced=false;
+    if(lastCommands){
+      for(const [ownerId,list] of lastCommands){
+        for(let i=0;i<list.length;i++){
+          const command=list[i];
+          if(command?.type!=='model'||String(command.name)!==assetName)continue;
+          referenced=true;
+          modelBuildErrors.delete(String(ownerId)+':'+i);
+        }
+      }
+      if(referenced){
+        try{render(lastCommands);return true;}
+        catch(error){dispatchModelLoadError({name:assetName,stage:'retry-render',error:error?.message||String(error),retryable:true});return false;}
+      }
+    }
+    requestModelAsset(assetName);
+    return true;
+  }
+  function getModelStatus(name){
+    const assetName=String(name||''),error=modelLoadErrors.get(assetName)||null;
+    const instances=[...modelInstances.values()].filter(instance=>instance.name===assetName);
+    let buildError=null;
+    if(lastCommands)for(const [ownerId,list] of lastCommands)for(let i=0;i<list.length;i++){
+      const command=list[i];
+      if(command?.type==='model'&&String(command.name)===assetName&&modelBuildErrors.has(String(ownerId)+':'+i))buildError=modelBuildErrors.get(String(ownerId)+':'+i);
+    }
+    const state=error?'error':buildError?'instance-error':modelPromises.has(assetName)?'loading':instances.some(instance=>instance.preparing)?'preparing':instances.length?'ready':'not-loaded';
+    return{name:assetName,state,error:error||buildError,instances:instances.length,preparing:instances.filter(instance=>instance.preparing).length};
+  }
+
   function invalidateAsset(name) {
     const key=String(name);
+    modelLoadErrors.delete(key);
+    for(const [instanceKey,instance] of modelInstances)if(instance.name===key)modelBuildErrors.delete(instanceKey);
     modelCollisionCache.delete(key);for(const cacheKey of transformedCollisionCache.keys())if(cacheKey.startsWith(key+'|'))transformedCollisionCache.delete(cacheKey);
     modelRevisions.set(key,(modelRevisions.get(key)||0)+1);
     const cachedAsset=modelCache.get(key);
@@ -3188,6 +3281,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     render,
     clear,
     frameObject,
+    retryModelAsset,
+    getModelStatus,
     setSelected: id => {
       selectedOwnerId = id || null;
       if(id!==null&&id!==undefined)cameraFocusOwnerId=String(id);

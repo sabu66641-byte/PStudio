@@ -517,7 +517,15 @@
     if (mode === '3d') {
       if(c2)c2.style.display='none'; if(c3)c3.style.display='block';
       if(!window.PStudio3D){setOutput?.('3D renderer is unavailable. Check the Three.js connection.','error');return;}
-      try{window.PStudio3D.render(buildScenePreview3D());}catch(err){setOutput?.('3D view error: '+err.message,'error');}
+      try{
+        window.PStudio3D.render(buildScenePreview3D());
+        const modelNames=new Set((sceneObjects||[]).map(object=>object.model).filter(Boolean).map(String));
+        for(const name of modelNames)window.PStudio3D.retryModelAsset?.(name);
+      }catch(err){
+        const message='3D view error: '+String(err?.message||err);
+        setOutput?.(message,'error');
+        const status=$('game-status');if(status)status.textContent='3D VIEW ERROR';
+      }
     } else { if(c3)c3.style.display='none'; if(c2)c2.style.display='block'; if(typeof renderGamePreview==='function')renderGamePreview(); }
   }
   function renderHud(commands) {
@@ -705,7 +713,39 @@
     setViewMode(renderMode);
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
   }
-  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,version:'3.0.0'};
+  function modelProgressLabel(stage){
+    const labels={
+      'worker-read':'モデルデータを読み込み中','worker-parse-start':'GLBを解析中','worker-serialize-complete':'解析結果を転送中',
+      'worker-glb-parse':'GLBを解析中','worker-glb-parsed':'GLB解析完了','main-thread-gltf-json-start':'glTF JSONを読み込み中',
+      'main-thread-parser-fallback':'互換読み込みへ切替中','scene-hydrate-nodes':'3Dシーンを構築中','scene-hydrate-geometry':'ジオメトリを構築中',
+      'scene-decoded':'3Dシーン構築完了','gpu-textures':'GPUテクスチャを準備中','shader-precompile':'シェーダーを準備中',
+      'prepared':'モデル表示準備完了','ready':'モデルデータ読込完了','instance-build':'3Dインスタンスを構築中'
+    };
+    return labels[stage]||String(stage||'モデルを読み込み中');
+  }
+  window.addEventListener('pstudio-model-load-progress',event=>{
+    if(runtime?.running)return;
+    const detail=event.detail||{},status=$('game-status');
+    if(!status||!detail.name)return;
+    const label=modelProgressLabel(detail.stage);
+    const count=Number.isFinite(Number(detail.loaded))&&Number.isFinite(Number(detail.total))&&Number(detail.total)>0
+      ?' · '+Math.min(Number(detail.loaded),Number(detail.total))+'/'+Number(detail.total):'';
+    status.textContent='MODEL · '+String(detail.name)+' · '+label+count;
+  });
+  window.addEventListener('pstudio-model-error',event=>{
+    const detail=event.detail||{},name=String(detail.name||'モデル');
+    const message='3Dモデル「'+name+'」の処理に失敗しました。\n段階: '+String(detail.stage||'unknown')+'\n原因: '+String(detail.error||'不明なエラー')+
+      (detail.retryable===false?'\nこの端末のメモリ安全基準により読み込みを停止しました。':'\n3D表示を再選択するか Refresh で再試行できます。');
+    const status=$('game-status');if(status&&!runtime?.running)status.textContent='MODEL ERROR · '+name;
+    setOutput?.(message,'error');
+  });
+  function refreshSceneView(){
+    if(runtime?.running){renderFrame();return true;}
+    if(renderMode==='3d'){setViewMode('3d');return true;}
+    if(typeof renderGamePreview==='function')renderGamePreview();
+    return true;
+  }
+  window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,refreshSceneView,version:'3.1.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
   updateViewModeButtons();
