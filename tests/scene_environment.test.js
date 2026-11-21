@@ -24,9 +24,9 @@ test('scene environment module defines four complete immutable presets', () => {
     assert.ok(profile.lightIntensity > 0, name + ' key light intensity');
     assert.ok(profile.hemisphereIntensity > 0, name + ' hemisphere intensity');
   }
-  assert.ok(Object.isFrozen(presets.getPreset) === false);
-  assert.equal(Object.isFrozen(presets.getPreset('day')), false, 'callers receive a detached profile object');
-  assert.equal(Object.isFrozen(presets.getPreset('day').skyTop), false);
+  const mutableCopy=presets.getPreset('day');
+  mutableCopy.skyTop='#FFFFFF';
+  assert.notEqual(mutableCopy.skyTop,presets.getPreset('day').skyTop,'editing a returned profile must not mutate the internal preset');
 });
 
 test('scene environment preset normalization defaults invalid and missing names to daytime', () => {
