@@ -405,7 +405,7 @@ set_toon_material(
 
 Arguments, in order: shadow, midtone and highlight colors; shadow and highlight thresholds; rim color, intensity and power; outline color and width; pseudo-SSS color and intensity; GPU wind strength and speed. Colors use `#RRGGBB`. Numeric values are bounded by the runtime before reaching shader uniforms. `set_toon_material` also selects the toon path for subsequent primitives and imported models owned by the script.
 
-GLB model Inspector overrides expose the same toon/rim/outline/pseudo-SSS controls plus foliage wind controls. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. The current outline is a view-angle edge-ink treatment; it is not yet a dedicated expanded back-face shell pass. Verify the actual WebGL shader compile and visual result on each target GPU.
+GLB model Inspector overrides expose the same toon/rim/outline/pseudo-SSS controls plus foliage wind controls. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. Outlines use an expanded back-face shell pass (including a skinned-mesh path) with depth testing, no depth writes, and no participation in raycasts or shadow passes. Verify the actual WebGL shader compile and visual result on each target GPU.
 
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 
