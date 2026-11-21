@@ -869,7 +869,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       updateBatchedAutoLOD();
       return;
     }
-    for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
+    for(const object of instance.meshes||[])if(!object.userData.pstudioBatchedIntoStaticInstance&&object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
     updateBatchedAutoLOD();
   }
   function enableGPUFrustumCullingForBatch(batch){
@@ -2646,6 +2646,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       !material.isShaderMaterial&&!material.isRawShaderMaterial&&
       !material.userData?.pstudioNoInstancing&&!material.userData?.pstudioNoBatching;
   }
+  const staticBatchOriginalRaycast=new WeakMap();
+  const skipStaticBatchSourceRaycast=()=>{};
   async function buildFoliageInstanceBatches(root,animations=[]){
     const T=window.THREE,groups=new Map(),batches=[],objects=[];
     const animatedTargets=collectAnimatedNodeTargets(animations);
@@ -2734,6 +2736,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         matrix.multiplyMatrices(inverseParent,source.matrixWorld);
         batch.setMatrixAt(i,matrix);
         source.visible=false;
+        if(group.isGeneric){
+          source.userData.pstudioBatchedIntoStaticInstance=true;
+          if(!staticBatchOriginalRaycast.has(source))staticBatchOriginalRaycast.set(source,source.raycast);
+          source.raycast=skipStaticBatchSourceRaycast;
+        }
         if(i>0&&i%128===0)await nextPreparationFrame();
       }
       batch.instanceMatrix.setUsage(group.isTree?T.DynamicDrawUsage:T.StaticDrawUsage);
@@ -2859,6 +2866,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     clone.updateMatrixWorld(true);
     const streamChunks=await buildModelStreamingChunks(clone);
     const foliageBatches=await buildFoliageInstanceBatches(clone,asset.animations||[]);
+    for(const entry of foliageBatches){
+      const sourceMaterial=entry.sources?.[0]?.material;
+      const batchMaterial=entry.mesh?.material;
+      const defaults=sourceMaterial&&materialDefaults.get(sourceMaterial);
+      if(defaults&&batchMaterial)materialDefaults.set(batchMaterial,{...defaults});
+    }
     const bounds=new T.Box3();
     for(let i=0;i<pairs.length;i++){
       const object=pairs[i].clone;
@@ -2981,19 +2994,48 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
 
   function applyModelMaterial(instance, state) {
     if(!instance?.materialDefaults)return;
+    const overrides=Array.isArray(state?.modelOverrides)?state.modelOverrides:[];
+    for(const entry of instance.foliageBatches||[]){
+      if(!entry.isGeneric||!entry.sources?.length)continue;
+      const needsPerNodeMaterials=overrides.some(item=>item.name!=='*'&&
+        entry.sources.some(source=>source.name===item.name&&source.material?.name!==item.name));
+      if(needsPerNodeMaterials&&!entry.disabledForObjectOverride){
+        entry.disabledForObjectOverride=true;
+        entry.mesh.visible=false;
+        for(const source of entry.sources){
+          source.visible=true;
+          source.userData.pstudioBatchedIntoStaticInstance=false;
+          const originalRaycast=staticBatchOriginalRaycast.get(source);
+          if(originalRaycast){source.raycast=originalRaycast;staticBatchOriginalRaycast.delete(source);}
+        }
+      }else if(!needsPerNodeMaterials&&entry.disabledForObjectOverride){
+        entry.disabledForObjectOverride=false;
+        entry.mesh.visible=true;
+        for(const source of entry.sources){
+          source.visible=false;
+          source.userData.pstudioBatchedIntoStaticInstance=true;
+          if(!staticBatchOriginalRaycast.has(source))staticBatchOriginalRaycast.set(source,source.raycast);
+          source.raycast=skipStaticBatchSourceRaycast;
+        }
+      }
+    }
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
-      modelOverrides:(state.modelOverrides||[]).map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
+      modelOverrides:overrides.map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
     }:null);
     if(instance.materialStateSignature===signature)return;
     instance.materialStateSignature=signature;
-    for(const object of instance.meshes||[]){
+    const materialTargets=[
+      ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
+      ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
+    ];
+    for(const object of materialTargets){
       if(!object.material)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials){const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
         material.roughness=state&&Number.isFinite(state.roughness)?state.roughness:defaults.roughness;material.metalness=state&&Number.isFinite(state.metalness)?state.metalness:defaults.metalness;
-        const override=state?.modelOverrides?.find(item=>item.name==='*'||item.name===object.name||item.name===material.name);
+        const override=overrides.find(item=>item.name==='*'||item.name===object.name||item.name===material.name);
         if(override){if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));if(override.color&&material.color)material.color.set(override.color);}
       }
     }
