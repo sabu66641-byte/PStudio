@@ -842,9 +842,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!occlusionEnabled||!occlusionRaycaster||!camera)return;
     const hasHighComplexityModel=[...modelInstances.values()].some(instance=>instance.occlusionEligible===false&&isOwnerChunkActive(instance.ownerId));
     if(hasHighComplexityModel){
-      for(const mesh of meshCache.values())mesh.userData.pstudioOccluded=false;
+      for(const mesh of meshCache.values()){
+        const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,worldRenderConfig.maxDrawDistance);
+        mesh.userData.pstudioOccluded=false;mesh.visible=active;
+      }
       for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;
-      for(const instance of modelInstances.values())if(instance.occlusionEligible===false)instance.root.userData.pstudioOccluded=false;
+      for(const instance of modelInstances.values())if(instance.occlusionEligible===false){
+        const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,worldRenderConfig.maxDrawDistance);
+        instance.root.userData.pstudioOccluded=false;instance.root.visible=!instance.preparing&&active;
+      }
       occlusionCursor=0;return;
     }
     const now=window.performance?.now?.()??Date.now();
@@ -1272,12 +1278,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     // A single center ray is substantially cheaper than five recursive scene raycasts
     // on every touch-move, while still preventing the camera from crossing solid geometry.
     primitiveGroup.updateMatrixWorld(true);
-    modelGroup.updateMatrixWorld(true);
+    const collisionTargets=[primitiveGroup];
+    for(const child of modelGroup.children){
+      if(child.userData?.pstudioHighComplexity)continue;
+      child.updateWorldMatrix(true,true);
+      collisionTargets.push(child);
+    }
     cameraCollisionRaycaster.set(target,direction);
     cameraCollisionRaycaster.near=0.04;
     cameraCollisionRaycaster.far=distance;
-    const collisionTargets=[primitiveGroup];
-    for(const child of modelGroup.children)if(!child.userData?.pstudioHighComplexity)collisionTargets.push(child);
     const hits=cameraCollisionRaycaster.intersectObjects(collisionTargets,true);
     const hit=hits.find(item=>{
       const ownerId=item.object?.userData?.ownerId;
