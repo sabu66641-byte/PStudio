@@ -164,6 +164,7 @@
     if(!material)return material;
     const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
     const existing=material.userData?.pstudioFoliageHQ;
+    if(!existing&&Object.prototype.hasOwnProperty.call(settings,'windStrength')&&Number(settings.windStrength)<=0)return material;
     if(existing){
       if(Number.isFinite(Number(settings.windStrength)))existing.strength.value=clamp(settings.windStrength,0,2.5);
       if(Number.isFinite(Number(settings.windSpeed)))existing.speed.value=clamp(settings.windSpeed,0,4);
