@@ -935,6 +935,7 @@
           }
         }
       }
+      window.PStudioECSScene?.syncRuntimeCommands?.(commands);
       runtime.contexts=commands;
       updateCollisions();
       update3DCollisions(commands);
