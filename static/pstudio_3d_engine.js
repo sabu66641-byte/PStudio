@@ -2105,6 +2105,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         }
         const isJSONGLTF=/\.gltf$/i.test(assetName)||String(blob.type||'').toLowerCase().includes('gltf+json');
         const decodeStarted=window.performance?.now?.()??Date.now();
+        dispatchModelLoadProgress({name:assetName,stage:'scene-decode-start',loaded:0,total:blob.size,progress:0});
         if(isJSONGLTF){
           // JSON glTF has no GLB header; parse its bundled Blob URL through the standard loader.
           loadStage='main-thread-gltf-json';

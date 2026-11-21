@@ -1,8 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 
-const html = fs.readFileSync('templates/index.html', 'utf8');
+const root = path.resolve(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
 const start = html.indexOf('const PSTUDIO_MAX_GLB_BYTES=');
 const end = html.indexOf('async function importGLTFFile', start);
 assert.ok(start >= 0 && end > start, 'GLB import validator source must exist');

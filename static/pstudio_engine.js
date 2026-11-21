@@ -716,7 +716,7 @@
   function modelProgressLabel(stage){
     const labels={
       'worker-read':'モデルデータを読み込み中','worker-parse-start':'GLBを解析中','worker-serialize-complete':'解析結果を転送中',
-      'worker-glb-parse':'GLBを解析中','worker-glb-parsed':'GLB解析完了','main-thread-gltf-json-start':'glTF JSONを読み込み中',
+      'worker-glb-parse':'GLBを解析中','worker-glb-parsed':'GLB解析完了','scene-decode-start':'glTFシーンの解析を開始中','main-thread-gltf-json-start':'glTF JSONを読み込み中',
       'main-thread-parser-fallback':'互換読み込みへ切替中','scene-hydrate-nodes':'3Dシーンを構築中','scene-hydrate-geometry':'ジオメトリを構築中',
       'scene-decoded':'3Dシーン構築完了','gpu-textures':'GPUテクスチャを準備中','shader-precompile':'シェーダーを準備中',
       'prepared':'モデル表示準備完了','ready':'モデルデータ読込完了','instance-build':'3Dインスタンスを構築中'

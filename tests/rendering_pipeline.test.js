@@ -155,7 +155,7 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
   assert.ok(renderer.includes("waterDetailRole?'water-detail:'+waterDetailRole:''"));
   assert.ok(renderer.includes("windRole?'wind:'+windRole:''"));
   assert.ok(renderer.includes('const materialDefaults=new Map(),materialClones=new Map(),meshes=[]'));
-  assert.ok(renderer.includes('for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,d)'));
+  assert.ok(renderer.includes('for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object))'));
 });
 
 test('automatic LOD work is serialized into idle callbacks without forced timeout execution',()=>{
@@ -250,7 +250,7 @@ test('GLB auto-play animation extras start a looping environment animation on im
   assert.ok(renderer.includes('action.reset().setLoop(T.LoopRepeat,Infinity).play()'));
 });
 test('animated tree parts inherit their parent LOD and share GPU instance batches',()=>{
-  for(const token of ["object.userData?.pstudioWindPart==='leaf'","object.userData?.pstudioWindPart==='branch'",'while(!levelMatch&&parent&&parent!==root)','PStudio_GPU_Instances_','entry.isTree&&Number.isInteger(entry.level)'])assert.ok(renderer.includes(token),token);
+  for(const token of ["windRole==='leaf'","windRole==='branch'",'while(!levelMatch&&parent&&parent!==root)','PStudio_GPU_Instances_','entry.isTree&&Number.isInteger(entry.level)'])assert.ok(renderer.includes(token),token);
 });
 test('modular architecture components are batched independently from foliage and remain visible across tree LOD changes',()=>{
   for(const token of ['/\^PStudioInstance_/i','group.isTree','level===null||level===0','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
@@ -271,7 +271,7 @@ test('high-detail asset loads receive device-aware CPU and GPU resource budgets'
 
 
 test('GLB spatial chunks preserve child transforms and stream detail by GPU-aware distance',()=>{
-  for(const token of ['buildModelStreamingChunks','pstudioStreamingConfig','chunk.attach(child)','pstudioStreamChunkId','pstudioStreamLoadDistance','updateModelStreamingChunks','activeModelStreamChunks'])assert.ok(renderer.includes(token),token);
+  for(const token of ['buildModelStreamingChunks','pstudioStreamingConfig','chunk.attach(group.children[i])','pstudioStreamChunkId','pstudioStreamLoadDistance','updateModelStreamingChunks','activeModelStreamChunks'])assert.ok(renderer.includes(token),token);
 });
 test('chunk-local GPU instance batches retain animated tree transforms but do not update static architecture every frame',()=>{
   for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
@@ -285,10 +285,10 @@ test('GLB metadata is inherited from nested glTF scene nodes before autoplay and
   assert.ok(renderer.includes('clone.userData.pstudioStreamingConfig=extras.pstudioStreamingConfig'));
 });
 test('streamed chunks are initially unloaded and retain hysteresis while their local children keep transforms',()=>{
-  for(const token of ['pstudioStreamActive=false','chunk.visible=false','chunk.attach(child)','pstudioStreamUnloadDistance','const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance'])assert.ok(renderer.includes(token),token);
+  for(const token of ['pstudioStreamActive=false','chunk.visible=false','chunk.attach(group.children[i])','pstudioStreamUnloadDistance','const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance'])assert.ok(renderer.includes(token),token);
 });
 test('tree trunk, branch and leaf tracks are all preserved by the animation-aware instancer',()=>{
-  for(const token of ["pstudioWindPart==='trunk'","pstudioWindPart==='branch'","pstudioWindPart==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
+  for(const token of ["windRole==='trunk'","pstudioWindPart==='branch'","pstudioWindPart==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
 });
 test('static architectural instance transforms are not recomputed every animation frame',()=>{
   assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
@@ -352,17 +352,17 @@ test('GPU-updated foliage transforms skip hidden LOD and streamed chunks',()=>{
 
 
 test('large GLB loading uses an object URL and progress events instead of an app-owned full ArrayBuffer copy',()=>{
-  assert.ok(renderer.includes('window.PStudioAssetStore.get(name,{cache:false})'));
+  assert.ok(renderer.includes('window.PStudioAssetStore.get(assetName,{cache:false})'));
   assert.ok(renderer.includes('URL.createObjectURL(blob)'));
   assert.ok(renderer.includes('loader.load(url,resolve,event=>'));
   assert.ok(renderer.includes('URL.revokeObjectURL(url)'));
   assert.ok(!renderer.includes("const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer()"));
 });
 test('large model loading checks estimated runtime memory against device memory before decoding',()=>{
-  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のGLBはIndexedDBに保存済みです'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のモデルはIndexedDBに保存済みです'])assert.ok(renderer.includes(token),token);
 });
 test('failed model loading clears pending promises so the same model can be retried',()=>{
-  assert.ok(renderer.includes('if(modelPromises.get(name)===promise)modelPromises.delete(name)'));
+  assert.ok(renderer.includes('if(modelPromises.get(assetName)===promise)modelPromises.delete(assetName)'));
   assert.ok(!renderer.includes('if(modelPromises.get(name)===promise&&modelCache.has(name))modelPromises.delete(name)'));
 });
 test('renderer exposes live memory telemetry and activates a safe graphics mode under memory pressure',()=>{
@@ -382,7 +382,7 @@ test('large GLB memory preflight checks both total runtime and JavaScript heap b
 
 
 test('model GPU preparation uploads textures across frames and precompiles shaders asynchronously when supported',()=>{
-  for(const token of ['prepareModelInstance','collectModelTextures','nextPreparationFrame','renderer?.initTexture?.(texture)','gpu-textures','KHR_parallel_shader_compile','renderer.compileAsync(scene,camera)','shaderCompileQueue','preparing'])assert.ok(renderer.includes(token),token);
+  for(const token of ['prepareModelInstance','collectModelTextures','nextPreparationFrame','renderer?.initTexture?.(texture)','gpu-textures','KHR_parallel_shader_compile','renderer.compileAsync(instance.root,camera,scene)','shaderCompileQueue','preparing'])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('instance.preparing=false'));
   assert.ok(renderer.includes('preparationCancelled'));
 });
@@ -402,7 +402,7 @@ test('GPU and CPU resource-cache pressure contribute to memory safety telemetry'
 
 
 test('per-instance frustum culling filters instanced draw batches against the camera projection',()=>{
-  for(const token of ['new T.Frustum()','new T.Matrix4()','camera.updateMatrixWorld(true)','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)','worldFrustum.intersectsSphere(worldFrustumSphere)'])assert.ok(renderer.includes(token),token);
+  for(const token of ['new T.Frustum()','new T.Matrix4()','camera.updateMatrixWorld(true)','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)','uniforms.planes[i].copy(worldFrustum.planes[i])'])assert.ok(renderer.includes(token),token);
 });
 
 test('GLTF scene decode timing is reported separately from binary fetch and GPU preparation',()=>{
@@ -446,7 +446,7 @@ test('virtual texturing retains source images in the worker and streams page til
   const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
   for(const token of [
     'VIRTUAL_IMAGES.set(workerImageKey,bitmap)','message.op === \'extract-tile\'',
-    'new OffscreenCanvas(width,height)','message.op === \'release-asset\''
+    'new OffscreenCanvas(width, height)','message.op === \'release-asset\''
   ])assert.ok(worker.includes(token),token);
   for(const token of [
     'initializeVirtualTextureAtlas','renderer.copyTextureToTexture',

@@ -42,7 +42,7 @@ test('selecting a scene object marks it as the camera focus collision exclusion'
 
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
-  assert.match(renderer, /instance\.root\.visible=active&&\(isSelected\|\|!instance\.root\.userData\.pstudioOccluded\)/);
+  assert.match(renderer, /instance\.root\.visible=!instance\.preparing&&active&&\(isSelected\|\|!instance\.root\.userData\.pstudioOccluded\)/);
 });
 
 test('native GLTF material shaders remain untouched unless a probe volume is baked', () => {
