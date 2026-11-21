@@ -1074,7 +1074,7 @@ async function inspectGLBImageDimensions(file,binStart,view,name){
  const dimension=/8k/.test(hint)?8192:/4k/.test(hint)?4096:/2k/.test(hint)?2048:/1k/.test(hint)?1024:0;
  return dimension?{width:dimension,height:dimension,inferred:true}:null;
 }
-async function validateGLBFile(file,options={}){
+async function validateGLBFileMainThread(file,options={}){
  if(!file||typeof file.slice!=='function')throw new TypeError('GLBファイルを読み込めません。');
  if(file.size<20)throw new Error('GLBファイルが短すぎます。');
  if(file.size>PSTUDIO_MAX_GLB_BYTES)throw new Error('GLBの上限は1GBです。');
@@ -1160,6 +1160,60 @@ async function validateGLBFile(file,options={}){
  dispatchGLBImportProgress({stage:'validated',name:file.name,info});
  options.onProgress?.({stage:'validated',info});
  return info;
+}
+let pstudioModelWorker=null,pstudioModelWorkerSequence=0;
+const pstudioModelWorkerPending=new Map();
+function getPStudioModelWorker(){
+ if(typeof window.Worker!=='function')return null;
+ if(pstudioModelWorker)return pstudioModelWorker;
+ try{
+  const worker=new window.Worker('/static/pstudio_model_worker.js');
+  worker.onmessage=event=>{
+   const message=event.data||{},pending=pstudioModelWorkerPending.get(message.id);
+   if(!pending)return;
+   pstudioModelWorkerPending.delete(message.id);
+   if(message.ok)pending.resolve(message.result);
+   else pending.reject(new Error(String(message.error||'GLB worker inspection failed.')));
+  };
+  worker.onerror=event=>{
+   const error=new Error(event?.message||'GLB解析Workerを起動できませんでした。');
+   error.code='PSTUDIO_WORKER_UNAVAILABLE';
+   for(const pending of pstudioModelWorkerPending.values())pending.reject(error);
+   pstudioModelWorkerPending.clear();
+   if(pstudioModelWorker===worker)pstudioModelWorker=null;
+   try{worker.terminate();}catch(_){}
+  };
+  pstudioModelWorker=worker;
+  return worker;
+ }catch(_){return null;}
+}
+function inspectGLBWithWorker(file){
+ const worker=getPStudioModelWorker();
+ if(!worker){const error=new Error('Web Worker is unavailable.');error.code='PSTUDIO_WORKER_UNAVAILABLE';return Promise.reject(error);}
+ const id=++pstudioModelWorkerSequence;
+ return new Promise((resolve,reject)=>{
+  pstudioModelWorkerPending.set(id,{resolve,reject});
+  try{worker.postMessage({id,op:'inspect-glb',file});}
+  catch(error){pstudioModelWorkerPending.delete(id);reject(error);}
+ });
+}
+async function validateGLBFile(file,options={}){
+ if(!file||typeof file.slice!=='function')throw new TypeError('GLBファイルを読み込めません。');
+ if(file.size<20)throw new Error('GLBファイルが短すぎます。');
+ if(file.size>PSTUDIO_MAX_GLB_BYTES)throw new Error('GLBの上限は1GBです。');
+ dispatchGLBImportProgress({stage:'worker-inspection',name:file.name,loaded:0,total:file.size,progress:0});
+ try{
+  const info=await inspectGLBWithWorker(file);
+  dispatchGLBImportProgress({stage:'validated',name:file.name,info});
+  options.onProgress?.({stage:'validated',info});
+  return info;
+ }catch(error){
+  if(error?.code==='PSTUDIO_WORKER_UNAVAILABLE'){
+   dispatchGLBImportProgress({stage:'main-thread-fallback',name:file.name});
+   return validateGLBFileMainThread(file,options);
+  }
+  throw error;
+ }
 }
 async function importGLTFFile(file,allFiles){
  const json=JSON.parse(await file.text());
