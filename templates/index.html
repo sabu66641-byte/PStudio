@@ -804,6 +804,20 @@ if(!sourceEnvironment){try{sourceEnvironment=JSON.parse(files['main.scene']?.con
 const sourcePreset=String(sourceEnvironment?.preset||'day').toLowerCase();
 const environment={preset:['day','dusk','night','studio'].includes(sourcePreset)?sourcePreset:'day'};
 const sourceObjects=archive.project.objects;if(!Array.isArray(sourceObjects)||sourceObjects.length>5000)throw new Error('シーンオブジェクト一覧が不正です。');const objectIds=new Set();const assetByName=new Map(assets.map(asset=>[asset.name,asset]));const objects=sourceObjects.map((item,index)=>{if(!item||typeof item!=='object')throw new Error('シーンオブジェクトが不正です。');const id=String(item.id||'object-'+index).slice(0,128);if(objectIds.has(id))throw new Error('シーンオブジェクトIDが重複しています: '+id);objectIds.add(id);const numeric=(key,fallback)=>Number.isFinite(Number(item[key]))?Number(item[key]):fallback;const script=typeof item.script==='string'&&files[item.script]?.type==='ps'?item.script:'';const sprite=typeof item.sprite==='string'&&assetByName.get(item.sprite)?.kind==='image'?item.sprite:'';const model=typeof item.model==='string'&&assetByName.get(item.model)?.kind==='model'?item.model:'';if(item.model&&!model)throw new Error('モデル「'+item.model+'」がアセット一覧にありません。');const restored={id,name:String(item.name||'Object '+(index+1)).slice(0,128),x:numeric('x',0),y:numeric('y',0),z:numeric('z',0),rotationX:numeric('rotationX',0),rotationY:numeric('rotationY',0),rotationZ:numeric('rotationZ',0),w:Math.max(1,numeric('w',64)),h:Math.max(1,numeric('h',64)),sprite,script,color:String(item.color||'#d1d5db').slice(0,64),shape:item.shape==='circle'?'circle':'rect',collider:!!item.collider,model,modelScale:Math.max(0.001,numeric('modelScale',1)),manipulationEnabled:item.manipulationEnabled!==false};
+const sourceObjectToon=item.toonMaterialSettings&&typeof item.toonMaterialSettings==='object'?item.toonMaterialSettings:null;
+if(sourceObjectToon){
+ const toonColor=value=>typeof value==='string'&&/^#[0-9a-fA-F]{6}$/.test(value)?value:'#d1d5db';
+ const toonBounded=(value,fallback,min,max)=>Number.isFinite(Number(value))?Math.max(min,Math.min(max,Number(value))):fallback;
+ restored.toonMaterialSettings={
+  enabled:sourceObjectToon.enabled===true,
+  shadowColor:toonColor(sourceObjectToon.shadowColor),midColor:toonColor(sourceObjectToon.midColor),highlightColor:toonColor(sourceObjectToon.highlightColor),
+  shadowThreshold:toonBounded(sourceObjectToon.shadowThreshold,0.32,0.02,0.95),highlightThreshold:toonBounded(sourceObjectToon.highlightThreshold,0.68,0.05,0.99),
+  rimColor:toonColor(sourceObjectToon.rimColor),rimIntensity:toonBounded(sourceObjectToon.rimIntensity,0.42,0,4),rimPower:toonBounded(sourceObjectToon.rimPower,2.6,0.5,8),
+  outlineColor:toonColor(sourceObjectToon.outlineColor),outlineWidth:toonBounded(sourceObjectToon.outlineWidth,0.12,0.005,0.45),
+  sssColor:toonColor(sourceObjectToon.sssColor),sssIntensity:toonBounded(sourceObjectToon.sssIntensity,0.12,0,1.5),
+  windStrength:toonBounded(sourceObjectToon.windStrength,0,0,2.5),windSpeed:toonBounded(sourceObjectToon.windSpeed,1,0,4)
+ };
+}
 const sourceOverrides=Array.isArray(item.modelMaterialOverrides)?item.modelMaterialOverrides:null;
 if(sourceOverrides&&sourceOverrides.length>64)throw new Error('GLB material overrideは1オブジェクトにつき64個までです。');
 if(sourceOverrides){
