@@ -2948,7 +2948,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.modelRoot=clone;
       if(object.isMesh&&object.material){
         meshes.push(object);
-        geometryOriginals.set(object,object.geometry);
         object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0));
         scheduleAutoLOD(object,object.geometry);
         scheduleGeometryBVH(object.geometry);
@@ -3265,13 +3264,21 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function applyModelMaterial(instance, state) {
     if(!instance?.materialDefaults)return;
     const overrides=Array.isArray(state?.modelOverrides)?state.modelOverrides:[];
+    const geometryTargets=[
+      ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
+      ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
+    ];
+    const normalGeometrySignature=overrides.some(item=>item.recomputeNormals===true)
+      ?geometryTargets.map(object=>object.uuid+':'+(object.geometry?.userData?.pstudioNormalSourceGeometry?.uuid||object.geometry?.uuid||'')).join('|')
+      :'';
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
       modelOverrides:overrides.map(item=>[
         item.name,item.roughness??null,item.metalness??null,item.color??null,
         item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
-      ])
+      ]),
+      normalGeometrySignature
     }:null);
     if(instance.materialStateSignature===signature)return;
     for(const entry of instance.foliageBatches||[]){
@@ -3301,10 +3308,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     instance.materialStateSignature=signature;
-    const materialTargets=[
-      ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
-      ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
-    ];
+    const materialTargets=geometryTargets;
     const desiredNormalTargets=new Set();
     for(const object of materialTargets){
       if(!object.material)continue;
@@ -3312,12 +3316,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const matching=overrides.filter(item=>item.name==='*'||item.name===object.name||materials.some(material=>material?.name===item.name));
       if(matching.some(item=>item.recomputeNormals===true)&&object.geometry?.isBufferGeometry&&object.geometry.attributes?.position){
         desiredNormalTargets.add(object);
-        let original=instance.geometryOriginals?.get(object);
-        if(!original){original=object.geometry;instance.geometryOriginals?.set(object,original);}
+        const original=object.geometry?.userData?.pstudioNormalSourceGeometry||object.geometry;
+        instance.geometryOriginals?.set(object,original);
         let normalized=instance.normalGeometryClones?.get(original);
         if(!normalized){
           normalized=original.clone();
           normalized.computeVertexNormals();
+          if(normalized.attributes?.tangent)normalized.deleteAttribute('tangent');
+          normalized.userData=normalized.userData||{};
+          normalized.userData.pstudioNormalSourceGeometry=original;
+          scheduleGeometryBVH(normalized);
           instance.normalGeometryClones?.set(original,normalized);
         }
         object.geometry=normalized;
@@ -3342,7 +3350,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     for(const [object,original] of [...(instance.geometryOriginals||new Map()).entries()]){
       if(desiredNormalTargets.has(object))continue;
-      object.geometry=original;
+      const normalized=instance.normalGeometryClones?.get(original);
+      if(normalized&&object.geometry===normalized)object.geometry=original;
       instance.geometryOriginals.delete(object);
     }
     const activeOriginals=new Set([...(instance.geometryOriginals?.values()||[])]);
