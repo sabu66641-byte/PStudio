@@ -713,7 +713,14 @@
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
       }
-      const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
+      let data;
+      if(window.PStudioPlayerManifest?.scripts&&typeof window.PStudioPlayerManifest.scripts==='object'){
+        data={success:true,scripts:window.PStudioPlayerManifest.scripts};
+      }else{
+        const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});
+        data=await res.json();
+      }
+      if(!data?.success||!data.scripts)throw new Error(data?.error||'Script validation failed');
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
