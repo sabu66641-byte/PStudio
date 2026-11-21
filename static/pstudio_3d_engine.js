@@ -2240,7 +2240,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(estimatedRuntimeBytes>safeBudget||estimatedCpuBytes>cpuBudget){
           const needed=(estimatedRuntimeBytes/1024/1024).toFixed(0),budget=(safeBudget/1024/1024).toFixed(0);
           const cpuNeeded=(estimatedCpuBytes/1024/1024).toFixed(0),cpuSafe=(cpuBudget/1024/1024).toFixed(0);
-          const error=new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のモデルはIndexedDBに保存済みです。メモリに余裕のある端末、またはモデルのテクスチャ・メッシュ構成を見直して再試行してください。');
+          const error=new Error('この端末ではモデル展開時のメモリ負荷が安全目安を超えます（全体推定 '+needed+'MiB / '+budget+'MiB、CPU側 '+cpuNeeded+'MiB / '+cpuSafe+'MiB）。元のモデルデータはブラウザの永続保存領域に保存済みです。メモリに余裕のある端末、またはモデルのテクスチャ・メッシュ構成を見直して再試行してください。');
           error.code='PSTUDIO_MODEL_MEMORY_BUDGET';
           throw error;
         }
