@@ -403,6 +403,7 @@
       header.appendChild(make('div', 'ecs-component-name', definition.label || entry.type));
       const readonly = !!(entry.readonly || definition.readonly || entry.type === 'SceneObjectRef');
       if (readonly) header.appendChild(make('span', 'ecs-muted', 'READ ONLY'));
+      else if (CORE_COMPONENTS.has(entry.type)) header.appendChild(make('span', 'ecs-muted', 'CORE'));
       else {
         const remove = make('button', '', 'Remove');
         remove.type = 'button';
@@ -584,11 +585,12 @@
     throw new Error('Component defaults must be literal values or literal arrays.');
   }
 
-  function psFieldType(value) {
+  function psFieldType(value, sourceNode) {
     if (typeof value === 'boolean') return 'boolean';
     if (typeof value === 'string') return 'string';
     if (Array.isArray(value)) return 'array';
-    return Number.isInteger(value) ? 'integer' : 'number';
+    const raw = String(sourceNode?.value ?? '');
+    return Number.isInteger(value) && !/[.eE]/.test(raw) ? 'integer' : 'number';
   }
 
   async function refreshProjectDefinitions(quiet) {
@@ -631,7 +633,7 @@
                 const value = parsePsEcsLiteral(field.value);
                 defaults[field.variable] = value;
                 schema[field.variable] = {
-                  type: psFieldType(value),
+                  type: psFieldType(value, field.value),
                   default: value,
                   label: field.variable
                 };
