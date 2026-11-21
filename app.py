@@ -192,7 +192,7 @@ def tokenize(source_code):
         ("KEYWORDS", r"\b(if|elif|else|while|for|in|break|continue|func|return)\b"),
         ("LOGIC", r"\b(and|or|not)\b"),
         ("ID", r"[a-zA-Z_]\w*"),
-        ("OP", r"\*\*|\+\+|--|\+=|-=|\*=|/=|%=|<<|>>|&=|\|=|\^=|==|!=|<=|>=|[+\-*/%=<>!&|^~]"),
+        ("OP", r"\*\*|\+\+|--|\+=|-=|\*=|/=|%=|<<|>>|&=|\|=|\^=|==|!=|<=|>=|[+\-*/%=<>!&|^~.]"),
         ("LPAREN", r"\("),
         ("RPAREN", r"\)"),
         ("LBRACK", r"\["),
@@ -383,9 +383,18 @@ class ExpressionParser:
 
     def parse_postfix(self):
         node = self.parse_primary()
-        while self.peek() and self.peek()["type"] == "OP" and self.peek()["value"] in ["++", "--"]:
-            op = self.consume()["value"]
-            node = {"type": "PostfixExpr", "op": op, "value": node}
+        while self.peek():
+            tok = self.peek()
+            if tok["type"] == "OP" and tok["value"] in ["++", "--"]:
+                op = self.consume()["value"]
+                node = {"type": "PostfixExpr", "op": op, "value": node}
+                continue
+            if tok["type"] == "OP" and tok["value"] == ".":
+                self.consume("OP", ".")
+                member = self.expect("ID")
+                node = {"type": "MemberExpr", "object": node, "property": member["value"]}
+                continue
+            break
         return node
 
     def parse_primary(self):
@@ -484,6 +493,45 @@ def parse(tokens):
             continue
 
         first = line_tokens[0]
+
+        # ECS declarations are contextual identifiers, not lexer keywords.
+        # This preserves backwards compatibility for variables named "component" or "system".
+        if first["type"] == "ID" and first["value"] in ("component", "system"):
+            if parent is not root:
+                raise Exception(f"構文エラー (行 {first['line']}): ECS宣言はファイルのトップレベルに置いてください。")
+            if len(line_tokens) < 2 or line_tokens[1]["type"] != "ID":
+                raise Exception(f"構文エラー (行 {first['line']}): {first['value']} の後ろに名前が必要です。")
+            declaration_name = line_tokens[1]["value"]
+            if first["value"] == "component":
+                if len(line_tokens) != 2:
+                    raise Exception(f"構文エラー (行 {first['line']}): component Name の形式で宣言してください。")
+                node.update({"type": "ComponentDef", "name": declaration_name, "body": []})
+            else:
+                rest = line_tokens[2:]
+                if len(rest) < 2 or rest[0]["type"] != "LPAREN" or rest[-1]["type"] != "RPAREN":
+                    raise Exception(f"構文エラー (行 {first['line']}): system Name(ComponentA, ComponentB) の形式で宣言してください。")
+                inner = rest[1:-1]
+                component_names = []
+                expect_id = True
+                for tok in inner:
+                    if expect_id:
+                        if tok["type"] != "ID":
+                            raise Exception(f"構文エラー (行 {tok['line']}): Systemのコンポーネント名が必要です。")
+                        component_names.append(tok["value"])
+                    else:
+                        if tok["type"] != "COMMA":
+                            raise Exception(f"構文エラー (行 {tok['line']}): コンポーネント名はカンマで区切ってください。")
+                    expect_id = not expect_id
+                if inner and expect_id:
+                    raise Exception(f"構文エラー (行 {first['line']}): コンポーネント名の後ろが不正です。")
+                if len(component_names) != len(set(component_names)):
+                    raise Exception(f"構文エラー (行 {first['line']}): System内のコンポーネント名が重複しています。")
+                if not component_names:
+                    raise Exception(f"構文エラー (行 {first['line']}): Systemには1つ以上のコンポーネントが必要です。")
+                node.update({"type": "SystemDef", "name": declaration_name, "components": component_names, "body": []})
+            parent["body"].append(node)
+            stack.append((first["indent"], node))
+            continue
 
         if (
             first["type"] == "KEYWORDS"
@@ -662,6 +710,31 @@ def parse(tokens):
             continue
 
         if first["type"] == "ID":
+            # Property assignment is shared by ECS system fields and ordinary objects.
+            assignment_ops = ["=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
+            nesting = 0
+            assignment_index = None
+            for token_index, token in enumerate(line_tokens):
+                if token["type"] in ("LPAREN", "LBRACK"):
+                    nesting += 1
+                elif token["type"] in ("RPAREN", "RBRACK"):
+                    nesting = max(0, nesting - 1)
+                elif nesting == 0 and token["type"] == "OP" and token["value"] in assignment_ops:
+                    assignment_index = token_index
+                    break
+            if assignment_index is not None and assignment_index > 1:
+                target_ast = ExpressionParser(line_tokens[:assignment_index]).parse()
+                if target_ast.get("type") == "MemberExpr":
+                    value_ast = ExpressionParser(line_tokens[assignment_index + 1:]).parse()
+                    operator = line_tokens[assignment_index]["value"]
+                    node.update({
+                        "type": "MemberAssignment" if operator == "=" else "MemberCompoundAssignment",
+                        "target": target_ast,
+                        "op": operator,
+                        "value": value_ast
+                    })
+                    parent["body"].append(node)
+                    continue
 
             if (
                 len(line_tokens) >= 2
