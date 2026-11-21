@@ -2014,7 +2014,7 @@ def generate_native_ecs_sources(parsed_scripts):
     ])
     readme = """# PStudio Native ECS module
 
-This CMake project contains C++17 Component data types and System callbacks generated from the supported ps ECS subset.
+This CMake project contains C++17 Component data types and System callbacks generated from the supported ps ECS subset. Supported operations include Component member access/assignment, scalar locals, arithmetic and logical expressions, if/else, while, range loops, len and range. Unsupported game APIs and arbitrary helper-function calls are rejected during export.
 
 Build on the target machine with a C++17 toolchain and CMake:
 
