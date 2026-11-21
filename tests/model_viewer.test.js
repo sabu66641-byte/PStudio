@@ -92,9 +92,19 @@ test('large GLB scenes bypass recursive CPU occlusion raycasts while keeping fru
   assert.match(renderer,/if\(hasHighComplexityModel\)/);
   assert.match(renderer,/instance\.occlusionEligible===false\|\|!instance\.root\.userData\.pstudioOccluded/);
 });
+test('large selected GLBs use one bounds outline instead of per-mesh edge geometries',()=>{
+  assert.match(renderer,/complexInstance=\[\.\.\.modelInstances\.values\(\)\]\.find/);
+  assert.match(renderer,/new T\.Box3Helper\(bounds,0xffffff\)/);
+  assert.match(renderer,/pstudioBoundsSelectionHelper/);
+});
+test('camera collision skips recursive high-complexity model trees',()=>{
+  assert.match(renderer,/pstudioHighComplexity=meshes\.length>256/);
+  assert.match(renderer,/child\.userData\?\.pstudioHighComplexity\)collisionTargets\.push\(child\)/);
+  assert.match(renderer,/intersectObjects\(collisionTargets,true\)/);
+});
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
-  assert.match(renderer, /instance\.root\.visible=!instance\.preparing&&active&&\(isSelected\|\|!instance\.root\.userData\.pstudioOccluded\)/);
+  assert.match(renderer, /instance\.root\.visible=!instance\.preparing&&active&&\(isSelected\|\|instance\.occlusionEligible===false\|\|!instance\.root\.userData\.pstudioOccluded\)/);
 });
 
 test('native GLTF material shaders remain untouched unless a probe volume is baked', () => {
