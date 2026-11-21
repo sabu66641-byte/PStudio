@@ -2612,7 +2612,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         nodeName=String(parsed?.nodeName||'');
       }catch(_){}
       if(!nodeName){
-        const match=trackName.match(/^(.+?)(?:\\.|\\/)(?:position|quaternion|rotation|scale|weights|morphTargetInfluences)(?:\\[|$)/i);
+        const match=trackName.match(/^(.+?)(?:\.|\/)(?:position|quaternion|rotation|scale|weights|morphTargetInfluences)(?:\[|$)/i);
         if(match)nodeName=match[1];
       }
       if(nodeName)targets.add(nodeName);
@@ -2670,7 +2670,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const isGeneric=!isTree&&!isModularPart;
       if(isGeneric){
         const morphTargets=Object.values(object.geometry?.morphAttributes||{}).some(list=>Array.isArray(list)&&list.length>0);
-        if(bakedLightProbeVolume?.length||hasAnimatedAncestor(object,root,animatedTargets)||
+        if(Array.isArray(object.material)||bakedLightProbeVolume?.length||hasAnimatedAncestor(object,root,animatedTargets)||
           !isBatchHierarchyVisible(object,root)||object.children.length>0||hasNamedLODParent(object)||
           object.morphTargetInfluences?.length||morphTargets||object.frustumCulled===false||
           object.customDepthMaterial||object.customDistanceMaterial||
@@ -2867,10 +2867,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const streamChunks=await buildModelStreamingChunks(clone);
     const foliageBatches=await buildFoliageInstanceBatches(clone,asset.animations||[]);
     for(const entry of foliageBatches){
-      const sourceMaterial=entry.sources?.[0]?.material;
-      const batchMaterial=entry.mesh?.material;
-      const defaults=sourceMaterial&&materialDefaults.get(sourceMaterial);
-      if(defaults&&batchMaterial)materialDefaults.set(batchMaterial,{...defaults});
+      const sourceMaterials=Array.isArray(entry.sources?.[0]?.material)?entry.sources[0].material:[entry.sources?.[0]?.material];
+      const batchMaterials=Array.isArray(entry.mesh?.material)?entry.mesh.material:[entry.mesh?.material];
+      for(let i=0;i<batchMaterials.length;i++){
+        const sourceMaterial=sourceMaterials[i]||sourceMaterials[0],batchMaterial=batchMaterials[i];
+        const defaults=sourceMaterial&&materialDefaults.get(sourceMaterial);
+        if(defaults&&batchMaterial)materialDefaults.set(batchMaterial,{...defaults});
+      }
     }
     const bounds=new T.Box3();
     for(let i=0;i<pairs.length;i++){
@@ -3024,12 +3027,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       metalness:state.metalness??null,
       modelOverrides:overrides.map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
     }:null);
-    if(instance.materialStateSignature===signature)return;
-    instance.materialStateSignature=signature;
     const materialTargets=[
       ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
       ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
     ];
+    if(instance.materialStateSignature===signature)return;
+    instance.materialStateSignature=signature;
     for(const object of materialTargets){
       if(!object.material)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
