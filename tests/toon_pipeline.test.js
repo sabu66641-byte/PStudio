@@ -181,7 +181,7 @@ test('toon controls persist as per-model overrides and are forwarded to the rend
 test('PBR remains the default, while toon mode uses a standard material with the additive FX pipeline', () => {
   assert.match(renderer, /shaderMode=ownerMaterial\?\.shader\|\|'standard'/);
   assert.match(renderer, /shaderMode==='toon'\)material=new T\.MeshStandardMaterial/);
-  assert.match(renderer, /reflectedLight\.directDiffuse\*=mix/);
+  assert.match(fxSource, /reflectedLight\.directDiffuse\*=mix/);
   assert.match(renderer, /setupLightingMaterial\(material\)/);
   assert.match(renderer, /setupClusteredLightingMaterial\(material\)/);
   assert.match(readme, /set_toon_material\(/);
