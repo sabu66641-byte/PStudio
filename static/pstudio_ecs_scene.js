@@ -376,6 +376,37 @@
     return true;
   }
 
+  function syncCollisionContacts(ownerIds, pairs, dimension) {
+    const api = ecs();
+    if (!api || !Array.isArray(ownerIds) || !Array.isArray(pairs)) return [];
+    const field = dimension === '3d' ? 'overlaps3D' : 'overlaps2D';
+    const ids = [...new Set(ownerIds.map(String))];
+    const current = new Map(ids.map(id => [id, new Set()]));
+    const previous = new Map();
+    for (const id of ids) {
+      const entity = sceneEntity(id);
+      const state = entity && api.hasComponent(entity, 'CollisionState')
+        ? api.getComponent(entity, 'CollisionState') : null;
+      previous.set(id, new Set(Array.isArray(state?.[field]) ? state[field].map(String) : []));
+    }
+    for (const pair of pairs) {
+      if (!Array.isArray(pair) || pair.length < 2) continue;
+      const a = String(pair[0]), b = String(pair[1]);
+      if (a === b || !current.has(a) || !current.has(b)) continue;
+      current.get(a).add(b);
+      current.get(b).add(a);
+    }
+    const entered = [];
+    for (const id of ids) {
+      const peers = current.get(id), old = previous.get(id) || new Set();
+      for (const peer of peers) if (!old.has(peer)) entered.push([id, peer]);
+      const entity = sceneEntity(id);
+      if (!entity || (!peers.size && !old.size && !api.hasComponent(entity, 'CollisionState'))) continue;
+      commitCollisionState(id, dimension, [...peers]);
+    }
+    return entered;
+  }
+
   function commitCollisionState(ownerId, dimension, peers) {
     const api = ecs();
     const entity = sceneEntity(ownerId);
@@ -445,6 +476,7 @@
     syncRuntimeCommands,
     syncAudioState,
     commitCollisionState,
+    syncCollisionContacts,
     ensureComponent,
     setComponent,
     getComponent,
