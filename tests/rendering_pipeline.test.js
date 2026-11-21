@@ -379,3 +379,23 @@ test('large GLB memory preflight checks both total runtime and JavaScript heap b
   for(const token of ['function modelRuntimeBudgetBytes()','function modelCpuHeapBudgetBytes()','metadata?.estimatedCpuBytes','const safeBudget=modelRuntimeBudgetBytes(),cpuBudget=modelCpuHeapBudgetBytes()','CPU側'])assert.ok(renderer.includes(token),token);
   assert.ok(html.includes('estimatedCpuBytes:inspection.estimatedCpuBytes'));
 });
+
+
+test('model GPU preparation uploads textures across frames and precompiles shaders asynchronously when supported',()=>{
+  for(const token of ['prepareModelInstance','collectModelTextures','nextPreparationFrame','renderer?.initTexture?.(texture)','gpu-textures','KHR_parallel_shader_compile','renderer.compileAsync(scene,camera)','shaderCompileQueue','preparing'])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('instance.preparing=false'));
+  assert.ok(renderer.includes('preparationCancelled'));
+});
+
+test('model LOD uses world-space bounds for both authored LOD groups and generated mesh LOD',()=>{
+  for(const token of ['function modelCameraDistance(instance)','function objectCameraDistance(object)','function updateModelLOD(instance)','instance.localBoundsCenter','applyAutoLOD(object,objectCameraDistance(object))'])assert.ok(renderer.includes(token),token);
+});
+
+test('static model meshes use native frustum culling while animated deformation remains conservatively visible',()=>{
+  assert.ok(renderer.includes('object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0))'));
+  assert.ok(renderer.includes('batch.frustumCulled=true'));
+});
+
+test('GPU and CPU resource-cache pressure contribute to memory safety telemetry',()=>{
+  for(const token of ['gpuPressure','gpuBudgetBytes','cpuResourcePressure','estimatedGpuBytes','modelPreparationPending','stagedTextureUploads'])assert.ok(renderer.includes(token),token);
+});
