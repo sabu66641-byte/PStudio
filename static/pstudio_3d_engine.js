@@ -1276,7 +1276,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     cameraCollisionRaycaster.set(target,direction);
     cameraCollisionRaycaster.near=0.04;
     cameraCollisionRaycaster.far=distance;
-    const hits=cameraCollisionRaycaster.intersectObjects([primitiveGroup,modelGroup],true);
+    const collisionTargets=[primitiveGroup];
+    for(const child of modelGroup.children)if(!child.userData?.pstudioHighComplexity)collisionTargets.push(child);
+    const hits=cameraCollisionRaycaster.intersectObjects(collisionTargets,true);
     const hit=hits.find(item=>{
       const ownerId=item.object?.userData?.ownerId;
       const isCameraFocus=ownerId!==undefined&&ownerId!==null&&cameraFocusOwnerId!==null&&String(ownerId)===String(cameraFocusOwnerId);
@@ -1356,6 +1358,22 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       return;
     }
     const T = window.THREE;
+    const complexInstance=[...modelInstances.values()].find(instance=>String(instance.ownerId)===String(selectedOwnerId)&&instance.occlusionEligible===false);
+    if(complexInstance){
+      complexInstance.root.updateMatrixWorld(true);
+      const bounds=new T.Box3().setFromObject(complexInstance.root);
+      if(bounds.isEmpty()){disposeGroup(selectionGroup);selectionSignature='';return;}
+      const signature=String(selectedOwnerId)+':bounds:'+complexInstance.root.uuid;
+      let helper=selectionGroup.children.find(child=>child.userData?.pstudioBoundsSelectionHelper);
+      if(signature!==selectionSignature||!helper){
+        disposeGroup(selectionGroup);
+        helper=new T.Box3Helper(bounds,0xffffff);
+        helper.material.depthTest=false;helper.renderOrder=10;
+        helper.userData.isSelectionOutline=true;helper.userData.pstudioBoundsSelectionHelper=true;
+        selectionGroup.add(helper);selectionSignature=signature;
+      }else{helper.box.copy(bounds);helper.updateMatrixWorld(true);}
+      return;
+    }
     const meshes = [];
     for(const mesh of meshCache.values()){if(mesh.isMesh&&mesh.userData.ownerId===selectedOwnerId)meshes.push(mesh);}
     for(const instance of modelInstances.values())for(const mesh of instance.meshes||[])if(mesh.userData.ownerId===selectedOwnerId)meshes.push(mesh);
@@ -2973,6 +2991,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const modelSphere=bounds.getBoundingSphere(new T.Sphere());
     clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
     clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
+    clone.userData.pstudioHighComplexity=meshes.length>256;
     onPhase('streaming-chunk-build');
     const streamChunks=await buildModelStreamingChunks(clone);
     onPhase('gpu-instancing-build');
