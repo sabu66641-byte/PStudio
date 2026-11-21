@@ -77,6 +77,9 @@ test('standalone player uses prevalidated browser ASTs and does not require edit
   const editorHTML = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
   assert.ok(editorHTML.includes('window.PStudioBuild?.exportStandalone?.()'));
   assert.ok(editorHTML.includes('id="asset-storage-info"'));
+  assert.ok(editorHTML.includes('value!==null&&value!==undefined'));
+  assert.ok(editorHTML.includes('pstudio_assets.js?v=20261121-step5-opfs2'));
+  assert.ok(editorHTML.includes('pstudio_build.js?v=20261121-step5-build2'));
   assert.doesNotMatch(playerHTML, /ide-shell|editor-panel|inspector-content/);
 });
 
