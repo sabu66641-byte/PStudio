@@ -319,6 +319,22 @@ async function serializeGLTF(gltf,assetKey='') {
   }
 
   for (const [texture, id] of textureIds) {
+    if(texture.isCompressedTexture){
+      const mipmaps=(texture.mipmaps||[]).map(mipmap=>({
+        width:mipmap.width,height:mipmap.height,depth:mipmap.depth||0,
+        data:transferTypedArray(mipmap.data)
+      }));
+      textures[id]={
+        id,name:texture.name||'',compressed:true,array:!!texture.isCompressedArrayTexture,
+        width:texture.image?.width||0,height:texture.image?.height||0,depth:texture.image?.depth||0,
+        mipmaps,format:texture.format,type:texture.type,colorSpace:texture.colorSpace||'',
+        mapping:texture.mapping,wrapS:texture.wrapS,wrapT:texture.wrapT,
+        magFilter:texture.magFilter,minFilter:texture.minFilter,
+        generateMipmaps:false,flipY:false,premultiplyAlpha:!!texture.premultiplyAlpha,
+        anisotropy:texture.anisotropy||1,userData:safeJSON(texture.userData)
+      };
+      continue;
+    }
     const image = texture.source?.data ?? texture.image;
     let imageId = imageIds.get(image);
     if (imageId === undefined) {
@@ -397,14 +413,37 @@ async function parseGLB(message) {
   if (jsonChunkLength < 2 || 20 + jsonChunkLength > buffer.byteLength) throw new Error('GLB JSON chunk is invalid.');
   const jsonText = new TextDecoder().decode(new Uint8Array(buffer, 20, jsonChunkLength)).replace(/[\u0000\s]+$/g, '');
   const json = JSON.parse(jsonText);
-  if ((json.extensionsUsed || []).includes('KHR_texture_basisu')) {
-    const error = new Error('This GLB uses KTX2/Basis textures; the renderer must initialize the KTX2 transcoder on the main thread.');
-    error.code = 'PSTUDIO_MAIN_THREAD_REQUIRED';
-    throw error;
-  }
-
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
+  let ktx2Loader=null;
+  if ((json.extensionsUsed || []).includes('KHR_texture_basisu')) {
+    try {
+      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/KTX2Loader.js?bundle');
+      ktx2Loader = new module.KTX2Loader();
+      ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+      ktx2Loader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
+      const support=message.textureSupport||{};
+      const extensions={
+        'WEBGL_compressed_texture_astc':!!support.astc,
+        'WEBGL_compressed_texture_etc1':!!support.etc1,
+        'WEBGL_compressed_texture_etc':!!support.etc2,
+        'WEBGL_compressed_texture_s3tc':!!support.dxt,
+        'EXT_texture_compression_bptc':!!support.bptc,
+        'WEBGL_compressed_texture_pvrtc':!!support.pvrtc,
+        'WEBKIT_WEBGL_compressed_texture_pvrtc':!!support.pvrtc
+      };
+      ktx2Loader.detectSupport({
+        isWebGPURenderer:false,
+        capabilities:{isWebGL2:!!support.webgl2},
+        extensions:{has:name=>!!extensions[name]}
+      });
+      loader.setKTX2Loader(ktx2Loader);
+    } catch (cause) {
+      const error = new Error('KTX2 worker transcoder could not initialize; using renderer-compatible fallback: '+String(cause?.message||cause));
+      error.code = 'PSTUDIO_MAIN_THREAD_REQUIRED';
+      throw error;
+    }
+  }
   let dracoLoader=null;
   if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) {
     try {
@@ -429,6 +468,7 @@ async function parseGLB(message) {
     serializedAt = performance.now();
   } finally {
     dracoLoader?.dispose?.();
+    ktx2Loader?.dispose?.();
   }
   packet.timings = {
     parseMs: parsedAt - started,
