@@ -400,6 +400,13 @@ self.onmessage = async event => {
   const message = event.data || {};
   if (!Number.isSafeInteger(message.id)) return;
   try {
+    if (message.op === 'capabilities') {
+      self.postMessage({ id: message.id, ok: true, result: {
+        offscreenCanvas: typeof OffscreenCanvas === 'function',
+        createImageBitmap: typeof createImageBitmap === 'function'
+      }});
+      return;
+    }
     if (message.op === 'register-image') {
       if (!message.bitmap || typeof message.textureId !== 'string') throw new Error('Invalid virtual texture image registration.');
       const previous = VIRTUAL_IMAGES.get(message.textureId);
