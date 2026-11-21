@@ -183,6 +183,17 @@ test('toon controls persist as per-model overrides and are forwarded to the rend
   assert.match(renderer, /configureToon\?\.\(material,toonSettings,object\)/);
 });
 
+test('shared Inspector NPR settings apply to primitive script owners and wind-only stays on PBR', () => {
+  assert.ok(html.includes('id="obj-toon-controls"'));
+  assert.ok(html.includes('applySelectedToonMaterial()'));
+  assert.match(html, /o\.toonMaterialSettings=toon/);
+  assert.match(runtime, /type:'toon_material',toon:o\.toonMaterialSettings/);
+  assert.match(renderer, /shader:toon\.enabled===false\?/);
+  assert.match(renderer, /primitiveToon&&primitiveToon\.enabled!==false/);
+  assert.match(renderer, /hasOwnProperty\.call\(primitiveToon,'windStrength'\)/);
+  assert.match(renderer, /hasOwnProperty\.call\(toonSettings,'windStrength'\)/);
+});
+
 test('PBR remains the default, while toon mode uses a standard material with the additive FX pipeline', () => {
   assert.match(renderer, /shaderMode=ownerMaterial\?\.shader\|\|'standard'/);
   assert.match(renderer, /shaderMode==='toon'\)material=new T\.MeshStandardMaterial/);
