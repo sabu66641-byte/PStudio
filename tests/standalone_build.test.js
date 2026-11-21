@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const buildSource = fs.readFileSync(path.join(root, 'static', 'pstudio_build.js'), 'utf8');
@@ -55,6 +56,26 @@ test('standalone ZIP64 writer stores UTF-8 files, CRC32 and ZIP64 metadata corre
   assert.ok(bytes.some((_, index) => index + 3 < bytes.length && readU32(bytes, index) === 0x06064B50));
   assert.ok(bytes.some((_, index) => index + 3 < bytes.length && readU32(bytes, index) === 0x07064B50));
   assert.ok(bytes.some((_, index) => index + 3 < bytes.length && readU32(bytes, index) === 0x06054B50));
+});
+
+test('ZIP64 package can be extracted by the standard Python zipfile implementation', async (t) => {
+  const build = createBuild();
+  const archive = await build.createZip64([
+    { name: 'index.html', blob: new Blob(['<!doctype html><title>Standalone</title>']) },
+    { name: 'assets/scene.glb', blob: new Blob([new Uint8Array([0, 1, 2, 3, 254, 255])]) }
+  ]);
+  const python = String.raw`import io, json, sys, zipfile
+data = sys.stdin.buffer.read()
+with zipfile.ZipFile(io.BytesIO(data), "r") as archive:
+    assert archive.namelist() == ["index.html", "assets/scene.glb"]
+    assert archive.read("index.html") == b"<!doctype html><title>Standalone</title>"
+    assert archive.read("assets/scene.glb") == bytes([0, 1, 2, 3, 254, 255])
+    assert archive.testzip() is None
+print("zip64 extraction verified")`;
+  const result = spawnSync('python', ['-c', python], { input: Buffer.from(await archive.arrayBuffer()), encoding: 'utf8' });
+  if (result.error?.code === 'ENOENT') return t.skip('Python is unavailable in this environment.');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /zip64 extraction verified/);
 });
 
 test('standalone ZIP64 writer rejects path traversal and duplicate entry names', async () => {
