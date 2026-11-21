@@ -820,6 +820,30 @@ GAME_FUNCTIONS = {
 }
 GAME_LIFECYCLE = {"start": 0, "update": 1, "on_collision": 1}
 
+# Names accepted by the ps lexer must also be valid identifiers in generated C++17.
+CPP_RESERVED_IDENTIFIERS = set("""
+alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto
+bitand bitor bool break case catch char char8_t char16_t char32_t class compl
+concept const consteval constexpr constinit const_cast continue co_await co_return
+co_yield decltype default delete do double dynamic_cast else enum explicit export
+extern false float for friend goto if inline int long mutable namespace new noexcept
+not not_eq nullptr operator or or_eq private protected public register reinterpret_cast
+requires return short signed sizeof static static_assert static_cast struct switch
+synchronized template this thread_local throw true try typedef typeid typename union
+unsigned using virtual void volatile wchar_t while xor xor_eq
+""".split())
+
+
+def _validate_cpp_identifier(name, line=None):
+    if name in CPP_RESERVED_IDENTIFIERS or name in ("true", "false"):
+        raise Exception(
+            f"意味エラー (行 {line or '?'}): '{name}' はC++予約語またはpsの論理値なので、識別子として使用できません。"
+        )
+    if name.startswith("__") or (len(name) > 1 and name[0] == "_" and name[1].isupper()):
+        raise Exception(
+            f"意味エラー (行 {line or '?'}): '{name}' は予約された識別子形式です。別の名前を使用してください。"
+        )
+
 
 def validate_ast(tree, allow_game=False):
     """Validate ps semantics. Game APIs are opt-in for the browser game runtime."""
@@ -827,8 +851,11 @@ def validate_ast(tree, allow_game=False):
     for node in tree.get("body", []):
         if node.get("type") == "FunctionDef":
             name = node["name"]
+            _validate_cpp_identifier(name, node.get("line"))
             if name in functions:
                 raise Exception(f"意味エラー (行 {node.get('line', '?')}): 関数 '{name}' が重複定義されています。")
+            for param in node.get("params", []):
+                _validate_cpp_identifier(param, node.get("line"))
             functions[name] = len(node.get("params", []))
 
     game_functions = GAME_FUNCTIONS if allow_game else {}
@@ -981,13 +1008,16 @@ def validate_ast(tree, allow_game=False):
                 previous = typ
                 continue
             if typ == "AssignmentExpression":
+                _validate_cpp_identifier(node["variable"], node.get("line"))
                 env[node["variable"]] = expr(node["value"], env)
             elif typ == "CompoundAssignment":
                 name = node["variable"]
+                _validate_cpp_identifier(name, node.get("line"))
                 if name not in env:
                     raise Exception(f"意味エラー (行 {node.get('line', '?')}): 未定義の変数 '{name}' に複合代入しています。")
                 expr(node["value"], env)
             elif typ in ("ArrayAssignStatement", "ArrayCompoundAssignStatement"):
+                _validate_cpp_identifier(node["name"], node.get("line"))
                 base = env.get(node["name"])
                 if not (isinstance(base, str) and base.startswith("array<")):
                     raise Exception(f"意味エラー: '{node['name']}' は配列ではありません。")
@@ -1000,6 +1030,7 @@ def validate_ast(tree, allow_game=False):
                     expr(node["condition"], env)
                 else:
                     expr(node["range"], env)
+                    _validate_cpp_identifier(node["variable"], node.get("line"))
                     env[node["variable"]] = "int"
                 block(node.get("body", []), env, loop_depth + 1, function_depth)
             elif typ == "ReturnStatement":
