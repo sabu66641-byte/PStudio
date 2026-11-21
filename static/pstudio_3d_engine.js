@@ -879,6 +879,183 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values())for(const entry of instance.foliageBatches||[])update(entry.mesh);
   }
 
+  function createClusterDataTexture(data,width,height,name){
+    const T=window.THREE,texture=new T.DataTexture(data,width,height,T.RGBAFormat,T.FloatType);
+    texture.name=name;texture.magFilter=T.NearestFilter;texture.minFilter=T.NearestFilter;
+    texture.generateMipmaps=false;texture.flipY=false;texture.unpackAlignment=1;
+    texture.colorSpace=T.NoColorSpace;texture.needsUpdate=true;return texture;
+  }
+  function ensureClusteredLightingResources(){
+    if(clusteredLightingResources)return clusteredLightingResources;
+    if(!renderer||!renderer.capabilities?.isWebGL2)return null;
+    const clusterCount=CLUSTER_GRID_X*CLUSTER_GRID_Y*CLUSTER_GRID_Z,indexWidth=CLUSTER_MAX_PER_CELL+1;
+    const lightData=new Float32Array(3*CLUSTER_MAX_LIGHTS*4),clusterData=new Float32Array(indexWidth*clusterCount*4);
+    let lightTexture=null,clusterTexture=null;
+    try{
+      lightTexture=createClusterDataTexture(lightData,3,CLUSTER_MAX_LIGHTS,'PStudio_Clustered_PointLight_Data');
+      clusterTexture=createClusterDataTexture(clusterData,indexWidth,clusterCount,'PStudio_Clustered_Light_Lists');
+      renderer.initTexture(lightTexture);renderer.initTexture(clusterTexture);
+    }catch(error){
+      lightTexture?.dispose?.();clusterTexture?.dispose?.();
+      console.warn('[PStudio] Clustered lighting float textures are unavailable; native point lights remain enabled.',error);
+      return null;
+    }
+    clusteredLightingResources={lightData,clusterData,lightTexture,clusterTexture,clusterCount,indexWidth,lightCount:0,bytes:lightData.byteLength+clusterData.byteLength};
+    return clusteredLightingResources;
+  }
+  function setupClusteredLightingMaterial(material){
+    if(!material||material.userData?.pstudioClusterLightingSetup)return false;
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return false;
+    const resources=ensureClusteredLightingResources();if(!resources)return false;
+    const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+    const uniforms={
+      lights:resources.lightTexture,clusters:resources.clusterTexture,
+      viewport:new window.THREE.Vector2(1,1),
+      grid:new window.THREE.Vector3(CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z),
+      near:camera?.near||0.1,far:camera?.far||worldRenderConfig.maxDrawDistance,enabled:clusteredLightingEnabled?1:0
+    };
+    material.onBeforeCompile=function(shader,rendererRef){
+      if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
+      shader.uniforms.uPStudioClusterLights={value:uniforms.lights};
+      shader.uniforms.uPStudioClusterIndices={value:uniforms.clusters};
+      shader.uniforms.uPStudioClusterViewport={value:uniforms.viewport};
+      shader.uniforms.uPStudioClusterGrid={value:uniforms.grid};
+      shader.uniforms.uPStudioClusterNear={value:uniforms.near};
+      shader.uniforms.uPStudioClusterFar={value:uniforms.far};
+      shader.uniforms.uPStudioClusterEnabled={value:uniforms.enabled};
+      const declarations=[
+        'uniform sampler2D uPStudioClusterLights;',
+        'uniform sampler2D uPStudioClusterIndices;',
+        'uniform vec2 uPStudioClusterViewport;',
+        'uniform vec3 uPStudioClusterGrid;',
+        'uniform float uPStudioClusterNear;',
+        'uniform float uPStudioClusterFar;',
+        'uniform float uPStudioClusterEnabled;'
+      ].join('\\n');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\\n'+declarations);
+      const lighting=[
+        'if(uPStudioClusterEnabled>0.5){',
+        '  float pstudioDepth=max(uPStudioClusterNear,-vViewPosition.z);',
+        '  float pstudioLogRange=max(0.0001,log(uPStudioClusterFar/uPStudioClusterNear));',
+        '  vec2 pstudioTile=clamp(floor(gl_FragCoord.xy/uPStudioClusterViewport*uPStudioClusterGrid.xy),vec2(0.0),uPStudioClusterGrid.xy-vec2(1.0));',
+        '  float pstudioSlice=clamp(floor(log(pstudioDepth/uPStudioClusterNear)/pstudioLogRange*uPStudioClusterGrid.z),0.0,uPStudioClusterGrid.z-1.0);',
+        '  float pstudioCluster=(pstudioSlice*uPStudioClusterGrid.y+pstudioTile.y)*uPStudioClusterGrid.x+pstudioTile.x;',
+        '  float pstudioClusterV=(pstudioCluster+0.5)/(uPStudioClusterGrid.x*uPStudioClusterGrid.y*uPStudioClusterGrid.z);',
+        '  float pstudioLightCount=floor(texture2D(uPStudioClusterIndices,vec2(0.5/25.0,pstudioClusterV)).r+0.5);',
+        '  PointLight pstudioClusterPointLight;',
+        '  IncidentLight pstudioClusterIncident;',
+        '  for(int pstudioLightSlot=0;pstudioLightSlot<24;pstudioLightSlot++){',
+        '    if(float(pstudioLightSlot)>=pstudioLightCount)break;',
+        '    float pstudioLightIndex=floor(texture2D(uPStudioClusterIndices,vec2((float(pstudioLightSlot)+1.5)/25.0,pstudioClusterV)).r+0.5);',
+        '    float pstudioLightV=(pstudioLightIndex+0.5)/96.0;',
+        '    vec4 pstudioLightPositionRange=texture2D(uPStudioClusterLights,vec2(0.5/3.0,pstudioLightV));',
+        '    vec4 pstudioLightColorIntensity=texture2D(uPStudioClusterLights,vec2(1.5/3.0,pstudioLightV));',
+        '    vec4 pstudioLightDecay=texture2D(uPStudioClusterLights,vec2(2.5/3.0,pstudioLightV));',
+        '    pstudioClusterPointLight.position=pstudioLightPositionRange.xyz;',
+        '    pstudioClusterPointLight.distance=pstudioLightPositionRange.w;',
+        '    pstudioClusterPointLight.color=pstudioLightColorIntensity.rgb*pstudioLightColorIntensity.a;',
+        '    pstudioClusterPointLight.decay=pstudioLightDecay.r;',
+        '    getPointLightInfo(pstudioClusterPointLight,geometryPosition,pstudioClusterIncident);',
+        '    if(pstudioClusterIncident.visible){',
+        '      RE_Direct(pstudioClusterIncident,geometryPosition,geometryNormal,geometryViewDir,geometryClearcoatNormal,material,reflectedLight);',
+        '    }',
+        '  }',
+        '}'
+      ].join('\\n');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>','#include <lights_fragment_begin>\\n'+lighting);
+    };
+    material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-clustered-forward-v1';};
+    material.userData.pstudioClusterLightingSetup=true;
+    material.userData.pstudioClusterLightingUniforms=uniforms;
+    return true;
+  }
+  function clusteredDepthSlice(depth,near,far){
+    return Math.max(0,Math.min(CLUSTER_GRID_Z-1,Math.floor(Math.log(Math.max(near,Math.min(far,depth))/near)/Math.log(far/near)*CLUSTER_GRID_Z)));
+  }
+  function updateClusteredLighting(force=false){
+    const resources=ensureClusteredLightingResources();
+    if(!resources||!camera){
+      clusteredLightingActive=false;
+      for(const light of dynamicLights.values())if(light.isPointLight)light.visible=true;
+      return false;
+    }
+    const now=window.performance?.now?.()??Date.now();
+    camera.updateMatrixWorld(true);
+    const T=window.THREE,lights=[],signatureParts=[];
+    for(const light of dynamicLights.values()){
+      if(!light.isPointLight)continue;
+      light.updateWorldMatrix(true,false);
+      const position=light.getWorldPosition(new T.Vector3()).applyMatrix4(camera.matrixWorldInverse);
+      const range=Math.max(camera.near,Number(light.distance)||worldRenderConfig.maxDrawDistance);
+      const color=light.color;
+      signatureParts.push(
+        Number(position.x.toFixed(2)),Number(position.y.toFixed(2)),Number(position.z.toFixed(2)),
+        Number(range.toFixed(2)),Number(light.intensity.toFixed(2)),
+        Number(color.r.toFixed(2)),Number(color.g.toFixed(2)),Number(color.b.toFixed(2))
+      );
+      if(light.intensity>0&&lights.length<CLUSTER_MAX_LIGHTS)lights.push({light,position,range});
+    }
+    const signature=signatureParts.join('|')+'|'+[
+      Number(camera.position.x.toFixed(2)),Number(camera.position.y.toFixed(2)),Number(camera.position.z.toFixed(2)),
+      Number(camera.quaternion.x.toFixed(3)),Number(camera.quaternion.y.toFixed(3)),
+      Number(camera.quaternion.z.toFixed(3)),Number(camera.quaternion.w.toFixed(3))
+    ].join(',');
+    if(!force&&now-clusteredLightingLastUpdate<100&&signature===clusteredLightingLastSignature){
+      clusteredLightingActive=clusteredLightingEnabled;
+      for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!clusteredLightingActive;
+      return clusteredLightingActive;
+    }
+    clusteredLightingLastUpdate=now;clusteredLightingLastSignature=signature;
+    const near=Math.max(0.001,camera.near),far=Math.max(near*1.01,Math.min(camera.far||worldRenderConfig.maxDrawDistance,worldRenderConfig.maxDrawDistance*2));
+    resources.lightData.fill(0);resources.clusterData.fill(0);
+    const counts=new Uint8Array(resources.clusterCount),width=resources.indexWidth;
+    const projection=camera.projectionMatrix.elements;
+    const clusterPush=(x,y,z,index)=>{
+      const cluster=(z*CLUSTER_GRID_Y+y)*CLUSTER_GRID_X+x,count=counts[cluster];
+      if(count>=CLUSTER_MAX_PER_CELL)return;
+      resources.clusterData[(cluster*width+count+1)*4]=index;
+      counts[cluster]=count+1;
+    };
+    resources.lightCount=lights.length;
+    for(let index=0;index<lights.length;index++){
+      const entry=lights[index],light=entry.light,position=entry.position,depth=-position.z,range=entry.range,base=index*12;
+      resources.lightData[base]=position.x;resources.lightData[base+1]=position.y;resources.lightData[base+2]=position.z;resources.lightData[base+3]=range;
+      resources.lightData[base+4]=light.color.r;resources.lightData[base+5]=light.color.g;resources.lightData[base+6]=light.color.b;resources.lightData[base+7]=Math.max(0,light.intensity);
+      resources.lightData[base+8]=Math.max(0.01,Number(light.decay)||2);
+      if(depth+range<near||depth-range>far)continue;
+      let minX=0,maxX=CLUSTER_GRID_X-1,minY=0,maxY=CLUSTER_GRID_Y-1;
+      if(depth-range>near){
+        const clipW=-position.z;
+        if(clipW>0){
+          const centerX=(position.x*projection[0])/clipW,centerY=(position.y*projection[5])/clipW;
+          const radiusX=Math.abs(projection[0]*range/Math.max(near,depth-range)),radiusY=Math.abs(projection[5]*range/Math.max(near,depth-range));
+          minX=Math.max(0,Math.floor(((centerX-radiusX)*0.5+0.5)*CLUSTER_GRID_X));
+          maxX=Math.min(CLUSTER_GRID_X-1,Math.floor(((centerX+radiusX)*0.5+0.5)*CLUSTER_GRID_X));
+          minY=Math.max(0,Math.floor(((centerY-radiusY)*0.5+0.5)*CLUSTER_GRID_Y));
+          maxY=Math.min(CLUSTER_GRID_Y-1,Math.floor(((centerY+radiusY)*0.5+0.5)*CLUSTER_GRID_Y));
+          if(maxX<minX||maxY<minY)continue;
+        }
+      }
+      const minZ=clusteredDepthSlice(Math.max(near,depth-range),near,far),maxZ=clusteredDepthSlice(Math.min(far,depth+range),near,far);
+      for(let z=minZ;z<=maxZ;z++)for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++)clusterPush(x,y,z,index);
+    }
+    for(let cluster=0;cluster<resources.clusterCount;cluster++)resources.clusterData[(cluster*width)*4]=counts[cluster];
+    resources.lightTexture.needsUpdate=true;resources.clusterTexture.needsUpdate=true;
+    const viewport=renderer.getDrawingBufferSize(new T.Vector2());
+    const active=clusteredLightingEnabled;
+    clusteredLightingActive=active;
+    for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!active;
+    const updateMaterial=material=>{
+      const uniforms=material?.userData?.pstudioClusterLightingUniforms;
+      if(!uniforms)return;
+      uniforms.viewport.set(viewport.x,viewport.y);uniforms.near=near;uniforms.far=far;uniforms.enabled=active?1:0;
+    };
+    for(const instance of modelInstances.values())for(const material of instance.materialDefaults.keys())updateMaterial(material);
+    for(const mesh of meshCache.values())updateMaterial(mesh.material);
+    clusteredLightingUpdatedClusters=counts.reduce((sum,count)=>sum+(count>0?1:0),0);
+    return active;
+  }
+
   function updateWorldVisibility(){
     if(!camera)return;updateWorldChunkStates();const max=worldRenderConfig.maxDrawDistance,T=window.THREE;
     if(!worldFrustum){worldFrustum=new T.Frustum();worldFrustumMatrix=new T.Matrix4();worldFrustumSphere=new T.Sphere();}
