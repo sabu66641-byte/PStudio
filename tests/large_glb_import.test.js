@@ -98,9 +98,9 @@ test('staged validator rejects incorrect GLB headers and mismatched declared len
 
 test('GLB maximum is exactly one GiB and oversize files are rejected before reading', async () => {
   const { validateGLBFile, PSTUDIO_MAX_GLB_BYTES } = makeValidator();
-  assert.equal(PSTUDIO_MAX_GLB_BYTES, 1024 * 1024 * 1024);
+  assert.equal(PSTUDIO_MAX_GLB_BYTES, 0xFFFFFFFF);
   const fake = { size: PSTUDIO_MAX_GLB_BYTES + 1, slice() { throw new Error('should not read'); } };
-  await assert.rejects(validateGLBFile(fake), /1GB/);
+  await assert.rejects(validateGLBFile(fake), /4GiB/);
 });
 
 test('GLB validator rejects external resources and out-of-range buffer views', async () => {
