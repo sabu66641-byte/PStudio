@@ -35,7 +35,7 @@ function scene(runtime, objects) {
 
 test('registers typed gameplay Components and keeps runtime-only world state internal', () => {
   const { ecs } = createRuntime();
-  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider']) {
+  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider', 'AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings', 'AudioSource', 'CollisionState']) {
     assert.equal(ecs.hasComponentType(type), true, type);
     assert.ok(ecs.getComponentDefinition(type).schema, type);
   }
@@ -101,6 +101,48 @@ test('Scene Object authoring fields are projected into ECS presentation Componen
     assert.equal(runtime.ecs.hasComponent(entity, type), true, type);
     assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false, type);
   }
+});
+
+test('animation, camera, lights and environment commands are mirrored in Entity Components', () => {
+  const runtime = createRuntime();
+  const object = { id: 'camera-owner', name: 'Camera Owner', x: 0, y: 0, z: 0 };
+  scene(runtime, [object]);
+  const commands = new Map([['camera-owner', [
+    { type: 'animation', clipName: 'Run', loop: true },
+    { type: 'animation_layer', clip: 'UpperBody', weight: 0.5, additive: true },
+    { type: 'camera', x: 1, y: 2, z: 3, targetX: 0, targetY: 0, targetZ: 0, smoothing: 4 },
+    { type: 'light', kind: 'point', x: 2, y: 3, z: 4, intensity: 2, color: '#ffffff', distance: 10 },
+    { type: 'environment', fogColor: '#112233', fogNear: 1, fogFar: 100 }
+  ]]]);
+  assert.equal(runtime.scene.syncRuntimeCommands(commands), 1);
+  const entity = runtime.ecs.getEntityForSceneObject('camera-owner');
+  assert.equal(runtime.ecs.getComponent(entity, 'AnimationState').entries[0].command.clipName, 'Run');
+  assert.equal(runtime.ecs.getComponent(entity, 'CameraState').entry.command.x, 1);
+  assert.equal(runtime.ecs.getComponent(entity, 'LightSet').entries[0].command.kind, 'point');
+  assert.equal(runtime.ecs.getComponent(entity, 'EnvironmentSettings').entries[0].command.fogFar, 100);
+  assert.equal(commands.get('camera-owner')[2].type, 'camera');
+  for (const type of ['AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings']) {
+    assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false);
+  }
+});
+
+test('AudioSource and CollisionState store per-Entity playback and contact metadata', () => {
+  const runtime = createRuntime();
+  const objects = scene(runtime, [
+    { id: 'hero', name: 'Hero', x: 0, y: 0, z: 0 },
+    { id: 'enemy', name: 'Enemy', x: 0, y: 0, z: 0 }
+  ]);
+  assert.equal(runtime.scene.syncAudioState('hero', [
+    { name: 'theme', volume: 0.7, loop: true, paused: false, currentTime: 3.25 }
+  ]), true);
+  const hero = runtime.ecs.getEntityForSceneObject('hero');
+  assert.equal(runtime.ecs.getComponent(hero, 'AudioSource').sounds[0].name, 'theme');
+  runtime.scene.commitCollisionState('hero', '2d', ['enemy']);
+  runtime.scene.commitCollisionState('hero', '3d', ['enemy']);
+  const collision = runtime.ecs.getComponent(hero, 'CollisionState');
+  assert.deepEqual(JSON.parse(JSON.stringify(collision.overlaps2D)), ['enemy']);
+  assert.deepEqual(JSON.parse(JSON.stringify(collision.overlaps3D)), ['enemy']);
+  assert.equal(runtime.ecs.getComponentDefinition('CollisionState').persistent, false);
 });
 
 test('Scene presentation adapter loads in order before the ECS Inspector', () => {
