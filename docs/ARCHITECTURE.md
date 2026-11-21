@@ -52,6 +52,18 @@ The four Step 4 APIs remain browser-game-runtime-only and are registered in `GAM
 
 The trail pool is capped at 64 effects × 48 samples. The screen-space God Rays shader uses 20 texture samples per output pixel; desktop/mobile GPU compile, frame-time and visual equivalence checks remain real-device quality gates. A failed optional God Rays pass must not prevent the base renderer or other post-processing from running.
 
+### ps ECS declarations and runtime bridge
+
+The parser recognizes contextual top-level `component Name` and `system Name(ComponentA, ComponentB)` declarations without reserving those words as lexer keywords. Thus existing variables named `component` and `system` remain valid. Member access/assignment is represented by explicit AST nodes and validated against the declared Component fields. The browser runtime registers project Components and Systems with `PStudioECS`, then uses the existing scheduler and sparse-set iteration API.
+
+The initial bridge policy attaches every declared custom Component to every Scene Game Object at Play start. System IDs are deterministically namespaced by source filename and declared system name. Component definitions and system references are validated across all .ps files in `/game/prepare`. Stop and failed-start paths unregister dynamic Systems, clear scene mirrors, then unregister custom Component types in dependency-safe order.
+
+This stage does not replace legacy object scripts, PStudioPhysics ownership, renderer state, collision or gameplay systems. The built-in Transform is still synchronized between ECS and Scene Object fields. Native code generation must preserve the same Component schemas and System ordering without implying that JavaScript renderer/physics backends have been ported.
+
+### Native build boundary
+
+The normal `/compile` path generates C++17 for the existing console-program subset. Browser game ASTs also contain renderer, input, asset and physics calls whose semantics currently live in JavaScript/Three.js. They cannot be safely made native by merely feeding the same AST to `generate_cpp()`. Native project export must therefore define a separate C++ runtime/module contract and explicitly list supported system operations. A CMake package for native ECS logic is not yet a standalone game executable; full Windows/macOS/Android games require target-native render, platform/input/audio, asset and physics backends and appropriate toolchains.
+
 ## Repository map
 
 ### Server and language
