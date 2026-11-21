@@ -160,7 +160,8 @@
       material:{shaderFragment:String(object?.shaderFragment||''),toonSettings:object?.toonMaterialSettings||null,modelOverrides:Array.isArray(object?.modelMaterialOverrides)?object.modelMaterialOverrides:[]},
       postProcessing:{enabled:!!object?.postProcessing,bloom:!!object?.postProcessing?.bloom,ssao:!!object?.postProcessing?.ssao,strength:finite(object?.postProcessing?.strength,0.45)},
       particleEmitter:{enabled:object?.particleEmitter?.enabled===true,rate:finite(object?.particleEmitter?.rate,12),color:object?.particleEmitter?.color||'#ffffff',speed:finite(object?.particleEmitter?.speed,2),lifetime:finite(object?.particleEmitter?.lifetime,1),maxCount:finite(object?.particleEmitter?.maxCount,200)},
-      collider2D:{enabled:!!object?.collider,shape:object?.shape==='circle'?'circle':'rect'}
+      collider2D:{enabled:!!object?.collider,shape:object?.shape==='circle'?'circle':'rect'},
+      meshCollider:{enabled:!!object?.collider&&!!object?.model,source:'render-mesh'}
     };
   }
   function getCollisionObject(object) {
@@ -787,7 +788,7 @@
         if(list.length)commands.set(o.id,list);
       }
 
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);const ownerPresentation=owner?getRuntimePresentation(owner):null;if(ownerPresentation?.meshRenderer.enabled&&ownerPresentation.collider2D.enabled){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);const ownerPresentation=owner?getRuntimePresentation(owner):null;if(ownerPresentation?.meshRenderer.enabled&&ownerPresentation.meshCollider.enabled){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ecsAfterPhysics = window.PStudioECS;
