@@ -44,6 +44,10 @@
   const virtualTexturePending = new Set();
   const virtualTextureQueue = [];
   let virtualTexturePumpScheduled=false,virtualTextureTileUploads=0,virtualTextureRequests=0;
+  const CLUSTER_GRID_X=16,CLUSTER_GRID_Y=9,CLUSTER_GRID_Z=16;
+  const CLUSTER_MAX_LIGHTS=96,CLUSTER_MAX_PER_CELL=24;
+  let clusteredLightingEnabled=true,clusteredLightingActive=false,clusteredLightingResources=null;
+  let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0;
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
   let lastCommands = null;
