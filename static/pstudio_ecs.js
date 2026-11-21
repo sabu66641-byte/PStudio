@@ -561,6 +561,7 @@
   const api = {
     registerComponent,
     unregisterComponent,
+    hasComponentType(type) { return componentDefinitions.has(String(type || '')); },
     registerSystem,
     unregisterSystem,
     setSystemEnabled,
