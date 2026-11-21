@@ -133,7 +133,8 @@ test('BVH occlusion state persists between bounded candidate checks',()=>{
 });
 test('inactive script owners retain prior render commands for seamless resume',()=>{
   assert.ok(engine.includes('runtime.contexts.get(o.id)'));
-  assert.ok(engine.includes('runtime.started.has(o.id)'));
+  assert.ok(engine.includes('getScriptLifecycle(o.id)'));
+  assert.ok(engine.includes('lifecycle.started'));
   assert.ok(engine.includes('physicsCommands'));
 });
 
