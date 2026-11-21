@@ -756,6 +756,7 @@
     for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619);
     return 'ps.'+(hash>>>0).toString(36);
   }
+  function cloneEcsDefault(value){return Array.isArray(value)?value.map(cloneEcsDefault):value;}
   function ecsLiteralValue(node){
     if(!node||typeof node!=='object')throw new PsRuntimeError('ECS Component初期値が不正です。');
     if(node.type==='Literal'){
@@ -807,7 +808,7 @@
     runtime.ecsStates=new Map();
     try{
       for(const [name,defaults] of definitions){
-        ecs.registerComponent(name,{create:()=>structuredClone(defaults)});
+        ecs.registerComponent(name,{create:()=>Object.fromEntries(Object.entries(defaults).map(([key,value])=>[key,cloneEcsDefault(value)]))});
         runtime.ecsComponentTypes.push(name);
       }
       // Initial policy: each declared gameplay Component is attached to every Scene Game Object.
