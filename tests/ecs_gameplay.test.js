@@ -23,8 +23,9 @@ function createRuntime() {
   };
   vm.runInNewContext(read('static/pstudio_ecs.js'), sandbox, { filename: 'pstudio_ecs.js' });
   vm.runInNewContext(read('static/pstudio_ecs_gameplay.js'), sandbox, { filename: 'pstudio_ecs_gameplay.js' });
+  vm.runInNewContext(read('static/pstudio_ecs_scene.js'), sandbox, { filename: 'pstudio_ecs_scene.js' });
   vm.runInNewContext(read('static/pstudio_gameplay.js'), sandbox, { filename: 'pstudio_gameplay.js' });
-  return { ecs: window.PStudioECS, gameplay: window.PStudioGameplay, bridge: window.PStudioECSGameplay, window, positions };
+  return { ecs: window.PStudioECS, gameplay: window.PStudioGameplay, bridge: window.PStudioECSGameplay, scene: window.PStudioECSScene, window, positions };
 }
 
 function scene(runtime, objects) {
@@ -34,7 +35,7 @@ function scene(runtime, objects) {
 
 test('registers typed gameplay Components and keeps runtime-only world state internal', () => {
   const { ecs } = createRuntime();
-  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState']) {
+  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider']) {
     assert.equal(ecs.hasComponentType(type), true, type);
     assert.ok(ecs.getComponentDefinition(type).schema, type);
   }
@@ -64,6 +65,51 @@ test('ps runtime locals and lifecycle flags have per-Entity ECS ownership', () =
     assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false);
     assert.equal(runtime.ecs.getComponentDefinition(type).internal, true);
   }
+});
+
+test('Scene Object authoring fields are projected into ECS presentation Components', () => {
+  const runtime = createRuntime();
+  const object = {
+    id: 'model-1', name: 'Model', x: 10, y: 20, z: 3, w: 80, h: 120,
+    model: 'tree.glb', modelScale: 1.5, shape: 'circle', sprite: 'hero.png',
+    color: '#123456', collider: true,
+    toonMaterialSettings: { enabled: true, rimIntensity: 0.5 },
+    modelMaterialOverrides: [{ name: 'Bark', roughness: 0.8 }],
+    shaderFragment: 'void main() {}',
+    postProcessing: { bloom: true, ssao: false, strength: 0.7 },
+    particleEmitter: { enabled: true, rate: 30, color: '#ffffff', speed: 3, lifetime: 2, maxCount: 300 }
+  };
+  scene(runtime, [object]);
+  assert.equal(runtime.scene.syncSceneObjects([object]), 1);
+  const state = runtime.scene.getRenderState(object);
+  assert.equal(state.spriteRenderer.width, 80);
+  assert.equal(state.spriteRenderer.height, 120);
+  assert.equal(state.spriteRenderer.shape, 'circle');
+  assert.equal(state.spriteRenderer.color, '#123456');
+  assert.equal(state.meshRenderer.enabled, true);
+  assert.equal(state.meshRenderer.model, 'tree.glb');
+  assert.equal(state.meshRenderer.scale, 1.5);
+  assert.equal(state.material.toonSettings.enabled, true);
+  assert.equal(state.material.modelOverrides[0].name, 'Bark');
+  assert.equal(state.material.shaderFragment, 'void main() {}');
+  assert.equal(state.postProcessing.bloom, true);
+  assert.equal(state.particleEmitter.rate, 30);
+  assert.equal(state.collider2D.enabled, true);
+  assert.equal(state.meshCollider.enabled, true);
+  const entity = runtime.ecs.getEntityForSceneObject('model-1');
+  for (const type of ['SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider']) {
+    assert.equal(runtime.ecs.hasComponent(entity, type), true, type);
+    assert.equal(runtime.ecs.getComponentDefinition(type).persistent, false, type);
+  }
+});
+
+test('Scene presentation adapter loads in order before the ECS Inspector', () => {
+  const html = read('templates/index.html');
+  const core = html.indexOf('<script src="/static/pstudio_ecs.js"></script>');
+  const scene = html.indexOf('<script src="/static/pstudio_ecs_scene.js"></script>');
+  const inspector = html.indexOf('<script src="/static/pstudio_ecs_inspector.js"></script>');
+  assert.ok(core >= 0 && scene > core && inspector > scene);
+  assert.doesNotThrow(() => new vm.Script(read('static/pstudio_ecs_scene.js')));
 });
 
 test('Health API is backed by a Scene Object Health Component', () => {
@@ -231,8 +277,9 @@ test('the ECS gameplay bridge loads after ECS Physics and before the Inspector',
   const ecsCore = html.indexOf('<script src="/static/pstudio_ecs.js"></script>');
   const physics = html.indexOf('<script src="/static/pstudio_ecs_physics.js"></script>');
   const gameplay = html.indexOf('<script src="/static/pstudio_ecs_gameplay.js"></script>');
+  const scene = html.indexOf('<script src="/static/pstudio_ecs_scene.js"></script>');
   const inspector = html.indexOf('<script src="/static/pstudio_ecs_inspector.js"></script>');
-  assert.ok(ecsCore >= 0 && physics > ecsCore && gameplay > physics && inspector > gameplay);
+  assert.ok(ecsCore >= 0 && physics > ecsCore && gameplay > physics && scene > gameplay && inspector > scene);
   assert.doesNotThrow(() => new vm.Script(read('static/pstudio_ecs_gameplay.js')));
   assert.doesNotThrow(() => new vm.Script(read('static/pstudio_gameplay.js')));
 });
