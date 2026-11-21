@@ -156,3 +156,28 @@ test('PStudio retains existing ps material API arity and does not change parser 
   assert.match(engine, /case 'set_model_material': if\(a\.length===4\)/);
   assert.match(engine, /case 'set_environment': if\(a\.length===3\)/);
 });
+
+test('project backups preserve scene environment presets and restore old backups as daytime',()=>{
+  assert.match(html,/environment:normalizeSceneEnvironment\(sceneEnvironment\)/);
+  assert.match(html,/let sourceEnvironment=archive\.project\.environment\|\|null/);
+  assert.match(html,/JSON\.parse\(files\['main\.scene'\]\?\.content\|\|'null'\)\?\.environment/);
+  assert.match(html,/environment:\{preset:\['day','dusk','night','studio'\]\.includes\(sourcePreset\)\?sourcePreset:'day'\}/);
+  assert.match(html,/next\.files\['main\.scene'\]\.content=JSON\.stringify\(\{width:960,height:540,objects:next\.objects,environment:next\.environment\}/);
+  assert.match(html,/const nextState=\{files:next\.files,assets:next\.assets,objects:next\.objects,environment:next\.environment,active:next\.active\}/);
+  assert.match(html,/sceneEnvironment=next\.environment/);
+  assert.match(html,/environment:sceneEnvironment/);
+});
+test('project backup restores sanitized GLB material overrides without trusting arbitrary input',()=>{
+  assert.match(html,/sourceOverrides\.length>64/);
+  assert.match(html,/sourceOverrides\.map\(override=>/);
+  assert.match(html,/doubleSide:override\.doubleSide===true/);
+  assert.match(html,/recomputeNormals:override\.recomputeNormals===true/);
+  assert.match(html,/emissiveIntensity:bounded\(override\.emissiveIntensity,0,8\)/);
+  assert.match(html,/\^\#\[0-9a-fA-F\]\{6\}\$/);
+  assert.match(html,/modelMaterialOverrides=sourceOverrides\.map/);
+});
+test('procedural scene environment releases the unused room PMREM when switching to the preset PMREM',()=>{
+  assert.match(renderer,/if\(environmentTarget\)\{environmentTarget\.dispose\?\.\(\);environmentTarget=null;\}/);
+  assert.match(renderer,/scenePresetTarget=nextTarget/);
+  assert.match(renderer,/scene\.environment=scenePresetTarget\.texture/);
+});
