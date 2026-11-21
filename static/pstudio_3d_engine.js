@@ -1014,12 +1014,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const projection=camera.projectionMatrix.elements;
     const clusterPush=(x,y,z,index)=>{
       const cluster=(z*CLUSTER_GRID_Y+y)*CLUSTER_GRID_X+x,count=counts[cluster];
-      if(count>=CLUSTER_MAX_PER_CELL)return;
       resources.clusterData[(cluster*width+count+1)*4]=index;
       counts[cluster]=count+1;
     };
     resources.lightCount=lights.length;
-    clusteredLightSet=new Set(lights.map(entry=>entry.light));
+    clusteredLightSet=new Set();
     for(let index=0;index<lights.length;index++){
       const entry=lights[index],light=entry.light,position=entry.position,depth=-position.z,range=entry.range,base=index*12;
       resources.lightData[base]=position.x;resources.lightData[base+1]=position.y;resources.lightData[base+2]=position.z;resources.lightData[base+3]=range;
@@ -1040,6 +1039,14 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         }
       }
       const minZ=clusteredDepthSlice(Math.max(near,depth-range),near,far),maxZ=clusteredDepthSlice(Math.min(far,depth+range),near,far);
+      let fitsEveryCluster=true;
+      for(let z=minZ;z<=maxZ&&fitsEveryCluster;z++)for(let y=minY;y<=maxY&&fitsEveryCluster;y++)for(let x=minX;x<=maxX;x++){
+        const cluster=(z*CLUSTER_GRID_Y+y)*CLUSTER_GRID_X+x;
+        if(counts[cluster]>=CLUSTER_MAX_PER_CELL){fitsEveryCluster=false;break;}
+      }
+      // Keep an overflowing light in Three.js' native path rather than silently dropping it.
+      if(!fitsEveryCluster)continue;
+      clusteredLightSet.add(light);
       for(let z=minZ;z<=maxZ;z++)for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++)clusterPush(x,y,z,index);
     }
     for(let cluster=0;cluster<resources.clusterCount;cluster++)resources.clusterData[(cluster*width)*4]=counts[cluster];
@@ -3193,7 +3200,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       geometries:renderer.info?.memory?.geometries||0,
       textures:renderer.info?.memory?.textures||0,
       instancedBatches:instancedBatches.size,
-      clusteredLighting:{enabled:clusteredLightingEnabled,active:clusteredLightingActive,available:!!clusteredLightingResources,pointLights:clusteredLightingResources?.lightCount||0,updatedClusters:clusteredLightingUpdatedClusters,grid:[CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z],maxLightsPerCluster:CLUSTER_MAX_PER_CELL,mode:'cpu-cluster-assignment-gpu-brdf'},
+      clusteredLighting:{enabled:clusteredLightingEnabled,active:clusteredLightingActive,available:!!clusteredLightingResources,pointLights:clusteredLightingResources?.lightCount||0,clusteredPointLights:clusteredLightSet.size,nativeFallbackPointLights:[...dynamicLights.values()].filter(light=>light.isPointLight&&light.visible).length,updatedClusters:clusteredLightingUpdatedClusters,grid:[CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z],maxLightsPerCluster:CLUSTER_MAX_PER_CELL,mode:'cpu-cluster-assignment-gpu-brdf'},
       virtualTexturing:{textures:virtualTextures.size,queuedPages:virtualTextureQueue.length,residentPages:virtualTexturePageCache.size,requestedPages:virtualTextureRequests,uploadedPages:virtualTextureTileUploads,atlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0),atlasCount:virtualTextureAtlases.size},
       gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
