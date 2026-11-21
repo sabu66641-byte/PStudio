@@ -166,7 +166,7 @@ class PsEcsLanguageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, msg=response.get_json())
 
     def test_builtin_ecs_physics_components_cannot_be_redeclared(self):
-        for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld"):
+        for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld", "ScriptState", "ScriptLifecycle", "ScriptSystemState", "LocomotionState"):
             response = self.client.post(
                 "/game/prepare",
                 json={"scripts": { "bad.ps": f"component {name}\n    x = 1\n" }},
