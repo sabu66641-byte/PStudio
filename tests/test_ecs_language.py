@@ -150,8 +150,23 @@ class PsEcsLanguageTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, msg=response.get_json())
 
+    def test_builtin_gameplay_components_are_available_to_game_systems(self):
+        source = (
+            "system Gameplay(Health, AIState, CombatState, Quest, NavigationNode)\\n"
+            "    health.hp -= 1.0\\n"
+            '    ai_state.state = "chase"\\n'
+            "    combat_state.comboCount += 1\\n"
+            "    quest.progress += 1.0\\n"
+            "    navigation_node.x += dt\\n"
+        )
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"gameplay.ps": source}},
+        )
+        self.assertEqual(response.status_code, 200, msg=response.get_json())
+
     def test_builtin_ecs_physics_components_cannot_be_redeclared(self):
-        for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform"):
+        for name in ("Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld"):
             response = self.client.post(
                 "/game/prepare",
                 json={"scripts": { "bad.ps": f"component {name}\n    x = 1\n" }},
