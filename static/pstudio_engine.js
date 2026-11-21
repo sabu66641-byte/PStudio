@@ -771,8 +771,8 @@
       'worker-inspection':'GLB構造を検査中',
       'validated':'GLBの構造検査完了',
       'main-thread-fallback':'互換検査へ切替中',
-      'storage':'IndexedDBへ保存中',
-      'stored':'IndexedDBへの保存完了'
+      'storage':'OPFS / IndexedDBへ保存中',
+      'stored':detail.backend==='opfs'?'OPFSへの保存完了':'IndexedDBへの保存完了'
     };
     const info=detail.info||{};
     const nodes=Number(info.nodeCount),meshes=Number(info.meshCount);
