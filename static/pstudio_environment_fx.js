@@ -524,19 +524,22 @@
           'uniform float uPStudioToonSSSIntensity;'
         ].join('\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <lights_fragment_end>',[
+          'float pStudioToonRim=0.0;',
+          'if(uPStudioToonEnabled>0.5){',
           'float pStudioToonDirect=max(0.0,dot(reflectedLight.directDiffuse,vec3(0.2126,0.7152,0.0722)));',
           'float pStudioToonIndirect=max(0.0,dot(reflectedLight.indirectDiffuse,vec3(0.2126,0.7152,0.0722)));',
           'float pStudioToonBase=max(0.025,dot(max(diffuseColor.rgb,vec3(0.0)),vec3(0.2126,0.7152,0.0722)));',
           'float pStudioToonLight=clamp((pStudioToonDirect+pStudioToonIndirect)/pStudioToonBase,0.0,1.0);',
           'vec3 pStudioToonRamp=mix(uPStudioToonShadowColor,uPStudioToonMidColor,smoothstep(uPStudioToonShadowThreshold-0.015,uPStudioToonShadowThreshold+0.015,pStudioToonLight));',
           'pStudioToonRamp=mix(pStudioToonRamp,uPStudioToonHighlightColor,smoothstep(uPStudioToonHighlightThreshold-0.015,uPStudioToonHighlightThreshold+0.015,pStudioToonLight));',
-          'reflectedLight.directDiffuse*=mix(vec3(1.0),pStudioToonRamp,uPStudioToonEnabled);',
-          'reflectedLight.indirectDiffuse*=mix(vec3(1.0),pStudioToonRamp,uPStudioToonEnabled);',
+          'reflectedLight.directDiffuse*=pStudioToonRamp;',
+          'reflectedLight.indirectDiffuse*=pStudioToonRamp;',
           'float pStudioToonNdotV=clamp(dot(normalize(normal),normalize(-vViewPosition)),0.0,1.0);',
-          'float pStudioToonRim=pow(1.0-pStudioToonNdotV,max(0.5,uPStudioToonRimPower))*uPStudioToonRimIntensity*uPStudioToonEnabled;',
-          'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity*uPStudioToonEnabled;',
+          'pStudioToonRim=pow(1.0-pStudioToonNdotV,max(0.5,uPStudioToonRimPower))*uPStudioToonRimIntensity;',
+          'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity;',
           'reflectedLight.indirectDiffuse+=uPStudioToonSSSColor*pStudioToonSubsurface;',
-        ].join('\n'));
+          '}',
+        ].join('\\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
           'if(uPStudioToonEnabled>0.5){',
           'gl_FragColor.rgb+=uPStudioToonRimColor*pStudioToonRim*0.82;',
