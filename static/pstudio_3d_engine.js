@@ -3462,7 +3462,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     const pendingFrameInstances=[];
     let cameraCommand=null,environment=null,cameraOwnerId=null;
-    scene.fog=null;
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
