@@ -933,6 +933,7 @@
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
+    window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);
     window.PStudioECS?.clearSceneObjects?.();
     window.PStudioECSInspector?.refresh?.();
     justPressed.clear();
