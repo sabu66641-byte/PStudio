@@ -913,7 +913,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       lights:resources.lightTexture,clusters:resources.clusterTexture,
       viewport:new window.THREE.Vector2(1,1),
       grid:new window.THREE.Vector3(CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z),
-      near:camera?.near||0.1,far:camera?.far||worldRenderConfig.maxDrawDistance,enabled:clusteredLightingEnabled?1:0
+      near:{value:camera?.near||0.1},far:{value:camera?.far||worldRenderConfig.maxDrawDistance},enabled:{value:clusteredLightingEnabled?1:0}
     };
     material.onBeforeCompile=function(shader,rendererRef){
       if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
@@ -921,9 +921,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       shader.uniforms.uPStudioClusterIndices={value:uniforms.clusters};
       shader.uniforms.uPStudioClusterViewport={value:uniforms.viewport};
       shader.uniforms.uPStudioClusterGrid={value:uniforms.grid};
-      shader.uniforms.uPStudioClusterNear={value:uniforms.near};
-      shader.uniforms.uPStudioClusterFar={value:uniforms.far};
-      shader.uniforms.uPStudioClusterEnabled={value:uniforms.enabled};
+      shader.uniforms.uPStudioClusterNear=uniforms.near;
+      shader.uniforms.uPStudioClusterFar=uniforms.far;
+      shader.uniforms.uPStudioClusterEnabled=uniforms.enabled;
       const declarations=[
         'uniform sampler2D uPStudioClusterLights;',
         'uniform sampler2D uPStudioClusterIndices;',
@@ -943,8 +943,6 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         '  float pstudioCluster=(pstudioSlice*uPStudioClusterGrid.y+pstudioTile.y)*uPStudioClusterGrid.x+pstudioTile.x;',
         '  float pstudioClusterV=(pstudioCluster+0.5)/(uPStudioClusterGrid.x*uPStudioClusterGrid.y*uPStudioClusterGrid.z);',
         '  float pstudioLightCount=floor(texture2D(uPStudioClusterIndices,vec2(0.5/25.0,pstudioClusterV)).r+0.5);',
-        '  PointLight pstudioClusterPointLight;',
-        '  IncidentLight pstudioClusterIncident;',
         '  for(int pstudioLightSlot=0;pstudioLightSlot<24;pstudioLightSlot++){',
         '    if(float(pstudioLightSlot)>=pstudioLightCount)break;',
         '    float pstudioLightIndex=floor(texture2D(uPStudioClusterIndices,vec2((float(pstudioLightSlot)+1.5)/25.0,pstudioClusterV)).r+0.5);',
@@ -952,14 +950,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         '    vec4 pstudioLightPositionRange=texture2D(uPStudioClusterLights,vec2(0.5/3.0,pstudioLightV));',
         '    vec4 pstudioLightColorIntensity=texture2D(uPStudioClusterLights,vec2(1.5/3.0,pstudioLightV));',
         '    vec4 pstudioLightDecay=texture2D(uPStudioClusterLights,vec2(2.5/3.0,pstudioLightV));',
-        '    pstudioClusterPointLight.position=pstudioLightPositionRange.xyz;',
-        '    pstudioClusterPointLight.distance=pstudioLightPositionRange.w;',
-        '    pstudioClusterPointLight.color=pstudioLightColorIntensity.rgb*pstudioLightColorIntensity.a;',
-        '    pstudioClusterPointLight.decay=pstudioLightDecay.r;',
-        '    getPointLightInfo(pstudioClusterPointLight,geometryPosition,pstudioClusterIncident);',
-        '    if(pstudioClusterIncident.visible){',
-        '      RE_Direct(pstudioClusterIncident,geometryPosition,geometryNormal,geometryViewDir,geometryClearcoatNormal,material,reflectedLight);',
-        '    }',
+        '    vec3 pstudioLightVector=pstudioLightPositionRange.xyz-geometryPosition;',
+        '    float pstudioLightDistance=length(pstudioLightVector);',
+        '    vec3 pstudioLightDirection=pstudioLightVector/max(0.0001,pstudioLightDistance);',
+        '    float pstudioLightAttenuation=getDistanceAttenuation(pstudioLightDistance,pstudioLightPositionRange.w,pstudioLightDecay.r);',
+        '    float pstudioNdotL=max(dot(normalize(geometryNormal),pstudioLightDirection),0.0);',
+        '    vec3 pstudioIncident=pstudioLightColorIntensity.rgb*pstudioLightColorIntensity.a*pstudioLightAttenuation;',
+        '    reflectedLight.directDiffuse+=pstudioIncident*pstudioNdotL*BRDF_Lambert(diffuseColor.rgb);',
         '  }',
         '}'
       ].join('\n');
@@ -1049,7 +1046,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const updateMaterial=material=>{
       const uniforms=material?.userData?.pstudioClusterLightingUniforms;
       if(!uniforms)return;
-      uniforms.viewport.set(viewport.x,viewport.y);uniforms.near=near;uniforms.far=far;uniforms.enabled=active?1:0;
+      uniforms.viewport.set(viewport.x,viewport.y);uniforms.near.value=near;uniforms.far.value=far;uniforms.enabled.value=active?1:0;
     };
     for(const instance of modelInstances.values())for(const material of instance.materialDefaults.keys())updateMaterial(material);
     for(const mesh of meshCache.values())updateMaterial(mesh.material);
