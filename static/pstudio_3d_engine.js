@@ -540,7 +540,10 @@
         if(godRaysPass){
           godRaysPass.enabled=godRaysEnabled;
           syncPostFXUniforms(godRaysPass,['uLightPosition','uIntensity'],u=>{
-            const sunWorld=camera.position.clone().addScaledVector(new T.Vector3(5,9,6).normalize(),1000);
+            camera.updateMatrixWorld(true);
+            const sunDirection=keyLight?.position?.clone?.()||new T.Vector3(5,9,6);
+            if(sunDirection.lengthSq()<1e-8)sunDirection.set(5,9,6);else sunDirection.normalize();
+            const sunWorld=camera.position.clone().addScaledVector(sunDirection,1000);
             const sunScreen=sunWorld.project(camera);
             u.uLightPosition.value.set(sunScreen.x*0.5+0.5,sunScreen.y*0.5+0.5);
             u.uIntensity.value=godRaysIntensity;
