@@ -1,15 +1,18 @@
-/* PStudio persistent binary asset store (IndexedDB).
- * Large GLB files are stored as Blob records directly; never base64-expanded in JS memory.
+/* PStudio persistent binary asset store.
+ * OPFS is the preferred large-asset backend; IndexedDB remains the compatibility fallback.
+ * Both backends store Blob/File bytes directly. They never base64-expand binary models.
  */
 (() => {
   'use strict';
   const DB_NAME = 'pstudio-binary-assets';
   const STORE_NAME = 'models';
-  const VERSION = 1;
-  const MAX_MODEL_BYTES = 1024 * 1024 * 1024;
+  const VERSION = 1; // Keep v1 records readable; OPFS metadata fits the existing key/value store.
+  const OPFS_DIRECTORY = 'pstudio-assets-v1';
+  const MAX_MODEL_BYTES = 4 * 1024 * 1024 * 1024;
   const LARGE_BLOB_CACHE_THRESHOLD = 64 * 1024 * 1024;
   let databasePromise = null;
   let persistencePromise = null;
+  let opfsDirectoryPromise = null;
 
   function openDatabase() {
     if (databasePromise) return databasePromise;
@@ -73,6 +76,63 @@
     }
   }
 
+  function getOPFSDirectory() {
+    const storage = window.navigator?.storage;
+    if (typeof storage?.getDirectory !== 'function') return Promise.resolve(null);
+    if (!opfsDirectoryPromise) {
+      opfsDirectoryPromise = Promise.resolve()
+        .then(() => storage.getDirectory())
+        .then(root => root.getDirectoryHandle(OPFS_DIRECTORY, { create: true }))
+        .catch(error => {
+          opfsDirectoryPromise = null;
+          try { window.dispatchEvent(new CustomEvent('pstudio-asset-backend-fallback', { detail: { backend: 'indexeddb', reason: String(error?.name || error) } })); } catch (_) {}
+          return null;
+        });
+    }
+    return opfsDirectoryPromise;
+  }
+
+  function createOPFSFileName() {
+    const bytes = new Uint8Array(16);
+    try {
+      if (window.crypto?.getRandomValues) window.crypto.getRandomValues(bytes);
+      else throw new Error('crypto unavailable');
+    } catch (_) {
+      const seed = String(Date.now()) + '-' + String(Math.random()) + '-' + String(Math.random());
+      for (let i = 0; i < bytes.length; i++) bytes[i] = (seed.charCodeAt(i % seed.length) * (i + 31) + i * 17) & 255;
+    }
+    return 'asset-' + Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('') + '.bin';
+  }
+
+  async function removeOPFSFile(directory, fileName) {
+    if (!directory || !fileName) return false;
+    try { await directory.removeEntry(String(fileName)); return true; }
+    catch (error) { if (error?.name === 'NotFoundError') return false; throw error; }
+  }
+
+  async function writeOPFSFile(directory, fileName, blob) {
+    const handle = await directory.getFileHandle(fileName, { create: true });
+    const writable = await handle.createWritable({ keepExistingData: false });
+    try {
+      // FileSystemWritableFileStream accepts Blob directly; no app-owned ArrayBuffer copy is made.
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (error) {
+      try { await writable.abort?.(); } catch (_) {}
+      try { await removeOPFSFile(directory, fileName); } catch (_) {}
+      throw error;
+    }
+  }
+
+  function isOPFSFallbackError(error) {
+    const name = String(error?.name || '');
+    return [
+      'NotAllowedError', 'NotSupportedError', 'SecurityError', 'InvalidStateError',
+      'QuotaExceededError', 'AbortError', 'UnknownError'
+    ].includes(name);
+  }
+
   async function readRecord(name) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
@@ -84,6 +144,31 @@
     });
   }
 
+  async function writeRecord(record) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(record);
+      let settled = false;
+      const fail = error => { if (settled) return; settled = true; reject(error); };
+      tx.oncomplete = () => { if (!settled) { settled = true; resolve(true); } };
+      tx.onerror = () => fail(tx.error || new Error('モデル情報を保存できませんでした。'));
+      tx.onabort = () => fail(tx.error || new Error('モデル情報の保存が中断されました。'));
+    });
+  }
+
+  async function deleteRecord(name) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(String(name));
+      let settled = false;
+      tx.oncomplete = () => { if (!settled) { settled = true; resolve(true); } };
+      tx.onerror = () => { if (!settled) { settled = true; reject(tx.error || new Error('モデル情報を削除できませんでした。')); } };
+      tx.onabort = () => { if (!settled) { settled = true; reject(tx.error || new Error('モデル情報の削除が中断されました。')); } };
+    });
+  }
+
   async function checkAvailableStorage(incomingBytes, previousBytes = 0) {
     const estimate = await storageEstimate();
     if (!estimate.supported || estimate.available === null || estimate.quota === null) return estimate;
@@ -92,7 +177,7 @@
     if (available < incomingBytes + reserve) {
       const freeMiB = Math.floor(available / 1024 / 1024);
       const needMiB = Math.ceil((incomingBytes + reserve) / 1024 / 1024);
-      throw new Error('端末の保存空き容量が不足しています（空き約' + freeMiB + 'MiB / 必要約' + needMiB + 'MiB）。不要な端末内データを整理して再試行してください。');
+      throw new Error('端末の保存空き容量が不足しています（空き約' + freeMiB + 'MiB / 必要約' + needMiB + 'MiB）。端末の空き容量を確保して再試行してください。');
     }
     return { ...estimate, available };
   }
@@ -102,54 +187,106 @@
     if (!key) throw new TypeError('アセット名が空です。');
     if (!blob || !Number.isFinite(Number(blob.size))) throw new TypeError('保存するアセットがBlob/Fileではありません。');
     const size = Number(blob.size) || 0;
-    if (size > MAX_MODEL_BYTES) throw new Error('GLBは1GB以下にしてください。');
+    if (size > MAX_MODEL_BYTES) throw new Error('GLBは4GB以下にしてください。');
     await requestPersistentStorage();
     const previous = await readRecord(key);
     const estimate = await checkAvailableStorage(size, previous?.size || 0);
-    const db = await openDatabase();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put({
-        name: key,
-        blob,
-        size,
-        type: blob.type || 'model/gltf-binary',
-        metadata: options.metadata && typeof options.metadata === 'object' ? options.metadata : null,
-        updatedAt: Date.now()
-      });
-      let settled = false;
-      const fail = error => { if (settled) return; settled = true; reject(error); };
-      tx.oncomplete = () => {
-        if (settled) return;
-        settled = true;
-        try { window.PStudioResources?.remove?.('binary-asset', key, { reason: 'asset-updated' }); } catch (_) {}
-        resolve(true);
-      };
-      tx.onerror = () => fail(tx.error || new Error('モデルを保存できませんでした。'));
-      tx.onabort = () => fail(tx.error || new Error('モデル保存が中断されました。'));
-    }).catch(error => {
+    const baseRecord = {
+      name: key, size, type: blob.type || 'model/gltf-binary',
+      metadata: options.metadata && typeof options.metadata === 'object' ? options.metadata : null,
+      updatedAt: Date.now()
+    };
+    let nextRecord = null;
+    let opfsDirectory = null;
+    let newOPFSFile = null;
+    let fallbackReason = null;
+
+    opfsDirectory = await getOPFSDirectory();
+    if (opfsDirectory) {
+      newOPFSFile = createOPFSFileName();
+      try {
+        await writeOPFSFile(opfsDirectory, newOPFSFile, blob);
+        nextRecord = { ...baseRecord, storage: 'opfs', fileName: newOPFSFile };
+      } catch (error) {
+        newOPFSFile = null;
+        if (!isOPFSFallbackError(error)) throw error;
+        fallbackReason = String(error?.name || error?.message || error);
+      }
+    } else {
+      fallbackReason = 'OPFS unavailable';
+    }
+
+    if (!nextRecord) {
+      nextRecord = { ...baseRecord, storage: 'indexeddb', blob };
+    }
+
+    try {
+      await writeRecord(nextRecord);
+    } catch (error) {
+      if (nextRecord.storage === 'opfs' && newOPFSFile) {
+        try { await removeOPFSFile(opfsDirectory, newOPFSFile); } catch (_) {}
+      }
       const name = String(error?.name || '');
       if (name === 'QuotaExceededError') {
-        throw new Error('IndexedDBの保存容量が不足しています。端末の空き容量を確保するか、古いアセットを削除してください。');
+        throw new Error('ブラウザの保存容量が不足しています。端末の空き容量を確保するか、不要なアセットを削除してください。');
       }
       throw error;
-    });
-    try { window.dispatchEvent(new CustomEvent('pstudio-asset-stored', { detail: { name: key, size, availableBytes: estimate.available } })); } catch (_) {}
+    }
+
+    if (previous?.storage === 'opfs' && previous.fileName && previous.fileName !== newOPFSFile) {
+      try { await removeOPFSFile(opfsDirectory || await getOPFSDirectory(), previous.fileName); } catch (error) {
+        console.warn('[PStudio Assets] Replaced OPFS file could not be reclaimed:', error);
+      }
+    }
+    try { window.PStudioResources?.remove?.('binary-asset', key, { reason: 'asset-updated' }); } catch (_) {}
+    const backend = nextRecord.storage;
+    try {
+      window.dispatchEvent(new CustomEvent('pstudio-asset-stored', {
+        detail: { name: key, size, storage: backend, fallbackReason, availableBytes: estimate.available }
+      }));
+    } catch (_) {}
     return true;
+  }
+
+  async function getRecordBlob(record) {
+    if (!record) return null;
+    if (record.storage === 'opfs' && record.fileName) {
+      const directory = await getOPFSDirectory();
+      if (directory) {
+        try {
+          const handle = await directory.getFileHandle(record.fileName);
+          return await handle.getFile();
+        } catch (error) {
+          if (record.blob) return record.blob; // Read old transitional records defensively.
+          if (error?.name !== 'NotFoundError') throw error;
+          return null;
+        }
+      }
+      if (record.blob) return record.blob;
+      return null;
+    }
+    // Records created before OPFS support have no storage property and remain valid IndexedDB records.
+    return record.blob || null;
   }
 
   async function get(name, options = {}) {
     const key = String(name);
     const record = await readRecord(key);
-    if (!record?.blob) return null;
-    const blob = record.blob;
-    // Keep large Blob handles out of the in-memory LRU cache. IndexedDB remains the source of truth.
+    const blob = await getRecordBlob(record);
+    if (!blob) return null;
+    // Keep large Blob/File handles out of the in-memory LRU cache. Persistent storage remains the source of truth.
     if (options.cache === false || blob.size > LARGE_BLOB_CACHE_THRESHOLD || !window.PStudioResources?.getOrLoad) return blob;
     return window.PStudioResources.getOrLoad('binary-asset', key, async () => blob, {
       category: 'cpu',
       sizeBytes: Math.min(blob.size, LARGE_BLOB_CACHE_THRESHOLD),
-      metadata: { persistent: true, store: STORE_NAME }
+      metadata: { persistent: true, store: record?.storage || 'indexeddb' }
     });
+  }
+
+  async function getStream(name) {
+    const blob = await get(name, { cache: false });
+    if (!blob) return null;
+    return typeof blob.stream === 'function' ? blob.stream() : null;
   }
 
   async function getMetadata(name) {
@@ -157,19 +294,25 @@
     return record?.metadata || null;
   }
 
+  async function getStorageBackend(name) {
+    const record = await readRecord(String(name));
+    if (!record) return null;
+    return record.storage === 'opfs' ? 'opfs' : 'indexeddb';
+  }
+
   async function remove(name) {
     const key = String(name);
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(key);
-      tx.oncomplete = () => {
-        try { window.PStudioResources?.remove?.('binary-asset', key, { reason: 'asset-removed' }); } catch (_) {}
-        resolve(true);
-      };
-      tx.onerror = () => reject(tx.error || new Error('モデルを削除できませんでした。'));
-      tx.onabort = () => reject(tx.error || new Error('モデル削除が中断されました。'));
-    });
+    const record = await readRecord(key);
+    await deleteRecord(key);
+    if (record?.storage === 'opfs' && record.fileName) {
+      const directory = await getOPFSDirectory();
+      if (directory) {
+        try { await removeOPFSFile(directory, record.fileName); }
+        catch (error) { console.warn('[PStudio Assets] Removed asset metadata but could not reclaim OPFS file:', error); }
+      }
+    }
+    try { window.PStudioResources?.remove?.('binary-asset', key, { reason: 'asset-removed' }); } catch (_) {}
+    return true;
   }
 
   async function getStorageInfo() {
@@ -178,12 +321,19 @@
     try {
       if (typeof window.navigator?.storage?.persisted === 'function') persisted = !!(await window.navigator.storage.persisted());
     } catch (_) {}
-    return { ...estimate, persisted, maxModelBytes: MAX_MODEL_BYTES };
+    const directory = await getOPFSDirectory();
+    return {
+      ...estimate, persisted,
+      opfsSupported: !!directory,
+      preferredBackend: directory ? 'opfs' : 'indexeddb',
+      maxModelBytes: MAX_MODEL_BYTES
+    };
   }
 
   window.PStudioAssetStore = {
-    put, get, getMetadata, remove, getStorageInfo, requestPersistentStorage,
+    put, get, getStream, getMetadata, getStorageBackend, remove,
+    getStorageInfo, requestPersistentStorage,
     maxModelBytes: MAX_MODEL_BYTES,
-    version: '1.1.0'
+    version: '2.0.0'
   };
 })();
