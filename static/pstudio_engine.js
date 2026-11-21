@@ -176,6 +176,12 @@
     if (target.type === 'Variable') env[target.value] = value;
     else if (target.type === 'IndexExpr') {
       const a = getVar(c, env, target.name); a[evalExpr(c, env, target.index)] = value;
+    } else if (target.type === 'MemberExpr') {
+      const owner=evalExpr(c,env,target.object),property=String(target.property||'');
+      if(!owner||typeof owner!=='object'||Array.isArray(owner)||['__proto__','prototype','constructor'].includes(property)||!Object.prototype.hasOwnProperty.call(owner,property)) {
+        throw new PsRuntimeError('Component Fieldへの代入先が不正です: '+property);
+      }
+      owner[property]=value;
     } else throw new PsRuntimeError('代入先が不正です。');
   }
   function callFunction(c, name, args) {
@@ -410,6 +416,13 @@
       case 'Variable': return getVar(c,env,n.value);
       case 'ArrayLiteral': return (n.elements||[]).map(x=>evalExpr(c,env,x));
       case 'IndexExpr': return getVar(c,env,n.name)[evalExpr(c,env,n.index)];
+      case 'MemberExpr': {
+        const owner=evalExpr(c,env,n.object),property=String(n.property||'');
+        if(!owner||typeof owner!=='object'||Array.isArray(owner)||['__proto__','prototype','constructor'].includes(property)||!Object.prototype.hasOwnProperty.call(owner,property)) {
+          throw new PsRuntimeError('Component Fieldを読み取れません: '+property);
+        }
+        return owner[property];
+      }
       case 'UnaryExpr': { const v=evalExpr(c,env,n.right); if(n.op==='!')return !truthy(v);if(n.op==='+')return +v;if(n.op==='-')return -v;if(n.op==='~')return ~v;if(n.op==='++'||n.op==='--'){const nv=v+(n.op==='++'?1:-1);setTarget(c,env,n.right,nv);return nv;}break; }
       case 'PostfixExpr': {const v=evalExpr(c,env,n.value);setTarget(c,env,n.value,v+(n.op==='++'?1:-1));return v;}
       case 'BinaryExpr': {const l=evalExpr(c,env,n.left);if(n.op==='&&')return truthy(l)&&truthy(evalExpr(c,env,n.right));if(n.op==='||')return truthy(l)||truthy(evalExpr(c,env,n.right));const r=evalExpr(c,env,n.right);switch(n.op){case '+':return l+r;case '-':return l-r;case '*':return l*r;case '/':if(r===0)throw new PsRuntimeError('0で割ることはできません。');return l/r;case '%':return l%r;case '**':return l**r;case '&':return l&r;case '|':return l|r;case '^':return l^r;case '<<':return l<<r;case '>>':return l>>r;case '==':return l===r;case '!=':return l!==r;case '<':return l<r;case '>':return l>r;case '<=':return l<=r;case '>=':return l>=r;}break;}
@@ -429,6 +442,9 @@
         case 'CompoundAssignment': {const v=getVar(c,env,n.variable),r=evalExpr(c,env,n.value),op=n.op.slice(0,-1);env[n.variable]=binary(op,v,r);break;}
         case 'ArrayAssignStatement': {getVar(c,env,n.name)[evalExpr(c,env,n.index)]=evalExpr(c,env,n.value);break;}
         case 'ArrayCompoundAssignStatement': {const a=getVar(c,env,n.name),k=evalExpr(c,env,n.index);a[k]=binary(n.op.slice(0,-1),a[k],evalExpr(c,env,n.value));break;}
+        case 'MemberAssignment': setTarget(c,env,n.target,evalExpr(c,env,n.value));break;
+        case 'MemberCompoundAssignment': {const current=evalExpr(c,env,n.target),value=evalExpr(c,env,n.value);setTarget(c,env,n.target,binary(n.op.slice(0,-1),current,value));break;}
+        case 'ComponentDef': case 'SystemDef': case 'FunctionDef': break;
         case 'PrintStatement': c.output.push(String(evalExpr(c,env,n.value)));break;
         case 'ExpressionStatement': evalExpr(c,env,n.value);break;
         case 'WhileStatement': {let guard=0;while(truthy(evalExpr(c,env,n.condition))){if(++guard>1000)throw new PsRuntimeError('while の反復回数が上限を超えました。');try{execBlock(c,n.body||[],env)}catch(s){if(s===BREAK)break;if(s===CONTINUE)continue;throw s;}}break;}
@@ -731,6 +747,115 @@
       setOutput?.(`Game runtime error: ${err.message}`,'error');
     }
   }
+  function ecsBindingName(name){
+    return String(name).replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase();
+  }
+  function ecsSystemRuntimeId(filename,systemName){
+    const source=String(filename)+'\\0'+String(systemName);
+    let hash=2166136261;
+    for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619);
+    return 'ps.'+(hash>>>0).toString(36);
+  }
+  function ecsLiteralValue(node){
+    if(!node||typeof node!=='object')throw new PsRuntimeError('ECS Component初期値が不正です。');
+    if(node.type==='Literal'){
+      const raw=String(node.value??'');
+      if(raw==='true')return true;
+      if(raw==='false')return false;
+      if(raw.startsWith('"')){try{return JSON.parse(raw);}catch(_){throw new PsRuntimeError('ECS文字列初期値が不正です。');}}
+      const number=Number(raw);
+      if(!Number.isFinite(number))throw new PsRuntimeError('ECS数値初期値が不正です。');
+      return number;
+    }
+    if(node.type==='ArrayLiteral')return (node.elements||[]).map(ecsLiteralValue);
+    throw new PsRuntimeError('ECS Component初期値はリテラルまたは配列のみ対応しています。');
+  }
+  function cleanupEcsRuntime(){
+    const ecs=window.PStudioECS;
+    if(!runtime||!ecs)return;
+    for(const id of runtime.ecsSystemIds||[]){try{ecs.unregisterSystem(id);}catch(error){console.warn('[PStudio ECS] System cleanup failed:',id,error);}}
+    runtime.ecsSystemIds=[];
+    ecs.clearSceneObjects?.();
+    for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
+      try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
+    }
+    runtime.ecsComponentTypes=[];
+    runtime.ecsStates?.clear?.();
+  }
+  function registerEcsRuntime(asts){
+    const ecs=window.PStudioECS;
+    const componentDefs=[],systemDefs=[];
+    for(const [filename,ast] of Object.entries(asts||{})){
+      for(const node of ast?.body||[]){
+        if(node.type==='ComponentDef')componentDefs.push({filename,node});
+        else if(node.type==='SystemDef')systemDefs.push({filename,node});
+      }
+    }
+    if(!componentDefs.length&&!systemDefs.length)return;
+    if(!ecs)throw new PsRuntimeError('PStudioECSが初期化されていません。');
+    const definitions=new Map();
+    for(const item of componentDefs){
+      const name=String(item.node.name);
+      if(definitions.has(name))throw new PsRuntimeError('Componentが複数回定義されています: '+name);
+      if(ecs.hasComponentType?.(name))throw new PsRuntimeError('Component名が既存ECS型と衝突しています: '+name);
+      const defaults=Object.create(null);
+      for(const field of item.node.body||[])defaults[field.variable]=ecsLiteralValue(field.value);
+      definitions.set(name,defaults);
+    }
+    runtime.ecsComponentTypes=[];
+    runtime.ecsSystemIds=[];
+    runtime.ecsStates=new Map();
+    try{
+      for(const [name,defaults] of definitions){
+        ecs.registerComponent(name,{create:()=>structuredClone(defaults)});
+        runtime.ecsComponentTypes.push(name);
+      }
+      // Initial policy: each declared gameplay Component is attached to every Scene Game Object.
+      // This keeps the first DSL version usable without requiring a second entity-authoring UI.
+      for(const object of sceneObjects||[]){
+        const entity=ecs.getEntityForSceneObject?.(object.id);
+        if(!entity)continue;
+        for(const name of definitions.keys()){
+          if(!ecs.hasComponent(entity,name))ecs.addComponent(entity,name);
+        }
+      }
+      for(const {filename,node} of systemDefs){
+        const systemId=ecsSystemRuntimeId(filename,node.name);
+        const componentNames=(node.components||[]).map(String);
+        const registered=ecs.registerSystem({
+          id:systemId,
+          components:componentNames,
+          update:(dt,api)=>{
+            api.forEach(componentNames,(entity,...values)=>{
+              const sceneRef=api.hasComponent(entity,'SceneObjectRef')?api.getComponent(entity,'SceneObjectRef'):null;
+              const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
+              const stateKey=systemId+':'+entity;
+              const c=makeContext(object,dt);
+              c.env=runtime.ecsStates.get(stateKey)||Object.create(null);
+              c.env.entity=entity;c.env.dt=dt;
+              componentNames.forEach((component,index)=>{c.env[ecsBindingName(component)]=values[index];});
+              c.funcs=Object.create(null);
+              for(const fn of asts[filename]?.body||[])if(fn.type==='FunctionDef')c.funcs[fn.name]=fn;
+              c.steps=0;
+              try{execBlock(c,node.body||[],c.env);}
+              catch(signal){if(!(signal&&signal.kind===RETURN))throw signal;}
+              runtime.ecsStates.set(stateKey,c.env);
+              if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
+            });
+          }
+        });
+        runtime.ecsSystemIds.push(registered);
+      }
+    }catch(error){
+      for(const id of runtime.ecsSystemIds||[])try{ecs.unregisterSystem(id);}catch(_){}
+      runtime.ecsSystemIds=[];
+      ecs.clearSceneObjects?.();
+      for(const type of [...(runtime.ecsComponentTypes||[])].reverse())try{ecs.unregisterComponent?.(type);}catch(_){}
+      runtime.ecsComponentTypes=[];
+      throw error;
+    }
+  }
+
   async function startGame() {
     if(runtime?.running)return;
     if(projectFiles[activeProjectFile]?.type==='ps' && typeof codeEditor!=='undefined') projectFiles[activeProjectFile].content=codeEditor.value;
@@ -749,17 +874,18 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
+      registerEcsRuntime(data.scripts);
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestFrame(tick);
-    } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
+    } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
