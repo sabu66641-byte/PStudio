@@ -41,6 +41,17 @@ When Play is pressed, `static/pstudio_engine.js` sends the project's ps scripts 
 
 Do not send a server request every frame. Preserve the division between server-side parsing/validation and client-side game execution.
 
+### Cinematic game-script APIs
+
+The four Step 4 APIs remain browser-game-runtime-only and are registered in `GAME_FUNCTIONS` for `validate_ast(..., allow_game=True)`. They do not enter the regular C++17 built-in table:
+
+- `camera_shake(intensity, duration)` delegates a bounded transient impulse to `PStudio3D.cameraShake()`; the renderer applies it only while drawing and restores the authored camera transform after the frame.
+- `set_time_scale(scale)` sets the browser runtime's simulation multiplier. The scaled `dt` is shared by script callbacks, ECS, physics and render-command clocks; wall-clock browser APIs and audio playback are deliberately unaffected.
+- `draw_trail(target_id, color, width, duration)` resolves a scene object by id or name and emits a world-space trail sample. The renderer owns bounded ribbon geometry and disposes expired/evicted effects.
+- `set_god_rays(enabled, intensity)` toggles a screen-space ShaderPass before OutputPass. Missing or failed God Rays rendering falls back to the existing Bloom pass where available.
+
+The trail pool is capped at 64 effects × 48 samples. The screen-space God Rays shader uses 20 texture samples per output pixel; desktop/mobile GPU compile, frame-time and visual equivalence checks remain real-device quality gates. A failed optional God Rays pass must not prevent the base renderer or other post-processing from running.
+
 ## Repository map
 
 ### Server and language
@@ -96,6 +107,8 @@ Keep these boundaries explicit. Avoid silently duplicating ownership of transfor
 - Preserve animation clips, skinning, hierarchy, morph data and model transforms. Generic automatic instancing only combines opaque, static, same-geometry/same-material nodes; animated ancestry, skinning, morph targets, transparent/transmissive materials, water/wind roles, custom shadow materials and baked per-object probe lighting are excluded.
 - Generic repeated static nodes are grouped by geometry, material, stream chunk, render order, layer mask and shadow flags. Their transforms are stored relative to the owning model/stream chunk; their instance buffers use static usage. Explicit foliage/tree batches retain dynamic transforms and their existing update path.
 - Keep quality features enabled according to the selected quality profile; do not mask performance problems by silently downgrading quality.
+- Stylized NPR is an opt-in shader extension on cloned standard/physical materials. It preserves the PBR default and chains existing material compile hooks; toon ramps, rim response and pseudo-SSS remain material-local. Expanded back-face outline shells are object-local, including skinned meshes, and must be released with their owner without entering raycasts or shadow passes.
+- GPU foliage wind is vertex-shader deformation with per-material time/strength/speed uniforms. Continue to preserve the existing role-aware automatic foliage path and GPU-instanced foliage exclusions; do not introduce per-frame CPU vertex writes.
 - Automatic LOD must retain source geometry and must not override explicit named GLTF LODs. Generated LOD levels are shared per source geometry and are owned/disposed with the cached model asset, not with an individual scene instance.
 - BVH generation is deferred to browser idle time for sufficiently large geometry; small geometry is left on normal raycasting, and failed BVH builds are not retried continuously. Raycasting remains correct through the Three.js fallback.
 - KTX2Loader/Basis Universal transcoding supports assets that already contain KHR_texture_basisu. It does not encode ordinary PNG/JPEG images into KTX2 at runtime; asset encoding is a separate import/build step and must not silently resample or discard source detail.

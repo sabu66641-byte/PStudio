@@ -340,12 +340,56 @@
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
       case 'set_shader': if(a.length===1){const mode=String(a[0]).toLowerCase();if(!['standard','toon','unlit','normal','wireframe'].includes(mode))throw new PsRuntimeError('Shader preset must be standard, toon, unlit, normal or wireframe.');c.draw.push({type:'material',shader:mode});return null;} break;
+      case 'set_toon_material': if(a.length===14){
+        const color=(value,fallback)=>/^#[0-9a-f]{6}$/i.test(String(value))?String(value):fallback;
+        const bounded=(value,min,max)=>Math.max(min,Math.min(max,finite(value)));
+        c.draw.push({type:'toon_material',toon:{
+          enabled:true,shadowColor:color(a[0],'#46516f'),midColor:color(a[1],'#9eafd0'),highlightColor:color(a[2],'#ffffff'),
+          shadowThreshold:bounded(a[3],0.02,0.95),highlightThreshold:bounded(a[4],0.05,0.99),
+          rimColor:color(a[5],'#b8dcff'),rimIntensity:bounded(a[6],0,4),rimPower:bounded(a[7],0.5,8),
+          outlineColor:color(a[8],'#182235'),outlineWidth:bounded(a[9],0.005,0.45),
+          sssColor:color(a[10],'#f0a5a0'),sssIntensity:bounded(a[11],0,1.5),
+          windStrength:bounded(a[12],0,2.5),windSpeed:bounded(a[13],0,4)
+        }});return null;
+      } break;
       case 'set_model_material': if(a.length===4){c.draw.push({type:'model_material',name:String(a[0]),roughness:Math.max(0,Math.min(1,finite(a[1]))),metalness:Math.max(0,Math.min(1,finite(a[2]))),color:String(a[3])});return null;} break;
       case 'set_postprocessing': if(a.length===3){c.draw.push({type:'postfx',bloom:truthy(a[0]),ssao:truthy(a[1]),strength:finite(a[2])});return null;} break;
       case 'particle_emitter': if(a.length===6){c.draw.push({type:'particle_emitter',emitterId:String(a[0]),x:readPosition(0),y:readPosition(1),z:readPosition(2),rate:Math.max(0,finite(a[1])),color:String(a[2]),speed:Math.max(0,finite(a[3])),lifetime:Math.max(0.05,Math.min(20,finite(a[4]))),maxCount:Math.max(1,Math.min(1200,Math.floor(finite(a[5])))),dt:c.dt});return null;} break;
       case 'stop_particle_emitter': if(a.length===1){c.draw.push({type:'particle_emitter_stop',emitterId:String(a[0])});return null;} break;
       case 'solve_ik': if(a.length===7){c.draw.push({type:'ik',rootBone:String(a[0]),endBone:String(a[1]),target:[finite(a[2]),finite(a[3]),finite(a[4])],iterations:Math.max(1,Math.min(20,Math.floor(finite(a[5])))),weight:Math.max(0,Math.min(1,finite(a[6])))});return null;} break;
       case 'animation_layer': if(a.length===3){c.draw.push({type:'animation_layer',clip:String(a[0]),weight:Math.max(0,Math.min(1,finite(a[1]))),additive:truthy(a[2])});return null;} break;
+      case 'camera_shake': if(a.length===2){
+        const intensity=Math.max(0,Math.min(2,finite(a[0])));
+        const duration=Math.max(0,Math.min(8,finite(a[1])));
+        if(runtime)runtime.requires3D=true;
+        const triggered=window.PStudio3D?.cameraShake?.(intensity,duration)??false;
+        c.draw.push({type:'camera_shake'});
+        return triggered;
+      } break;
+      case 'set_time_scale': if(a.length===1){
+        if(!runtime)throw new PsRuntimeError('set_time_scale() はゲーム実行中のみ使用できます。');
+        runtime.timeScale=Math.max(0,Math.min(4,finite(a[0])));
+        return runtime.timeScale;
+      } break;
+      case 'draw_trail': if(a.length===4){
+        if(runtime)runtime.requires3D=true;
+        const targetKey=String(a[0]);
+        const target=(sceneObjects||[]).find(item=>String(item.id)===targetKey||String(item.name)===targetKey);
+        if(!target)throw new PsRuntimeError('draw_trail(): 対象の Game Object が見つかりません: '+targetKey);
+        const targetPhysicsPosition=window.PStudioPhysics?.getPosition?.(target.id);
+        const x=Number.isFinite(Number(targetPhysicsPosition?.x))?Number(targetPhysicsPosition.x):((Number(target.x)||0)+(Number(target.w)||64)/2-480)/100;
+        const y=Number.isFinite(Number(targetPhysicsPosition?.y))?Number(targetPhysicsPosition.y):(270-((Number(target.y)||0)+(Number(target.h)||64)/2))/100;
+        const z=Number.isFinite(Number(targetPhysicsPosition?.z))?Number(targetPhysicsPosition.z):(Number(target.z)||0)/100;
+        c.draw.push({type:'trail',targetId:String(target.id),x,y,z,color:String(a[1]),width:Math.max(0.001,Math.min(1,finite(a[2]))),duration:Math.max(0.05,Math.min(10,finite(a[3]))),dt:c.dt});
+        return true;
+      } break;
+      case 'set_god_rays': if(a.length===2){
+        if(runtime)runtime.requires3D=true;
+        const enabled=truthy(a[0]),intensity=Math.max(0,Math.min(2,finite(a[1])));
+        const result=window.PStudio3D?.setGodRays?.(enabled,intensity)??null;
+        c.draw.push({type:'camera_fx'});
+        return result;
+      } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -507,8 +551,9 @@
           ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
           : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
       const objectCommands=[];
+      if(o.toonMaterialSettings)objectCommands.push({type:'toon_material',toon:o.toonMaterialSettings});
       if(o.postProcessing)objectCommands.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity});
+      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
       if(o.shaderFragment)objectCommands.push({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
       if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
       objectCommands.push(draw);commands.set(o.id,objectCommands);
@@ -551,8 +596,8 @@
     const draws=[...drawCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const allDraws=draws;
-    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
-    const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
+    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx','trail','camera_shake','camera_fx'].includes(d.type));
+    const use3D=renderMode==='3d'||(renderMode==='auto'&&(!!runtime?.requires3D||has3D));
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
     else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(drawCommands);}
@@ -561,7 +606,7 @@
   }
   function tick(time) {
     if(!runtime?.running)return;
-    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
+    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
     try {
       const commands=new Map();
       for(const object of sceneObjects||[]){
@@ -596,9 +641,10 @@
         if(c.funcs.update)callFunction(c,'update',[dt]);
         runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
+        if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
         if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
         if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
         if(o.model&&!objectDraws.some(d=>d.type==='model')){
           const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
@@ -612,13 +658,14 @@
       // Scene-only render settings (models and particle emitters) remain active without scripts.
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
-        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled))continue;
+        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled&&!o.toonMaterialSettings))continue;
         const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
         const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
         const z=(Number(o.z)||0)/100;
         const list=[];
+        if(o.toonMaterialSettings)list.push({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
         if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
         if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
         if(list.length)commands.set(o.id,list);
@@ -693,7 +740,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation)\s*\(/.test(source));
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
@@ -702,7 +749,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';

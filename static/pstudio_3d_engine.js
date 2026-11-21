@@ -6,8 +6,8 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null;
-  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,temporalAAEnabled=false;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,godRaysPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,temporalAAEnabled=false,godRaysEnabled=false,godRaysFallbackEnabled=false,godRaysIntensity=0;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -61,6 +61,7 @@
   const dynamicLights = new Map();
   const particleBursts = new Map();
   const particleEmitters = new Map();
+  const trailEffects = new Map();
   const modelCollisionCache = new Map();
   const transformedCollisionCache = new Map();
   let environmentTexture = null;
@@ -75,6 +76,7 @@
   let pinchDistance = 0;
   let pinchGestureStart = null;
   let pinchGestureMode = null;
+  let cameraShakeState=null;
   let cameraTarget = [0, 0, 0];
   let cameraBase = [6, 5, 8];
   let activeCameraOwnerId = null;
@@ -305,6 +307,7 @@
       if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
       if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
+      godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godRaysPass){godRaysPass.enabled=false;composer.addPass(godRaysPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
@@ -504,12 +507,14 @@
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
+    const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
+    applyCameraShake();updateTrailEffects();
     const hiddenStaticSky=[];
     try{
       renderWaterDepthPrepass();
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
-        if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+        if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
         const syncPostFXUniforms=(pass,required,update)=>{
@@ -532,13 +537,35 @@
             u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;
           });
         }
-        composer.render();
+        if(godRaysPass){
+          godRaysPass.enabled=godRaysEnabled;
+          syncPostFXUniforms(godRaysPass,['uLightPosition','uIntensity'],u=>{
+            camera.updateMatrixWorld(true);
+            const sunDirection=keyLight?.position?.clone?.()||new T.Vector3(5,9,6);
+            if(sunDirection.lengthSq()<1e-8)sunDirection.set(5,9,6);else sunDirection.normalize();
+            const sunWorld=camera.position.clone().addScaledVector(sunDirection,1000);
+            const sunScreen=sunWorld.project(camera);
+            u.uLightPosition.value.set(sunScreen.x*0.5+0.5,sunScreen.y*0.5+0.5);
+            u.uIntensity.value=godRaysIntensity;
+          });
+        }
+        try{
+          composer.render();
+        }catch(postError){
+          if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
+          godRaysEnabled=false;godRaysPass.enabled=false;
+          godRaysFallbackEnabled=!!bloomPass;
+          if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
+          console.warn('[PStudio] God Rays shader is unsupported; switching to bloom fallback.',postError);
+          composer.render();
+        }
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
         if(ssrPass)ssrPass.enabled=false;
         renderer.render(scene,camera);
       }
     }finally{
+      camera.position.copy(cameraPositionBefore);camera.quaternion.copy(cameraQuaternionBefore);camera.updateMatrixWorld(true);
       restoreStaticSky(hiddenStaticSky);
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       endGpuTimerQuery(gpuQuery);
@@ -575,6 +602,116 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     a.aOrigin.needsUpdate=true;a.aVelocity.needsUpdate=true;a.aBirth.needsUpdate=true;a.aLife.needsUpdate=true;
   }
   function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
+  const MAX_TRAIL_POINTS=48;
+  const MAX_TRAIL_EFFECTS=64;
+  function disposeTrailEffect(trail){
+    if(!trail)return;
+    if(trail.mesh?.parent)trail.mesh.parent.remove(trail.mesh);
+    trail.geometry?.dispose?.();
+    trail.material?.dispose?.();
+  }
+  function updateTrailGeometry(trail){
+    const T=window.THREE,points=trail.points;
+    if(!T||!trail.geometry||points.length<2){trail.geometry?.setDrawRange?.(0,0);return;}
+    const positions=trail.geometry.attributes.position;
+    const births=trail.geometry.attributes.aBirth;
+    const worldUp=new T.Vector3(0,1,0),fallbackAxis=new T.Vector3(1,0,0);
+    for(let i=0;i<points.length;i++){
+      const previous=points[Math.max(0,i-1)].position;
+      const following=points[Math.min(points.length-1,i+1)].position;
+      const tangent=following.clone().sub(previous);
+      if(tangent.lengthSq()<1e-10)tangent.set(0,0,1);
+      else tangent.normalize();
+      const view=camera?camera.position.clone().sub(points[i].position).normalize():worldUp.clone();
+      let side=tangent.clone().cross(view);
+      if(side.lengthSq()<1e-8)side=tangent.clone().cross(worldUp);
+      if(side.lengthSq()<1e-8)side=tangent.clone().cross(fallbackAxis);
+      side.normalize().multiplyScalar(trail.width*0.5);
+      const center=points[i].position;
+      const left=center.clone().add(side),right=center.clone().sub(side);
+      positions.setXYZ(i*2,left.x,left.y,left.z);
+      positions.setXYZ(i*2+1,right.x,right.y,right.z);
+      births.setX(i*2,points[i].time);
+      births.setX(i*2+1,points[i].time);
+    }
+    positions.needsUpdate=true;births.needsUpdate=true;
+    trail.geometry.setDrawRange(0,(points.length-1)*6);
+  }
+  function updateTrailEffect(key,command){
+    const T=window.THREE;
+    if(!T||!scene)return;
+    const duration=Math.max(0.05,Math.min(10,Number(command.duration)||0.25));
+    const width=Math.max(0.001,Math.min(1,Number(command.width)||0.05));
+    let trail=trailEffects.get(key);
+    if(!trail){
+      if(trailEffects.size>=MAX_TRAIL_EFFECTS){
+        const oldestKey=trailEffects.keys().next().value;
+        const oldest=trailEffects.get(oldestKey);
+        disposeTrailEffect(oldest);trailEffects.delete(oldestKey);
+      }
+      const geometry=new T.BufferGeometry();
+      const position=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2*3),3);
+      const birth=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2),1);
+      position.setUsage?.(T.DynamicDrawUsage);birth.setUsage?.(T.DynamicDrawUsage);
+      geometry.setAttribute('position',position);geometry.setAttribute('aBirth',birth);
+      const indices=[];
+      for(let i=0;i<MAX_TRAIL_POINTS-1;i++){const a=i*2,b=a+1,c=a+2,d=a+3;indices.push(a,b,c,b,d,c);}
+      geometry.setIndex(indices);
+      const material=new T.ShaderMaterial({
+        uniforms:{uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}},
+        vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+        fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
+        transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
+      });
+      const mesh=new T.Mesh(geometry,material);mesh.frustumCulled=false;mesh.renderOrder=5;scene.add(mesh);
+      trail={geometry,material,mesh,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
+      trailEffects.set(key,trail);
+    }
+    trail.width=width;trail.duration=duration;trail.lastCalledAt=particleClock;
+    trail.material.uniforms.uDuration.value=duration;
+    try{trail.material.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.material.uniforms.uColor.value.set('#ffffff');}
+    const position=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0);
+    const last=trail.points[trail.points.length-1];
+    if(!last||last.position.distanceToSquared(position)>0.000025||particleClock-trail.lastSampleAt>=0.025){
+      trail.points.push({position,time:particleClock});trail.lastSampleAt=particleClock;
+      if(trail.points.length>MAX_TRAIL_POINTS)trail.points.shift();
+      updateTrailGeometry(trail);
+    }
+  }
+  function updateTrailEffects(){
+    for(const [key,trail] of trailEffects){
+      if(particleClock-trail.lastCalledAt>trail.duration){
+        disposeTrailEffect(trail);trailEffects.delete(key);continue;
+      }
+      const time=trail.material?.uniforms?.uTime;
+      if(time&&Object.prototype.hasOwnProperty.call(time,'value'))time.value=particleClock;
+    }
+  }
+  function triggerCameraShake(intensity,duration){
+    const strength=Math.max(0,Math.min(2,Number(intensity)||0));
+    const seconds=Math.max(0,Math.min(8,Number(duration)||0));
+    if(!strength||!seconds){cameraShakeState=null;return false;}
+    const now=window.performance?.now?.()??Date.now();
+    cameraShakeState={startedAt:now,intensity:strength,duration:seconds};
+    if(renderer&&scene&&camera)drawFrame();
+    return true;
+  }
+  function applyCameraShake(){
+    if(!cameraShakeState||!camera||!window.THREE)return;
+    const now=window.performance?.now?.()??Date.now();
+    const elapsed=Math.max(0,(now-cameraShakeState.startedAt)/1000);
+    const progress=elapsed/cameraShakeState.duration;
+    if(progress>=1){cameraShakeState=null;return;}
+    const envelope=(1-progress)*(1-progress),amplitude=0.12*cameraShakeState.intensity*envelope;
+    const right=new window.THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    const up=new window.THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+    const t=elapsed;
+    camera.position.addScaledVector(right,(Math.sin(t*59.3)+0.38*Math.sin(t*91.7+1.4))*amplitude*0.5);
+    camera.position.addScaledVector(up,(Math.cos(t*67.1+0.6)+0.32*Math.sin(t*107.3))*amplitude*0.38);
+    camera.rotateX(Math.sin(t*43.7)*0.0035*cameraShakeState.intensity*envelope);
+    camera.rotateY(Math.cos(t*51.9)*0.003*cameraShakeState.intensity*envelope);
+    camera.updateMatrixWorld(true);
+  }
   function updateGpuParticleSystems(){
     const ratio=renderer?.getPixelRatio?.()||1;
     const update=system=>{const uniforms=system?.uniforms;if(!uniforms?.uTime||!uniforms?.uPixelRatio)return false;uniforms.uTime.value=particleClock;uniforms.uPixelRatio.value=ratio;return true;};
@@ -1529,6 +1666,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeMesh(mesh) {
     if (!mesh) return;
+    window.PStudioEnvironmentFX?.releaseObject?.(mesh);
     mesh.userData?.pstudioLightmapTexture?.dispose?.();
     const currentGeometry=mesh.geometry,lightmapped=!!mesh.userData?.pstudioLightmapGeometry;
     if(currentGeometry?.userData){currentGeometry.userData.pstudioBVHDisposed=true;currentGeometry.userData.pstudioBVHToken=(currentGeometry.userData.pstudioBVHToken||0)+1;}
@@ -2649,6 +2787,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;
     markModelGeometryChanged(object);
+    if(object.userData?.pstudioOutlineShell)object.userData.pstudioOutlineShell.mesh.geometry=object.geometry;
     object.userData.pstudioActiveAutoLOD=selected;
     if(object.isInstancedMesh)object.computeBoundingSphere?.();
   }
@@ -3279,9 +3418,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
+      toon:state.toon??null,
       modelOverrides:overrides.map(item=>[
         item.name,item.roughness??null,item.metalness??null,item.color??null,
-        item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
+        item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null,item.toon??null
       ]),
       normalGeometrySignature
     }:null);
@@ -3344,6 +3484,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(Number.isFinite(defaults.emissiveIntensity))material.emissiveIntensity=defaults.emissiveIntensity;
         material.side=defaults.side;
         const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
+        const toonSettings=override?.toon||state?.toon||null;
+        if(toonSettings&&toonSettings.enabled!==false)window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
+        else if(material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(material,{enabled:false},object);
+        if(toonSettings&&Object.prototype.hasOwnProperty.call(toonSettings,'windStrength'))window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
@@ -3456,6 +3600,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(instance.root.parent) instance.root.parent.remove(instance.root);
     const disposedMaterials=new Set();
     instance.root.traverse(object=>{
+      window.PStudioEnvironmentFX?.releaseObject?.(object);
       if(!object.isMesh)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials)if(material)disposedMaterials.add(material);
@@ -3477,7 +3622,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
     let frameDelta=1/60;
-    for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
+    for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){const value=Number(timing.dt);frameDelta=Number.isFinite(value)?Math.max(0,Math.min(0.1,value)):1/60;break;}}
     particleClock+=frameDelta;
     for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u?.uPStudioTime&&Object.prototype.hasOwnProperty.call(u.uPStudioTime,'value'))u.uPStudioTime.value=particleClock;}window.PStudioEnvironmentFX?.update?.(particleClock);
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
@@ -3486,7 +3631,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
-      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined}));
+      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined,toon:d.toon&&typeof d.toon==='object'?d.toon:null}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
@@ -3494,7 +3639,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||!!d.ssao;const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
+      if(d.type==='trail'){updateTrailEffect(String(ownerId)+':'+String(d.targetId),d);continue;}
+      if(d.type==='camera_shake'||d.type==='camera_fx')continue;
       if(d.type==='model_material')continue;
+        if(d.type==='toon_material'){const toon=d.toon&&typeof d.toon==='object'?d.toon:{};ownerMaterial=Object.assign(ownerMaterial||{},{shader:toon.enabled===false?(ownerMaterial?.shader==='toon'?'standard':ownerMaterial?.shader||'standard'):'toon',toon});continue;}
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
           const emitterKey=String(ownerId)+':'+String(d.emitterId);
@@ -3711,7 +3859,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
             material=configureWaterMaterial(material);
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
-          }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
+          }else if(shaderMode==='toon')material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:ownerMaterial?.roughness??0.72,metalness:ownerMaterial?.metalness??0.04,side:T.DoubleSide});
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
@@ -3727,6 +3875,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
+        const primitiveToon=ownerMaterial?.toon;
+        if(shaderMode==='toon'||(primitiveToon&&primitiveToon.enabled!==false))window.PStudioEnvironmentFX?.configureToon?.(mesh.material,Object.assign({},primitiveToon||{},{enabled:true}),mesh);
+        else if(mesh.material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,{enabled:false},mesh);
+        if(primitiveToon&&Object.prototype.hasOwnProperty.call(primitiveToon,'windStrength'))window.PStudioEnvironmentFX?.configureFoliage?.(mesh.material,mesh,{windStrength:primitiveToon.windStrength,windSpeed:primitiveToon.windSpeed});
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
         if(d.type!=='water'){
@@ -3800,6 +3952,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     disposeGroup(selectionGroup);
     for(const emitter of particleEmitters.values())disposeGpuParticleSystem(emitter.system);particleEmitters.clear();
     for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
+    for(const trail of trailEffects.values())disposeTrailEffect(trail);trailEffects.clear();
+    cameraShakeState=null;godRaysEnabled=false;godRaysFallbackEnabled=false;godRaysIntensity=0;
     particleClock=0;
     selectionSignature='';
     if(renderer)drawFrame();
@@ -3872,6 +4026,17 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     clear,
     frameObject,
     adjustZoom:adjustCameraZoom,
+    cameraShake:triggerCameraShake,
+    setGodRays:(enabled,intensity=1)=>{
+      const requested=!!enabled;
+      godRaysIntensity=Math.max(0,Math.min(2,Number.isFinite(Number(intensity))?Number(intensity):1));
+      if(requested&&!renderer&&window.THREE)ensureRenderer();
+      godRaysEnabled=requested&&!!godRaysPass;
+      godRaysFallbackEnabled=requested&&!godRaysPass&&!!bloomPass;
+      if(!requested){godRaysEnabled=false;godRaysFallbackEnabled=false;}
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
+    },
     getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
     getModelStatus,
@@ -3902,6 +4067,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
+      trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
+      cameraShake:{active:!!cameraShakeState},
+      godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity},
       models:modelInstances.size,
       modelPreparationPending,
       stagedTextureUploads,
