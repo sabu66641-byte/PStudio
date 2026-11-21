@@ -1187,18 +1187,23 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeModelAsset(asset) {
     if(!asset?.scene)return;
-    const geometries=new Set(),materials=new Set(),textures=new Set();
+    const geometries=new Set(),materials=new Set(),textures=new Set(),imageBitmaps=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
       if(object.geometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();geometries.add(object.geometry);}
       for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
     });
     materials.forEach(material=>{
-      for(const value of Object.values(material))if(value?.isTexture)textures.add(value);
+      for(const value of Object.values(material))if(value?.isTexture){
+        textures.add(value);
+        const image=value.source?.data??value.image;
+        if(typeof ImageBitmap!=='undefined'&&image instanceof ImageBitmap)imageBitmaps.add(image);
+      }
     });
     geometries.forEach(geometry=>geometry.dispose());
     textures.forEach(texture=>texture.dispose());
     materials.forEach(material=>material.dispose());
+    imageBitmaps.forEach(bitmap=>{try{bitmap.close();}catch(_){}});
   }
 
   function deviceMemoryGiB(){
@@ -2367,6 +2372,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
               const assetRevision=modelRevisions.get(d.name)||0;
               const build=(async()=>{
                 const created=await createModelInstanceAsync(key,ownerId,d.name,asset);
+                created.root.visible=false;
                 const latest=lastCommands?.get(ownerId)||[];
                 const stillRequested=latest.some(command=>command.type==='model'&&command.name===d.name);
                 if(!stillRequested||modelBuildGeneration!==buildGeneration||(modelRevisions.get(d.name)||0)!==assetRevision){
