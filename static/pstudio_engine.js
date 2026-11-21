@@ -702,6 +702,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
+      window.PStudioECSInspector?.refresh?.();
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
@@ -709,7 +710,7 @@
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestFrame(tick);
-    } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
+    } catch(err) {window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
     if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
@@ -717,6 +718,7 @@
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();
+    window.PStudioECSInspector?.refresh?.();
     justPressed.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
