@@ -1991,7 +1991,7 @@ def generate_native_ecs_sources(parsed_scripts):
         "    const auto entity = PStudioGenerated::create_entity(world);",
         "    scheduler.update(world, 1.0 / 60.0);",
         "    const auto& transform = world.get<pstudio::ecs::Transform>(entity);",
-        '    std::cout << "PStudio native ECS ready; entities=" << world.entity_count() << ", x=" << transform.x << std::endl;',
+        '    std::cout << "PStudio native ECS ready; entities=" << world.entity_count() << ", x=" << transform.x << ", y=" << transform.y << ", z=" << transform.z << std::endl;',
         "    return 0;",
         "}",
         ""
