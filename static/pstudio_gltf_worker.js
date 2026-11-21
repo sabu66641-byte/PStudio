@@ -359,7 +359,7 @@ async function serializeGLTF(gltf) {
   };
 }
 
-async async async function parseGLB(message) {
+async function parseGLB(message) {
   const buffer = message.buffer || (message.blob?.arrayBuffer ? await message.blob.arrayBuffer() : null);
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 20) throw new Error('Invalid GLB buffer.');
   const jsonLengthView = new DataView(buffer);
