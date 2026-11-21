@@ -172,7 +172,7 @@ test('toon controls persist as per-model overrides and are forwarded to the rend
     'obj-model-toon-sss-color', 'obj-model-wind-strength', 'obj-model-wind-speed'
   ]) assert.ok(html.includes('id="' + id + '"'), id);
   assert.match(html, /const toon=\{enabled:!!document\.getElementById\('obj-model-toon-enabled'\)/);
-  assert.match(html, /toon:rawToon\?\{/);
+  assert.match(html, /const toon=rawToon\?\{/);
   assert.match(runtime, /toon:override\.toon/);
   assert.match(renderer, /toon:d\.toon&&typeof d\.toon==='object'\?d\.toon:null/);
   assert.match(renderer, /configureToon\?\.\(material,toonSettings,object\)/);
