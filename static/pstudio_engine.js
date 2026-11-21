@@ -603,43 +603,29 @@
   }
   function updateCollisions() {
     const bridge=window.PStudioECSScene;
-    if(!bridge?.commitCollisionState){
-      const objs=(sceneObjects||[]).map(getCollisionObject).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
-      const now=new Set();
-      for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){
-        const left=objs[i],right=objs[j];
-        if(collides(left,right)){
-          const key=[left.id,right.id].sort().join('|');now.add(key);
-          if(!collisionPairs.has(key)){dispatchCollision(left,right);dispatchCollision(right,left);}
-        }
-      }
-      collisionPairs=now;return;
-    }
     const objects=sceneObjects||[];
     const active=objects.map(getCollisionObject).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
-    const activeIds=new Set(active.map(o=>String(o.id)));
-    const previous=new Map(),current=new Map(),owners=new Map();
-    for(const object of objects){
-      const id=String(object.id),state=bridge.getComponent(id,'CollisionState');
-      const old=Array.isArray(state?.overlaps2D)?state.overlaps2D.map(String):[];
-      if(activeIds.has(id)||old.length){
-        previous.set(id,new Set(old));current.set(id,new Set());owners.set(id,object);
-      }
-    }
+    const pairs=[];
     for(let i=0;i<active.length;i++)for(let j=i+1;j<active.length;j++){
-      const left=active[i],right=active[j];
-      if(!collides(left,right))continue;
-      const a=String(left.id),b=String(right.id);
-      current.get(a)?.add(b);current.get(b)?.add(a);
+      if(collides(active[i],active[j]))pairs.push([String(active[i].id),String(active[j].id)]);
     }
-    for(const [id,peers] of current){
-      const old=previous.get(id)||new Set(),owner=owners.get(id);
-      for(const peer of peers)if(!old.has(peer)){
-        const other=owners.get(peer)||(sceneObjects||[]).find(item=>String(item.id)===peer);
+    if(bridge?.syncCollisionContacts){
+      const entered=bridge.syncCollisionContacts(objects.map(o=>String(o.id)),pairs,'2d');
+      for(const [ownerId,otherId] of entered){
+        const owner=objects.find(o=>String(o.id)===ownerId),other=objects.find(o=>String(o.id)===otherId);
         if(owner&&other)dispatchCollision(owner,other);
       }
-      if(peers.size||old.size)bridge.commitCollisionState(id,'2d',[...peers]);
+      return;
     }
+    const now=new Set();
+    for(const [a,b] of pairs){
+      const key=[a,b].sort().join('|');now.add(key);
+      if(!collisionPairs.has(key)){
+        const left=objects.find(o=>String(o.id)===a),right=objects.find(o=>String(o.id)===b);
+        if(left&&right){dispatchCollision(left,right);dispatchCollision(right,left);}
+      }
+    }
+    collisionPairs=now;
   }
 
   // 3D AABB collision is isolated from the existing 2D collider system.
@@ -679,44 +665,32 @@
         if(bounds)colliders.push({owner,bounds});
       }
     }
-    const bridge=window.PStudioECSScene;
-    if(!bridge?.commitCollisionState){
-      const now=new Set();
-      for(let i=0;i<colliders.length;i++)for(let j=i+1;j<colliders.length;j++){
-        const left=colliders[i],right=colliders[j];
-        if(left.owner.id===right.owner.id||!overlaps3D(left.bounds,right.bounds))continue;
-        const key=[left.owner.id,right.owner.id].sort().join('|');
-        if(now.has(key))continue;
-        now.add(key);
-        if(!collision3DPairs.has(key)){dispatchCollision(left.owner,right.owner);dispatchCollision(right.owner,left.owner);}
-      }
-      collision3DPairs=now;return;
-    }
-    const objects=sceneObjects||[];
-    const previous=new Map(),current=new Map(),owners=new Map();
-    for(const object of objects){
-      const id=String(object.id),state=bridge.getComponent(id,'CollisionState');
-      const old=Array.isArray(state?.overlaps3D)?state.overlaps3D.map(String):[];
-      if(old.length){previous.set(id,new Set(old));current.set(id,new Set());owners.set(id,object);}
-    }
-    for(const collider of colliders){
-      const id=String(collider.owner.id);
-      if(!current.has(id)){current.set(id,new Set());previous.set(id,new Set());owners.set(id,collider.owner);}
-    }
+    const pairs=[],seen=new Set();
     for(let i=0;i<colliders.length;i++)for(let j=i+1;j<colliders.length;j++){
       const left=colliders[i],right=colliders[j];
       if(left.owner.id===right.owner.id||!overlaps3D(left.bounds,right.bounds))continue;
-      const a=String(left.owner.id),b=String(right.owner.id);
-      current.get(a)?.add(b);current.get(b)?.add(a);
+      const pair=[String(left.owner.id),String(right.owner.id)].sort(),key=pair.join('|');
+      if(seen.has(key))continue;
+      seen.add(key);pairs.push(pair);
     }
-    for(const [id,peers] of current){
-      const old=previous.get(id)||new Set(),owner=owners.get(id);
-      for(const peer of peers)if(!old.has(peer)){
-        const other=owners.get(peer)||(sceneObjects||[]).find(item=>String(item.id)===peer);
+    const bridge=window.PStudioECSScene,objects=sceneObjects||[];
+    if(bridge?.syncCollisionContacts){
+      const entered=bridge.syncCollisionContacts(objects.map(o=>String(o.id)),pairs,'3d');
+      for(const [ownerId,otherId] of entered){
+        const owner=objects.find(o=>String(o.id)===ownerId),other=objects.find(o=>String(o.id)===otherId);
         if(owner&&other)dispatchCollision(owner,other);
       }
-      if(peers.size||old.size)bridge.commitCollisionState(id,'3d',[...peers]);
+      return;
     }
+    const now=new Set();
+    for(const [a,b] of pairs){
+      const key=[a,b].sort().join('|');now.add(key);
+      if(!collision3DPairs.has(key)){
+        const left=objects.find(o=>String(o.id)===a),right=objects.find(o=>String(o.id)===b);
+        if(left&&right){dispatchCollision(left,right);dispatchCollision(right,left);}
+      }
+    }
+    collision3DPairs=now;
   }
 
   let renderMode = 'auto';
