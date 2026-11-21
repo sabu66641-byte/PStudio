@@ -539,7 +539,7 @@
           'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity;',
           'reflectedLight.indirectDiffuse+=uPStudioToonSSSColor*pStudioToonSubsurface;',
           '}',
-        ].join('\\n'));
+        ].join('\n'));
         shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
           'if(uPStudioToonEnabled>0.5){',
           'gl_FragColor.rgb+=uPStudioToonRimColor*pStudioToonRim*0.82;',
