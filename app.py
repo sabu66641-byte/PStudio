@@ -1,5 +1,8 @@
 import os
 import re
+import io
+import json
+import zipfile
 import subprocess
 import threading
 import tempfile
@@ -1566,6 +1569,463 @@ def generate_cpp(ast):
         + main_declarations + main_body + ["    return 0;", "}"]
     )
     return "\n".join(final_code)
+
+
+
+# ====================================================
+# Portable C++17 ECS project generator
+# ====================================================
+
+def _native_cpp_string(value):
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _native_cpp_literal_type(node):
+    if not isinstance(node, dict):
+        raise Exception("Native ECS: invalid Component default.")
+    if node.get("type") == "Literal":
+        raw = str(node.get("value", ""))
+        if raw in ("true", "false"):
+            return "bool"
+        if raw.startswith('"'):
+            return "std::string"
+        return "double" if "." in raw else "std::int64_t"
+    if node.get("type") == "ArrayLiteral":
+        elements = node.get("elements", [])
+        if not elements:
+            return "std::vector<std::int64_t>"
+        element_types = {_native_cpp_literal_type(item) for item in elements}
+        if len(element_types) != 1:
+            raise Exception("Native ECS: array defaults must contain one consistent scalar type.")
+        element_type = next(iter(element_types))
+        if element_type.startswith("std::vector<"):
+            raise Exception("Native ECS: nested array defaults are not supported in this stage.")
+        return f"std::vector<{element_type}>"
+    raise Exception("Native ECS: Component defaults must be literal values or literal arrays.")
+
+
+def _native_cpp_literal(node):
+    kind = node.get("type")
+    if kind == "Literal":
+        raw = str(node.get("value", ""))
+        if raw.startswith('"'):
+            try:
+                return _native_cpp_string(json.loads(raw))
+            except Exception as exc:
+                raise Exception("Native ECS: invalid string literal.") from exc
+        if raw in ("true", "false"):
+            return raw
+        number = float(raw) if "." in raw else int(raw)
+        if not math.isfinite(float(number)):
+            raise Exception("Native ECS: numeric literal must be finite.")
+        return raw
+    if kind == "ArrayLiteral":
+        cpp_type = _native_cpp_literal_type(node)
+        values = ", ".join(_native_cpp_literal(item) for item in node.get("elements", []))
+        return f"{cpp_type}{{{values}}}"
+    raise Exception("Native ECS: unsupported literal value.")
+
+
+def _native_expr_type(node, local_types, binding_types, field_types):
+    kind = node.get("type")
+    if kind == "Literal":
+        raw = str(node.get("value", ""))
+        if raw in ("true", "false"):
+            return "bool"
+        if raw.startswith('"'):
+            return "std::string"
+        return "double" if "." in raw else "std::int64_t"
+    if kind == "ArrayLiteral":
+        return _native_cpp_literal_type(node)
+    if kind == "Variable":
+        name = node.get("value")
+        if name in local_types:
+            return local_types[name]
+        if name == "dt":
+            return "double"
+        if name == "entity":
+            return "pstudio::ecs::Entity"
+        if name in binding_types:
+            return binding_types[name]
+        raise Exception(f"Native ECS: unknown System variable '{name}'.")
+    if kind == "MemberExpr":
+        owner = node.get("object", {})
+        if owner.get("type") != "Variable":
+            raise Exception("Native ECS: member access must use a Component binding.")
+        component_type = binding_types.get(owner.get("value"))
+        if component_type is None:
+            raise Exception(f"Native ECS: '{owner.get('value')}' is not a Component binding.")
+        field = node.get("property")
+        result = field_types.get(component_type, {}).get(field)
+        if result is None:
+            raise Exception(f"Native ECS: Component '{component_type}' has no Field '{field}'.")
+        return result
+    if kind == "IndexExpr":
+        base_type = local_types.get(node.get("name"))
+        if not base_type or not base_type.startswith("std::vector<"):
+            raise Exception("Native ECS: array indexing currently requires a local vector.")
+        return base_type[len("std::vector<"):-1]
+    if kind in ("UnaryExpr", "PostfixExpr"):
+        inner = node.get("right") if kind == "UnaryExpr" else node.get("value")
+        value_type = _native_expr_type(inner, local_types, binding_types, field_types)
+        return "bool" if kind == "UnaryExpr" and node.get("op") == "!" else value_type
+    if kind == "BinaryExpr":
+        op = node.get("op")
+        left = _native_expr_type(node.get("left"), local_types, binding_types, field_types)
+        right = _native_expr_type(node.get("right"), local_types, binding_types, field_types)
+        if op in ("&&", "||", "==", "!=", "<", ">", "<=", ">="):
+            return "bool"
+        if op in ("/", "**"):
+            return "double"
+        if left == "std::string" and right == "std::string" and op == "+":
+            return "std::string"
+        if left == "double" or right == "double":
+            return "double"
+        return left
+    if kind == "CallExpr":
+        name = node.get("name")
+        if name == "len" and len(node.get("args", [])) == 1:
+            return "std::size_t"
+        if name == "range":
+            return "std::vector<std::int64_t>"
+        raise Exception(f"Native ECS: function '{name}' is not yet supported inside native Systems.")
+    raise Exception(f"Native ECS: expression '{kind}' is not supported.")
+
+
+def _native_merge_numeric_types(left, right):
+    if left == right:
+        return left
+    numeric = {"std::int64_t", "double"}
+    if left in numeric and right in numeric:
+        return "double"
+    raise Exception(f"Native ECS: local variable type changes from {left} to {right} are not supported.")
+
+
+def _native_system_locals(nodes, binding_types, field_types):
+    local_types = {}
+
+    def visit(body):
+        for node in body:
+            kind = node.get("type")
+            if kind == "AssignmentExpression":
+                name = node.get("variable")
+                if name in binding_types or name in ("entity", "dt"):
+                    raise Exception(f"Native ECS: System binding '{name}' cannot be reassigned.")
+                inferred = _native_expr_type(node.get("value"), local_types, binding_types, field_types)
+                local_types[name] = _native_merge_numeric_types(local_types[name], inferred) if name in local_types else inferred
+            elif kind == "CompoundAssignment":
+                name = node.get("variable")
+                if name not in local_types:
+                    raise Exception(f"Native ECS: local '{name}' must be assigned before compound assignment.")
+                inferred = _native_expr_type(node.get("value"), local_types, binding_types, field_types)
+                local_types[name] = _native_merge_numeric_types(local_types[name], inferred)
+            elif kind == "ForStatement":
+                name = node.get("variable")
+                if name in binding_types or name in ("entity", "dt"):
+                    raise Exception(f"Native ECS: loop variable '{name}' shadows a System binding.")
+                iterable_type = _native_expr_type(node.get("range"), local_types, binding_types, field_types)
+                if iterable_type != "std::vector<std::int64_t>":
+                    raise Exception("Native ECS: for loops currently require range(...).")
+                local_types.setdefault(name, "std::int64_t")
+                visit(node.get("body", []))
+            elif kind in ("IfStatement", "ElifStatement", "ElseStatement", "WhileStatement"):
+                visit(node.get("body", []))
+            elif kind in ("ArrayAssignStatement", "ArrayCompoundAssignStatement"):
+                name = node.get("name")
+                if name not in local_types or not local_types[name].startswith("std::vector<"):
+                    raise Exception("Native ECS: array assignment requires a local vector.")
+            elif kind in ("FunctionDef", "ComponentDef", "SystemDef"):
+                raise Exception(f"Native ECS: nested {kind} declarations are not supported inside a System.")
+    visit(nodes)
+    return local_types
+
+
+def _native_cpp_expr(node, local_names, binding_names):
+    kind = node.get("type")
+    if kind == "Literal":
+        return _native_cpp_literal(node)
+    if kind == "ArrayLiteral":
+        return _native_cpp_literal(node)
+    if kind == "Variable":
+        name = node.get("value")
+        if name in local_names:
+            return f"pstudio::ecs::get({name}, {_native_cpp_string(name)})"
+        if name in binding_names or name in ("entity", "dt", "true", "false"):
+            return name
+        raise Exception(f"Native ECS: unknown variable '{name}'.")
+    if kind == "MemberExpr":
+        return _native_cpp_expr(node.get("object"), local_names, binding_names) + "." + node["property"]
+    if kind == "IndexExpr":
+        base = f"pstudio::ecs::get({node['name']}, {_native_cpp_string(node['name'])})" if node["name"] in local_names else node["name"]
+        return f"{base}[{_native_cpp_expr(node['index'], local_names, binding_names)}]"
+    if kind == "UnaryExpr":
+        op = node.get("op")
+        right = _native_cpp_expr(node.get("right"), local_names, binding_names)
+        return f"(!({right}))" if op == "!" else f"({op}{right})"
+    if kind == "PostfixExpr":
+        return f"({_native_cpp_expr(node['value'], local_names, binding_names)}{node['op']})"
+    if kind == "BinaryExpr":
+        op = node.get("op")
+        left = _native_cpp_expr(node["left"], local_names, binding_names)
+        right = _native_cpp_expr(node["right"], local_names, binding_names)
+        if op == "/":
+            return f"pstudio::ecs::ps_div({left}, {right})"
+        if op == "%":
+            return f"pstudio::ecs::ps_mod({left}, {right})"
+        if op == "**":
+            return f"std::pow({left}, {right})"
+        return f"({left} {op} {right})"
+    if kind == "CallExpr":
+        name = node.get("name")
+        args = [_native_cpp_expr(arg, local_names, binding_names) for arg in node.get("args", [])]
+        if name == "len" and len(args) == 1:
+            return f"pstudio::ecs::len({args[0]})"
+        if name == "range" and 1 <= len(args) <= 3:
+            return f"pstudio::ecs::range({', '.join(args)})"
+        raise Exception(f"Native ECS: function '{name}' is not yet supported inside a System.")
+    raise Exception(f"Native ECS: expression '{kind}' is not supported.")
+
+
+def _native_generate_system_body(nodes, local_names, binding_names, indent=3, sequence=None):
+    sequence = sequence if sequence is not None else [0]
+    pad = "    " * indent
+    output = []
+    index = 0
+    while index < len(nodes):
+        node = nodes[index]
+        kind = node.get("type")
+        if kind == "IfStatement":
+            condition = _native_cpp_expr(node["condition"], local_names, binding_names)
+            output.append(pad + f"if ({condition}) {{")
+            output.extend(_native_generate_system_body(node.get("body", []), local_names, binding_names, indent + 1, sequence))
+            output.append(pad + "}")
+            index += 1
+            while index < len(nodes) and nodes[index].get("type") in ("ElifStatement", "ElseStatement"):
+                branch = nodes[index]
+                if branch["type"] == "ElifStatement":
+                    condition = _native_cpp_expr(branch["condition"], local_names, binding_names)
+                    output[-1] = pad + f"}} else if ({condition}) {{"
+                else:
+                    output[-1] = pad + "} else {"
+                output.extend(_native_generate_system_body(branch.get("body", []), local_names, binding_names, indent + 1, sequence))
+                output.append(pad + "}")
+                index += 1
+            continue
+        if kind in ("ElifStatement", "ElseStatement"):
+            raise Exception("Native ECS: elif/else must immediately follow an if branch.")
+        if kind == "AssignmentExpression":
+            name = node["variable"]
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"pstudio::ecs::set({name}, {value}, {_native_cpp_string(name)});")
+        elif kind == "CompoundAssignment":
+            name = node["variable"]
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            target = f"pstudio::ecs::get({name}, {_native_cpp_string(name)})"
+            output.append(pad + f"{target} {node['op']} {value};")
+        elif kind == "MemberAssignment":
+            target = _native_cpp_expr(node["target"], local_names, binding_names)
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"{target} = {value};")
+        elif kind == "MemberCompoundAssignment":
+            target = _native_cpp_expr(node["target"], local_names, binding_names)
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"{target} {node['op']} {value};")
+        elif kind == "ArrayAssignStatement":
+            target = f"pstudio::ecs::get({node['name']}, {_native_cpp_string(node['name'])})"
+            index_expr = _native_cpp_expr(node["index"], local_names, binding_names)
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"{target}[{index_expr}] = {value};")
+        elif kind == "ArrayCompoundAssignStatement":
+            target = f"pstudio::ecs::get({node['name']}, {_native_cpp_string(node['name'])})"
+            index_expr = _native_cpp_expr(node["index"], local_names, binding_names)
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"{target}[{index_expr}] {node['op']} {value};")
+        elif kind == "PrintStatement":
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + f"std::cout << {value} << std::endl;")
+        elif kind == "ExpressionStatement":
+            value = _native_cpp_expr(node["value"], local_names, binding_names)
+            output.append(pad + value + ";")
+        elif kind == "WhileStatement":
+            sequence[0] += 1
+            guard = f"pstudio_internal_while_guard_{sequence[0]}"
+            condition = _native_cpp_expr(node["condition"], local_names, binding_names)
+            output.append(pad + f"std::size_t {guard} = 0;")
+            output.append(pad + f"while ({condition}) {{")
+            output.append(pad + f"    if (++{guard} > 1000) throw std::runtime_error(\"ps while iteration limit exceeded\");")
+            output.extend(_native_generate_system_body(node.get("body", []), local_names, binding_names, indent + 1, sequence))
+            output.append(pad + "}")
+        elif kind == "ForStatement":
+            sequence[0] += 1
+            iterator = f"pstudio_internal_range_{sequence[0]}"
+            guard = f"pstudio_internal_for_guard_{sequence[0]}"
+            iterable = _native_cpp_expr(node["range"], local_names, binding_names)
+            name = node["variable"]
+            output.append(pad + f"std::size_t {guard} = 0;")
+            output.append(pad + f"for (auto&& {iterator} : {iterable}) {{")
+            output.append(pad + f"    if (++{guard} > 100000) throw std::runtime_error(\"ps for iteration limit exceeded\");")
+            output.append(pad + f"    pstudio::ecs::set({name}, {iterator}, {_native_cpp_string(name)});")
+            output.extend(_native_generate_system_body(node.get("body", []), local_names, binding_names, indent + 1, sequence))
+            output.append(pad + "}")
+        elif kind == "BREAKStatement":
+            output.append(pad + "break;")
+        elif kind == "CONTINUEStatement":
+            output.append(pad + "continue;")
+        elif kind == "ReturnStatement":
+            value = node.get("value")
+            output.append(pad + ("return;" if value is None else "return " + _native_cpp_expr(value, local_names, binding_names) + ";"))
+        else:
+            raise Exception(f"Native ECS: statement '{kind}' is not yet supported.")
+        index += 1
+    return output
+
+
+def generate_native_ecs_sources(parsed_scripts):
+    components = {}
+    systems = []
+    for filename, tree in parsed_scripts.items():
+        for node in tree.get("body", []):
+            if node.get("type") == "ComponentDef":
+                name = node["name"]
+                if name in components:
+                    raise Exception(f"Native ECS: Component '{name}' is declared more than once.")
+                components[name] = node
+            elif node.get("type") == "SystemDef":
+                systems.append((filename, node))
+    if not components and not systems:
+        raise Exception("Native ECS export requires at least one component or system declaration.")
+    system_names = set()
+    for filename, node in systems:
+        if node["name"] in system_names:
+            raise Exception(f"Native ECS: System '{node['name']}' is declared more than once.")
+        system_names.add(node["name"])
+    fields = {
+        "Transform": {
+            "x": "double", "y": "double", "z": "double",
+            "rotationX": "double", "rotationY": "double", "rotationZ": "double",
+            "scaleX": "double", "scaleY": "double", "scaleZ": "double"
+        },
+        "SceneObjectRef": {"sceneObjectId": "std::string"}
+    }
+    component_definitions = []
+    for name, node in components.items():
+        field_types = {}
+        field_lines = []
+        for field in node.get("body", []):
+            if field.get("type") != "AssignmentExpression":
+                raise Exception(f"Native ECS: Component '{name}' contains an unsupported statement.")
+            field_name = field["variable"]
+            value = field["value"]
+            field_type = _native_cpp_literal_type(value)
+            field_types[field_name] = field_type
+            field_lines.append(f"    {field_type} {field_name} = {_native_cpp_literal(value)};")
+        fields[name] = field_types
+        component_definitions.append("struct " + name + " {\n" + "\n".join(field_lines) + "\n};")
+    system_bodies = []
+    for filename, node in systems:
+        component_names = node.get("components", [])
+        binding_types = {_ecs_binding_name(name): name for name in component_names}
+        local_types = _native_system_locals(node.get("body", []), binding_types, fields)
+        local_names = set(local_types)
+        for name in component_names:
+            if name not in fields:
+                raise Exception(f"Native ECS: unknown Component '{name}'.")
+        params = ", ".join(
+            f"{name if name in ('Transform', 'SceneObjectRef') else name}& {_ecs_binding_name(name)}"
+            for name in component_names
+        )
+        declarations = [f"std::optional<{local_types[name]}> {name};" for name in sorted(local_types)]
+        body = _native_generate_system_body(node.get("body", []), local_names, set(binding_types) | {"entity", "dt"})
+        system_id = _native_cpp_string(filename + "::" + node["name"])
+        function = [
+            f"    scheduler.add({system_id}, 0, [](pstudio::ecs::World& world, double dt) {{",
+            f"        world.each<{', '.join(component_names)}>([&](pstudio::ecs::Entity entity, {params}) {{"
+        ]
+        function.extend("            " + line.strip() for line in declarations)
+        function.extend(body)
+        function.extend(["        });", "    });"])
+        system_bodies.append("\n".join(function))
+    header = "\n".join([
+        "#pragma once",
+        '#include "pstudio/ecs.hpp"',
+        "namespace PStudioGenerated {",
+        "using pstudio::ecs::Transform;",
+        "using pstudio::ecs::SceneObjectRef;",
+        "using pstudio::ecs::Entity;",
+        "using pstudio::ecs::World;",
+        "using pstudio::ecs::Scheduler;",
+        *component_definitions,
+        "Entity create_entity(World& world);",
+        "void register_systems(Scheduler& scheduler);",
+        "}",
+        ""
+    ])
+    cpp = "\n".join([
+        '#include "pstudio_generated.hpp"',
+        "#include <iostream>",
+        "#include <optional>",
+        "namespace PStudioGenerated {",
+        "Entity create_entity(World& world) {",
+        "    const Entity entity = world.create_entity();",
+        "    world.add<Transform>(entity, Transform{});",
+        "    world.add<SceneObjectRef>(entity, SceneObjectRef{});",
+        *[f"    world.add<{name}>(entity, {name}{{}});" for name in components],
+        "    return entity;",
+        "}",
+        "void register_systems(Scheduler& scheduler) {",
+        *system_bodies,
+        "}",
+        "}",
+        ""
+    ])
+    main_cpp = "\n".join([
+        '#include "pstudio_generated.hpp"',
+        "#include <iostream>",
+        "int main() {",
+        "    pstudio::ecs::World world;",
+        "    pstudio::ecs::Scheduler scheduler;",
+        "    PStudioGenerated::register_systems(scheduler);",
+        "    const auto entity = PStudioGenerated::create_entity(world);",
+        "    scheduler.update(world, 1.0 / 60.0);",
+        "    const auto& transform = world.get<pstudio::ecs::Transform>(entity);",
+        '    std::cout << "PStudio native ECS ready; entities=" << world.entity_count() << ", x=" << transform.x << std::endl;',
+        "    return 0;",
+        "}",
+        ""
+    ])
+    cmake = "\n".join([
+        "cmake_minimum_required(VERSION 3.16)",
+        "project(PStudioNativeECS LANGUAGES CXX)",
+        "set(CMAKE_CXX_STANDARD 17)",
+        "set(CMAKE_CXX_STANDARD_REQUIRED ON)",
+        "set(CMAKE_CXX_EXTENSIONS OFF)",
+        "add_library(pstudio_native_ecs STATIC src/pstudio_generated.cpp)",
+        "target_include_directories(pstudio_native_ecs PUBLIC native/include src)",
+        "add_executable(pstudio_native_sample src/main.cpp)",
+        "target_link_libraries(pstudio_native_sample PRIVATE pstudio_native_ecs)",
+        ""
+    ])
+    readme = """# PStudio Native ECS module
+
+This CMake project contains C++17 Component data types and System callbacks generated from the supported ps ECS subset.
+
+Build on the target machine with a C++17 toolchain and CMake:
+
+    cmake -S . -B build
+    cmake --build build --config Release
+
+For Android, configure CMake with the Android NDK toolchain file and ABI/API settings. Windows and macOS builds use the target platform's CMake generator and compiler.
+
+Scope: this is a native ECS module/sample executable, not yet a complete PStudio game port. Browser Three.js rendering, GLB loading, input, audio, legacy JS physics and gameplay APIs are not native in this package. Unsupported System expressions/functions are rejected during export rather than silently stubbed.
+"""
+    return {
+        "CMakeLists.txt": cmake,
+        "README.md": readme,
+        "native/include/pstudio/ecs.hpp": None,
+        "src/pstudio_generated.hpp": header,
+        "src/pstudio_generated.cpp": cpp,
+        "src/main.cpp": main_cpp,
+    }
 
 
 # ====================================================
