@@ -834,13 +834,15 @@
           runtime.ecsComponentTypes.push(name);
         }else{
           const existing=ecs.getComponentDefinition?.(name);
-          if(existing?.schema){
-            const existingFields=Object.keys(existing.schema).sort();
-            const declaredFields=Object.keys(definition.schema).sort();
-            if(existingFields.length!==declaredFields.length||existingFields.some((field,index)=>field!==declaredFields[index])){
-              throw new PsRuntimeError('Component定義がInspector登録内容と一致しません: '+name);
-            }
+          if(existing?.source!==definition.source){
+            throw new PsRuntimeError('Component定義の所有元が一致しません: '+name);
           }
+          ecs.updateComponentDefinition?.(name,{
+            create,
+            schema:definition.schema,
+            additionalProperties:false,
+            source:definition.source
+          });
         }
       }
       // Restore Component values after all declarations have been registered.
