@@ -1698,37 +1698,76 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(mode===T.MirroredRepeatWrapping){const cell=Math.floor(value),fraction=value-cell;return Math.abs(cell%2)===1?1-fraction:fraction;}
     return Math.max(0,Math.min(0.999999,value));
   }
+  const VIRTUAL_TEXTURE_UV_VARYINGS={
+    map:'vMapUv',alphaMap:'vAlphaMapUv',aoMap:'vAoMapUv',bumpMap:'vBumpMapUv',
+    normalMap:'vNormalMapUv',displacementMap:'vDisplacementMapUv',emissiveMap:'vEmissiveMapUv',
+    lightMap:'vLightMapUv',metalnessMap:'vMetalnessMapUv',roughnessMap:'vRoughnessMapUv',
+    specularMap:'vSpecularMapUv',clearcoatMap:'vClearcoatMapUv',clearcoatNormalMap:'vClearcoatNormalMapUv',
+    clearcoatRoughnessMap:'vClearcoatRoughnessMapUv',iridescenceMap:'vIridescenceMapUv',
+    iridescenceThicknessMap:'vIridescenceThicknessMapUv',sheenColorMap:'vSheenColorMapUv',
+    sheenRoughnessMap:'vSheenRoughnessMapUv',specularColorMap:'vSpecularColorMapUv',
+    specularIntensityMap:'vSpecularIntensityMapUv',transmissionMap:'vTransmissionMapUv',
+    thicknessMap:'vThicknessMapUv',anisotropyMap:'vAnisotropyMapUv'
+  };
   function setupVirtualTextureMaterial(material){
-    const record=material?.map?.userData?.pstudioVirtualTexture;
-    if(!record||material.userData?.pstudioVTShaderSetup)return false;
+    if(!material||material.userData?.pstudioVTShaderSetup)return false;
+    const slots=[];
+    for(const [slot] of Object.entries(VIRTUAL_TEXTURE_UV_VARYINGS)){
+      const texture=material[slot],record=texture?.userData?.pstudioVirtualTexture;
+      if(record?.pageTableTexture&&record.atlas?.texture)slots.push({slot,texture,record});
+    }
+    if(!slots.length)return false;
     const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
-    const uniforms={
-      atlas:record.atlas.texture,pageTable:record.pageTableTexture,
-      sourceSize:new window.THREE.Vector2(record.sourceWidth,record.sourceHeight),
-      tileCount:new window.THREE.Vector2(record.tileColumns,record.tileRows),
-      atlasSize:record.atlas.size,pageSize:record.tileSize,
-      wrapS:material.map.wrapS===window.THREE.RepeatWrapping?1:material.map.wrapS===window.THREE.MirroredRepeatWrapping?2:0,
-      wrapT:material.map.wrapT===window.THREE.RepeatWrapping?1:material.map.wrapT===window.THREE.MirroredRepeatWrapping?2:0
-    };
+    const uniforms={};
+    for(const entry of slots){
+      const u={
+        atlas:entry.record.atlas.texture,pageTable:entry.record.pageTableTexture,
+        sourceSize:new window.THREE.Vector2(entry.record.sourceWidth,entry.record.sourceHeight),
+        tileCount:new window.THREE.Vector2(entry.record.tileColumns,entry.record.tileRows),
+        atlasSize:entry.record.atlas.size,pageSize:entry.record.tileSize,
+        wrapS:entry.texture.wrapS===window.THREE.RepeatWrapping?1:entry.texture.wrapS===window.THREE.MirroredRepeatWrapping?2:0,
+        wrapT:entry.texture.wrapT===window.THREE.RepeatWrapping?1:entry.texture.wrapT===window.THREE.MirroredRepeatWrapping?2:0
+      };
+      uniforms[entry.slot]=u;
+    }
     material.onBeforeCompile=function(shader,rendererRef){
       if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
-      shader.uniforms.uPStudioVTAtlas={value:uniforms.atlas};
-      shader.uniforms.uPStudioVTPageTable={value:uniforms.pageTable};
-      shader.uniforms.uPStudioVTSourceSize={value:uniforms.sourceSize};
-      shader.uniforms.uPStudioVTTileCount={value:uniforms.tileCount};
-      shader.uniforms.uPStudioVTAtlasSize={value:uniforms.atlasSize};
-      shader.uniforms.uPStudioVTPageSize={value:uniforms.pageSize};
-      shader.uniforms.uPStudioVTWrapS={value:uniforms.wrapS};
-      shader.uniforms.uPStudioVTWrapT={value:uniforms.wrapT};
-      const source='#include <common>\nuniform sampler2D uPStudioVTAtlas;uniform sampler2D uPStudioVTPageTable;uniform vec2 uPStudioVTSourceSize;uniform vec2 uPStudioVTTileCount;uniform float uPStudioVTAtlasSize;uniform float uPStudioVTPageSize;uniform float uPStudioVTWrapS;uniform float uPStudioVTWrapT;\nfloat pstudioVTWrap(float v,float mode){if(mode<0.5)return clamp(v,0.0,0.999999);if(mode<1.5)return fract(v);float cell=floor(v);float f=fract(v);return mod(abs(cell),2.0)>0.5?1.0-f:f;}\nvec4 pstudioVTSampleMap(vec2 uv){vec2 wrapped=vec2(pstudioVTWrap(uv.x,uPStudioVTWrapS),pstudioVTWrap(uv.y,uPStudioVTWrapT));vec2 pixel=wrapped*uPStudioVTSourceSize;float footprint=max(length(dFdx(uv*uPStudioVTSourceSize)),length(dFdy(uv*uPStudioVTSourceSize)));if(footprint>1.5)return texture2D(map,uv);vec2 tile=floor(pixel/uPStudioVTPageSize);vec4 page=texture2D(uPStudioVTPageTable,(tile+vec2(0.5))/uPStudioVTTileCount);if(page.b<0.5)return texture2D(map,uv);vec2 slot=floor(page.rg*255.0+0.5);vec2 local=clamp(mod(pixel,uPStudioVTPageSize),vec2(0.5),vec2(uPStudioVTPageSize-0.5));vec2 atlasUV=(slot*uPStudioVTPageSize+local)/uPStudioVTAtlasSize;return texture2D(uPStudioVTAtlas,atlasUV);}\n';
-      shader.fragmentShader=shader.fragmentShader.replace('#include <common>',source);
-      shader.fragmentShader=shader.fragmentShader.replace(/texture2D\s*\(\s*map\s*,\s*vMapUv\s*\)/g,'pstudioVTSampleMap(vMapUv)');
+      let fragmentCode='',vertexCode='';
+      for(const entry of slots){
+        const slot=entry.slot,u=uniforms[slot],prefix='uPStudioVT_'+slot+'_';
+        shader.uniforms[prefix+'atlas']={value:u.atlas};
+        shader.uniforms[prefix+'pageTable']={value:u.pageTable};
+        shader.uniforms[prefix+'sourceSize']={value:u.sourceSize};
+        shader.uniforms[prefix+'tileCount']={value:u.tileCount};
+        shader.uniforms[prefix+'atlasSize']={value:u.atlasSize};
+        shader.uniforms[prefix+'pageSize']={value:u.pageSize};
+        shader.uniforms[prefix+'wrapS']={value:u.wrapS};
+        shader.uniforms[prefix+'wrapT']={value:u.wrapT};
+        let code='uniform sampler2D '+prefix+'atlas;uniform sampler2D '+prefix+'pageTable;uniform vec2 '+prefix+'sourceSize;uniform vec2 '+prefix+'tileCount;uniform float '+prefix+'atlasSize;uniform float '+prefix+'pageSize;uniform float '+prefix+'wrapS;uniform float '+prefix+'wrapT;\n';
+        code+='float '+prefix+'wrap(float v,float mode){if(mode<0.5)return clamp(v,0.0,0.999999);if(mode<1.5)return fract(v);float cell=floor(v);float f=fract(v);return mod(abs(cell),2.0)>0.5?1.0-f:f;}\n';
+        const vertexSample=slot==='displacementMap';
+        const footprint='(max(length(dFdx(uv*'+prefix+'sourceSize)),length(dFdy(uv*'+prefix+'sourceSize)))>1.5)';
+        code+='vec4 '+prefix+'sample(vec2 uv){vec2 wrapped=vec2('+prefix+'wrap(uv.x,'+prefix+'wrapS),'+prefix+'wrap(uv.y,'+prefix+'wrapT));vec2 pixel=wrapped*'+prefix+'sourceSize;';
+        if(!vertexSample)code+='if('+footprint+')return texture2D('+slot+',uv);';
+        code+='vec2 tile=floor(pixel/'+prefix+'pageSize);vec4 page=texture2D('+prefix+'pageTable,(tile+vec2(0.5))/'+prefix+'tileCount);if(page.b<0.5)return texture2D('+slot+',uv);vec2 slotXY=floor(page.rg*255.0+0.5);vec2 local=clamp(mod(pixel,'+prefix+'pageSize),vec2(0.5),vec2('+prefix+'pageSize-0.5));vec2 atlasUV=(slotXY*'+prefix+'pageSize+local)/'+prefix+'atlasSize;return texture2D('+prefix+'atlas,atlasUV);}\n';
+        if(vertexSample)vertexCode+=code;else fragmentCode+=code;
+      }
+      if(vertexCode)shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\n'+vertexCode);
+      if(fragmentCode)shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\n'+fragmentCode);
+      for(const entry of slots){
+        const slot=entry.slot,uv=VIRTUAL_TEXTURE_UV_VARYINGS[slot];
+        const pattern=new RegExp('texture2D\\\\(\\\\s*'+slot+'\\\\s*,\\\\s*'+uv+'\\\\s*\\\\)','g');
+        const replacement='uPStudioVT_'+slot+'_sample('+uv+')';
+        if(slot==='displacementMap')shader.vertexShader=shader.vertexShader.replace(pattern,replacement);
+        else shader.fragmentShader=shader.fragmentShader.replace(pattern,replacement);
+      }
     };
-    material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-vt-map-v1';};
+    material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-virtual-texture-v1:'+slots.map(entry=>entry.slot).sort().join(',');};
     material.userData.pstudioVTUniforms=uniforms;
     material.userData.pstudioVTShaderSetup=true;
     return true;
   }
+
   function requestVisibleVirtualTextureTiles(instance){
     if(!camera||!instance?.root?.visible)return;
     const now=window.performance?.now?.()??Date.now();
