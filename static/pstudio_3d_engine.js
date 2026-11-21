@@ -166,7 +166,7 @@
       if(!pointerMode||!renderer)return;
       if(lastObjectTap&&Math.hypot(e.clientX-lastObjectTap.x,e.clientY-lastObjectTap.y)>DOUBLE_TAP_DISTANCE)lastObjectTap=null;
       if(activePointers.has(e.pointerId))activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);const midpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};if(!pinchGestureMode&&pinchGestureStart){const zoomDelta=Math.abs(distance-pinchGestureStart.distance);const panDelta=Math.hypot(midpoint.x-pinchGestureStart.midpoint.x,midpoint.y-pinchGestureStart.midpoint.y);if(Math.max(zoomDelta,panDelta)>5)pinchGestureMode=zoomDelta>panDelta*1.15?'zoom':'pan';}if(pinchGestureMode==='zoom'&&pinchDistance>0)zoom=Math.max(0.25,Math.min(4,zoom*(distance/Math.max(1,pinchDistance))));else if(pinchGestureMode==='pan'&&pinchMidpoint)panCamera(midpoint.x-pinchMidpoint.x,midpoint.y-pinchMidpoint.y);pinchDistance=distance;pinchMidpoint=midpoint;}
+      if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);const midpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};if(!pinchGestureMode&&pinchGestureStart){const zoomDelta=Math.abs(distance-pinchGestureStart.distance);const panDelta=Math.hypot(midpoint.x-pinchGestureStart.midpoint.x,midpoint.y-pinchGestureStart.midpoint.y);if(Math.max(zoomDelta,panDelta)>5)pinchGestureMode=zoomDelta>panDelta*1.15?'zoom':'pan';}if(pinchGestureMode==='zoom'&&pinchDistance>0){zoom=clampCameraZoom(zoom*(pinchDistance/Math.max(1,distance)));updateCameraZoomReadout();}else if(pinchGestureMode==='pan'&&pinchMidpoint)panCamera(midpoint.x-pinchMidpoint.x,midpoint.y-pinchMidpoint.y);pinchDistance=distance;pinchMidpoint=midpoint;}
       else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
         orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));pointerStart={x:e.clientX,y:e.clientY};
@@ -193,8 +193,20 @@
     });
     const end=e=>{if(activePointers.has(e.pointerId)){if(pointerMode==='object-pending'||pointerMode==='locked-object'){lastObjectTap={ownerId:dragInfo?.ownerId||selectedOwnerId,time:Date.now(),x:e.clientX,y:e.clientY};}else if(pointerMode!=='double-tap')lastObjectTap=null;}activePointers.delete(e.pointerId);if(activePointers.size===1){const remaining=[...activePointers.values()][0];pointerMode='orbit';pointerStart={x:remaining.x,y:remaining.y};}else if(activePointers.size===0){pointerMode=null;dragInfo=null;pointerStart=null;pinchDistance=0;pinchMidpoint=null;pinchGestureStart=null;pinchGestureMode=null;}};
     interactionSurface.addEventListener('pointerup',end);interactionSurface.addEventListener('pointercancel',end);
-    interactionSurface.addEventListener('wheel',e=>{zoom=Math.max(0.25,Math.min(4,zoom*Math.exp(e.deltaY*0.00075)));scheduleCameraUpdate();e.preventDefault();},{passive:false});
+    interactionSurface.addEventListener('wheel',e=>{zoom=clampCameraZoom(zoom*Math.exp(e.deltaY*0.00075));updateCameraZoomReadout();scheduleCameraUpdate();e.preventDefault();},{passive:false});
     interactionSurface.addEventListener('contextmenu',e=>e.preventDefault());
+  }
+  const CAMERA_ZOOM_MIN=0.035,CAMERA_ZOOM_MAX=32;
+  function clampCameraZoom(value){return Math.max(CAMERA_ZOOM_MIN,Math.min(CAMERA_ZOOM_MAX,Number(value)||1));}
+  function updateCameraZoomReadout(){
+    const output=document.getElementById('camera-zoom-level');
+    if(output)output.textContent=Math.round((1/zoom)*100)+'%';
+  }
+  function adjustCameraZoom(factor){
+    const multiplier=Number(factor);
+    if(!Number.isFinite(multiplier)||multiplier<=0)return{zoom,displayPercent:Math.round((1/zoom)*100)};
+    zoom=clampCameraZoom(zoom*multiplier);updateCameraZoomReadout();scheduleCameraUpdate();
+    return{zoom,displayPercent:Math.round((1/zoom)*100)};
   }
   const QUALITY_PROFILES={
     mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
@@ -206,9 +218,13 @@
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
-    const selected=resolveQualityPreset(qualityPreset),baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
+    const selected=resolveQualityPreset(qualityPreset);
+    const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
+    if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
+    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
-      renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio));composer?.setPixelRatio?.(renderer.getPixelRatio());
+      const initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'&&deviceMemoryGiB()>2?[0.68,0.84,1][adaptiveQualityLevel]:1;
+      renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio*initialAdaptiveScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
       renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
       for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
@@ -824,6 +840,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function getOcclusionOwner(hit){return hit?.object?.userData?.instanceOwnerIds?.[hit.instanceId]??hit?.object?.userData?.ownerId??null;}
   function updateOcclusionVisibility(){
     if(!occlusionEnabled||!occlusionRaycaster||!camera)return;
+    const hasHighComplexityModel=[...modelInstances.values()].some(instance=>instance.occlusionEligible===false&&isOwnerChunkActive(instance.ownerId));
+    if(hasHighComplexityModel){
+      for(const mesh of meshCache.values())mesh.userData.pstudioOccluded=false;
+      for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;
+      for(const instance of modelInstances.values())if(instance.occlusionEligible===false)instance.root.userData.pstudioOccluded=false;
+      occlusionCursor=0;return;
+    }
     const now=window.performance?.now?.()??Date.now();
     if(now-lastOcclusionUpdate<180)return;
     lastOcclusionUpdate=now;
@@ -1149,7 +1172,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values()){
       const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
-      instance.root.visible=!instance.preparing&&active&&(isSelected||!instance.root.userData.pstudioOccluded);
+      instance.root.visible=!instance.preparing&&active&&(isSelected||instance.occlusionEligible===false||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
       updateModelStreamingChunks(instance);
       updateModelLOD(instance);
@@ -1200,7 +1223,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     cameraBase=[center.x+direction.x*distance,center.y+direction.y*distance,center.z+direction.z*distance];
     cameraFocusOwnerId=String(instance.ownerId);
     cameraPan?.set(0,0,0);
-    zoom=1;
+    zoom=1;updateCameraZoomReadout();
     cameraSmoothing=0;
     smoothedTarget=null;
     smoothedPosition=null;
@@ -1298,6 +1321,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const right = new T.Vector3(1, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
     offset.applyAxisAngle(right, orbitPitch);
     const desiredPosition = target.clone().add(offset);
+    const desiredDistance=desiredPosition.distanceTo(target);
+    const requiredFar=Math.max(1600,Math.min(1000000,desiredDistance+worldRenderConfig.maxDrawDistance+64));
+    if(Math.abs(camera.far-requiredFar)>Math.max(1,camera.far*0.02)){camera.far=requiredFar;camera.updateProjectionMatrix();}
     if (!smoothedTarget || !smoothedPosition) {
       smoothedTarget = target.clone();
       smoothedPosition = desiredPosition.clone();
@@ -2982,7 +3008,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),
       activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,
       resourceLease,materialStateSignature:null,foliageBatches,streamChunks,
-      preparing:true,preparationCancelled:false,environmentQuality
+      preparing:true,preparationCancelled:false,environmentQuality,occlusionEligible:meshes.length<=256
     };
   }
 
@@ -3664,6 +3690,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     render,
     clear,
     frameObject,
+    adjustZoom:adjustCameraZoom,
+    getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
     getModelStatus,
     setSelected: id => {
