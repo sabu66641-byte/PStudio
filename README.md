@@ -11,6 +11,8 @@ The game runtime does not send a request to the server every frame. Scripts are 
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execution-path separation, current implementation boundaries, server safeguards, open audit risks and change discipline.
 
+The current ECS gameplay ownership boundary and the subsystems still awaiting migration are documented in docs/ARCHITECTURE.md under “Gameplay ECS ownership contract (Phase 3).”
+
 ## Included files
 
 - `app.py` — Flask app, original ps lexer/parser/validator/C++ generator/Discord endpoints, plus game AST and compile endpoints.
@@ -22,7 +24,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execut
 - `static/pstudio_jobs.js` — cooperative asynchronous job queue.
 - `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
 - `static/pstudio_modules.js` — dependency-aware module registry.
-- `static/pstudio_ecs.js` — entity-component-system storage and scheduler.
+- `static/pstudio_ecs.js` — typed entity-component-system storage and phased scheduler.
+- `static/pstudio_ecs_physics.js` — ECS Components and adapters for fixed-step Physics.
+- `static/pstudio_ecs_gameplay.js` — ECS-owned gameplay state and world-scoped state.
 - `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
 - `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
