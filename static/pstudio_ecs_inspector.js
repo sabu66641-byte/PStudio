@@ -401,7 +401,7 @@
       const card = make('div', 'ecs-component-card');
       const header = make('div', 'ecs-component-head');
       header.appendChild(make('div', 'ecs-component-name', definition.label || entry.type));
-      const readonly = !!(entry.readonly || definition.readonly || CORE_COMPONENTS.has(entry.type));
+      const readonly = !!(entry.readonly || definition.readonly || entry.type === 'SceneObjectRef');
       if (readonly) header.appendChild(make('span', 'ecs-muted', 'READ ONLY'));
       else {
         const remove = make('button', '', 'Remove');
@@ -738,6 +738,10 @@
     if (requestedMappedId) activeEntityId = requestedMappedId;
     else if (!activeEntityId || !ids.includes(activeEntityId)) activeEntityId = selectedMappedId || ids[0] || null;
     if (select) select.value = activeEntityId ? String(activeEntityId) : '';
+    const currentSystems = api.getSystems();
+    for (const definition of projectSystemDefinitions.values()) {
+      definition.registered = currentSystems.some(system => system.source === definition.filename && system.name === definition.name);
+    }
     const info = byId('ecs-selected-info');
     if (info) {
       const ref = activeEntityId ? api.getComponent(activeEntityId, 'SceneObjectRef') : null;
