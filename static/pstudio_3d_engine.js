@@ -829,6 +829,16 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function objectCameraDistance(object){
     if(!camera||!object)return Infinity;
     const T=window.THREE;object.updateWorldMatrix(true,false);
+    if(object.isInstancedMesh){
+      if(!object.boundingSphere)object.computeBoundingSphere?.();
+      const sphere=object.boundingSphere;
+      if(sphere){
+        const center=sphere.center.clone().applyMatrix4(object.matrixWorld);
+        const scale=object.getWorldScale(new T.Vector3());
+        const radius=Math.max(0,Number(sphere.radius)||0)*Math.max(Math.abs(scale.x),Math.abs(scale.y),Math.abs(scale.z));
+        return Math.max(0,camera.position.distanceTo(center)-radius*0.2);
+      }
+    }
     const geometry=object.geometry;
     if(!geometry?.boundingSphere)geometry?.computeBoundingSphere?.();
     const center=geometry?.boundingSphere?.center?.clone?.()||new T.Vector3();
@@ -840,6 +850,12 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function updateModelLOD(instance){
     if(!instance?.root||!camera)return;
     const distance=modelCameraDistance(instance);
+    const updateBatchedAutoLOD=()=>{
+      for(const entry of instance.foliageBatches||[]){
+        if(entry.isTree&&Number.isInteger(entry.level)&&instance.activeLOD!==null)continue;
+        if(!entry.isTree)applyAutoLOD(entry.mesh,objectCameraDistance(entry.mesh));
+      }
+    };
     if(instance.lodLevels?.length>1){
       const lodScale=qualityPreset==='mobile'?0.62:qualityPreset==='balanced'?0.82:(adaptiveQualityEnabled?[0.62,0.82,1.0][adaptiveQualityLevel]:1.0);
       const distances=worldRenderConfig.lodDistances.map(value=>value*lodScale);
@@ -850,11 +866,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         instance.activeLOD=selected.level;
       }
       for(const entry of instance.foliageBatches||[])if(entry.isTree&&Number.isInteger(entry.level))entry.mesh.visible=entry.level===selected.level;
+      updateBatchedAutoLOD();
       return;
     }
     for(const object of instance.meshes||[])if(object.userData.pstudioAutoLOD)applyAutoLOD(object,objectCameraDistance(object));
+    updateBatchedAutoLOD();
   }
-  function enableGPUFrustumCullingForBatch(batch){
+  function enableGPUFrustumCullingForBatch(batch){  function enableGPUFrustumCullingForBatch(batch){
     if(!batch?.isInstancedMesh||batch.userData?.pstudioGPUFrustumConfigured)return false;
     const T=window.THREE,oldMaterial=batch.material;
     if(!oldMaterial||Array.isArray(oldMaterial))return false;
@@ -1432,10 +1450,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function disposeModelAsset(asset) {
     if(!asset?.scene)return;
     if(asset.assetKey)releaseVirtualTexturesForAsset(asset.assetKey);
-    const geometries=new Set(),materials=new Set(),textures=new Set(),imageBitmaps=new Set();
+    const geometries=new Set(),ownedLODs=new Set(),materials=new Set(),textures=new Set(),imageBitmaps=new Set();
     asset.scene.traverse(object=>{
       if(!object.isMesh)return;
-      if(object.geometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();geometries.add(object.geometry);}
+      if(object.geometry){
+        object.geometry.userData=object.geometry.userData||{};
+        object.geometry.userData.pstudioBVHDisposed=true;
+        object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;
+        object.geometry.userData.pstudioLODDisposed=true;
+        object.geometry.userData.pstudioLODToken=(object.geometry.userData.pstudioLODToken||0)+1;
+        for(const level of object.geometry.userData.pstudioAutoLODLevels||[])if(level?.owned&&level.geometry)ownedLODs.add(level.geometry);
+        object.geometry.disposeBoundsTree?.();
+        geometries.add(object.geometry);
+      }
       for(const material of (Array.isArray(object.material)?object.material:[object.material]))if(material)materials.add(material);
     });
     materials.forEach(material=>{
@@ -1446,6 +1473,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     });
     geometries.forEach(geometry=>geometry.dispose());
+    for(const geometry of ownedLODs){
+      geometry.userData=geometry.userData||{};
+      geometry.userData.pstudioBVHDisposed=true;
+      geometry.userData.pstudioBVHToken=(geometry.userData.pstudioBVHToken||0)+1;
+      geometry.disposeBoundsTree?.();
+      geometry.dispose?.();
+    }
     textures.forEach(texture=>texture.dispose());
     materials.forEach(material=>material.dispose());
     imageBitmaps.forEach(bitmap=>{try{bitmap.close();}catch(_){}});
@@ -2361,10 +2395,31 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(renderer&&scene)drawFrame();return{baked:baked.length,failed,meshes:baked,resolution,allocatedBytes,budgetBytes:budget,format:'linear-half-float-rgba',uvLayout:'non-overlapping-per-triangle-atlas',lighting:'spatial-sh-probe-irradiance'};
   }
   function scheduleGeometryBVH(geometry){
-    if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled||geometry.userData?.pstudioBVHDisposed)return false;
-    geometry.userData=geometry.userData||{};geometry.userData.pstudioBVHScheduled=true;geometry.userData.pstudioBVHDisposed=false;const token=(geometry.userData.pstudioBVHToken||0)+1;geometry.userData.pstudioBVHToken=token;
-    const build=()=>{if(geometry.userData.pstudioBVHToken!==token||geometry.userData.pstudioBVHDisposed){geometry.userData.pstudioBVHScheduled=false;return;}if(!geometry.boundsTree)try{geometry.computeBoundsTree({maxLeafTris:12});}catch(error){console.warn('[PStudio] BVH build skipped:',error);}geometry.userData.pstudioBVHScheduled=false;};
-    if(window.requestIdleCallback)window.requestIdleCallback(build,{timeout:1500});else window.setTimeout(build,0);return true;
+    if(!geometry?.computeBoundsTree||geometry.boundsTree||geometry.userData?.pstudioBVHScheduled||
+      geometry.userData?.pstudioBVHDisposed||geometry.userData?.pstudioBVHFailed||geometry.userData?.pstudioBVHSkippedSmall)return false;
+    geometry.userData=geometry.userData||{};
+    const elementCount=Number(geometry.index?.count)||Number(geometry.attributes?.position?.count)||0;
+    if(elementCount<768){geometry.userData.pstudioBVHSkippedSmall=true;return false;}
+    geometry.userData.pstudioBVHScheduled=true;
+    geometry.userData.pstudioBVHDisposed=false;
+    const token=(geometry.userData.pstudioBVHToken||0)+1;
+    geometry.userData.pstudioBVHToken=token;
+    const build=()=>{
+      if(geometry.userData.pstudioBVHToken!==token||geometry.userData.pstudioBVHDisposed){
+        geometry.userData.pstudioBVHScheduled=false;return;
+      }
+      if(!geometry.boundsTree){
+        try{geometry.computeBoundsTree({maxLeafTris:12});}
+        catch(error){
+          geometry.userData.pstudioBVHFailed=true;
+          console.warn('[PStudio] BVH build skipped; this geometry will use standard raycasting.',error);
+        }
+      }
+      geometry.userData.pstudioBVHScheduled=false;
+    };
+    if(window.requestIdleCallback)window.requestIdleCallback(build,{timeout:1500});
+    else window.setTimeout(build,0);
+    return true;
   }
 
   function setupLightingMaterial(material){
@@ -2393,6 +2448,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     let node=object;while(node){if(/(?:^|[ _-])LOD[0-9]+(?:$|[ _-])/i.test(String(node.name||'')))return true;node=node.parent;}return false;
   }
   const autoLODQueue=[];
+  const autoLODGeometryJobs=new WeakMap();
   let autoLODPumpScheduled=false;
   function scheduleAutoLODPump(){
     if(autoLODPumpScheduled||!autoLODQueue.length)return;
@@ -2401,9 +2457,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       autoLODPumpScheduled=false;
       const job=autoLODQueue[0];
       if(!job)return;
-      const {object,geometry,token,count,levels,specs,modifier}=job;
-      if(object.userData.pstudioLODToken!==token||object.geometry!==geometry){
-        if(object.userData.pstudioLODToken===token)object.userData.pstudioAutoLODGenerating=false;
+      const {geometry,token,count,levels,specs,modifier}=job;
+      if(geometry.userData?.pstudioLODToken!==token||geometry.userData?.pstudioLODDisposed){
+        if(geometry.userData?.pstudioLODToken===token)geometry.userData.pstudioAutoLODGenerating=false;
+        job.done=true;
         autoLODQueue.shift();scheduleAutoLODPump();return;
       }
       if(deadline&&typeof deadline.timeRemaining==='function'&&deadline.timeRemaining()<8){
@@ -2414,36 +2471,78 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         try{
           const lod=modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));
           if(!lod?.attributes?.position||lod.attributes.position.count>=count*0.94)lod?.dispose?.();
-          else{lod.computeBoundingSphere?.();lod.computeVertexNormals?.();levels.push({geometry:lod,distance:spec.distance,owned:true});}
-        }catch(error){console.warn('[PStudio] Automatic LOD generation skipped:',error);job.nextSpec=specs.length;}
+          else{
+            lod.computeBoundingSphere?.();
+            lod.computeVertexNormals?.();
+            levels.push({geometry:lod,distance:spec.distance,owned:true});
+          }
+        }catch(error){
+          console.warn('[PStudio] Automatic LOD generation skipped:',error);
+          job.failed=true;
+          job.nextSpec=specs.length;
+        }
       }
+      geometry.userData.pstudioAutoLODLevels=levels;
       if(job.nextSpec<specs.length){scheduleAutoLODPump();return;}
-      if(object.userData.pstudioLODToken===token&&object.geometry===geometry){
-        object.userData.pstudioAutoLOD=levels.length>1?levels:null;
-        object.userData.pstudioAutoLODGenerating=false;
-        try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length});}catch(_){}
-      }else for(const level of levels)if(level.owned)level.geometry.dispose?.();
+      if(geometry.userData.pstudioLODToken===token&&!geometry.userData.pstudioLODDisposed){
+        geometry.userData.pstudioAutoLODGenerating=false;
+        job.done=true;
+        try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length,sharedGeometry:true});}catch(_){}
+      }else{
+        for(const level of levels)if(level.owned)level.geometry.dispose?.();
+        job.done=true;
+      }
       autoLODQueue.shift();scheduleAutoLODPump();
     };
-    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump);
+    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump,{timeout:1500});
     else window.setTimeout(()=>pump(null),250);
   }
   function scheduleAutoLOD(object,geometry){
     const Modifier=window.PStudioSimplifyModifier,pos=geometry?.attributes?.position,count=pos?.count||0;
-    if(!Modifier||!geometry||count<240||count>16000||hasNamedLODParent(object)||object.isSkinnedMesh)return false;
-    const token=(object.userData.pstudioLODToken||0)+1;object.userData.pstudioLODToken=token;
-    object.userData.pstudioAutoLOD=[{geometry,distance:0,owned:false}];object.userData.pstudioAutoLODGenerating=true;
-    autoLODQueue.push({object,geometry,token,count,levels:[{geometry,distance:0,owned:false}],specs:[{keep:0.58,distance:worldRenderConfig.lodDistances[0]||25},{keep:0.3,distance:worldRenderConfig.lodDistances[1]||70}],nextSpec:0,modifier:new Modifier()});
+    if(!Modifier||!geometry||count<240||count>16000||hasNamedLODParent(object)||object.isSkinnedMesh||geometry.userData?.pstudioLODDisposed)return false;
+    geometry.userData=geometry.userData||{};
+    const existing=autoLODGeometryJobs.get(geometry);
+    if(existing){
+      object.userData.pstudioAutoLOD=existing.levels;
+      object.userData.pstudioAutoLODBaseGeometry=geometry;
+      object.userData.pstudioAutoLODGenerating=!existing.done;
+      return true;
+    }
+    const token=(geometry.userData.pstudioLODToken||0)+1;
+    geometry.userData.pstudioLODToken=token;
+    const levels=[{geometry,distance:0,owned:false}];
+    const job={
+      geometry,token,count,levels,
+      specs:[
+        {keep:0.58,distance:worldRenderConfig.lodDistances[0]||25},
+        {keep:0.3,distance:worldRenderConfig.lodDistances[1]||70}
+      ],
+      nextSpec:0,modifier:new Modifier(),done:false,failed:false
+    };
+    autoLODGeometryJobs.set(geometry,job);
+    geometry.userData.pstudioAutoLODLevels=levels;
+    geometry.userData.pstudioAutoLODGenerating=true;
+    object.userData.pstudioLODToken=token;
+    object.userData.pstudioAutoLOD=levels;
+    object.userData.pstudioAutoLODBaseGeometry=geometry;
+    object.userData.pstudioAutoLODGenerating=true;
+    autoLODQueue.push(job);
     scheduleAutoLODPump();
     return true;
   }
   function applyAutoLOD(object,distance){
-    const levels=object?.userData?.pstudioAutoLOD;if(!levels?.length)return;
-    let selected=0;for(let i=1;i<levels.length;i++)if(distance>=levels[i].distance)selected=i;
+    const baseGeometry=object?.userData?.pstudioAutoLODBaseGeometry||object?.geometry;
+    const levels=object?.userData?.pstudioAutoLOD||baseGeometry?.userData?.pstudioAutoLODLevels;
+    if(!object||!levels?.length)return;
+    let selected=0;
+    for(let i=1;i<levels.length;i++)if(distance>=levels[i].distance)selected=i;
     if(object.userData.pstudioActiveAutoLOD===selected)return;
-    object.geometry=levels[selected].geometry;object.userData.pstudioActiveAutoLOD=selected;
+    object.geometry=levels[selected].geometry;
+    object.userData.pstudioActiveAutoLOD=selected;
+    if(object.isInstancedMesh)object.computeBoundingSphere?.();
   }
-  async function buildModelStreamingChunks(root){
+
+  async function buildModelStreamingChunks(root){  async function buildModelStreamingChunks(root){
     const T=window.THREE,settings=root.userData?.pstudioStreamingConfig||{};
     const cellSize=Math.max(48,Math.min(256,Number(settings.cellSize)||96));
     const loadDistance=Math.max(96,Math.min(1200,Number(settings.loadDistance)||300));
@@ -2503,8 +2602,53 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
   }
 
-  async function buildFoliageInstanceBatches(root){
+  function collectAnimatedNodeTargets(animations){
+    const targets=new Set(),T=window.THREE;
+    for(const clip of animations||[])for(const track of clip?.tracks||[]){
+      const trackName=String(track?.name||'');
+      let nodeName='';
+      try{
+        const parsed=T.PropertyBinding?.parseTrackName?.(trackName)||T.PropertyBinding?.parse?.(trackName);
+        nodeName=String(parsed?.nodeName||'');
+      }catch(_){}
+      if(!nodeName){
+        const match=trackName.match(/^(.+?)(?:\\.|\\/)(?:position|quaternion|rotation|scale|weights|morphTargetInfluences)(?:\\[|$)/i);
+        if(match)nodeName=match[1];
+      }
+      if(nodeName)targets.add(nodeName);
+      else targets.add('*');
+    }
+    return targets;
+  }
+  function hasAnimatedAncestor(object,root,targets){
+    if(targets.has('*'))return true;
+    let node=object;
+    while(node){
+      if(targets.has(String(node.name||''))||targets.has(String(node.uuid||'')))return true;
+      if(node===root)break;
+      node=node.parent;
+    }
+    return false;
+  }
+  function isBatchHierarchyVisible(object,root){
+    let node=object;
+    while(node){
+      if(node.visible===false&&!node.userData?.pstudioStreamChunkId)return false;
+      if(node===root)return true;
+      node=node.parent;
+    }
+    return false;
+  }
+  function supportsGenericStaticInstancing(material,T){
+    return !!material&&!material.transparent&&Number(material.opacity??1)>=0.999&&
+      Number(material.transmission??0)<=0&&Number(material.thickness??0)<=0&&
+      material.depthWrite!==false&&material.blending===T.NormalBlending&&
+      !material.isShaderMaterial&&!material.isRawShaderMaterial&&
+      !material.userData?.pstudioNoInstancing&&!material.userData?.pstudioNoBatching;
+  }
+  async function buildFoliageInstanceBatches(root,animations=[]){
     const T=window.THREE,groups=new Map(),batches=[],objects=[];
+    const animatedTargets=collectAnimatedNodeTargets(animations);
     const stack=[root];
     let visited=0;
     while(stack.length){
@@ -2515,15 +2659,26 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     root.updateMatrixWorld(true);
     for(const object of objects){
-      if(!object.isMesh||object.isSkinnedMesh)continue;
+      if(!object.isMesh||object.isSkinnedMesh||object.isInstancedMesh)continue;
       const objectName=String(object.name||'');
       const windRole=object.userData?.pstudioWindPart;
       const isWindPart=windRole==='leaf'||windRole==='branch'||windRole==='trunk';
       const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName)||isWindPart;
       const isModularPart=/^PStudioInstance_/i.test(objectName)||object.userData?.pstudioInstanceBatch===true;
-      if(!isTree&&!isModularPart)continue;
+      const isGeneric=!isTree&&!isModularPart;
+      if(isGeneric){
+        const morphTargets=Object.values(object.geometry?.morphAttributes||{}).some(list=>Array.isArray(list)&&list.length>0);
+        if(bakedLightProbeVolume?.length||hasAnimatedAncestor(object,root,animatedTargets)||
+          !isBatchHierarchyVisible(object,root)||object.children.length>0||hasNamedLODParent(object)||
+          object.morphTargetInfluences?.length||morphTargets||object.frustumCulled===false||
+          object.customDepthMaterial||object.customDistanceMaterial||
+          object.userData?.pstudioNoInstancing||object.userData?.pstudioNoBatching||
+          object.userData?.pstudioWaterSurface||object.userData?.pstudioWaterDetail||
+          object.userData?.pstudioWindPart)continue;
+      }
       const materials=Array.isArray(object.material)?object.material:[object.material];
       if(materials.length!==1||!object.geometry||!materials[0])continue;
+      if(isGeneric&&!supportsGenericStaticInstancing(materials[0],T))continue;
       let levelMatch=objectName.match(/LOD([0-9]+)/i);
       let parent=object.parent;
       while(!levelMatch&&parent&&parent!==root){levelMatch=String(parent.name||'').match(/LOD([0-9]+)/i);parent=parent.parent;}
@@ -2532,25 +2687,43 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       while(streamParent&&streamParent!==root&&!streamParent.userData?.pstudioStreamChunkId)streamParent=streamParent.parent;
       if(!streamParent||streamParent===root)streamParent=root;
       const chunkId=streamParent.userData?.pstudioStreamChunkId||'GLOBAL';
-      const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level)+'|'+chunkId;
-      if(!groups.has(key))groups.set(key,{sources:[],level,isTree,parent:streamParent});
+      const optionKey=[
+        object.renderOrder||0,
+        object.layers?.mask??1,
+        object.castShadow?1:0,
+        object.receiveShadow?1:0
+      ].join(':');
+      const kind=isTree?'TREE':isModularPart?'MARKED_STATIC':'GENERIC_STATIC';
+      const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level)+'|'+chunkId+'|'+kind+'|'+optionKey;
+      if(!groups.has(key))groups.set(key,{
+        sources:[],level,isTree,isGeneric,parent:streamParent,
+        castShadow:!!object.castShadow,receiveShadow:!!object.receiveShadow,
+        renderOrder:object.renderOrder||0,layersMask:object.layers?.mask??1
+      });
       groups.get(key).sources.push(object);
     }
     const matrix=new T.Matrix4();
-    let groupIndex=0;
+    let groupIndex=0,totalInstancedSources=0,genericInstancedSources=0;
     for(const group of groups.values()){
       const sources=group.sources,level=group.level,parent=group.parent;
       if(sources.length<3)continue;
       parent.updateWorldMatrix(true,true);
       const inverseParent=parent.matrixWorld.clone().invert();
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:'Architecture_Static');
-      batch.castShadow=true;batch.receiveShadow=true;batch.frustumCulled=true;
+      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:group.isGeneric?'Generic_Static':'Architecture_Static');
+      batch.castShadow=group.castShadow;
+      batch.receiveShadow=group.receiveShadow;
+      batch.frustumCulled=true;
+      batch.renderOrder=group.renderOrder;
+      batch.layers.mask=group.layersMask;
       batch.userData.ownerId=root.userData.ownerId;
       batch.userData.modelRoot=root;
       batch.userData.pstudioStreamChunkId=parent.userData?.pstudioStreamChunkId||null;
       batch.userData.pstudioFoliageLOD=level;
       batch.userData.pstudioInstanceBatch=!group.isTree;
+      batch.userData.pstudioGenericStaticInstances=!!group.isGeneric;
+      batch.userData.pstudioAutoLOD=first.userData.pstudioAutoLOD||first.geometry.userData?.pstudioAutoLODLevels||null;
+      batch.userData.pstudioAutoLODBaseGeometry=first.userData.pstudioAutoLODBaseGeometry||first.geometry;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
       batch.userData.pstudioFoliageSources=sources;
       batch.visible=level===null||level===0;
@@ -2563,16 +2736,24 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         source.visible=false;
         if(i>0&&i%128===0)await nextPreparationFrame();
       }
-      batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      batch.instanceMatrix.setUsage(group.isTree?T.DynamicDrawUsage:T.StaticDrawUsage);
       batch.instanceMatrix.needsUpdate=true;
       batch.computeBoundingSphere();
       enableGPUFrustumCullingForBatch(batch);
-      batches.push({mesh:batch,sources,level,isTree:group.isTree,parent});
+      batches.push({mesh:batch,sources,level,isTree:group.isTree,isGeneric:!!group.isGeneric,parent});
+      totalInstancedSources+=sources.length;
+      if(group.isGeneric)genericInstancedSources+=sources.length;
       if(++groupIndex%2===0)await nextPreparationFrame();
+    }
+    if(totalInstancedSources){
+      try{window.PStudioEvents?.emit('render.instances.batched',{
+        totalSources:totalInstancedSources,genericStaticSources:genericInstancedSources,
+        batchCount:batches.length,estimatedDrawCallsSaved:totalInstancedSources-batches.length
+      });}catch(_){}
     }
     return batches;
   }
-  function updateFoliageInstanceBatches(instance){
+  function updateFoliageInstanceBatches(instance){  function updateFoliageInstanceBatches(instance){
     if(!instance?.foliageBatches?.length)return;
     const T=window.THREE,root=instance.root;root.updateMatrixWorld(true);
     const matrix=new T.Matrix4();
@@ -2642,6 +2823,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         meshes.push(object);
         object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0));
         scheduleAutoLOD(object,object.geometry);
+        scheduleGeometryBVH(object.geometry);
         object.castShadow=true;object.receiveShadow=true;
         const cloneMaterial=material=>{
           const windRole=String(object.userData?.pstudioWindPart||'');
@@ -2676,7 +2858,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     clone.updateMatrixWorld(true);
     const streamChunks=await buildModelStreamingChunks(clone);
-    const foliageBatches=await buildFoliageInstanceBatches(clone);
+    const foliageBatches=await buildFoliageInstanceBatches(clone,asset.animations||[]);
     const bounds=new T.Box3();
     for(let i=0;i<pairs.length;i++){
       const object=pairs[i].clone;
@@ -2910,7 +3092,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       for(const material of materials)if(material)disposedMaterials.add(material);
       if(object.userData.pstudioLightmapOriginalMaterial){const originals=Array.isArray(object.userData.pstudioLightmapOriginalMaterial)?object.userData.pstudioLightmapOriginalMaterial:[object.userData.pstudioLightmapOriginalMaterial];for(const material of originals)if(material)disposedMaterials.add(material);}
       object.userData.pstudioLightmapTexture?.dispose?.();if(object.userData.pstudioLightmapGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry?.disposeBoundsTree?.();object.geometry?.dispose?.();}
-      object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD||[])if(level.owned)level.geometry.dispose?.();
+      object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;
     });
     disposedMaterials.forEach(material=>{window.PStudioEnvironmentFX?.releaseMaterial?.(material);material.dispose();});
     modelInstances.delete(key);
