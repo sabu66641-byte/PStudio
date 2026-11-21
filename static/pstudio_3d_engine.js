@@ -1530,7 +1530,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const constructors={Int8Array,Uint8Array,Uint8ClampedArray,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array};
     const Constructor=constructors[record.type];
     if(!Constructor)throw new Error('Unsupported worker geometry array type: '+record.type);
-    return new Constructor(record.buffer,0,record.length);
+    return new Constructor(record.buffer,Number(record.byteOffset)||0,record.length);
   }
   function colorFromArray(value){return Array.isArray(value)?new window.THREE.Color().setRGB(value[0],value[1],value[2]):0xffffff;}
   function hydrateBufferAttribute(record){
