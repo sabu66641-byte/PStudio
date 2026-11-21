@@ -414,7 +414,7 @@ test('GLTFLoader runs in a module worker and transfers a structured scene packet
   const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
   for(const token of [
     'GLTFLoader','loader.parseAsync(buffer, \'\')','serializeGLTF(gltf',
-    'transferTypedArray','ImageBitmap','boneInverses','AnimationClip',
+    'transferTypedArray','ImageBitmap','boneInverses','clip.constructor.toJSON(clip)',
     'isInstancedMesh','parseMs','serializeMs','postMessage({ id: message.id, ok: true, result: packet }'
   ])assert.ok(worker.includes(token),token);
   for(const token of [
