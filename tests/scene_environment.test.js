@@ -128,7 +128,7 @@ test('GLB material inspector exposes sidedness, normal recalculation, roughness,
   assert.match(engine, /doubleSide:override\.doubleSide,recomputeNormals:override\.recomputeNormals,emissive:override\.emissive,emissiveIntensity:override\.emissiveIntensity/);
 });
 
-test('GLB material overrides restore source defaults and keep normal recomputation on instance-owned geometry clones', () => {
+test('GLB material overrides restore source defaults and use per-instance geometry clones for normal recalculation', () => {
   for (const token of [
     'materialDefaults.set(copy,{',
     'emissive:material.emissive?.clone?.()||null',
@@ -136,19 +136,30 @@ test('GLB material overrides restore source defaults and keep normal recomputati
     'material.side=override.doubleSide?window.THREE.DoubleSide:(defaults.side??window.THREE.FrontSide)',
     'material.emissive.set(override.emissive)',
     'geometryOriginals=new Map(),normalGeometryClones=new Map()',
+    'const original=object.userData?.pstudioLightmapGeometry?object.geometry:',
     'normalized=original.clone()',
     'normalized.computeVertexNormals()',
+    "normalized.deleteAttribute('tangent')",
+    'scheduleGeometryBVH(normalized)',
     'object.geometry=normalized',
-    'object.geometry=original',
+    'if(normalized&&object.geometry===normalized)object.geometry=original',
     'for(const geometry of instance.normalGeometryClones?.values?.()||[])'
   ]) assert.ok(renderer.includes(token), token);
 });
 
-test('GLB source material and source geometry are cloned before editor overrides are applied', () => {
-  assert.match(renderer, /copy=material\.clone\(\);setupLightingMaterial\(copy\)/);
-  assert.match(renderer, /geometryOriginals\.set\(object,object\.geometry\)/);
-  assert.match(renderer, /normalGeometryClones\?\.set\(original,normalized\)/);
-  assert.match(renderer, /instance\.normalGeometryClones\?\.clear\?\.\(\);instance\.geometryOriginals\?\.clear\?\.\(\)/);
+test('model material instances do not capture geometry before LOD or lightmap setup', () => {
+  assert.match(renderer,/geometryRevision=overrides\.some\(item=>item\.recomputeNormals===true\)/);
+  assert.doesNotMatch(renderer,/geometryOriginals\.set\(object,object\.geometry\)/);
+  assert.match(renderer,/const original=object\.userData\?\.pstudioLightmapGeometry\?object\.geometry/);
+  assert.match(renderer,/normalGeometryClones\?\.set\(original,normalized\)/);
+});
+test('normal overrides follow LOD and lightmap geometry revisions without per-frame mesh scans',()=>{
+  assert.match(renderer,/function markModelGeometryChanged\(object\)/);
+  assert.match(renderer,/object\.geometry=levels\[selected\]\.geometry;\s*markModelGeometryChanged\(object\)/);
+  assert.match(renderer,/object\.geometry=working;object\.userData\.pstudioLightmapGeometry=true;markModelGeometryChanged\(object\)/);
+  assert.match(renderer,/object\.geometry=working;working=null;object\.userData\.pstudioLightmapGeometry=true;markModelGeometryChanged\(object\)/);
+  assert.match(renderer,/object\.geometry=object\.userData\.pstudioLightmapOriginalGeometry;markModelGeometryChanged\(object\)/);
+  assert.match(renderer,/normalGeometrySignature=overrides\.some\(item=>item\.recomputeNormals===true\)\s*\?Number\(instance\.root\?\.userData\?\.pstudioGeometryRevision\)\|\|0/);
 });
 
 test('PStudio retains existing ps material API arity and does not change parser or generated code interface', () => {
