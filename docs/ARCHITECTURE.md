@@ -57,7 +57,8 @@ Do not send a server request every frame. Preserve the division between server-s
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
-- `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
+- `static/pstudio_ecs.js`: entity/component/system storage, introspection, Scene Object mirroring, serialized custom Component restoration and deterministic scheduling.
+- `static/pstudio_ecs_inspector.js`: editor Inspector integration for Entity selection/creation, Component JSON editing and attachment/removal, and registered System priority/state management.
 - `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
@@ -83,7 +84,8 @@ Do not send a server request every frame. Preserve the division between server-s
 - The game runtime owns ps callback state and emits frame render commands.
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations.
-- ECS is integrated with scene entities and system iteration but is not yet a full migration of every legacy subsystem.
+- ECS mirrors Scene Objects into Entities during editor inspection and runtime; serialized custom Components are restored from Scene Object data. The Inspector owns the UI for Component editing and System scheduling controls.
+- ECS is not yet the owner of every legacy gameplay, physics, collision or rendering subsystem; those boundaries remain explicit.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
 Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state.
