@@ -166,7 +166,7 @@ test('exposes Entity, Component and System introspection and updates system prio
   const first = ecs.createEntity({ Transform: { x: 2 } });
   const second = ecs.createEntity();
   assert.deepEqual(Array.from(ecs.getEntities()), [first, second]);
-  assert.deepEqual(ecs.getEntityComponents(first).map(item => item.type), ['Transform']);
+  assert.deepEqual(Array.from(ecs.getEntityComponents(first), item => item.type), ['Transform']);
   assert.ok(Array.from(ecs.getComponentTypes()).includes('SceneObjectRef'));
 
   const order = [];
