@@ -208,6 +208,21 @@
     return state?state.landSequence:(runtime?.landSequences?.get?.(objectId)||0);
   }
 
+  function makeContext(object, dt) {
+    return {
+      object, dt, draw: [], steps: 0, callDepth: 0,
+      env: getScriptState(object.id),
+      funcs: Object.create(null),
+      output: []
+    };
+  }
+  function setupContext(object, dt=0) {
+    const c = makeContext(object, dt);
+    const ast = astForScript(object.script);
+    if (!ast) return c;
+    for (const node of ast.body || []) if (node.type === 'FunctionDef') c.funcs[node.name] = node;
+    return c;
+  }
   function getVar(c, env, name) {
     if (Object.prototype.hasOwnProperty.call(env, name)) return env[name];
     if (name === 'true') return true;
