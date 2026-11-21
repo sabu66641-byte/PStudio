@@ -2384,7 +2384,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       for(const level of object.userData.pstudioAutoLOD)if(level.owned){level.geometry.userData.pstudioBVHDisposed=true;level.geometry.userData.pstudioBVHToken=(level.geometry.userData.pstudioBVHToken||0)+1;level.geometry.disposeBoundsTree?.();level.geometry.dispose?.();}
       object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;
     }
-    object.geometry=working;object.userData.pstudioLightmapGeometry=true;
+    object.geometry=working;object.userData.pstudioLightmapGeometry=true;markModelGeometryChanged(object);
     if(oldGeometry!==sourceGeometry&&oldGeometry!==working){oldGeometry.userData.pstudioBVHDisposed=true;oldGeometry.userData.pstudioBVHToken=(oldGeometry.userData.pstudioBVHToken||0)+1;oldGeometry.disposeBoundsTree?.();oldGeometry.dispose?.();}
     oldTexture?.dispose?.();object.userData.pstudioLightmapTexture=texture;object.userData.pstudioLightmapId=record.id;object.userData.pstudioLightmapBakedMatrix=record.matrixWorld?Array.from(record.matrixWorld):null;return true;
   }
@@ -2397,7 +2397,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function clearObjectLightmap(object){
     if(!object?.userData)return false;let changed=false;
     if(object.userData.pstudioLightmapTexture){object.userData.pstudioLightmapTexture.dispose();object.userData.pstudioLightmapTexture=null;changed=true;}
-    if(object.userData.pstudioLightmapGeometry&&object.userData.pstudioLightmapOriginalGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();object.geometry.dispose?.();object.geometry=object.userData.pstudioLightmapOriginalGeometry;object.userData.pstudioLightmapOriginalGeometry=null;object.userData.pstudioLightmapGeometry=false;object.userData.pstudioLightmapOriginalGeometryOwned=false;changed=true;}
+    if(object.userData.pstudioLightmapGeometry&&object.userData.pstudioLightmapOriginalGeometry){object.geometry.userData.pstudioBVHDisposed=true;object.geometry.userData.pstudioBVHToken=(object.geometry.userData.pstudioBVHToken||0)+1;object.geometry.disposeBoundsTree?.();object.geometry.dispose?.();object.geometry=object.userData.pstudioLightmapOriginalGeometry;markModelGeometryChanged(object);object.userData.pstudioLightmapOriginalGeometry=null;object.userData.pstudioLightmapGeometry=false;object.userData.pstudioLightmapOriginalGeometryOwned=false;changed=true;}
     if(object.userData.pstudioLightmapOriginalMaterial){const current=Array.isArray(object.material)?object.material:[object.material];for(const m of current)m?.dispose?.();object.material=object.userData.pstudioLightmapOriginalMaterial;object.userData.pstudioLightmapOriginalMaterial=null;changed=true;}
     delete object.userData.pstudioLightmapId;delete object.userData.pstudioLightmapBakedMatrix;return changed;
   }
@@ -2493,7 +2493,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       cloneLightmapMaterial(object,texture);
       if(!object.userData.pstudioLightmapOriginalGeometry){object.userData.pstudioLightmapOriginalGeometry=source;object.userData.pstudioLightmapOriginalGeometryOwned=id.startsWith('primitive:');}
       if(object.userData.pstudioAutoLOD?.length){object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;for(const level of object.userData.pstudioAutoLOD)if(level.owned){level.geometry.userData.pstudioBVHDisposed=true;level.geometry.userData.pstudioBVHToken=(level.geometry.userData.pstudioBVHToken||0)+1;level.geometry.disposeBoundsTree?.();level.geometry.dispose?.();}object.userData.pstudioAutoLOD=null;object.userData.pstudioAutoLODGenerating=false;}
-      object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;
+      object.geometry=working;working=null;object.userData.pstudioLightmapGeometry=true;markModelGeometryChanged(object);
       if(oldGeometry!==source&&oldGeometry!==object.geometry){oldGeometry.userData.pstudioBVHDisposed=true;oldGeometry.userData.pstudioBVHToken=(oldGeometry.userData.pstudioBVHToken||0)+1;oldGeometry.disposeBoundsTree?.();oldGeometry.dispose?.();}
       oldTexture?.dispose?.();object.userData.pstudioLightmapTexture=texture;object.userData.pstudioLightmapId=id;object.userData.pstudioLightmapBakedMatrix=bakedMatrix;baked.push(id);allocatedBytes+=perTextureBytes;
     }catch(error){working?.dispose?.();texture?.dispose?.();failed.push({id,error:String(error?.message||error)});}
@@ -2636,6 +2636,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     scheduleAutoLODPump();
     return true;
   }
+  function markModelGeometryChanged(object){
+    const root=object?.userData.modelRoot;
+    if(root?.userData)root.userData.pstudioGeometryRevision=(Number(root.userData.pstudioGeometryRevision)||0)+1;
+  }
   function applyAutoLOD(object,distance){
     const baseGeometry=object?.userData?.pstudioAutoLODBaseGeometry||object?.geometry;
     const levels=object?.userData?.pstudioAutoLOD||baseGeometry?.userData?.pstudioAutoLODLevels;
@@ -2644,6 +2648,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(let i=1;i<levels.length;i++)if(distance>=levels[i].distance)selected=i;
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;
+    markModelGeometryChanged(object);
     object.userData.pstudioActiveAutoLOD=selected;
     if(object.isInstancedMesh)object.computeBoundingSphere?.();
   }
@@ -3269,7 +3274,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
     ];
     const normalGeometrySignature=overrides.some(item=>item.recomputeNormals===true)
-      ?geometryTargets.map(object=>object.uuid+':'+(object.geometry?.userData?.pstudioNormalSourceGeometry?.uuid||object.geometry?.uuid||'')).join('|')
+      ?Number(instance.root?.userData?.pstudioGeometryRevision)||0
       :'';
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
