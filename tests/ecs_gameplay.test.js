@@ -145,6 +145,40 @@ test('AudioSource and CollisionState store per-Entity playback and contact metad
   assert.equal(runtime.ecs.getComponentDefinition('CollisionState').persistent, false);
 });
 
+test('CollisionState emits enter transitions once, clears on exit and detects re-entry', () => {
+  const runtime = createRuntime();
+  const objects = scene(runtime, [
+    { id: 'hero', name: 'Hero', x: 0, y: 0, z: 0 },
+    { id: 'enemy', name: 'Enemy', x: 0, y: 0, z: 0 }
+  ]);
+  const pair = [['hero', 'enemy']];
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.scene.syncCollisionContacts(objects.map(o => o.id), pair, '2d'))),
+    [['hero', 'enemy'], ['enemy', 'hero']]
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.scene.syncCollisionContacts(objects.map(o => o.id), pair, '2d'))),
+    []
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.scene.syncCollisionContacts(objects.map(o => o.id), [], '2d'))),
+    []
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.scene.syncCollisionContacts(objects.map(o => o.id), pair, '2d'))),
+    [['hero', 'enemy'], ['enemy', 'hero']]
+  );
+  runtime.scene.syncCollisionContacts(objects.map(o => o.id), pair, '3d');
+  const hero = runtime.ecs.getEntityForSceneObject('hero');
+  const state = runtime.ecs.getComponent(hero, 'CollisionState');
+  assert.deepEqual(JSON.parse(JSON.stringify(state.overlaps2D)), ['enemy']);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.overlaps3D)), ['enemy']);
+  runtime.scene.syncCollisionContacts(objects.map(o => o.id), [], '3d');
+  const cleared = runtime.ecs.getComponent(hero, 'CollisionState');
+  assert.deepEqual(JSON.parse(JSON.stringify(cleared.overlaps2D)), ['enemy']);
+  assert.deepEqual(JSON.parse(JSON.stringify(cleared.overlaps3D)), []);
+});
+
 test('Scene presentation adapter loads in order before the ECS Inspector', () => {
   const html = read('templates/index.html');
   const core = html.indexOf('<script src="/static/pstudio_ecs.js"></script>');
