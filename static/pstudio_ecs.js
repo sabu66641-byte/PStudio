@@ -361,6 +361,21 @@
     return record.enabled;
   }
 
+  function unregisterComponent(type) {
+    assertStructureMutable();
+    const key = String(type || '');
+    const store = componentStores.get(key);
+    if (!store) return false;
+    if (store.size > 0) throw new Error('Cannot unregister a Component while entities still contain it: ' + key);
+    if (orderedSystems.some(system => system.components.includes(key))) {
+      throw new Error('Cannot unregister a Component while a System still requires it: ' + key);
+    }
+    componentStores.delete(key);
+    componentDefinitions.delete(key);
+    emit('component-unregistered', { type: key });
+    return true;
+  }
+
   function flushDeferred() {
     if (flushingDeferred || iterationDepth > 0 || updating || deferredHead >= deferred.length) return;
     flushingDeferred = true;
@@ -545,6 +560,7 @@
 
   const api = {
     registerComponent,
+    unregisterComponent,
     registerSystem,
     unregisterSystem,
     setSystemEnabled,
