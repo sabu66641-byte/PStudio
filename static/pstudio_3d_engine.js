@@ -856,10 +856,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(typeof previousCompile==='function')previousCompile.call(this,shader,rendererRef);
       shader.uniforms.uPStudioFrustumPlanes={value:uniforms.planes};
       shader.uniforms.uPStudioFrustumCenter=uniforms.center;
-      shader.uniforms.uPStudioFrustumCenter=uniforms.center;
       shader.uniforms.uPStudioFrustumRadius=uniforms.radius;
       shader.uniforms.uPStudioFrustumEnabled=uniforms.enabled;
-      shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
+      shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nuniform vec4 uPStudioFrustumPlanes[6];\nuniform vec3 uPStudioFrustumCenter;\nuniform float uPStudioFrustumRadius;\nuniform float uPStudioFrustumEnabled;\n');
       const cullingCode='#include <project_vertex>\n#ifdef USE_INSTANCING\nif(uPStudioFrustumEnabled>0.5){\n  mat4 pstudioWorldInstance=modelMatrix*instanceMatrix;\n  vec3 pstudioWorldCenter=(pstudioWorldInstance*vec4(uPStudioFrustumCenter,1.0)).xyz;\n  float pstudioWorldScale=max(length(pstudioWorldInstance[0].xyz),max(length(pstudioWorldInstance[1].xyz),length(pstudioWorldInstance[2].xyz)));\n  float pstudioWorldRadius=uPStudioFrustumRadius*pstudioWorldScale;\n  bool pstudioInsideFrustum=true;\n  for(int pstudioPlane=0;pstudioPlane<6;pstudioPlane++){\n    if(dot(uPStudioFrustumPlanes[pstudioPlane].xyz,pstudioWorldCenter)+uPStudioFrustumPlanes[pstudioPlane].w < -pstudioWorldRadius){pstudioInsideFrustum=false;}\n  }\n  if(!pstudioInsideFrustum)gl_Position=vec4(2.0,2.0,2.0,1.0);\n}\n#endif\n';
       shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>',cullingCode);
     };
@@ -1971,26 +1970,28 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(!position)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials){
-        const record=material?.map?.userData?.pstudioVirtualTexture;
-        const texture=material?.map;
-        if(!record||!texture)continue;
-        const channel=Number(texture.channel)||0,uv=object.geometry.attributes[channel===0?'uv':'uv'+channel]||object.geometry.attributes.uv;
-        if(!uv)continue;
-        if(texture.matrixAutoUpdate)texture.updateMatrix();
-        const count=index?index.count:position.count,triangleCount=Math.floor(count/3);
-        const stride=Math.max(1,Math.ceil(triangleCount/Math.max(1,Math.floor((900-sampled)/2))));
-        const p0=new T.Vector3(),p1=new T.Vector3(),p2=new T.Vector3(),center=new T.Vector3(),clip=new T.Vector4(),uvCenter=new T.Vector2();
-        for(let tri=0;tri<triangleCount&&sampled<900;tri+=stride){
-          const base=tri*3,a=index?index.getX(base):base,b=index?index.getX(base+1):base+1,c=index?index.getX(base+2):base+2;
-          p0.fromBufferAttribute(position,a);p1.fromBufferAttribute(position,b);p2.fromBufferAttribute(position,c);
-          center.copy(p0).add(p1).add(p2).multiplyScalar(1/3);
-          clip.set(center.x,center.y,center.z,1).applyMatrix4(mvp);sampled++;
-          if(clip.w<=0||Math.abs(clip.x)>clip.w||Math.abs(clip.y)>clip.w||clip.z< -clip.w||clip.z>clip.w)continue;
-          uvCenter.set((uv.getX(a)+uv.getX(b)+uv.getX(c))/3,(uv.getY(a)+uv.getY(b)+uv.getY(c))/3).applyMatrix3(texture.matrix);
-          const u=virtualTextureWrap(uvCenter.x,texture.wrapS),v=virtualTextureWrap(uvCenter.y,texture.wrapT);
-          const tx=Math.floor(u*record.sourceWidth/record.tileSize),ty=Math.floor(v*record.sourceHeight/record.tileSize);
-          const priority=1-Math.min(1,Math.hypot(clip.x/clip.w,clip.y/clip.w)/1.4142);
-          requestVirtualTexturePage(record,tx,ty,priority);
+        if(!material)continue;
+        for(const slot of Object.keys(VIRTUAL_TEXTURE_UV_VARYINGS)){
+          const texture=material[slot],record=texture?.userData?.pstudioVirtualTexture;
+          if(!record||!texture)continue;
+          const channel=Number(texture.channel)||0,uv=object.geometry.attributes[channel===0?'uv':'uv'+channel]||object.geometry.attributes.uv;
+          if(!uv)continue;
+          if(texture.matrixAutoUpdate)texture.updateMatrix();
+          const count=index?index.count:position.count,triangleCount=Math.floor(count/3);
+          const stride=Math.max(1,Math.ceil(triangleCount/Math.max(1,Math.floor((900-sampled)/Math.max(1,materials.length)))));
+          const p0=new T.Vector3(),p1=new T.Vector3(),p2=new T.Vector3(),center=new T.Vector3(),clip=new T.Vector4(),uvCenter=new T.Vector2();
+          for(let tri=0;tri<triangleCount&&sampled<900;tri+=stride){
+            const base=tri*3,a=index?index.getX(base):base,b=index?index.getX(base+1):base+1,c=index?index.getX(base+2):base+2;
+            p0.fromBufferAttribute(position,a);p1.fromBufferAttribute(position,b);p2.fromBufferAttribute(position,c);
+            center.copy(p0).add(p1).add(p2).multiplyScalar(1/3);
+            clip.set(center.x,center.y,center.z,1).applyMatrix4(mvp);sampled++;
+            if(clip.w<=0||Math.abs(clip.x)>clip.w||Math.abs(clip.y)>clip.w||clip.z< -clip.w||clip.z>clip.w)continue;
+            uvCenter.set((uv.getX(a)+uv.getX(b)+uv.getX(c))/3,(uv.getY(a)+uv.getY(b)+uv.getY(c))/3).applyMatrix3(texture.matrix);
+            const u=virtualTextureWrap(uvCenter.x,texture.wrapS),v=virtualTextureWrap(uvCenter.y,texture.wrapT);
+            const tx=Math.floor(u*record.sourceWidth/record.tileSize),ty=Math.floor(v*record.sourceHeight/record.tileSize);
+            const priority=1-Math.min(1,Math.hypot(clip.x/clip.w,clip.y/clip.w)/1.4142);
+            requestVirtualTexturePage(record,tx,ty,priority);
+          }
         }
       }
     }
