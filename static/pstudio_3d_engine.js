@@ -3215,15 +3215,21 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
     if(changed){
-      const nextTexture=createProceduralSkyTexture(T,profile);
-      let nextTarget=null;
-      try{if(pmremGenerator)nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
-      catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
+      let nextTexture=null,nextTarget=null;
+      try{nextTexture=createProceduralSkyTexture(T,profile);}
+      catch(error){console.warn('[PStudio] Procedural sky texture unavailable; using a color background while retaining scene lighting.',error);}
+      if(nextTexture&&pmremGenerator){
+        try{nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
+        catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
+      }
       scenePresetTarget?.dispose?.();
       scenePresetTexture?.dispose?.();
       scenePresetTexture=nextTexture;scenePresetTarget=nextTarget;scenePresetSignature=signature;
     }
-    if(!(hdrTexture&&hdrShowBackground)&&scenePresetTexture)scene.background=scenePresetTexture;
+    if(!(hdrTexture&&hdrShowBackground)){
+      if(scenePresetTexture)scene.background=scenePresetTexture;
+      else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0');
+    }
     if(!hasCustomEnvironment){
       if(environmentSignature){
         environmentTarget?.dispose?.();environmentTarget=null;
