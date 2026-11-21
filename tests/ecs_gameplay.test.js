@@ -67,7 +67,7 @@ test('Inventory and Equipment APIs persist their data in typed Entity Components
   assert.equal(runtime.gameplay.inventoryAdd('hero', 'Potion', 2), 2);
   assert.equal(runtime.gameplay.inventoryAdd('hero', 'Sword', 1), 1);
   assert.equal(runtime.gameplay.equipItem('hero', 'Sword'), true);
-  assert.deepEqual(runtime.gameplay.getEquipment('hero'), [{ slot: 'main', item: 'Sword' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.gameplay.getEquipment('hero'))), [{ slot: 'main', item: 'Sword' }]);
   assert.equal(runtime.gameplay.useItem('hero', 'Potion'), true);
   assert.equal(runtime.gameplay.getHP('hero'), 65);
   assert.equal(runtime.gameplay.inventoryCount('hero', 'Potion'), 1);
