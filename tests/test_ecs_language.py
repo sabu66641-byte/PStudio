@@ -152,12 +152,12 @@ class PsEcsLanguageTests(unittest.TestCase):
 
     def test_builtin_gameplay_components_are_available_to_game_systems(self):
         source = (
-            "system Gameplay(Health, AIState, CombatState, Quest, NavigationNode)\\n"
-            "    health.hp -= 1.0\\n"
-            '    ai_state.state = "chase"\\n'
-            "    combat_state.comboCount += 1\\n"
-            "    quest.progress += 1.0\\n"
-            "    navigation_node.x += dt\\n"
+            "system Gameplay(Health, AIState, CombatState, Quest, NavigationNode)\n"
+            "    health.hp -= 1.0\n"
+            '    ai_state.state = "chase"\n'
+            "    combat_state.comboCount += 1\n"
+            "    quest.progress += 1.0\n"
+            "    navigation_node.x += dt\n"
         )
         response = self.client.post(
             "/game/prepare",
