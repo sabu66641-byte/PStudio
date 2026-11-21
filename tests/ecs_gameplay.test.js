@@ -281,5 +281,6 @@ test('the ECS gameplay bridge loads after ECS Physics and before the Inspector',
   const inspector = html.indexOf('<script src="/static/pstudio_ecs_inspector.js"></script>');
   assert.ok(ecsCore >= 0 && physics > ecsCore && gameplay > physics && scene > gameplay && inspector > scene);
   assert.doesNotThrow(() => new vm.Script(read('static/pstudio_ecs_gameplay.js')));
+  assert.doesNotThrow(() => new vm.Script(read('static/pstudio_ecs_scene.js')));
   assert.doesNotThrow(() => new vm.Script(read('static/pstudio_gameplay.js')));
 });
