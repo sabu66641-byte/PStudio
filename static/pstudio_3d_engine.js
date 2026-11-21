@@ -3279,6 +3279,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
+      toon:state.toon??null,
       modelOverrides:overrides.map(item=>[
         item.name,item.roughness??null,item.metalness??null,item.color??null,
         item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null,item.toon??null
