@@ -407,6 +407,32 @@ Arguments, in order: shadow, midtone and highlight colors; shadow and highlight 
 
 The shared Object Inspector exposes the toon/rim/outline/pseudo-SSS controls plus foliage wind controls for both script-owned 3D primitives and GLB models. GLB material-specific overrides expose the same controls per named material; the shared Object Inspector applies its settings across the selected object's 3D materials. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. Outlines use expanded back-face shell passes for regular, skinned and instanced meshes. Multi-material GLBs retain each material slot's alpha-test/transparent texture masking; shells use depth testing, no depth writes, and do not participate in raycasts or shadow passes. Verify the actual WebGL shader compile and visual result on each target GPU.
 
+## Cinematic gameplay APIs
+
+The browser-only game runtime includes a small set of time and presentation controls for action-game feedback. These calls are available in attached `.ps` Game Object scripts validated by `/game/prepare`; they are not normal `ps -> C++17` built-ins.
+
+```ps
+func start()
+    set_time_scale(1)
+    set_god_rays(true, 0.7)
+
+func update(dt)
+    if was_key_pressed("space")
+        camera_shake(0.9, 0.24)
+        set_time_scale(0.2)
+    if not is_key_down("space")
+        set_time_scale(1)
+    # Call every frame to record the moving target's path.
+    draw_trail("Weapon", "#8fe6ff", 0.08, 0.3)
+```
+
+- `camera_shake(intensity, duration)`: triggers a decaying 3D camera impulse. Intensity is bounded to 0–2; duration is seconds, bounded to 0–8. Its envelope uses wall-clock time, so it is not frozen by `set_time_scale(0)`.
+- `set_time_scale(scale)`: sets the scene simulation multiplier, bounded to 0–4. Zero freezes the runtime delta time; values below/above 1 slow down/speed up script `update(dt)`, ECS, physics and runtime-clock effects. Browser audio playback and wall-clock timers are not time-scaled. The value resets to 1 on the next Play session.
+- `draw_trail(target_id, color, width, duration)`: records the world-space position of a Scene Game Object resolved by its id or name. Call it repeatedly from `update(dt)` to form a moving ribbon; a one-off call cannot infer a path. Width is in world units (0.001–1) and lifetime is seconds (0.05–10). The renderer retains up to 64 simultaneous trails, each with up to 48 sampled points; the oldest trail is disposed when that budget is reached.
+- `set_god_rays(enabled, intensity)`: enables a screen-space radial light-shaft pass that samples bright regions (20 taps per pixel); intensity is bounded to 0–2. If the shader pass is unavailable or fails to render, PStudio disables it and falls back to the existing Bloom pass when available. If neither pass is available, the call reports the effect as disabled.
+
+These are screen-space/art-directed effects, not physically simulated volumetric light transport. The God Rays pass is inserted before the final output/tonemapping pass to preserve the compositing color pipeline. The mobile GPU shader compile and visual-quality gate still requires testing on real target devices.
+
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 
 The 3D renderer uses Three.js r160 with ACES filmic tone mapping, sRGB output, PMREM-filtered image-based lighting and directional shadow mapping. Quality presets are available through the renderer API:
