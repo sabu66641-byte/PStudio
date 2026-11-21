@@ -275,6 +275,7 @@
         pressedKeys: [], justPressedKeys: [], axisX: 0, axisZ: 0,
         touchActive: false, touchX: 0, touchY: 0, jumpPressed: false
       },
+      TimeState: { timeScale: 1, deltaTime: 0, unscaledDeltaTime: 0 },
       ...(api.hasComponentType('ScriptSystemState') ? { ScriptSystemState: { values: {} } } : {})
     });
     return inputWorldEntity;
@@ -301,6 +302,35 @@
     const api = ecs(), entity = getInputWorldEntity();
     if (!api || !entity) return null;
     return api.getComponent(entity, 'InputState');
+  }
+
+  function syncTimeState(snapshot) {
+    const api = ecs(), entity = getInputWorldEntity();
+    if (!api || !entity) return false;
+    const current = api.hasComponent(entity, 'TimeState')
+      ? api.getComponent(entity, 'TimeState') : { timeScale: 1, deltaTime: 0, unscaledDeltaTime: 0 };
+    const value = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    api.setComponent(entity, 'TimeState', {
+      timeScale: bounded(value.timeScale, current.timeScale ?? 1, 0, 4),
+      deltaTime: bounded(value.deltaTime, 0, 0, 0.1),
+      unscaledDeltaTime: bounded(value.unscaledDeltaTime, 0, 0, 0.1)
+    });
+    return true;
+  }
+
+  function getTimeState() {
+    const api = ecs(), entity = getInputWorldEntity();
+    if (!api || !entity || !api.hasComponent(entity, 'TimeState')) return null;
+    return api.getComponent(entity, 'TimeState');
+  }
+
+  function setTimeScale(value) {
+    const current = getTimeState();
+    if (!current) return false;
+    current.timeScale = bounded(value, current.timeScale ?? 1, 0, 4);
+    const api = ecs(), entity = getInputWorldEntity();
+    api.setComponent(entity, 'TimeState', current);
+    return current.timeScale;
   }
 
   function sceneEntity(objectOrId) {
@@ -584,6 +614,9 @@
     syncSceneObjects,
     syncInputState,
     getInputState,
+    syncTimeState,
+    getTimeState,
+    setTimeScale,
     syncRuntimeCommands,
     syncAudioState,
     commitCollisionState,
