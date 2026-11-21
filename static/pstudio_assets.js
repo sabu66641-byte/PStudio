@@ -8,7 +8,7 @@
   const STORE_NAME = 'models';
   const VERSION = 1; // Keep v1 records readable; OPFS metadata fits the existing key/value store.
   const OPFS_DIRECTORY = 'pstudio-assets-v1';
-  const MAX_MODEL_BYTES = 0xFFFFFFFF;
+  const MAX_MODEL_BYTES = 1024 * 1024 * 1024;
   const LARGE_BLOB_CACHE_THRESHOLD = 64 * 1024 * 1024;
   let databasePromise = null;
   let persistencePromise = null;
@@ -187,7 +187,7 @@
     if (!key) throw new TypeError('アセット名が空です。');
     if (!blob || !Number.isFinite(Number(blob.size))) throw new TypeError('保存するアセットがBlob/Fileではありません。');
     const size = Number(blob.size) || 0;
-    if (size > MAX_MODEL_BYTES) throw new Error('GLBは4GiB未満にしてください。');
+    if (size > MAX_MODEL_BYTES) throw new Error('GLBは1GB以下にしてください。');
     await requestPersistentStorage();
     const previous = await readRecord(key);
     const estimate = await checkAvailableStorage(size, previous?.size || 0);
