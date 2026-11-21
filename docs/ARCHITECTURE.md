@@ -145,6 +145,24 @@ These world Entities are not Scene Objects. They survive clearSceneObjects() and
 
 Script runtime Components are also runtime-only and are attached only when needed. ScriptSystemState is pre-attached before System scheduling starts; cleanup removes it after unregistering Systems, so the scheduler does not mutate its Component structure while iterating.
 
+### Scene presentation and collision Components (Phase 4)
+
+At Play startup, the ECS Scene bridge projects existing Scene Object authoring values into runtime-only Components:
+
+- SpriteRenderer: 2D size, shape, sprite reference and color.
+- MeshRenderer: imported model reference and model scale.
+- MaterialSettings: custom shader source, toon settings and named model overrides.
+- PostProcessingSettings: bloom, SSAO and effect strength.
+- ParticleEmitter: GPU emitter settings.
+- Collider2D: 2D collision participation and shape.
+- MeshCollider: imported-model triangle collision participation.
+
+The project file format is deliberately unchanged in this migration tranche. The Editor still writes the established Scene Object authoring fields; the Play runtime calls PStudioECSScene.syncSceneObjects once after ECS Scene Entity creation, then obtains render and collision settings from Components. This is a compatibility projection, not yet a new durable project serialization format.
+
+The renderer continues to own Three.js meshes, materials, GPU buffers, particle systems, GLTF loading and their disposal. The ECS stores configuration and Entity ownership; the existing renderer service consumes render commands produced from those Components. Do not create GPU objects directly inside Components or System callbacks.
+
+The old Scene Object collider flag is projected to both Collider2D and MeshCollider for backward compatibility. The former drives the 2D collision path; the latter controls imported-mesh triangle collision generation. They are distinct Components because 2D and 3D collision geometry have different contracts.
+
 ### What is not an ECS Component
 
 - Item and weapon definition registries are static catalog data; they are not mutable per-Entity state.
@@ -154,7 +172,7 @@ Script runtime Components are also runtime-only and are attached only when neede
 
 ### Remaining migration boundary
 
-This phase moves the generic gameplay state above into ECS, but does not yet replace the per-Scene-Object ps callback interpreter or its per-object environment. It also does not yet model all Scene presentation fields (MeshRenderer/Camera/Light/Material/Animation) as typed Components, migrate collision-pair dispatch, or unify project serialization/save-game snapshots with the standalone player. Those are separate migrations with independent compatibility tests. Keep the current renderer/Physics service ownership until an explicit Component-to-service adapter is tested end-to-end.
+The current migration has not yet converted every engine subsystem. The Editor's persisted authoring fields remain the project-file source for backward compatibility; the Player/Standalone save format and OPFS branch still need a separate integration audit. Camera and light authoring/runtime state, animation state and animation graph ownership, audio sources/listeners, input action maps, collision-pair event state, global 3D world/environment settings, and broader project/package lifecycle still need their own ECS models and service adapters. Per-frame render command maps and GPU resource caches remain execution-service data rather than persistent Components. These migrations need independent compatibility tests across Editor preview, Play, project save/load and Standalone Player.
 
 ## ECS and Physics frame contract
 
