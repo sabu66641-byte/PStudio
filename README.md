@@ -26,7 +26,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execut
 - `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
 - `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
-- `static/pstudio_assets.js` — IndexedDB storage for binary model assets.
+- `static/pstudio_assets.js` — OPFS-first persistent binary asset storage with backward-compatible IndexedDB records, quota checks, and streaming Blob reads.
+- `static/pstudio_build.js` — ZIP64 standalone Web-game exporter; stores GLB files as binary ZIP entries instead of base64.
+- `static/pstudio_player.html` / `static/pstudio_player.js` — editor-free game player that executes prevalidated browser ASTs and reads packaged assets.
 - `discord_runtime.py` — Discord REST/Gateway runtime used by the normal server-side ps path.
 - `network.py` — standalone HTTP/HTTPS helper module. It is not currently exposed as a browser game-script API.
 - `tests/` — Python compiler/server tests and Node.js subsystem/regression suites.
@@ -61,6 +63,25 @@ node --test tests/*.test.js
 ```
 
 The GitHub Actions workflow runs both commands on pushes to `main` and pull requests. Python tests include actual C++17 compilation and execution when `g++` is available. These automated tests do not replace browser, Android, WebGL, IndexedDB or deployed-site smoke tests.
+
+
+## Large-asset storage and standalone Web builds
+
+PStudio uses a hybrid persistent binary-asset store:
+
+- New model assets are written to the browser Origin Private File System (OPFS) when `navigator.storage.getDirectory()` is available and permitted.
+- The IndexedDB `pstudio-binary-assets/models` object store remains the metadata index and compatibility backend. Existing IndexedDB Blob records without a backend marker remain readable without migration.
+- If OPFS is unavailable, blocked by browser policy, or rejects a write, PStudio falls back to storing the Blob in IndexedDB. A storage quota failure is reported; no browser storage backend is unlimited.
+- Storage usage and quota are browser/origin-specific. PStudio requests persistent storage where supported and uses `navigator.storage.estimate()` before writes. Browser eviction, OS free space, profile policy, and device memory still apply.
+- GLB's accepted container size is bounded by the glTF 2.0 32-bit total-length field (4 GiB minus one byte). This is a format ceiling, not a promise that any device can store or decode a model of that size. Runtime CPU/GPU budgets can still reject a model whose decoded footprint is unsafe. External `.gltf` packages remain separately capped at 30 MiB because the current importer embeds external dependencies as data URLs.
+
+### Export a standalone game
+
+Use **Export Web Build** in the Scene toolbar. PStudio validates the project's game scripts through `/game/prepare`, then packages the validated AST, scene/project data, model assets and player runtime into a ZIP64 archive. Binary assets remain binary ZIP entries and are not converted to base64. Extract the archive and serve `index.html` over HTTP(S) or upload the extracted folder to a static host. Opening it as `file://` is not supported because browser modules, workers and fetch require an origin.
+
+The player has no editor UI and does not call the PStudio editor or `/game/prepare` endpoint at runtime. The current player loads Three.js and selected optional rendering modules from public CDN URLs, so network access is required for 3D features. The package is read-only: changes to scripts or assets must be made in PStudio and exported again. The ZIP64 writer supports archives beyond the classic ZIP 4 GiB file-size limit; final download size remains constrained by browser/device memory and the browser's Blob download implementation.
+
+Automated tests cover OPFS-first writes, mocked 50 MiB Blob storage and streaming reads, IndexedDB fallback/legacy records, ZIP64 headers/CRC/path safety, and standalone player bootstrap contracts. These do not replace real-device OPFS permission/quota checks, large-file imports, WebGL/Android smoke tests, or opening an exported archive on a target hosting service.
 
 ## Run locally
 
