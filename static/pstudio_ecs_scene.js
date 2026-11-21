@@ -126,6 +126,83 @@
     persistent: false
   });
 
+  register('AnimationState', {
+    label: 'Animation State',
+    category: 'Animation',
+    description: 'Per-Entity animation, blend, layer, IK and locomotion commands.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('CameraState', {
+    label: 'Camera State',
+    category: 'Scene',
+    description: 'Camera command currently owned by this Entity.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entry: { type: 'json', default: null }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('LightSet', {
+    label: 'Light Set',
+    category: 'Lighting',
+    description: 'Dynamic point and spot lights authored by this Entity.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('EnvironmentSettings', {
+    label: 'Environment Settings',
+    category: 'Scene',
+    description: 'Environment, background, fog and directional-light commands owned by this Entity.',
+    schema: {
+      enabled: { type: 'boolean', default: false },
+      entries: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('AudioSource', {
+    label: 'Audio Source',
+    category: 'Audio',
+    description: 'Active sound playback metadata for this Entity. Audio elements remain service resources.',
+    schema: {
+      sounds: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
+  register('CollisionState', {
+    label: 'Collision State',
+    category: 'Physics',
+    description: 'Current overlapping Entity IDs for 2D and 3D collision event transitions.',
+    schema: {
+      overlaps2D: { type: 'array', default: [] },
+      overlaps3D: { type: 'array', default: [] }
+    },
+    additionalProperties: false,
+    internal: true,
+    persistent: false
+  });
+
   function sceneEntity(objectOrId) {
     const api = ecs();
     const id = typeof objectOrId === 'object' && objectOrId ? objectOrId.id : objectOrId;
@@ -213,6 +290,107 @@
     return synchronized;
   }
 
+  function ensureComponent(objectOrId, type, data) {
+    const api = ecs();
+    const entity = sceneEntity(objectOrId);
+    if (!api || !entity || !api.hasComponentType(type)) return null;
+    return ensure(entity, type, data || {});
+  }
+
+  function setComponent(objectOrId, type, data) {
+    const api = ecs();
+    const entity = sceneEntity(objectOrId);
+    if (!api || !entity || !api.hasComponentType(type)) return false;
+    api.setComponent(entity, type, data);
+    return true;
+  }
+
+  function syncRuntimeCommands(commandsByObject) {
+    const api = ecs();
+    if (!api || !(commandsByObject instanceof Map)) return 0;
+    let synchronized = 0;
+    const groups = {
+      animation: new Set(['animation', 'animation_blend', 'animation_layer', 'locomotion', 'ik']),
+      lights: new Set(['light']),
+      environment: new Set(['environment'])
+    };
+    for (const [ownerId, draws] of commandsByObject) {
+      const entity = sceneEntity(ownerId);
+      if (!entity || !Array.isArray(draws)) continue;
+      const animationEntries = [], lightEntries = [], environmentEntries = [];
+      let cameraEntry = null;
+      for (let index = 0; index < draws.length; index++) {
+        const command = draws[index];
+        if (!command || typeof command !== 'object') continue;
+        if (groups.animation.has(command.type)) animationEntries.push({ index, command: clone(command) });
+        else if (command.type === 'camera') cameraEntry = { index, command: clone(command) };
+        else if (groups.lights.has(command.type)) lightEntries.push({ index, command: clone(command) });
+        else if (groups.environment.has(command.type)) environmentEntries.push({ index, command: clone(command) });
+      }
+      const write = (type, value) => {
+        if (api.hasComponent(entity, type)) api.setComponent(entity, type, value);
+        else if (value.enabled || value.sounds?.length || value.overlaps2D?.length || value.overlaps3D?.length) api.addComponent(entity, type, value);
+      };
+      write('AnimationState', { enabled: animationEntries.length > 0, entries: animationEntries });
+      write('CameraState', { enabled: !!cameraEntry, entry: cameraEntry });
+      write('LightSet', { enabled: lightEntries.length > 0, entries: lightEntries });
+      write('EnvironmentSettings', { enabled: environmentEntries.length > 0, entries: environmentEntries });
+      const stateEntries = [
+        ['AnimationState', animationEntries],
+        ['CameraState', cameraEntry ? [cameraEntry] : []],
+        ['LightSet', lightEntries],
+        ['EnvironmentSettings', environmentEntries]
+      ];
+      const replacements = new Map();
+      for (const [type, fallback] of stateEntries) {
+        if (!api.hasComponent(entity, type)) continue;
+        const data = api.getComponent(entity, type);
+        const entries = type === 'CameraState' ? (data.entry ? [data.entry] : []) : data.entries || [];
+        for (const entry of entries) {
+          if (entry && Number.isInteger(entry.index) && entry.index >= 0 && entry.index < draws.length) {
+            replacements.set(entry.index, clone(entry.command));
+          }
+        }
+      }
+      for (const [index, command] of replacements) draws[index] = command;
+      synchronized++;
+    }
+    return synchronized;
+  }
+
+  function syncAudioState(ownerId, sounds) {
+    const api = ecs();
+    const entity = sceneEntity(ownerId);
+    if (!api || !entity) return false;
+    const normalized = (Array.isArray(sounds) ? sounds : []).map(sound => ({
+      name: text(sound?.name),
+      volume: bounded(sound?.volume, 1, 0, 1),
+      loop: sound?.loop === true,
+      paused: sound?.paused === true,
+      currentTime: Math.max(0, finite(sound?.currentTime, 0)),
+      suspended: sound?.suspended === true
+    })).filter(sound => sound.name);
+    const data = { sounds: normalized };
+    if (api.hasComponent(entity, 'AudioSource')) api.setComponent(entity, 'AudioSource', data);
+    else if (normalized.length) api.addComponent(entity, 'AudioSource', data);
+    return true;
+  }
+
+  function commitCollisionState(ownerId, dimension, peers) {
+    const api = ecs();
+    const entity = sceneEntity(ownerId);
+    if (!api || !entity) return false;
+    const type = 'CollisionState';
+    const current = api.hasComponent(entity, type)
+      ? api.getComponent(entity, type)
+      : { overlaps2D: [], overlaps3D: [] };
+    const field = dimension === '3d' ? 'overlaps3D' : 'overlaps2D';
+    current[field] = [...new Set((Array.isArray(peers) ? peers : []).map(String))];
+    if (api.hasComponent(entity, type)) api.setComponent(entity, type, current);
+    else api.addComponent(entity, type, current);
+    return true;
+  }
+
   function getComponent(objectOrId, type) {
     const api = ecs();
     const entity = sceneEntity(objectOrId);
@@ -264,6 +442,11 @@
 
   window.PStudioECSScene = Object.freeze({
     syncSceneObjects,
+    syncRuntimeCommands,
+    syncAudioState,
+    commitCollisionState,
+    ensureComponent,
+    setComponent,
     getComponent,
     getRenderState,
     version: '1.0.0'
