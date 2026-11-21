@@ -496,7 +496,8 @@ def parse(tokens):
 
         # ECS declarations are contextual identifiers, not lexer keywords.
         # This preserves backwards compatibility for variables named "component" or "system".
-        if first["type"] == "ID" and first["value"] in ("component", "system"):
+        if (first["type"] == "ID" and first["value"] in ("component", "system")
+                and len(line_tokens) >= 2 and line_tokens[1]["type"] == "ID"):
             if parent is not root:
                 raise Exception(f"構文エラー (行 {first['line']}): ECS宣言はファイルのトップレベルに置いてください。")
             if len(line_tokens) < 2 or line_tokens[1]["type"] != "ID":
