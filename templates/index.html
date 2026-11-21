@@ -1494,7 +1494,7 @@ function stripPreviewCommands(source){return source.split(/\r?\n/).filter(line=>
 async function runCode(){const active=projectFiles[activeProjectFile];if(active&&active.type==='ps'){active.content=codeEditor.value;const n=applyPreviewCommands(codeEditor.value);if(n){switchWorkspaceView('game');setOutput('Scene preview updated ('+n+' draw commands).\nPreview drawing commands are handled by the PStudio browser preview.','success')}}const serverSource=stripPreviewCommands(codeEditor.value);if(!serverSource.trim()){persistProject();return}await runServerCode(serverSource);persistProject()}
 
 
-window.addEventListener('DOMContentLoaded',()=>{loadProject();if(projectFiles[activeProjectFile]?.type==='ps')codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;updateLineNumbers();updateCursor();renderProjectTree();setupAssetDrop();setupCanvasInteraction();selectSceneObject(selectedObjectId);const scene=projectFiles['main.scene'];if(scene&&!scene.content.trim())scene.content=serializeScene();renderGamePreview();});
+window.addEventListener('DOMContentLoaded',()=>{refreshAssetStorageInfo();loadProject();if(projectFiles[activeProjectFile]?.type==='ps')codeEditor.value=projectFiles[activeProjectFile].content;isDirty=false;updateLineNumbers();updateCursor();renderProjectTree();setupAssetDrop();setupCanvasInteraction();selectSceneObject(selectedObjectId);const scene=projectFiles['main.scene'];if(scene&&!scene.content.trim())scene.content=serializeScene();renderGamePreview();});
 window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;persistProject()});
 
         /* LANGUAGE */
@@ -2610,8 +2610,7 @@ try {
 <script src="/static/pstudio_ecs_physics.js"></script>
 <script src="/static/pstudio_ecs_gameplay.js"></script>
 <script src="/static/pstudio_ecs_scene.js"></script>
-<script src="/static/pstudio_ecs_inspector.js">refreshAssetStorageInfo();
-</script>
+<script src="/static/pstudio_ecs_inspector.js"></script>
 <script src="/static/pstudio_build.js?v=20261122-ecs1"></script>
 </body>
 </html>
