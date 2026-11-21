@@ -1129,7 +1129,7 @@ async function fileAsDataURL(file){
   };reader.onerror=()=>reject(reader.error||new Error('ファイルを読み込めませんでした'));reader.readAsDataURL(file);
  });
 }
-const PSTUDIO_MAX_GLB_BYTES=1024*1024*1024;
+const PSTUDIO_MAX_GLB_BYTES=0xFFFFFFFF;
 const PSTUDIO_MAX_GLTF_BYTES=30*1024*1024;
 const PSTUDIO_GLB_JSON_LIMIT=32*1024*1024;
 function dispatchGLBImportProgress(detail){try{window.dispatchEvent(new CustomEvent('pstudio-asset-import-progress',{detail}));}catch(_){}}
@@ -1339,7 +1339,7 @@ async function importAssets(files){
  for(const file of list.filter(f=>f.name.toLowerCase().endsWith('.glb'))){
   const existing=projectAssets.find(a=>a.name===file.name);
   if(existing?.locked){toast(file.name+' はロックされています');continue;}
-  if(file.size>PSTUDIO_MAX_GLB_BYTES){toast(file.name+' は1GBを超えています');continue;}
+  if(file.size>PSTUDIO_MAX_GLB_BYTES){toast(file.name+' は4GiB未満の上限を超えています');continue;}
   try{
    toast(file.name+' を段階検査中…');
    const inspection=await validateGLBFile(file);
