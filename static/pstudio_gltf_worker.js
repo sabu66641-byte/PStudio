@@ -1,4 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 // GLTFLoader imports the bare specifier "three". Module workers do not inherit the
 // document import map, so use a self-contained ESM bundle for the parser.
 import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js?bundle';
@@ -381,7 +380,7 @@ async function serializeGLTF(gltf,assetKey='') {
   return {
     rootIndex: objectIds.get(root) ?? 0,
     nodes, geometries, materials, textures, images,
-    animations: (gltf.animations || []).map(clip => THREE.AnimationClip.toJSON(clip)),
+    animations: (gltf.animations || []).map(clip => clip.constructor.toJSON(clip)),
     sceneName: root.name || '',
     source: 'three-gltfloader-worker-r160'
   };
