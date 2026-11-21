@@ -93,9 +93,13 @@ Keep these boundaries explicit. Avoid silently duplicating ownership of transfor
 ### Rendering
 
 - Preserve source GLTF materials and their textures unless an explicit material override or supported lighting feature requires a controlled change.
-- Preserve animation clips, skinning, hierarchy, morph data and model transforms.
+- Preserve animation clips, skinning, hierarchy, morph data and model transforms. Generic automatic instancing only combines opaque, static, same-geometry/same-material nodes; animated ancestry, skinning, morph targets, transparent/transmissive materials, water/wind roles, custom shadow materials and baked per-object probe lighting are excluded.
+- Generic repeated static nodes are grouped by geometry, material, stream chunk, render order, layer mask and shadow flags. Their transforms are stored relative to the owning model/stream chunk; their instance buffers use static usage. Explicit foliage/tree batches retain dynamic transforms and their existing update path.
 - Keep quality features enabled according to the selected quality profile; do not mask performance problems by silently downgrading quality.
-- Automatic LOD must retain the source geometry and must not override explicit named GLTF LODs.
+- Automatic LOD must retain source geometry and must not override explicit named GLTF LODs. Generated LOD levels are shared per source geometry and are owned/disposed with the cached model asset, not with an individual scene instance.
+- BVH generation is deferred to browser idle time for sufficiently large geometry; small geometry is left on normal raycasting, and failed BVH builds are not retried continuously. Raycasting remains correct through the Three.js fallback.
+- KTX2Loader/Basis Universal transcoding supports assets that already contain KHR_texture_basisu. It does not encode ordinary PNG/JPEG images into KTX2 at runtime; asset encoding is a separate import/build step and must not silently resample or discard source detail.
+- Model import and GLB preparation emit phase/progress events. Progress is reported only where a real byte/item count exists; IndexedDB persistence is represented as a phase because the current browser storage API does not expose byte-level write progress.
 - Occlusion is optional CPU ray-based visibility testing accelerated by BVH when available; it is not hardware GPU occlusion queries.
 - Spatial SH probe GI and its iterative diffuse bounces are approximations, not physically complete dynamic path tracing.
 - UV lightmaps use a per-triangle atlas and probe-derived diffuse irradiance. They are not a seam-aware UV unwrap or full direct-shadow bake.
