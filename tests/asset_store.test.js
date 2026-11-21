@@ -5,9 +5,11 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('static/pstudio_assets.js', 'utf8');
 
-function createStore(indexedDB) {
-  const window = { indexedDB };
-  vm.runInNewContext(source, { window, Promise, Date, Error });
+function createStore(indexedDBOrWindow) {
+  const isWindowState = indexedDBOrWindow && typeof indexedDBOrWindow === 'object' &&
+    ('indexedDB' in indexedDBOrWindow || 'navigator' in indexedDBOrWindow || 'crypto' in indexedDBOrWindow);
+  const window = isWindowState ? indexedDBOrWindow : { indexedDB: indexedDBOrWindow };
+  vm.runInNewContext(source, { window, Promise, Date, Error, console });
   return { store: window.PStudioAssetStore, window };
 }
 
@@ -105,6 +107,37 @@ test('a blocked request that succeeds late closes its unused database connection
 });
 
 
+function makeOPFS() {
+  const files = new Map();
+  const directory = {
+    async getFileHandle(name, options = {}) {
+      const key = String(name);
+      if (!files.has(key) && options.create !== true) {
+        const error = new Error('file not found'); error.name = 'NotFoundError'; throw error;
+      }
+      if (!files.has(key)) files.set(key, new Blob([]));
+      return {
+        async createWritable() {
+          let pending = null;
+          return {
+            async write(blob) { pending = blob; },
+            async close() { if (pending) files.set(key, pending); },
+            async abort() { pending = null; }
+          };
+        },
+        async getFile() {
+          if (!files.has(key)) { const error = new Error('file not found'); error.name = 'NotFoundError'; throw error; }
+          return files.get(key);
+        }
+      };
+    },
+    async removeEntry(name) {
+      if (!files.delete(String(name))) { const error = new Error('file not found'); error.name = 'NotFoundError'; throw error; }
+    }
+  };
+  return { files, directory, root: { async getDirectoryHandle() { return directory; } } };
+}
+
 function makeWritableDatabase() {
   const records = new Map();
   const db = {
@@ -146,7 +179,7 @@ test('large GLB limit is one GiB and Blob storage keeps the original Blob withou
       return request;
     }
   });
-  assert.equal(store.maxModelBytes, 1024 * 1024 * 1024);
+  assert.equal(store.maxModelBytes, 0xFFFFFFFF);
   const blob = new Blob([new Uint8Array(128)], { type: 'model/gltf-binary' });
   await store.put('large-scene.glb', blob, { metadata: { estimatedRuntimeBytes: 512 } });
   assert.equal(db.records.get('large-scene.glb').blob, blob);
@@ -154,11 +187,130 @@ test('large GLB limit is one GiB and Blob storage keeps the original Blob withou
   assert.deepEqual(await store.getMetadata('large-scene.glb'), { estimatedRuntimeBytes: 512 });
 });
 
+
+test('OPFS is the preferred backend for large Blobs and exposes a streaming read handle', async () => {
+  const opfs = makeOPFS();
+  const db = makeWritableDatabase();
+  const { store } = createStore({
+    indexedDB: {
+      open() {
+        const request = { result: db };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      }
+    },
+    navigator: {
+      storage: {
+        getDirectory: async () => opfs.root,
+        persist: async () => true,
+        persisted: async () => true,
+        estimate: async () => ({ usage: 0, quota: 512 * 1024 * 1024 })
+      }
+    },
+    dispatchEvent() {}
+  });
+  const blob = new Blob([new Uint8Array(50 * 1024 * 1024)], { type: 'model/gltf-binary' });
+  await store.put('50mb-world.glb', blob, { metadata: { triangleCount: 1200 } });
+  assert.equal(await store.getStorageBackend('50mb-world.glb'), 'opfs');
+  const record = db.records.get('50mb-world.glb');
+  assert.equal(record.storage, 'opfs');
+  assert.equal(record.blob, undefined);
+  assert.ok(opfs.files.has(record.fileName));
+  const loaded = await store.get('50mb-world.glb', { cache: false });
+  assert.equal(loaded.size, blob.size);
+  assert.equal(loaded.type, blob.type);
+  assert.equal((await store.getMetadata('50mb-world.glb')).triangleCount, 1200);
+  const stream = await store.getStream('50mb-world.glb');
+  assert.equal(typeof stream.getReader, 'function');
+  const first = await stream.getReader().read();
+  assert.ok(first.value.byteLength > 0);
+  const info = await store.getStorageInfo();
+  assert.equal(info.opfsSupported, true);
+  assert.equal(info.preferredBackend, 'opfs');
+  await store.remove('50mb-world.glb');
+  assert.equal(opfs.files.size, 0);
+  assert.equal(db.records.has('50mb-world.glb'), false);
+});
+
+test('OPFS permission or capability failure falls back to legacy IndexedDB Blob storage', async () => {
+  const db = makeWritableDatabase();
+  const { store } = createStore({
+    indexedDB: {
+      open() {
+        const request = { result: db };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      }
+    },
+    navigator: { storage: { getDirectory: async () => { const error = new Error('blocked'); error.name = 'NotAllowedError'; throw error; } } },
+    dispatchEvent() {}
+  });
+  const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'model/gltf-binary' });
+  await store.put('fallback.glb', blob);
+  assert.equal(await store.getStorageBackend('fallback.glb'), 'indexeddb');
+  assert.equal(db.records.get('fallback.glb').blob, blob);
+  assert.equal(await store.get('fallback.glb', { cache: false }), blob);
+  const info = await store.getStorageInfo();
+  assert.equal(info.opfsSupported, false);
+  assert.equal(info.preferredBackend, 'indexeddb');
+});
+
+test('OPFS quota write failure retries the same asset through IndexedDB', async () => {
+  const db = makeWritableDatabase();
+  const brokenOPFS = {
+    async getDirectoryHandle() {
+      return {
+        async getFileHandle() {
+          return {
+            async createWritable() {
+              const error = new Error('disk quota'); error.name = 'QuotaExceededError'; throw error;
+            }
+          };
+        },
+        async removeEntry() {}
+      };
+    }
+  };
+  const { store } = createStore({
+    indexedDB: {
+      open() {
+        const request = { result: db };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      }
+    },
+    navigator: { storage: { getDirectory: async () => ({ getDirectoryHandle: async () => brokenOPFS }), estimate: async () => ({ usage: 0, quota: 1024 * 1024 * 1024 }) } },
+    dispatchEvent() {}
+  });
+  const blob = new Blob([new Uint8Array([9, 8, 7])], { type: 'model/gltf-binary' });
+  await store.put('quota-fallback.glb', blob);
+  assert.equal(await store.getStorageBackend('quota-fallback.glb'), 'indexeddb');
+  assert.equal(await store.get('quota-fallback.glb', { cache: false }), blob);
+});
+
+test('legacy IndexedDB records without a backend marker remain readable', async () => {
+  const blob = new Blob([new Uint8Array([3, 1, 4])], { type: 'model/gltf-binary' });
+  const db = makeWritableDatabase();
+  db.records.set('legacy.glb', { name: 'legacy.glb', blob, size: blob.size, metadata: { legacy: true } });
+  const { store } = createStore({
+    indexedDB: {
+      open() {
+        const request = { result: db };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      }
+    }
+  });
+  assert.equal(await store.getStorageBackend('legacy.glb'), 'indexeddb');
+  assert.equal(await store.get('legacy.glb', { cache: false }), blob);
+  assert.deepEqual(await store.getMetadata('legacy.glb'), { legacy: true });
+});
+
 test('asset store rejects a model above the one GiB limit before IndexedDB access', async () => {
   const { store } = createStore(undefined);
   await assert.rejects(
     store.put('oversize.glb', { size: 1024 * 1024 * 1024 + 1, type: 'model/gltf-binary' }),
-    /1GB/
+    /4GiB/
   );
 });
 
