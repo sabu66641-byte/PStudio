@@ -44,6 +44,8 @@ void set(std::optional<T>& target, U&& value, const char* name) {
     target = std::forward<U>(value);
 }
 
+inline std::vector<std::int64_t> range(std::int64_t start, std::int64_t stop, std::int64_t step);
+
 inline std::vector<std::int64_t> range(std::int64_t stop) {
     std::vector<std::int64_t> result;
     if (stop <= 0) return result;
