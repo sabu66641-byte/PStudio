@@ -159,3 +159,45 @@ test('clears scene bindings without removing registered systems', () => {
   assert.equal(ecs.stats().systemCount, 1);
   ecs.update(0.016);
 });
+
+
+test('exposes Entity, Component and System introspection and updates system priority', () => {
+  const ecs = createECS();
+  const first = ecs.createEntity({ Transform: { x: 2 } });
+  const second = ecs.createEntity();
+  assert.deepEqual(Array.from(ecs.getEntities()), [first, second]);
+  assert.deepEqual(ecs.getEntityComponents(first).map(item => item.type), ['Transform']);
+  assert.ok(Array.from(ecs.getComponentTypes()).includes('SceneObjectRef'));
+
+  const order = [];
+  ecs.registerSystem({ id: 'test.priority-a', priority: 10, update() { order.push('a'); } });
+  ecs.registerSystem({ id: 'test.priority-b', priority: 0, update() { order.push('b'); } });
+  assert.deepEqual(ecs.getSystems().map(system => system.id), ['test.priority-b', 'test.priority-a']);
+  assert.equal(ecs.setSystemPriority('test.priority-a', -5), -5);
+  assert.deepEqual(ecs.getSystems().map(system => system.id), ['test.priority-a', 'test.priority-b']);
+  ecs.update(0.016);
+  assert.deepEqual(order, ['a', 'b']);
+  assert.throws(() => ecs.setSystemPriority('test.priority-a', 'invalid'), /finite number/);
+});
+
+test('restores serialized custom Components when Scene Objects are synchronized', () => {
+  const ecs = createECS();
+  const object = {
+    id: 'saved-object',
+    name: 'Saved Object',
+    x: 1,
+    ecsComponents: [
+      { type: 'Velocity', data: { x: 3, y: 4, z: 5 } },
+      { type: 'Health', data: { current: 80, maximum: 100 } }
+    ]
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject('saved-object');
+  assert.ok(entity);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Velocity'))),
+    { x: 3, y: 4, z: 5 }
+  );
+  assert.equal(ecs.getComponent(entity, 'Health').current, 80);
+  assert.ok(ecs.getComponentTypes().includes('Velocity'));
+});
