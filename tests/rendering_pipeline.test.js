@@ -373,7 +373,7 @@ test('large GLB loading uses an object URL and progress events instead of an app
   assert.ok(!renderer.includes("const source=name.toLowerCase().endsWith('.gltf') ? await blob.text() : await blob.arrayBuffer()"));
 });
 test('large model loading checks estimated runtime memory against device memory before decoding',()=>{
-  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のモデルはIndexedDBに保存済みです'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function modelRuntimeBudgetBytes()','estimatedRuntimeBytes','const safeBudget=modelRuntimeBudgetBytes()','元のモデルデータはブラウザの永続保存領域に保存済みです'])assert.ok(renderer.includes(token),token);
 });
 test('failed model loading clears pending promises so the same model can be retried',()=>{
   assert.ok(renderer.includes('if(modelPromises.get(assetName)===promise)modelPromises.delete(assetName)'));
@@ -432,7 +432,7 @@ test('GLTFLoader runs in a module worker and transfers a structured scene packet
     'isInstancedMesh','parseMs','serializeMs','postMessage({ id: message.id, ok: true, result: packet }'
   ])assert.ok(worker.includes(token),token);
   for(const token of [
-    'new window.Worker(\'/static/pstudio_gltf_worker.js\'',
+    /new window\\.Worker\\(new URL\\(\\(window\\.PStudioStaticBase\\|\\|['\"]\\/static\\/['\"]\\)\\+['\"]pstudio_gltf_worker\\.js['\"],document\\.baseURI\\)/,
     'worker.postMessage({id,op:\'parse-glb\',blob,assetKey:name,textureSupport:getWorkerTextureSupport()}',
     'hydrateGLTFWorkerPacket(packet,name)','CompressedTexture','CompressedArrayTexture',
     'parseGLTFOnMainThread(blob,name)'
