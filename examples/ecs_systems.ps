@@ -1,5 +1,6 @@
-# Attach a normal .ps script to a Scene Object and press Play.
-# Custom Components are registered with PStudioECS for the duration of Play.
+# Attach this .ps script to a Scene Object and press Play.
+# In the ECS Inspector, add EnemyAI only to the Scene Objects that should run these Systems.
+# New Scene Objects use explicit Component assignment; older scenes without ecsComponents keep legacy attach-all behavior.
 
 component EnemyAI
     speed = 3.0
