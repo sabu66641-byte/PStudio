@@ -18,6 +18,11 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three@0.160.0'));
 });
 
+test('mobile auto quality applies an adaptive starting scale rather than full device pixel ratio',()=>{
+  assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
+  assert.ok(renderer.includes("profile.pixelRatio*initialAdaptiveScale"));
+  assert.ok(renderer.includes("scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel]"));
+});
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));
