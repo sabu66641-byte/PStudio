@@ -635,9 +635,11 @@
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime };
         ecs.syncSceneObjects(sceneObjects || []);
         for(const object of sceneObjects||[])ecs.setSceneObjectActive?.(object.id,window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false);
-        ecs.update(dt, { sceneObjects: sceneObjects || [], runtime });
+        ecs.update(dt, ecsContext);
+        ecs.updatePhase?.('prePhysics', dt, ecsContext);
         ecs.applySceneObjectTransforms(sceneObjects || []);
       }
       for(const o of sceneObjects||[]){
@@ -690,6 +692,12 @@
       for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
+      const ecsAfterPhysics = window.PStudioECS;
+      if (ecsAfterPhysics?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime, physicsTransforms: transforms };
+        ecsAfterPhysics.updatePhase?.('postPhysics', dt, ecsContext);
+        ecsAfterPhysics.applySceneObjectTransforms(sceneObjects || []);
+      }
       const ownersById=new Map((sceneObjects||[]).map(item=>[item.id,item]));
       for(const [id,transform] of transforms){
         const owner=ownersById.get(id);
@@ -800,24 +808,51 @@
       if(definitions.has(name))throw new PsRuntimeError('Componentが複数回定義されています: '+name);
       if(ecs.hasComponentType?.(name))throw new PsRuntimeError('Component名が既存ECS型と衝突しています: '+name);
       const defaults=Object.create(null);
-      for(const field of item.node.body||[])defaults[field.variable]=ecsLiteralValue(field.value);
-      definitions.set(name,defaults);
+      const schema=Object.create(null);
+      for(const field of item.node.body||[]){
+        const value=ecsLiteralValue(field.value);
+        defaults[field.variable]=value;
+        const type=typeof value==='boolean'?'boolean':typeof value==='string'?'string':Array.isArray(value)?'array':Number.isInteger(value)?'integer':'number';
+        schema[field.variable]={type,default:cloneEcsDefault(value),label:field.variable};
+      }
+      definitions.set(name,{defaults,schema,source:item.filename});
     }
     runtime.ecsComponentTypes=[];
     runtime.ecsSystemIds=[];
     runtime.ecsStates=new Map();
     try{
-      for(const [name,defaults] of definitions){
-        ecs.registerComponent(name,{create:()=>Object.fromEntries(Object.entries(defaults).map(([key,value])=>[key,cloneEcsDefault(value)]))});
-        runtime.ecsComponentTypes.push(name);
+      for(const [name,definition] of definitions){
+        const create=()=>Object.fromEntries(Object.entries(definition.defaults).map(([key,value])=>[key,cloneEcsDefault(value)]));
+        if(!ecs.hasComponentType?.(name)){
+          ecs.registerComponent(name,{
+            create,
+            schema:definition.schema,
+            additionalProperties:false,
+            source:definition.source
+          });
+          runtime.ecsComponentTypes.push(name);
+        }else{
+          const existing=ecs.getComponentDefinition?.(name);
+          if(existing?.schema){
+            const existingFields=Object.keys(existing.schema).sort();
+            const declaredFields=Object.keys(definition.schema).sort();
+            if(existingFields.length!==declaredFields.length||existingFields.some((field,index)=>field!==declaredFields[index])){
+              throw new PsRuntimeError('Component定義がInspector登録内容と一致しません: '+name);
+            }
+          }
+        }
       }
-      // Initial policy: each declared gameplay Component is attached to every Scene Game Object.
-      // This keeps the first DSL version usable without requiring a second entity-authoring UI.
+      // Restore Component values after all declarations have been registered.
+      ecs.syncSceneObjects?.(sceneObjects || []);
+      // Backward compatibility: scenes without an explicit ECS assignment list keep
+      // the first-bridge behavior. An explicit [] means no custom Component is attached.
       for(const object of sceneObjects||[]){
         const entity=ecs.getEntityForSceneObject?.(object.id);
         if(!entity)continue;
-        for(const name of definitions.keys()){
-          if(!ecs.hasComponent(entity,name))ecs.addComponent(entity,name);
+        if(!Array.isArray(object.ecsComponents)){
+          for(const name of definitions.keys()){
+            if(!ecs.hasComponent(entity,name))ecs.addComponent(entity,name);
+          }
         }
       }
       for(const {filename,node} of systemDefs){
@@ -825,7 +860,10 @@
         const componentNames=(node.components||[]).map(String);
         const registered=ecs.registerSystem({
           id:systemId,
+          name:String(node.name),
+          source:filename,
           components:componentNames,
+          phase:'update',
           update:(dt,api)=>{
             api.forEach(componentNames,(entity,...values)=>{
               const sceneRef=api.hasComponent(entity,'SceneObjectRef')?api.getComponent(entity,'SceneObjectRef'):null;
