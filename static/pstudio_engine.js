@@ -358,6 +358,35 @@
       case 'stop_particle_emitter': if(a.length===1){c.draw.push({type:'particle_emitter_stop',emitterId:String(a[0])});return null;} break;
       case 'solve_ik': if(a.length===7){c.draw.push({type:'ik',rootBone:String(a[0]),endBone:String(a[1]),target:[finite(a[2]),finite(a[3]),finite(a[4])],iterations:Math.max(1,Math.min(20,Math.floor(finite(a[5])))),weight:Math.max(0,Math.min(1,finite(a[6])))});return null;} break;
       case 'animation_layer': if(a.length===3){c.draw.push({type:'animation_layer',clip:String(a[0]),weight:Math.max(0,Math.min(1,finite(a[1]))),additive:truthy(a[2])});return null;} break;
+      case 'camera_shake': if(a.length===2){
+        const intensity=Math.max(0,Math.min(2,finite(a[0])));
+        const duration=Math.max(0,Math.min(8,finite(a[1])));
+        const triggered=window.PStudio3D?.cameraShake?.(intensity,duration)??false;
+        c.draw.push({type:'camera_shake'});
+        return triggered;
+      } break;
+      case 'set_time_scale': if(a.length===1){
+        if(!runtime)throw new PsRuntimeError('set_time_scale() はゲーム実行中のみ使用できます。');
+        runtime.timeScale=Math.max(0,Math.min(4,finite(a[0])));
+        return runtime.timeScale;
+      } break;
+      case 'draw_trail': if(a.length===4){
+        const targetKey=String(a[0]);
+        const target=(sceneObjects||[]).find(item=>String(item.id)===targetKey||String(item.name)===targetKey);
+        if(!target)throw new PsRuntimeError('draw_trail(): 対象の Game Object が見つかりません: '+targetKey);
+        const targetPhysicsPosition=window.PStudioPhysics?.getPosition?.(target.id);
+        const x=Number.isFinite(Number(targetPhysicsPosition?.x))?Number(targetPhysicsPosition.x):((Number(target.x)||0)+(Number(target.w)||64)/2-480)/100;
+        const y=Number.isFinite(Number(targetPhysicsPosition?.y))?Number(targetPhysicsPosition.y):(270-((Number(target.y)||0)+(Number(target.h)||64)/2))/100;
+        const z=Number.isFinite(Number(targetPhysicsPosition?.z))?Number(targetPhysicsPosition.z):(Number(target.z)||0)/100;
+        c.draw.push({type:'trail',targetId:String(target.id),x,y,z,color:String(a[1]),width:Math.max(0.001,Math.min(1,finite(a[2]))),duration:Math.max(0.05,Math.min(10,finite(a[3]))),dt:c.dt});
+        return true;
+      } break;
+      case 'set_god_rays': if(a.length===2){
+        const enabled=truthy(a[0]),intensity=Math.max(0,Math.min(2,finite(a[1])));
+        const result=window.PStudio3D?.setGodRays?.(enabled,intensity)??null;
+        c.draw.push({type:'camera_fx'});
+        return result;
+      } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -564,7 +593,7 @@
     const draws=[...drawCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const allDraws=draws;
-    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
+    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx','trail','camera_shake','camera_fx'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
@@ -574,7 +603,7 @@
   }
   function tick(time) {
     if(!runtime?.running)return;
-    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
+    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
     try {
       const commands=new Map();
       for(const object of sceneObjects||[]){
@@ -708,7 +737,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation)\s*\(/.test(source));
+      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
@@ -717,7 +746,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
