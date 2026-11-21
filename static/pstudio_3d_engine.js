@@ -32,12 +32,18 @@
   let selectionGroup = null;
   const modelCache = new Map();
   const modelPromises = new Map();
-  let gltfWorker=null,gltfWorkerSequence=0,sharedKTX2Loader=null;
+  let gltfWorker=null,gltfWorkerSequence=0,sharedKTX2Loader=null,gltfWorkerCapabilitiesPromise=null;
   const gltfWorkerPending=new Map();
 
   const modelRevisions = new Map();
   const modelInstances = new Map();
   const modelInstancePromises = new Map();
+  const virtualTextures = new Map();
+  const virtualTextureAtlases = new Map();
+  const virtualTexturePageCache = new Map();
+  const virtualTexturePending = new Set();
+  const virtualTextureQueue = [];
+  let virtualTexturePumpScheduled=false,virtualTextureTileUploads=0,virtualTextureRequests=0;
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
   let lastCommands = null;
@@ -1309,7 +1315,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       gltfWorkerPending.set(id,{resolve,reject,onProgress:detail=>dispatchModelLoadProgress({name,...detail})});
       try{
         // Blob structured cloning shares its backing storage; the full ArrayBuffer is created inside the Worker.
-        worker.postMessage({id,op:'parse-glb',blob});
+        worker.postMessage({id,op:'parse-glb',blob,assetKey:name});
         dispatchModelLoadProgress({name,stage:'worker-parse-start',loaded:blob.size,total:blob.size,progress:0});
       }catch(error){
         gltfWorkerPending.delete(id);
@@ -1539,6 +1545,26 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         dispatchModelLoadProgress({name,stage:'main-thread-fetch',loaded,total,progress:total?loaded/total:0});
       },reject));
     }finally{URL.revokeObjectURL(url);}
+  }
+
+
+  function requestGLTFWorkerMessage(op,payload={},transferList=[]){
+    const worker=getGLTFWorker();
+    if(!worker){const error=new Error('GLTF Worker is unavailable.');error.code='PSTUDIO_WORKER_UNAVAILABLE';return Promise.reject(error);}
+    const id=++gltfWorkerSequence;
+    return new Promise((resolve,reject)=>{
+      gltfWorkerPending.set(id,{resolve,reject});
+      try{worker.postMessage({id,op,...payload},transferList);}
+      catch(error){gltfWorkerPending.delete(id);reject(error);}
+    });
+  }
+  function getGLTFWorkerCapabilities(){
+    if(gltfWorkerCapabilitiesPromise)return gltfWorkerCapabilitiesPromise;
+    gltfWorkerCapabilitiesPromise=requestGLTFWorkerMessage('capabilities').then(value=>value||{}).catch(error=>{
+      gltfWorkerCapabilitiesPromise=null;
+      return{offscreenCanvas:false,createImageBitmap:false,error:String(error?.message||error)};
+    });
+    return gltfWorkerCapabilitiesPromise;
   }
 
   function requestModelAsset(name) {
