@@ -401,7 +401,12 @@
     const width=Math.max(0.005,Math.min(0.45,Number(settings.width)||0));
     if(!enabled||width<=0){releaseOutline(object);return;}
     const color=String(settings.color||'#182235');
-    const cacheKey=color+'|'+width.toFixed(4);
+    const suppliedMaterial=settings.sourceMaterial||null;
+    const sourceMaterial=suppliedMaterial&&(!Array.isArray(object.material)||object.material.length===1)?suppliedMaterial:null;
+    const useAlphaTextures=!!(sourceMaterial&&(sourceMaterial.alphaTest>0||sourceMaterial.transparent));
+    const alphaMap=useAlphaTextures?(sourceMaterial.alphaMap||null):null;
+    const map=useAlphaTextures?(sourceMaterial.map||null):null;
+    const cacheKey=[color,width.toFixed(4),map?.uuid||'',alphaMap?.uuid||'',sourceMaterial?.alphaTest||0,sourceMaterial?.opacity??1,sourceMaterial?.transparent?1:0].join('|');
     const currentOutline=object.userData?.pstudioOutlineShell;
     if(currentOutline?.key===cacheKey){
       currentOutline.mesh.geometry=object.geometry;
@@ -413,7 +418,10 @@
     let cached=outlineMaterialCache.get(cacheKey);
     if(!cached){
       const material=new Three.MeshBasicMaterial({
-        color,side:Three.BackSide,depthWrite:false,depthTest:true,
+        color,map,alphaMap,alphaTest:sourceMaterial?.alphaTest||0,
+        transparent:!!(useAlphaTextures&&sourceMaterial?.transparent),opacity:sourceMaterial?.opacity??1,
+        alphaToCoverage:!!sourceMaterial?.alphaToCoverage,
+        side:Three.BackSide,depthWrite:false,depthTest:true,
         toneMapped:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1
       });
       material.onBeforeCompile=function(shader){
@@ -430,6 +438,7 @@
           '#endif',
           'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
         ].join('\n'));
+        if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
       };
       material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
       cached={material,refs:0};
@@ -554,7 +563,7 @@
     u.sssColor.value.set(value.sssColor);
     u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
     record.enabled=u.enabled.value>0.5;
-    if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth});
+    if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
     if(object&&settings&&Object.prototype.hasOwnProperty.call(settings,'windStrength'))configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
     return material;
   }
