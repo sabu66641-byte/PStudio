@@ -405,17 +405,31 @@ async function parseGLB(message) {
 
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
+  let dracoLoader=null;
   if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) {
-    const error = new Error('This GLB uses Draco compression; the decoder will run through the renderer-compatible main-thread loader path.');
-    error.code = 'PSTUDIO_MAIN_THREAD_REQUIRED';
-    throw error;
+    try {
+      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/DRACOLoader.js?bundle');
+      dracoLoader = new module.DRACOLoader();
+      dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      dracoLoader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
+      loader.setDRACOLoader(dracoLoader);
+    } catch (cause) {
+      const error = new Error('Draco worker decoder could not initialize; use the renderer-compatible fallback path: '+String(cause?.message||cause));
+      error.code = 'PSTUDIO_MAIN_THREAD_REQUIRED';
+      throw error;
+    }
   }
 
   const started = performance.now();
-  const gltf = await loader.parseAsync(buffer, '');
-  const parsedAt = performance.now();
-  const packet = await serializeGLTF(gltf,message.assetKey||'');
-  const serializedAt = performance.now();
+  let gltf,parsedAt,packet,serializedAt;
+  try {
+    gltf = await loader.parseAsync(buffer, '');
+    parsedAt = performance.now();
+    packet = await serializeGLTF(gltf,message.assetKey||'');
+    serializedAt = performance.now();
+  } finally {
+    dracoLoader?.dispose?.();
+  }
   packet.timings = {
     parseMs: parsedAt - started,
     serializeMs: serializedAt - parsedAt,
