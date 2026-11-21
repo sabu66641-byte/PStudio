@@ -35,7 +35,7 @@ function scene(runtime, objects) {
 
 test('registers typed gameplay Components and keeps runtime-only world state internal', () => {
   const { ecs } = createRuntime();
-  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider', 'AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings', 'AudioSource', 'CollisionState']) {
+  for (const type of ['Health', 'Inventory', 'Equipment', 'AIState', 'CombatState', 'Quest', 'NavigationNode', 'GameplayWorld', 'ScriptState', 'ScriptLifecycle', 'ScriptSystemState', 'LocomotionState', 'SpriteRenderer', 'MeshRenderer', 'MaterialSettings', 'PostProcessingSettings', 'ParticleEmitter', 'Collider2D', 'MeshCollider', 'AnimationState', 'CameraState', 'LightSet', 'EnvironmentSettings', 'AudioSource', 'CollisionState', 'InputState']) {
     assert.equal(ecs.hasComponentType(type), true, type);
     assert.ok(ecs.getComponentDefinition(type).schema, type);
   }
@@ -143,6 +143,30 @@ test('AudioSource and CollisionState store per-Entity playback and contact metad
   assert.deepEqual(JSON.parse(JSON.stringify(collision.overlaps2D)), ['enemy']);
   assert.deepEqual(JSON.parse(JSON.stringify(collision.overlaps3D)), ['enemy']);
   assert.equal(runtime.ecs.getComponentDefinition('CollisionState').persistent, false);
+});
+
+test('InputState snapshots keyboard, touch and virtual controls on a world Entity', () => {
+  const runtime = createRuntime();
+  assert.equal(runtime.scene.syncInputState({
+    pressedKeys: ['w', 'space', 'w'],
+    justPressedKeys: ['space'],
+    axisX: 0.75, axisZ: -0.5,
+    touchActive: true, touchX: 128, touchY: 240,
+    jumpPressed: true
+  }), true);
+  const input = runtime.scene.getInputState();
+  assert.deepEqual(JSON.parse(JSON.stringify(input.pressedKeys)), ['w', 'space']);
+  assert.deepEqual(JSON.parse(JSON.stringify(input.justPressedKeys)), ['space']);
+  assert.equal(input.axisX, 0.75);
+  assert.equal(input.axisZ, -0.5);
+  assert.equal(input.touchActive, true);
+  assert.equal(input.touchX, 128);
+  assert.equal(input.touchY, 240);
+  assert.equal(input.jumpPressed, true);
+  const entity = runtime.ecs.query(['InputState'])[0];
+  assert.ok(entity);
+  assert.equal(runtime.ecs.hasComponent(entity, 'ScriptSystemState'), true);
+  assert.equal(runtime.ecs.getComponentDefinition('InputState').persistent, false);
 });
 
 test('CollisionState emits enter transitions once, clears on exit and detects re-entry', () => {
