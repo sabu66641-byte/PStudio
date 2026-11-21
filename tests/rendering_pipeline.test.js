@@ -431,8 +431,8 @@ test('GLTFLoader runs in a module worker and transfers a structured scene packet
     'transferTypedArray','ImageBitmap','boneInverses','clip.constructor.toJSON(clip)',
     'isInstancedMesh','parseMs','serializeMs','postMessage({ id: message.id, ok: true, result: packet }'
   ])assert.ok(worker.includes(token),token);
+  assert.match(renderer,/new window\.Worker\(new URL\(\(window\.PStudioStaticBase\|\|['"]\/static\/['"]\)\+['"]pstudio_gltf_worker\.js['"],document\.baseURI\)/);
   for(const token of [
-    /new window\\.Worker\\(new URL\\(\\(window\\.PStudioStaticBase\\|\\|['\"]\\/static\\/['\"]\\)\\+['\"]pstudio_gltf_worker\\.js['\"],document\\.baseURI\\)/,
     'worker.postMessage({id,op:\'parse-glb\',blob,assetKey:name,textureSupport:getWorkerTextureSupport()}',
     'hydrateGLTFWorkerPacket(packet,name)','CompressedTexture','CompressedArrayTexture',
     'parseGLTFOnMainThread(blob,name)'
