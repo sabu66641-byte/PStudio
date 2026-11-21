@@ -3348,9 +3348,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         material.side=defaults.side;
         const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
         const toonSettings=override?.toon||state?.toon||null;
-        if(toonSettings)window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
+        if(toonSettings&&toonSettings.enabled!==false)window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
         else if(material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(material,{enabled:false},object);
-        if(toonSettings&&Number(toonSettings.windStrength)>0)window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
+        if(toonSettings&&Object.prototype.hasOwnProperty.call(toonSettings,'windStrength'))window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
@@ -3503,7 +3503,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||!!d.ssao;const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
       if(d.type==='model_material')continue;
-        if(d.type==='toon_material'){ownerMaterial=Object.assign(ownerMaterial||{},{shader:'toon',toon:d.toon&&typeof d.toon==='object'?d.toon:{}});continue;}
+        if(d.type==='toon_material'){const toon=d.toon&&typeof d.toon==='object'?d.toon:{};ownerMaterial=Object.assign(ownerMaterial||{},{shader:toon.enabled===false?(ownerMaterial?.shader==='toon'?'standard':ownerMaterial?.shader||'standard'):'toon',toon});continue;}
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
           const emitterKey=String(ownerId)+':'+String(d.emitterId);
@@ -3736,10 +3736,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
-        if(shaderMode==='toon'||ownerMaterial?.toon)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,Object.assign({},ownerMaterial?.toon||{},{enabled:true}),mesh);
-        else if(mesh.material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,{enabled:false},mesh);
         const primitiveToon=ownerMaterial?.toon;
-        if(primitiveToon&&Number(primitiveToon.windStrength)>0)window.PStudioEnvironmentFX?.configureFoliage?.(mesh.material,mesh,{windStrength:primitiveToon.windStrength,windSpeed:primitiveToon.windSpeed});
+        if(shaderMode==='toon'||(primitiveToon&&primitiveToon.enabled!==false))window.PStudioEnvironmentFX?.configureToon?.(mesh.material,Object.assign({},primitiveToon||{},{enabled:true}),mesh);
+        else if(mesh.material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,{enabled:false},mesh);
+        if(primitiveToon&&Object.prototype.hasOwnProperty.call(primitiveToon,'windStrength'))window.PStudioEnvironmentFX?.configureFoliage?.(mesh.material,mesh,{windStrength:primitiveToon.windStrength,windSpeed:primitiveToon.windSpeed});
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
         if(d.type!=='water'){
