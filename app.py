@@ -940,7 +940,7 @@ def validate_ast(tree, allow_game=False, external_components=None):
         if node.get("type") == "ComponentDef":
             name = node.get("name", "")
             _validate_cpp_identifier(name, node.get("line"))
-            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld", "ScriptState", "ScriptLifecycle", "ScriptSystemState", "LocomotionState"):
+            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld", "ScriptState", "ScriptLifecycle", "ScriptSystemState", "LocomotionState", "SpriteRenderer", "MeshRenderer", "MaterialSettings", "PostProcessingSettings", "ParticleEmitter", "Collider2D"):
                 raise Exception(f"意味エラー: '{name}' はPStudio組み込みComponentのため再定義できません。")
             if name in component_defs:
                 raise Exception(f"意味エラー: Component '{name}' が重複定義されています。")
@@ -1066,6 +1066,40 @@ def validate_ast(tree, allow_game=False, external_components=None):
             "y": {"type": "Literal", "value": "0.0"},
             "z": {"type": "Literal", "value": "0.0"},
             "blocked": {"type": "Literal", "value": "false"},
+        },
+        "SpriteRenderer": {
+            "visible": {"type": "Literal", "value": "true"},
+            "shape": {"type": "Literal", "value": '"rect"'},
+            "width": {"type": "Literal", "value": "64.0"},
+            "height": {"type": "Literal", "value": "64.0"},
+            "color": {"type": "Literal", "value": '"#d1d5db"'},
+            "sprite": {"type": "Literal", "value": '""'},
+        },
+        "MeshRenderer": {
+            "enabled": {"type": "Literal", "value": "false"},
+            "model": {"type": "Literal", "value": '""'},
+            "scale": {"type": "Literal", "value": "1.0"},
+        },
+        "MaterialSettings": {
+            "shaderFragment": {"type": "Literal", "value": '""'},
+        },
+        "PostProcessingSettings": {
+            "enabled": {"type": "Literal", "value": "false"},
+            "bloom": {"type": "Literal", "value": "false"},
+            "ssao": {"type": "Literal", "value": "false"},
+            "strength": {"type": "Literal", "value": "0.45"},
+        },
+        "ParticleEmitter": {
+            "enabled": {"type": "Literal", "value": "false"},
+            "rate": {"type": "Literal", "value": "12.0"},
+            "color": {"type": "Literal", "value": '"#ffffff"'},
+            "speed": {"type": "Literal", "value": "2.0"},
+            "lifetime": {"type": "Literal", "value": "1.0"},
+            "maxCount": {"type": "Literal", "value": "200"},
+        },
+        "Collider2D": {
+            "enabled": {"type": "Literal", "value": "false"},
+            "shape": {"type": "Literal", "value": '"rect"'},
         },
         "GameplayWorld": {},
     }
