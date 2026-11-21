@@ -180,44 +180,45 @@ Resource manager regression tests can be run with `node --test tests/resource_ma
 
 **Current boundary:** This stage manages cached binary assets and decoded 3D model lifetimes. It does not yet intercept every Three.js allocation, track browser-wide memory, measure actual GPU usage, or manage all image/audio/animation resources. Those integrations will be added incrementally rather than pretending the current counters represent total process memory.
 
-## Entity Component System (ECS) 1.0
+## Entity Component System (ECS) 1.2
 
-The ECS core is exposed as `window.PStudioECS`. It separates entity identity, component data and update systems. Component storage uses dense arrays with sparse entity-index maps, so systems can iterate only the entities that contain the components they need instead of scanning every Scene Object for every behavior.
+The ECS core is exposed as `window.PStudioECS`. It separates Entity identity, Component data and System scheduling. Component storage uses dense arrays with sparse entity-index maps; Systems query only the Components they require.
 
-- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`.
-- **Components:** `registerComponent(type, options?)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
-- **Systems:** `registerSystem({ id, components, priority, update })`, `setSystemEnabled`, `unregisterSystem`. Lower priority values run first; equal priorities preserve registration order.
-- **Iteration:** `forEach(componentTypes, callback)` iterates matching entities without allocating a query result array. `query(componentTypes)` returns matching entity IDs in ascending order.
-- **Deferred structure changes:** creating/destroying entities or adding/removing components during `forEach` is rejected to avoid corrupting an active iteration. Queue these changes with `ecs.defer(() => { ... })`; deferred actions run after the current system update.
-- **Lifecycle and diagnostics:** `on(event, callback)`, `stats()`, `setEnabled(boolean)`, `clearEntities()`.
+- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`, `getEntities(includeInactive?)`.
+- **Typed Components:** `registerComponent(type, options?)`, `updateComponentDefinition(type, options)`, `getComponentDefinition(s)`, `getEntityComponents(entity)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
+- **System scheduler:** `registerSystem({ id, components, priority, phase, update })`, `getSystems()`, `setSystemEnabled`, `setSystemPriority`, `setSystemPhase`, `unregisterSystem`.
+- **System phases:** `update`, `prePhysics`, and `postPhysics`. Priorities run from lower to higher; equal priorities retain registration order.
+- **Iteration and safety:** `forEach(componentTypes, callback)` avoids allocating a query-result array. Structural mutations during iteration must use `ecs.defer(() => { ... })`.
+- **Diagnostics:** `on(event, callback)`, `stats()`, `hasActiveSystems()`, `setEnabled(boolean)`, `clearEntities()`.
 
-The built-in `Transform` component contains position (`x/y/z`), rotation (`rotationX/Y/Z`) and scale (`scaleX/Y/Z). `SceneObjectRef` identifies a linked editor object. During Play, the runtime mirrors existing Scene Objects into ECS entities, runs enabled ECS systems before the legacy per-object ps update callbacks, then applies ECS Transform changes back to Scene Objects. Changes made by existing ps scripts are synchronized back into ECS on the following frame. When no ECS system is enabled, the per-frame mirror and apply passes are skipped to avoid unnecessary runtime work. Stop removes only the Scene Object mirror entities; separately-created ECS entities and registered systems remain available.
+### Component schemas and Inspector
 
-**Physics boundary:** ECS Transform currently mirrors the editor-side Scene Object fields. Physics body state and simulation remain owned by the existing `PStudioPhysics` subsystem; a dedicated physics component and full ECS ownership migration are not part of this stage. The renderer also continues to use its established width/height and `modelScale` fields; the new ECS scale values are available to systems but are not yet applied as general non-uniform visual scaling. This separation avoids silently changing the physics engine's world-space state or the existing ps APIs.
+A Component definition can provide a `schema` describing field types, defaults and validation constraints. Supported field types are `number`, `integer`, `boolean`, `string`, `enum`, `color`, `vector3`, `array`, `json` and `entity`. Required fields, numeric ranges, enum options and unknown-field rejection are checked by the ECS core when a Component is added or updated. Definitions can be updated safely; existing instance data is revalidated before the new schema is committed.
 
-Example: a generic movement system that does not depend on any specific game:
+The ECS Inspector now:
+- shows typed field controls for Component schemas and JSON editing for unstructured Components;
+- discovers `component` / `system` declarations from project `.ps` files using the same `/game/prepare` validator used by Play;
+- lets the user register a custom schema, attach/remove Components on a selected Scene Object and persist those values with the Scene;
+- lists declared and currently registered Systems, opens their source `.ps` file, and manages enabled state, priority and runtime phase.
 
-```js
-PStudioECS.registerSystem({
-  id: 'game.motion',
-  components: ['Transform'],
-  priority: 0,
-  update(dt, ecs) {
-    ecs.forEach(['Transform'], (entity, transform) => {
-      transform.x += 2 * dt;
-    });
-  }
-});
-```
+New Scene Objects start with an explicit empty `ecsComponents` list, so custom Components can be assigned selectively. Older projects that do not yet contain this field keep the legacy behavior: their declared `.ps` Components are attached to all Scene Objects at Play. A saved empty list `[]` means that the object has no custom Components assigned.
 
-**Current boundary:** ECS participates in the runtime update loop and supports the initial browser-game-only `component` / `system` ps declarations. The initial bridge attaches declared custom Components to all Scene Objects at Play start; selective entity authoring is not yet available. ECS does not replace the existing physics, rendering, collision or gameplay-state ownership systems. Scheduling remains single-threaded; parallel job execution is a separate planned subsystem.
+### Transform and Physics ownership
 
-Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
+`Transform` remains the Scene/IDE transform bridge. It mirrors the existing Scene Object coordinates and therefore retains the current editor and renderer coordinate conventions.
 
+Physics uses a separate world-space data path:
 
-### ps-native ECS declarations (initial browser/runtime integration)
+- `PhysicsBody` is persistent configuration: world position, capsule size, mass, gravity and optional character-controller settings.
+- `PhysicsState` is a read-only, runtime-only snapshot of velocity, grounded state, controller state, landing flags and world position.
+- `PhysicsTransform` is the read-only world-space position produced by the fixed-step Physics solver.
+- `Velocity` is a lightweight per-second velocity Component for non-Physics entities; its built-in System integrates it into `Transform`. Physics-driven entities are excluded to avoid competing transform owners.
 
-The browser game-script language can declare reusable data components and update systems directly:
+The runtime order is: ECS `update` Systems → ECS `prePhysics` Systems → legacy per-object ps callbacks and render-command generation → `PStudioPhysics.step()` → ECS `postPhysics` Systems → rendering. The Physics bridge creates/configures bodies before the simulation and copies the solver snapshot back to `PhysicsState` / `PhysicsTransform` afterward. It deliberately does not copy Physics world units directly into the editor `Transform`; the renderer and legacy runtime still use their established coordinate conversion. This prevents a 2D pixel coordinate from being mistaken for a 3D Physics world coordinate and avoids two subsystems writing the same position.
+
+### ps-native ECS declarations
+
+The browser game-script language can declare reusable data Components and update Systems directly:
 
 ```ps
 component EnemyAI
@@ -230,16 +231,19 @@ system MoveEnemy(Transform, EnemyAI)
         transform.y = 0
 ```
 
-- `component Name` declares a custom ECS Component. Its fields use literal or literal-array defaults.
-- `system Name(ComponentA, ComponentB)` declares a scheduled system. Its body receives `entity`, `dt`, and component bindings converted to lower_snake_case (for example `EnemyAI` becomes `enemy_ai`).
-- Component member reads and writes are type-checked against the declared schema. Component references may be declared in a different .ps file within the same project.
-- These declarations are browser-game-only and are validated by `/game/prepare`; they do not enter the ordinary `ps -> C++17` console-program path.
-- The initial integration attaches each declared custom Component to every Scene Game Object at Play start. Selective entity creation, per-object component assignment in the Inspector, and data-driven entity spawning are future steps.
-- The existing ECS scheduler executes these systems before legacy per-object `update(dt)` callbacks. ECS Transform remains mirrored to Scene Object fields; physics ownership remains with `PStudioPhysics`.
+- `component Name` declares typed fields using literal or literal-array defaults. The Inspector reads these declarations and presents the matching type-aware fields.
+- `system Name(ComponentA, ComponentB)` registers a System. Its body receives `entity`, `dt` and lower_snake_case Component bindings (for example `EnemyAI` becomes `enemy_ai`).
+- Component member reads and writes are validated against the declared Component fields. Project-wide Component references across multiple `.ps` files are supported.
+- The initial phase for a declared `.ps` System is `update`; its runtime priority, enabled state and phase can be adjusted in the Inspector while the game is running.
+- These declarations remain browser-game-only. They do not enter the normal `ps -> C++17` console-program pipeline.
 
-Run the sample in `examples/ecs_systems.ps` by attaching it to a Scene Object and pressing Play. ECS language regressions run with `python -m unittest tests.test_ecs_language -v` and `node --test tests/ecs_language.test.js tests/ecs.test.js`.
+Attach `examples/ecs_systems.ps` to a Scene Object. In the ECS Inspector, add `EnemyAI` to the specific objects that should participate in `MoveEnemy` / `Regenerate`, then press Play. The previous all-objects attachment behavior remains only for older Scene Objects that have no explicit `ecsComponents` property.
 
-**Native-build status:** the Backup menu now includes **Native C++17 ECS project (.zip)**. It validates project-wide ECS declarations and exports Component structs, supported System callbacks, the portable C++17 ECS runtime and a CMake sample project. The generated Systems currently support Component member access/assignment, scalar local variables, arithmetic/logical expressions, if/else, while, `for ... in range(...)`, and `len`/`range`; unsupported game APIs and arbitrary helper calls fail export explicitly. Build the source package with a local target C++17 toolchain/CMake generator (Android uses the NDK toolchain). This is a native ECS module/sample executable, not yet the complete PStudio game runtime: browser Three.js rendering, GLB loading, input, audio, legacy JS physics and gameplay APIs are not ported. Therefore PStudio does not yet emit a complete native game `.exe`, `.app` or APK.
+### Native-build boundary
+
+The Backup menu also exports a **Native C++17 ECS project (.zip)** with Component structs, supported System callbacks, a portable C++17 ECS runtime and a CMake sample project. That export is a native ECS module/sample executable, not a complete PStudio game build. The browser Three.js renderer, GLB pipeline, browser input/audio, JavaScript Physics bridge and broader gameplay systems have not yet been ported to native C++. A complete native game `.exe`, `.app` or APK remains a separate backend/packaging project.
+
+Run the focused JavaScript regression suites with `node --test tests/ecs.test.js tests/ecs_physics.test.js tests/physics.test.js`. The full JavaScript suite is `node --test tests/*.test.js`; Python tests are `python -m unittest discover -s tests -p "test_*.py" -v`.
 
 ## Project Backup and Restore
 
