@@ -29,20 +29,35 @@
   const ownerAudio=new Map();
   const chunkAudioSuspended=new Set();
   function audioMap(ownerId){const key=String(ownerId);if(!ownerAudio.has(key))ownerAudio.set(key,new Map());return ownerAudio.get(key);}
+  function syncOwnerAudioState(ownerId){
+    const sounds=ownerAudio.get(String(ownerId));
+    const entries=[];
+    for(const [name,audio] of sounds||[]){
+      let currentTime=0;
+      try{currentTime=Number(audio.currentTime)||0;}catch(_){}
+      entries.push({
+        name:String(name),volume:Number(audio.volume)||0,loop:!!audio.loop,
+        paused:!!audio.paused,currentTime,
+        suspended:audio._pstudioResumeAfterChunk===true
+      });
+    }
+    window.PStudioECSScene?.syncAudioState?.(String(ownerId),entries);
+    return entries.length;
+  }
   function playOwnerSound(ownerId,name,volume,loop){
     const assetList=typeof projectAssets!=='undefined'&&Array.isArray(projectAssets)?projectAssets:[];
     const asset=assetList.find(item=>item?.kind==='audio'&&String(item.name)===String(name));
     if(!asset||typeof (asset.data||asset.url)!=='string')throw new PsRuntimeError('音声アセットが見つかりません: '+String(name));
     const sounds=audioMap(ownerId);let audio=sounds.get(String(name));
     if(audio){audio.pause();try{audio.currentTime=0;}catch(_){} }
-    else{audio=new Audio(asset.data||asset.url);audio.preload='auto';sounds.set(String(name),audio);audio.addEventListener('ended',()=>{if(!audio.loop&&sounds.get(String(name))===audio)sounds.delete(String(name));});}
+    else{audio=new Audio(asset.data||asset.url);audio.preload='auto';sounds.set(String(name),audio);audio.addEventListener('ended',()=>{if(!audio.loop&&sounds.get(String(name))===audio)sounds.delete(String(name));syncOwnerAudioState(ownerId);});}
     audio.volume=Math.max(0,Math.min(1,finite(volume,1)));audio.loop=truthy(loop);audio._pstudioResumeAfterChunk=false;
-    const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio playback was blocked:',error));return true;
+    const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio playback was blocked:',error));syncOwnerAudioState(ownerId);return true;
   }
-  function stopOwnerSound(ownerId,name){const sounds=ownerAudio.get(String(ownerId));if(!sounds)return false;const targets=name===null?[...sounds.values()]:[sounds.get(String(name))].filter(Boolean);for(const audio of targets){audio.pause();try{audio.currentTime=0;}catch(_){}for(const [key,value] of sounds)if(value===audio)sounds.delete(key);}if(!sounds.size)ownerAudio.delete(String(ownerId));return targets.length>0;}
-  function setOwnerSoundVolume(ownerId,name,volume){const audio=ownerAudio.get(String(ownerId))?.get(String(name));if(!audio)return false;audio.volume=Math.max(0,Math.min(1,finite(volume,1)));return true;}
-  function pauseOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){audio._pstudioResumeAfterChunk=!audio.paused;if(!audio.paused)audio.pause();}}
-  function resumeOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){if(audio._pstudioResumeAfterChunk){audio._pstudioResumeAfterChunk=false;const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio resume was blocked:',error));}}}
+  function stopOwnerSound(ownerId,name){const sounds=ownerAudio.get(String(ownerId));if(!sounds){syncOwnerAudioState(ownerId);return false;}const targets=name===null?[...sounds.values()]:[sounds.get(String(name))].filter(Boolean);for(const audio of targets){audio.pause();try{audio.currentTime=0;}catch(_){}for(const [key,value] of sounds)if(value===audio)sounds.delete(key);}if(!sounds.size)ownerAudio.delete(String(ownerId));syncOwnerAudioState(ownerId);return targets.length>0;}
+  function setOwnerSoundVolume(ownerId,name,volume){const audio=ownerAudio.get(String(ownerId))?.get(String(name));if(!audio)return false;audio.volume=Math.max(0,Math.min(1,finite(volume,1)));syncOwnerAudioState(ownerId);return true;}
+  function pauseOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){audio._pstudioResumeAfterChunk=!audio.paused;if(!audio.paused)audio.pause();}syncOwnerAudioState(ownerId);}
+  function resumeOwnerAudio(ownerId){for(const audio of ownerAudio.get(String(ownerId))?.values()||[]){if(audio._pstudioResumeAfterChunk){audio._pstudioResumeAfterChunk=false;const promise=audio.play();if(promise?.catch)promise.catch(error=>console.warn('[PStudio] Audio resume was blocked:',error));}}syncOwnerAudioState(ownerId);}
   function stopAllOwnerAudio(){for(const ownerId of [...ownerAudio.keys()])stopOwnerSound(ownerId,null);chunkAudioSuspended.clear();}
 
   class PsRuntimeError extends Error {}
@@ -587,18 +602,44 @@
     if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);commitScriptState(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');}
   }
   function updateCollisions() {
-    const objs=(sceneObjects||[]).map(getCollisionObject)
-      .filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
-    const now=new Set();
-    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){
-      const a=objs[i],b=objs[j];
-      if(collides(a,b)){
-        const key=[a.id,b.id].sort().join('|');
-        now.add(key);
-        if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}
+    const bridge=window.PStudioECSScene;
+    if(!bridge?.commitCollisionState){
+      const objs=(sceneObjects||[]).map(getCollisionObject).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
+      const now=new Set();
+      for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){
+        const left=objs[i],right=objs[j];
+        if(collides(left,right)){
+          const key=[left.id,right.id].sort().join('|');now.add(key);
+          if(!collisionPairs.has(key)){dispatchCollision(left,right);dispatchCollision(right,left);}
+        }
+      }
+      collisionPairs=now;return;
+    }
+    const objects=sceneObjects||[];
+    const active=objects.map(getCollisionObject).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
+    const activeIds=new Set(active.map(o=>String(o.id)));
+    const previous=new Map(),current=new Map(),owners=new Map();
+    for(const object of objects){
+      const id=String(object.id),state=bridge.getComponent(id,'CollisionState');
+      const old=Array.isArray(state?.overlaps2D)?state.overlaps2D.map(String):[];
+      if(activeIds.has(id)||old.length){
+        previous.set(id,new Set(old));current.set(id,new Set());owners.set(id,object);
       }
     }
-    collisionPairs=now;
+    for(let i=0;i<active.length;i++)for(let j=i+1;j<active.length;j++){
+      const left=active[i],right=active[j];
+      if(!collides(left,right))continue;
+      const a=String(left.id),b=String(right.id);
+      current.get(a)?.add(b);current.get(b)?.add(a);
+    }
+    for(const [id,peers] of current){
+      const old=previous.get(id)||new Set(),owner=owners.get(id);
+      for(const peer of peers)if(!old.has(peer)){
+        const other=owners.get(peer)||(sceneObjects||[]).find(item=>String(item.id)===peer);
+        if(owner&&other)dispatchCollision(owner,other);
+      }
+      if(peers.size||old.size)bridge.commitCollisionState(id,'2d',[...peers]);
+    }
   }
 
   // 3D AABB collision is isolated from the existing 2D collider system.
@@ -630,28 +671,54 @@
   }
   function update3DCollisions(commandsByObject) {
     const colliders=[];
-    for (const [id,draws] of commandsByObject) {
+    for(const [id,draws] of commandsByObject){
       const owner=(sceneObjects||[]).find(o=>o.id===id);
-      if (!owner||window.PStudio3D?.isOwnerChunkActive?.(id)===false) continue;
-      for (const draw of draws) {
+      if(!owner||window.PStudio3D?.isOwnerChunkActive?.(id)===false)continue;
+      for(const draw of draws){
         const bounds=bounds3D(draw);
-        if (bounds) colliders.push({owner,bounds});
+        if(bounds)colliders.push({owner,bounds});
       }
     }
-    const now=new Set();
-    for(let i=0;i<colliders.length;i++) for(let j=i+1;j<colliders.length;j++) {
-      const a=colliders[i],b=colliders[j];
-      if(a.owner.id===b.owner.id||!overlaps3D(a.bounds,b.bounds)) continue;
-      const key=[a.owner.id,b.owner.id].sort().join('|');
-      if(now.has(key)) continue;
-      now.add(key);
-      if(!collision3DPairs.has(key)) {
-        dispatchCollision(a.owner,b.owner);
-        dispatchCollision(b.owner,a.owner);
+    const bridge=window.PStudioECSScene;
+    if(!bridge?.commitCollisionState){
+      const now=new Set();
+      for(let i=0;i<colliders.length;i++)for(let j=i+1;j<colliders.length;j++){
+        const left=colliders[i],right=colliders[j];
+        if(left.owner.id===right.owner.id||!overlaps3D(left.bounds,right.bounds))continue;
+        const key=[left.owner.id,right.owner.id].sort().join('|');
+        if(now.has(key))continue;
+        now.add(key);
+        if(!collision3DPairs.has(key)){dispatchCollision(left.owner,right.owner);dispatchCollision(right.owner,left.owner);}
       }
+      collision3DPairs=now;return;
     }
-    collision3DPairs=now;
+    const objects=sceneObjects||[];
+    const previous=new Map(),current=new Map(),owners=new Map();
+    for(const object of objects){
+      const id=String(object.id),state=bridge.getComponent(id,'CollisionState');
+      const old=Array.isArray(state?.overlaps3D)?state.overlaps3D.map(String):[];
+      if(old.length){previous.set(id,new Set(old));current.set(id,new Set());owners.set(id,object);}
+    }
+    for(const collider of colliders){
+      const id=String(collider.owner.id);
+      if(!current.has(id)){current.set(id,new Set());previous.set(id,new Set());owners.set(id,collider.owner);}
+    }
+    for(let i=0;i<colliders.length;i++)for(let j=i+1;j<colliders.length;j++){
+      const left=colliders[i],right=colliders[j];
+      if(left.owner.id===right.owner.id||!overlaps3D(left.bounds,right.bounds))continue;
+      const a=String(left.owner.id),b=String(right.owner.id);
+      current.get(a)?.add(b);current.get(b)?.add(a);
+    }
+    for(const [id,peers] of current){
+      const old=previous.get(id)||new Set(),owner=owners.get(id);
+      for(const peer of peers)if(!old.has(peer)){
+        const other=owners.get(peer)||(sceneObjects||[]).find(item=>String(item.id)===peer);
+        if(owner&&other)dispatchCollision(owner,other);
+      }
+      if(peers.size||old.size)bridge.commitCollisionState(id,'3d',[...peers]);
+    }
   }
+
   let renderMode = 'auto';
   function updateViewModeButtons() {
     for (const mode of ['auto','2d','3d']) {
