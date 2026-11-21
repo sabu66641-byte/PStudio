@@ -25,6 +25,11 @@ function readU32(bytes, offset) {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
 }
 
+test('standalone player module remains syntactically valid as an ES module source', () => {
+  const source = playerSource.replaceAll('import.meta.url', '"https://example.test/static/pstudio_player.js"');
+  assert.doesNotThrow(() => new Function(source));
+});
+
 test('standalone ZIP64 writer stores UTF-8 files, CRC32 and ZIP64 metadata correctly', async () => {
   const build = createBuild();
   assert.equal(await build.crc32Blob(new Blob(['123456789'])), 0xCBF43926);
@@ -66,6 +71,9 @@ test('standalone player uses prevalidated browser ASTs and does not require edit
   assert.match(engine, /window\.PStudioPlayerManifest\?\.scripts/);
   assert.match(engine, /data=\{success:true,scripts:window\.PStudioPlayerManifest\.scripts\}/);
   assert.match(playerHTML, /pstudio_player\.js/);
+  const editorHTML = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  assert.ok(editorHTML.includes('window.PStudioBuild?.exportStandalone?.()'));
+  assert.ok(editorHTML.includes('id="asset-storage-info"'));
   assert.doesNotMatch(playerHTML, /ide-shell|editor-panel|inspector-content/);
 });
 
