@@ -161,7 +161,7 @@ test('project backups preserve scene environment presets and restore old backups
   assert.match(html,/environment:normalizeSceneEnvironment\(sceneEnvironment\)/);
   assert.match(html,/let sourceEnvironment=archive\.project\.environment\|\|null/);
   assert.match(html,/JSON\.parse\(files\['main\.scene'\]\?\.content\|\|'null'\)\?\.environment/);
-  assert.match(html,/environment:\{preset:\['day','dusk','night','studio'\]\.includes\(sourcePreset\)\?sourcePreset:'day'\}/);
+  assert.match(html,/const environment=\{preset:\['day','dusk','night','studio'\]\.includes\(sourcePreset\)\?sourcePreset:'day'\}/);
   assert.match(html,/next\.files\['main\.scene'\]\.content=JSON\.stringify\(\{width:960,height:540,objects:next\.objects,environment:next\.environment\}/);
   assert.match(html,/const nextState=\{files:next\.files,assets:next\.assets,objects:next\.objects,environment:next\.environment,active:next\.active\}/);
   assert.match(html,/sceneEnvironment=next\.environment/);
