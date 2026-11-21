@@ -717,7 +717,9 @@
     const labels={
       'worker-read':'モデルデータを読み込み中','worker-parse-start':'GLBを解析中','worker-serialize-complete':'解析結果を転送中',
       'worker-glb-parse':'GLBを解析中','worker-glb-parsed':'GLB解析完了','scene-decode-start':'glTFシーンの解析を開始中','main-thread-gltf-json-start':'glTF JSONを読み込み中',
-      'main-thread-parser-fallback':'互換読み込みへ切替中','scene-hydrate-nodes':'3Dシーンを構築中','scene-hydrate-geometry':'ジオメトリを構築中',
+      'main-thread-parser-fallback':'互換読み込みへ切替中','main-thread-fetch':'モデルデータを読み込み中',
+      'scene-hydrate-nodes':'3Dシーンを構築中','scene-hydrate-geometry':'ジオメトリを構築中',
+      'instance-clone-and-materials':'モデル階層とマテリアルを準備中',
       'scene-decoded':'3Dシーン構築完了','gpu-textures':'GPUテクスチャを準備中','shader-precompile':'シェーダーを準備中',
       'prepared':'モデル表示準備完了','gpu-preparation-fallback':'GPU準備の通常描画へ切替中','ready':'モデルデータ読込完了','instance-build':'3Dインスタンスを構築中'
     };
@@ -728,9 +730,30 @@
     const detail=event.detail||{},status=$('game-status');
     if(!status||!detail.name)return;
     const label=modelProgressLabel(detail.stage);
-    const count=Number.isFinite(Number(detail.loaded))&&Number.isFinite(Number(detail.total))&&Number(detail.total)>0
-      ?' · '+Math.min(Number(detail.loaded),Number(detail.total))+'/'+Number(detail.total):'';
+    const loaded=Number(detail.loaded),total=Number(detail.total);
+    const hasCounts=Number.isFinite(loaded)&&Number.isFinite(total)&&total>0;
+    const count=hasCounts
+      ?' · '+Math.min(loaded,total)+'/'+total+' ('+Math.round(Math.max(0,Math.min(1,Number(detail.progress)||0))*100)+'%)':'';
     status.textContent='MODEL · '+String(detail.name)+' · '+label+count;
+    status.title=status.textContent;
+  });
+  window.addEventListener('pstudio-asset-import-progress',event=>{
+    if(runtime?.running)return;
+    const detail=event.detail||{},status=$('game-status');
+    if(!status||!detail.name)return;
+    const labels={
+      'worker-inspection':'GLB構造を検査中',
+      'validated':'GLBの構造検査完了',
+      'main-thread-fallback':'互換検査へ切替中',
+      'storage':'IndexedDBへ保存中',
+      'stored':'IndexedDBへの保存完了'
+    };
+    const info=detail.info||{};
+    const nodes=Number(info.nodeCount),meshes=Number(info.meshCount);
+    const summary=Number.isFinite(nodes)&&nodes>0
+      ?' · '+nodes.toLocaleString()+' nodes'+(Number.isFinite(meshes)&&meshes>0?' / '+meshes.toLocaleString()+' meshes':''):'';
+    status.textContent='ASSET · '+String(detail.name)+' · '+(labels[detail.stage]||String(detail.stage||'アセットを処理中'))+summary;
+    status.title=status.textContent;
   });
   window.addEventListener('pstudio-model-error',event=>{
     const detail=event.detail||{},name=String(detail.name||'モデル');
