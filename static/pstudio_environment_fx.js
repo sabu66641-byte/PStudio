@@ -703,7 +703,7 @@
         '#include <tonemapping_fragment>',
         '#include <colorspace_fragment>',
         '}'
-      ].join('\\n')
+      ].join('\n')
     };
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
