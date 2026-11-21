@@ -806,7 +806,8 @@
     for(const item of componentDefs){
       const name=String(item.node.name);
       if(definitions.has(name))throw new PsRuntimeError('Componentが複数回定義されています: '+name);
-      if(ecs.hasComponentType?.(name))throw new PsRuntimeError('Component名が既存ECS型と衝突しています: '+name);
+      const existingDefinition=ecs.getComponentDefinition?.(name);
+      if(existingDefinition && existingDefinition.source!==item.filename)throw new PsRuntimeError('Component名が既存ECS型と衝突しています: '+name);
       const defaults=Object.create(null);
       const schema=Object.create(null);
       for(const field of item.node.body||[]){
@@ -916,12 +917,13 @@
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
+      window.PStudioECSInspector?.refresh?.();
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestFrame(tick);
-    } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
+    } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
     if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
@@ -929,6 +931,7 @@
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();
+    window.PStudioECSInspector?.refresh?.();
     justPressed.clear();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
