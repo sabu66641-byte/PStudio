@@ -288,7 +288,7 @@ test('streamed chunks are initially unloaded and retain hysteresis while their l
   for(const token of ['pstudioStreamActive=false','chunk.visible=false','chunk.attach(group.children[i])','pstudioStreamUnloadDistance','const threshold=wasActive?chunk.userData.pstudioStreamUnloadDistance'])assert.ok(renderer.includes(token),token);
 });
 test('tree trunk, branch and leaf tracks are all preserved by the animation-aware instancer',()=>{
-  for(const token of ["windRole==='trunk'","windRole==='branch'","pstudioWindPart==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
+  for(const token of ["windRole==='trunk'","windRole==='branch'","windRole==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
 });
 test('static architectural instance transforms are not recomputed every animation frame',()=>{
   assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
