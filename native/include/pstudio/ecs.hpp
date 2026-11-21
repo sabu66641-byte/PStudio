@@ -7,6 +7,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <typeindex>
@@ -117,7 +118,6 @@ class World {
             if (index != last) {
                 const Entity moved = entities[last];
                 entities[index] = moved;
-                values[moved] = std::move(values.at(moved));
                 indices[moved] = index;
             }
             entities.pop_back();
