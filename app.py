@@ -940,7 +940,7 @@ def validate_ast(tree, allow_game=False, external_components=None):
         if node.get("type") == "ComponentDef":
             name = node.get("name", "")
             _validate_cpp_identifier(name, node.get("line"))
-            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform"):
+            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "AIState", "CombatState", "Quest", "NavigationNode", "GameplayWorld"):
                 raise Exception(f"意味エラー: '{name}' はPStudio組み込みComponentのため再定義できません。")
             if name in component_defs:
                 raise Exception(f"意味エラー: Component '{name}' が重複定義されています。")
@@ -1039,6 +1039,35 @@ def validate_ast(tree, allow_game=False, external_components=None):
             "stepHeight": {"type": "Literal", "value": "0.35"},
             "maxSlope": {"type": "Literal", "value": "50.0"},
         },
+        "Health": {
+            "max": {"type": "Literal", "value": "100.0"},
+            "hp": {"type": "Literal", "value": "100.0"},
+            "configured": {"type": "Literal", "value": "false"},
+        },
+        "AIState": {"state": {"type": "Literal", "value": '"idle"'}},
+        "CombatState": {
+            "comboCount": {"type": "Literal", "value": "0"},
+            "comboTime": {"type": "Literal", "value": "0.0"},
+            "comboWeapon": {"type": "Literal", "value": '""'},
+        },
+        "Inventory": {},
+        "Equipment": {},
+        "Quest": {
+            "questId": {"type": "Literal", "value": '""'},
+            "started": {"type": "Literal", "value": "false"},
+            "complete": {"type": "Literal", "value": "false"},
+            "progress": {"type": "Literal", "value": "0.0"},
+            "target": {"type": "Literal", "value": "1.0"},
+            "rewarded": {"type": "Literal", "value": "false"},
+        },
+        "NavigationNode": {
+            "nodeId": {"type": "Literal", "value": '""'},
+            "x": {"type": "Literal", "value": "0.0"},
+            "y": {"type": "Literal", "value": "0.0"},
+            "z": {"type": "Literal", "value": "0.0"},
+            "blocked": {"type": "Literal", "value": "false"},
+        },
+        "GameplayWorld": {},
     }
     external_components = external_components or {}
     component_fields = {**builtin_component_fields, **external_components, **component_defs}
