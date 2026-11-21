@@ -54,31 +54,7 @@ function serializeGeometry(geometry, geometryIds) {
   if (geometryIds.has(geometry)) return geometryIds.get(geometry);
   const id = geometryIds.size;
   geometryIds.set(geometry, id);
-  const attributes = {};
-  for (const [name, attribute] of Object.entries(geometry.attributes || {})) {
-    const value = serializeAttribute(attribute);
-    if (value) attributes[name] = value;
-  }
-  const morphAttributes = {};
-  for (const [name, list] of Object.entries(geometry.morphAttributes || {})) {
-    morphAttributes[name] = list.map(serializeAttribute).filter(Boolean);
-  }
-  const box = geometry.boundingBox;
-  const sphere = geometry.boundingSphere;
-  return {
-    id,
-    name: geometry.name || '',
-    type: geometry.type || 'BufferGeometry',
-    attributes,
-    morphAttributes,
-    morphTargetsRelative: !!geometry.morphTargetsRelative,
-    index: geometry.index ? serializeAttribute(geometry.index) : null,
-    groups: (geometry.groups || []).map(group => ({ start: group.start, count: group.count, materialIndex: group.materialIndex })),
-    drawRange: { start: geometry.drawRange?.start ?? 0, count: geometry.drawRange?.count ?? Infinity },
-    boundingBox: box ? { min: box.min.toArray(), max: box.max.toArray() } : null,
-    boundingSphere: sphere ? { center: sphere.center.toArray(), radius: sphere.radius } : null,
-    userData: safeJSON(geometry.userData)
-  };
+  return id;
 }
 
 const MATERIAL_TEXTURE_SLOTS = [
@@ -94,53 +70,6 @@ function colorArray(color) {
   return color?.isColor ? [color.r, color.g, color.b] : null;
 }
 
-function serializeTexture(texture, textureIds, images, imageIds) {
-  if (!texture?.isTexture) return null;
-  if (textureIds.has(texture)) return textureIds.get(texture);
-  const id = textureIds.size;
-  textureIds.set(texture, id);
-
-  let image = texture.source?.data ?? texture.image ?? null;
-  if (!image) throw new Error('GLTF_TEXTURE_IMAGE_MISSING');
-  let imageId = imageIds.get(image);
-  if (imageId === undefined) {
-    if (typeof createImageBitmap !== 'function') throw new Error('GLTF_WORKER_IMAGEBITMAP_UNAVAILABLE');
-    imageId = images.length;
-    imageIds.set(image, imageId);
-    let bitmap = image;
-    if (typeof ImageBitmap === 'undefined' || !(image instanceof ImageBitmap)) {
-      bitmap = await createImageBitmap(image);
-    }
-    if (typeof ImageBitmap !== 'undefined' && bitmap instanceof ImageBitmap) {
-      TRANSFERS.add(bitmap);
-    } else {
-      throw new Error('GLTF_WORKER_IMAGE_TRANSFER_UNAVAILABLE');
-    }
-    images.push({ id: imageId, width: bitmap.width, height: bitmap.height, bitmap });
-  }
-
-  return {
-    id, imageId, name: texture.name || '',
-    mapping: texture.mapping,
-    channel: texture.channel ?? 0,
-    wrapS: texture.wrapS, wrapT: texture.wrapT,
-    magFilter: texture.magFilter, minFilter: texture.minFilter,
-    format: texture.format, type: texture.type,
-    colorSpace: texture.colorSpace || '',
-    generateMipmaps: texture.generateMipmaps !== false,
-    premultiplyAlpha: !!texture.premultiplyAlpha,
-    flipY: !!texture.flipY,
-    unpackAlignment: texture.unpackAlignment || 4,
-    anisotropy: texture.anisotropy || 1,
-    offset: texture.offset?.toArray?.() || [0, 0],
-    repeat: texture.repeat?.toArray?.() || [1, 1],
-    center: texture.center?.toArray?.() || [0, 0],
-    rotation: texture.rotation || 0,
-    matrixAutoUpdate: texture.matrixAutoUpdate !== false,
-    matrix: texture.matrix?.toArray?.() || null,
-    userData: safeJSON(texture.userData)
-  };
-}
 
 async function serializeMaterial(material, materialIds, textures, textureIds, images, imageIds) {
   if (!material) return null;
@@ -383,7 +312,20 @@ async function serializeGLTF(gltf) {
 
   for (const [texture, id] of textureIds) {
     const image = texture.source?.data ?? texture.image;
-    const imageId = imageIds.get(image);
+    let imageId = imageIds.get(image);
+    if (imageId === undefined) {
+      if (typeof createImageBitmap !== 'function') throw new Error('GLTF_WORKER_IMAGEBITMAP_UNAVAILABLE');
+      const bitmap = typeof ImageBitmap !== 'undefined' && image instanceof ImageBitmap
+        ? image
+        : await createImageBitmap(image);
+      if (typeof ImageBitmap === 'undefined' || !(bitmap instanceof ImageBitmap)) {
+        throw new Error('GLTF_WORKER_IMAGE_TRANSFER_UNAVAILABLE');
+      }
+      imageId = images.length;
+      imageIds.set(image, imageId);
+      TRANSFERS.add(bitmap);
+      images.push({ id: imageId, width: bitmap.width, height: bitmap.height, bitmap });
+    }
     textures[id] = {
       id, imageId, name: texture.name || '', mapping: texture.mapping,
       channel: texture.channel ?? 0, wrapS: texture.wrapS, wrapT: texture.wrapT,
