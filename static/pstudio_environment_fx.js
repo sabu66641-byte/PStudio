@@ -401,7 +401,13 @@
     if(!enabled||width<=0){releaseOutline(object);return;}
     const color=String(settings.color||'#182235');
     const cacheKey=color+'|'+width.toFixed(4);
-    if(object.userData?.pstudioOutlineShell?.key===cacheKey)return;
+    const currentOutline=object.userData?.pstudioOutlineShell;
+    if(currentOutline?.key===cacheKey){
+      currentOutline.mesh.geometry=object.geometry;
+      if(object.isInstancedMesh){currentOutline.mesh.count=object.count;currentOutline.mesh.instanceMatrix=object.instanceMatrix;if(object.instanceColor)currentOutline.mesh.instanceColor=object.instanceColor;}
+      if(object.isSkinnedMesh&&object.skeleton)currentOutline.mesh.bind(object.skeleton,object.bindMatrix);
+      return;
+    }
     releaseOutline(object);
     let cached=outlineMaterialCache.get(cacheKey);
     if(!cached){
@@ -419,9 +425,12 @@
       outlineMaterialCache.set(cacheKey,cached);
     }
     cached.refs++;
-    const shell=object.isSkinnedMesh&&object.skeleton
-      ?new Three.SkinnedMesh(object.geometry,cached.material)
-      :new Three.Mesh(object.geometry,cached.material);
+    const shell=object.isInstancedMesh
+      ?new Three.InstancedMesh(object.geometry,cached.material,object.count)
+      :object.isSkinnedMesh&&object.skeleton
+        ?new Three.SkinnedMesh(object.geometry,cached.material)
+        :new Three.Mesh(object.geometry,cached.material);
+    if(shell.isInstancedMesh){shell.instanceMatrix=object.instanceMatrix;if(object.instanceColor)shell.instanceColor=object.instanceColor;shell.count=object.count;}
     if(shell.isSkinnedMesh&&object.skeleton){
       shell.bind(object.skeleton,object.bindMatrix);
       shell.bindMode=object.bindMode;
@@ -535,7 +544,7 @@
     u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
     record.enabled=u.enabled.value>0.5;
     if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth});
-    if(Number(value.windStrength)>0&&object)configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
+    if(object&&settings&&Object.prototype.hasOwnProperty.call(settings,'windStrength'))configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
     return material;
   }
 
