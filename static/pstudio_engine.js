@@ -828,6 +828,9 @@
     if(!runtime||!ecs)return;
     for(const id of runtime.ecsSystemIds||[]){try{ecs.unregisterSystem(id);}catch(error){console.warn('[PStudio ECS] System cleanup failed:',id,error);}}
     runtime.ecsSystemIds=[];
+    for(const entity of ecs.getEntities?.()||[]){
+      if(ecs.hasComponent(entity,'ScriptSystemState'))ecs.removeComponent(entity,'ScriptSystemState');
+    }
     ecs.clearSceneObjects?.();
     for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
       try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
