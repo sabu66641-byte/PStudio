@@ -210,10 +210,36 @@ PStudioECS.registerSystem({
 });
 ```
 
-**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. `PStudioECS` is currently a JavaScript-side engine API; direct Entity/Component/System declarations from the ps language and Inspector controls are a later integration step. The existing ps API remains unchanged. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
+**Current boundary:** ECS participates in the runtime update loop and supports the initial browser-game-only `component` / `system` ps declarations. The initial bridge attaches declared custom Components to all Scene Objects at Play start; selective entity authoring is not yet available. ECS does not replace the existing physics, rendering, collision or gameplay-state ownership systems. Scheduling remains single-threaded; parallel job execution is a separate planned subsystem.
 
 Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
 
+
+### ps-native ECS declarations (initial browser/runtime integration)
+
+The browser game-script language can declare reusable data components and update systems directly:
+
+```ps
+component EnemyAI
+    speed = 3.0
+    health = 100
+
+system MoveEnemy(Transform, EnemyAI)
+    transform.x += enemy_ai.speed * dt
+    if enemy_ai.health <= 0
+        transform.y = 0
+```
+
+- `component Name` declares a custom ECS Component. Its fields use literal or literal-array defaults.
+- `system Name(ComponentA, ComponentB)` declares a scheduled system. Its body receives `entity`, `dt`, and component bindings converted to lower_snake_case (for example `EnemyAI` becomes `enemy_ai`).
+- Component member reads and writes are type-checked against the declared schema. Component references may be declared in a different .ps file within the same project.
+- These declarations are browser-game-only and are validated by `/game/prepare`; they do not enter the ordinary `ps -> C++17` console-program path.
+- The initial integration attaches each declared custom Component to every Scene Game Object at Play start. Selective entity creation, per-object component assignment in the Inspector, and data-driven entity spawning are future steps.
+- The existing ECS scheduler executes these systems before legacy per-object `update(dt)` callbacks. ECS Transform remains mirrored to Scene Object fields; physics ownership remains with `PStudioPhysics`.
+
+Run the sample in `examples/ecs_systems.ps` by attaching it to a Scene Object and pressing Play. ECS language regressions run with `python -m unittest tests.test_ecs_language -v` and `node --test tests/ecs_language.test.js tests/ecs.test.js`.
+
+**Native-build status:** the existing normal ps path already generates C++17 for supported console programs. Browser game scripts still depend on the JavaScript/Three.js renderer and physics/runtime; compiling their AST to C++ alone does not produce a native game. The initial native export stage will package C++17 ECS source and a CMake project. A complete native Windows/macOS/Android game requires native renderer, platform/input/audio, asset-loading and physics backends plus target toolchains. Until those exist, PStudio does not claim to emit a complete .exe, .app or APK.
 
 ## Project Backup and Restore
 
