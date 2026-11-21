@@ -69,6 +69,42 @@
   }
 
   function getBody(id) { return bodies.get(id) || null; }
+  function removeBody(id) {
+    const key = String(id);
+    const existed = bodies.delete(key);
+    for (const platformId of platformPositions.keys()) {
+      if (String(platformId).startsWith(key + ':')) platformPositions.delete(platformId);
+    }
+    for (const cacheKey of staticColliderCache.keys()) {
+      if (String(cacheKey).includes(':' + key + ':')) staticColliderCache.delete(cacheKey);
+    }
+    return existed;
+  }
+  function getBodyState(id) {
+    const body = bodies.get(id);
+    if (!body) return null;
+    return {
+      x: body.position[0], y: body.position[1], z: body.position[2],
+      velocityX: body.velocity[0], velocityY: body.velocity[1], velocityZ: body.velocity[2],
+      grounded: !!body.grounded,
+      controlled: !!body.controller,
+      horizontalSpeed: Math.hypot(body.velocity[0], body.velocity[2]),
+      jumped: !!body.jumped,
+      landed: !!body.landed,
+      airTime: finite(body.airTime),
+      active: body.active !== false
+    };
+  }
+  function setController(id, config) {
+    const body = requireBody(id);
+    if (!config) {
+      body.controller = null;
+      body.input = [0, 0];
+      return false;
+    }
+    configureController(id, config.maxSpeed, config.acceleration, config.airControl);
+    return true;
+  }
   function setActive(id, active) {
     const body=bodies.get(id);if(!body)return false;
     const next=!!active;if(body.active===next)return true;body.active=next;
@@ -612,9 +648,9 @@
   }
 
   window.PStudioPhysics = {
-    createBody, getBody, setActive, getPosition, setPosition, getVelocity, setVelocity,
-    setGravity, beginFrame, applyForce, applyImpulse, configureController,
+    createBody, getBody, getBodyState, removeBody, setActive, getPosition, setPosition, getVelocity, setVelocity,
+    setGravity, beginFrame, applyForce, applyImpulse, configureController, setController,
     setStepHeight, setMaxSlope, moveCharacter, jump, isGrounded, step, clear, getStats,
-    version: '1.0.0'
+    version: '1.1.0'
   };
 })();
