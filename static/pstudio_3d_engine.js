@@ -468,6 +468,7 @@
 
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     const hiddenStaticSky=[];
@@ -931,8 +932,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         'uniform float uPStudioClusterNear;',
         'uniform float uPStudioClusterFar;',
         'uniform float uPStudioClusterEnabled;'
-      ].join('\\n');
-      shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\\n'+declarations);
+      ].join('\n');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\n'+declarations);
       const lighting=[
         'if(uPStudioClusterEnabled>0.5){',
         '  float pstudioDepth=max(uPStudioClusterNear,-vViewPosition.z);',
@@ -961,8 +962,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         '    }',
         '  }',
         '}'
-      ].join('\\n');
-      shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>','#include <lights_fragment_begin>\\n'+lighting);
+      ].join('\n');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>','#include <lights_fragment_begin>\n'+lighting);
     };
     material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-clustered-forward-v1';};
     material.userData.pstudioClusterLightingSetup=true;
@@ -2570,7 +2571,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           });
         }
         bindObjectProbeLighting(object);
-        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured)setupVirtualTextureMaterial(configured);
+        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured){setupVirtualTextureMaterial(configured);setupClusteredLightingMaterial(configured);}
       }
       if((i+1)%96===0){
         dispatchModelLoadProgress({name,stage:'instance-clone-and-materials',loaded:i+1,total:pairs.length,progress:(i+1)/pairs.length});
@@ -3024,7 +3025,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
-          mesh=new T.Mesh(geometry,material);setupLightingMaterial(material);bindObjectProbeLighting(mesh);scheduleAutoLOD(mesh,geometry);
+          mesh=new T.Mesh(geometry,material);setupLightingMaterial(material);bindObjectProbeLighting(mesh);setupClusteredLightingMaterial(material);scheduleAutoLOD(mesh,geometry);
           mesh.castShadow=d.type!=='plane'&&d.type!=='water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
@@ -3164,6 +3165,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       geometries:renderer.info?.memory?.geometries||0,
       textures:renderer.info?.memory?.textures||0,
       instancedBatches:instancedBatches.size,
+      clusteredLighting:{enabled:clusteredLightingEnabled,active:clusteredLightingActive,available:!!clusteredLightingResources,pointLights:clusteredLightingResources?.lightCount||0,updatedClusters:clusteredLightingUpdatedClusters,grid:[CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z],maxLightsPerCluster:CLUSTER_MAX_PER_CELL,mode:'cpu-cluster-assignment-gpu-brdf'},
+      virtualTexturing:{textures:virtualTextures.size,queuedPages:virtualTextureQueue.length,residentPages:virtualTexturePageCache.size,requestedPages:virtualTextureRequests,uploadedPages:virtualTextureTileUploads,atlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0),atlasCount:virtualTextureAtlases.size},
       gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
@@ -3172,7 +3175,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       stagedTextureUploads,
       parallelShaderCompileSupported,
       frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
@@ -3180,6 +3183,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
     setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
+    setClusteredLighting:enabled=>{clusteredLightingEnabled=!!enabled;updateClusteredLighting(true);return{enabled:clusteredLightingEnabled,available:!!clusteredLightingResources,active:clusteredLightingActive};},
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
     getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
