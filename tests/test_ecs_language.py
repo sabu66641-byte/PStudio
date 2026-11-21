@@ -116,9 +116,9 @@ class PsEcsLanguageTests(unittest.TestCase):
             "/game/prepare",
             json={"scripts": {
                 "bad.ps": (
-                    "component EnemyAI\\n    speed = 2.0\\n"
-                    "system Move(EnemyAI)\\n"
-                    '    enemy_ai.speed = "fast"\\n'
+                    "component EnemyAI\n    speed = 2.0\n"
+                    "system Move(EnemyAI)\n"
+                    '    enemy_ai.speed = "fast"\n'
                 )
             }},
         )
