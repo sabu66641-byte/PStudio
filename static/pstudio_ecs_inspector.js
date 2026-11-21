@@ -206,7 +206,7 @@
     const type = select?.value || '';
     if (!api || !entityId || !type) return;
     try {
-      api.addComponent(entityId, type, {});
+      api.addComponent(entityId, type);
       persistEntityComponents(entityId);
       refresh();
       notify('Component added: ' + type);
