@@ -78,14 +78,14 @@
     const bag=inventory(id),next=(bag.get(key)||0)+added;bag.set(key,next);return next;
   }
   function inventoryRemove(id,item,count=1){
-    const key=String(item),n=Math.max(1,Math.floor(number(count,1))),state=sceneComponent(id,'Inventory',{items:[]});
+    const key=String(item),n=Math.max(1,Math.floor(number(count,1))),state=inventoryComponent(id);
     if(state){const entry=state.items.find(value=>value.item===key);if(!entry||entry.count<n)return false;entry.count-=n;if(entry.count<=0)state.items=state.items.filter(value=>value!==entry);commitSceneComponent(id,'Inventory',state);return true;}
     const bag=inventory(id),old=bag.get(key)||0;if(old<n)return false;if(old===n)bag.delete(key);else bag.set(key,old-n);return true;
   }
-  function inventoryCount(id,item){const key=String(item),state=sceneComponent(id,'Inventory',{items:[]});if(state)return state.items.find(value=>value.item===key)?.count||0;return inventory(id).get(key)||0;}
+  function inventoryCount(id,item){const key=String(item),state=inventoryComponent(id);if(state)return state.items.find(value=>value.item===key)?.count||0;return inventory(id).get(key)||0;}
   function defineItem(item,kind,slot,value){itemDefinitions.set(String(item),{kind:String(kind),slot:String(slot||''),value:Math.max(0,number(value))});return true;}
   function equipItem(id,item){const def=itemDefinitions.get(String(item));if(!def||def.kind!=='equipment'||inventoryCount(id,item)<=0)return false;const state=equipmentComponent(id);if(state){const slot=def.slot||'main',entry=state.slots.find(value=>value.slot===slot);if(entry)entry.item=String(item);else state.slots.push({slot,item:String(item)});commitSceneComponent(id,'Equipment',state);return true;}const slots=equipment.get(id)||new Map();slots.set(def.slot||'main',String(item));equipment.set(id,slots);return true;}
-  function getEquipment(id){const state=sceneComponent(id,'Equipment',{slots:[]});return state?state.slots.map(value=>({slot:value.slot,item:value.item})):[...(equipment.get(id)||new Map()).entries()].map(([slot,item])=>({slot,item}));}
+  function getEquipment(id){const state=equipmentComponent(id);return state?state.slots.map(value=>({slot:value.slot,item:value.item})):[...(equipment.get(id)||new Map()).entries()].map(([slot,item])=>({slot,item}));}
   function useItem(id,item){const def=itemDefinitions.get(String(item));if(!def||def.kind!=='consumable'||inventoryCount(id,item)<=0)return false;if(!inventoryRemove(id,item,1))return false;if(def.slot==='heal')heal(id,def.value);return true;}
   function getInventorySnapshot(id){const state=inventoryComponent(id);const entries=state?state.items.map(value=>[value.item,value.count]):[...inventory(id).entries()];return entries.map(([item,count])=>({item,count,definition:itemDefinitions.get(item)||null,equipped:getEquipment(id).some(e=>e.item===item)}));}
   function questRecord(id,create=false){
