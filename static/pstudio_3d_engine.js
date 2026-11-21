@@ -36,6 +36,8 @@
 
   const modelRevisions = new Map();
   const modelInstances = new Map();
+  const modelInstancePromises = new Map();
+  let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
   let lastCommands = null;
   let selectedOwnerId = null;
@@ -1817,24 +1819,27 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(object.userData.pstudioActiveAutoLOD===selected)return;
     object.geometry=levels[selected].geometry;object.userData.pstudioActiveAutoLOD=selected;
   }
-  function buildModelStreamingChunks(root){
+  async function buildModelStreamingChunks(root){
     const T=window.THREE,settings=root.userData?.pstudioStreamingConfig||{};
     const cellSize=Math.max(48,Math.min(256,Number(settings.cellSize)||96));
     const loadDistance=Math.max(96,Math.min(1200,Number(settings.loadDistance)||300));
     const unloadDistance=Math.max(loadDistance+16,Math.min(1600,Number(settings.unloadDistance)||340));
     const groups=new Map(),chunks=[];
     root.updateMatrixWorld(true);
+    let processed=0;
     for(const child of [...root.children]){
       const name=String(child.name||'');
       const streamable=/^PStudioInstance_/i.test(name)||/(?:^|[_ -])Wind[_ -]?Tree/i.test(name)||/Wind_Grass|Wildflower_Cover/i.test(name);
       if(!streamable)continue;
       const bounds=new T.Box3().setFromObject(child);
-      if(bounds.isEmpty())continue;
-      const center=bounds.getCenter(new T.Vector3());
-      const cellX=Math.floor(center.x/cellSize),cellZ=Math.floor(center.z/cellSize);
-      const id=cellX+':'+cellZ;
-      if(!groups.has(id))groups.set(id,{id,cellX,cellZ,children:[]});
-      groups.get(id).children.push(child);
+      if(!bounds.isEmpty()){
+        const center=bounds.getCenter(new T.Vector3());
+        const cellX=Math.floor(center.x/cellSize),cellZ=Math.floor(center.z/cellSize);
+        const id=cellX+':'+cellZ;
+        if(!groups.has(id))groups.set(id,{id,cellX,cellZ,children:[]});
+        groups.get(id).children.push(child);
+      }
+      if(++processed%2===0)await nextPreparationFrame();
     }
     for(const group of groups.values()){
       const chunk=new T.Group();
@@ -1847,8 +1852,12 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       chunk.userData.pstudioStreamUnloadDistance=unloadDistance;
       chunk.userData.pstudioStreamActive=false;chunk.visible=false;
       root.add(chunk);root.updateMatrixWorld(true);
-      for(const child of group.children)chunk.attach(child);
+      for(let i=0;i<group.children.length;i++){
+        chunk.attach(group.children[i]);
+        if(i>0&&i%64===0)await nextPreparationFrame();
+      }
       chunks.push(chunk);
+      await nextPreparationFrame();
     }
     root.updateMatrixWorld(true);
     return chunks;
@@ -1870,18 +1879,27 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
   }
 
-  function buildFoliageInstanceBatches(root){
-    const T=window.THREE,groups=new Map(),batches=[];
+  async function buildFoliageInstanceBatches(root){
+    const T=window.THREE,groups=new Map(),batches=[],objects=[];
+    const stack=[root];
+    let visited=0;
+    while(stack.length){
+      const object=stack.pop();
+      objects.push(object);
+      for(let i=object.children.length-1;i>=0;i--)stack.push(object.children[i]);
+      if(++visited%192===0)await nextPreparationFrame();
+    }
     root.updateMatrixWorld(true);
-    root.traverse(object=>{
-      if(!object.isMesh||object.isSkinnedMesh)return;
+    for(const object of objects){
+      if(!object.isMesh||object.isSkinnedMesh)continue;
       const objectName=String(object.name||'');
-      const isWindPart=object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk';
+      const windRole=object.userData?.pstudioWindPart;
+      const isWindPart=windRole==='leaf'||windRole==='branch'||windRole==='trunk';
       const isTree=/(?:^|[_ -])Wind[_ -]?Tree/i.test(objectName)||isWindPart;
       const isModularPart=/^PStudioInstance_/i.test(objectName)||object.userData?.pstudioInstanceBatch===true;
-      if(!isTree&&!isModularPart)return;
+      if(!isTree&&!isModularPart)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
-      if(materials.length!==1||!object.geometry||!materials[0])return;
+      if(materials.length!==1||!object.geometry||!materials[0])continue;
       let levelMatch=objectName.match(/LOD([0-9]+)/i);
       let parent=object.parent;
       while(!levelMatch&&parent&&parent!==root){levelMatch=String(parent.name||'').match(/LOD([0-9]+)/i);parent=parent.parent;}
@@ -1893,23 +1911,39 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const key=object.geometry.uuid+'|'+materials[0].uuid+'|'+(level===null?'STATIC':'LOD'+level)+'|'+chunkId;
       if(!groups.has(key))groups.set(key,{sources:[],level,isTree,parent:streamParent});
       groups.get(key).sources.push(object);
-    });
+    }
     const matrix=new T.Matrix4();
+    let groupIndex=0;
     for(const group of groups.values()){
       const sources=group.sources,level=group.level,parent=group.parent;
       if(sources.length<3)continue;
       parent.updateWorldMatrix(true,true);
       const inverseParent=parent.matrixWorld.clone().invert();
       const first=sources[0],batch=new T.InstancedMesh(first.geometry,first.material,sources.length);
-      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:'Architecture_Static');batch.castShadow=true;batch.receiveShadow=true;
-      batch.frustumCulled=true;batch.userData.ownerId=root.userData.ownerId;
-      batch.userData.modelRoot=root;batch.userData.pstudioStreamChunkId=parent.userData?.pstudioStreamChunkId||null;batch.userData.pstudioFoliageLOD=level;batch.userData.pstudioInstanceBatch=!group.isTree;
+      batch.name='PStudio_GPU_Instances_'+(group.isTree?'Foliage_Level'+level:'Architecture_Static');
+      batch.castShadow=true;batch.receiveShadow=true;batch.frustumCulled=true;
+      batch.userData.ownerId=root.userData.ownerId;
+      batch.userData.modelRoot=root;
+      batch.userData.pstudioStreamChunkId=parent.userData?.pstudioStreamChunkId||null;
+      batch.userData.pstudioFoliageLOD=level;
+      batch.userData.pstudioInstanceBatch=!group.isTree;
       batch.userData.instanceOwnerIds=new Array(sources.length).fill(root.userData.ownerId);
-      batch.userData.pstudioFoliageSources=sources;batch.visible=level===null||level===0;
+      batch.userData.pstudioFoliageSources=sources;
+      batch.visible=level===null||level===0;
       parent.add(batch);
-      for(let i=0;i<sources.length;i++){sources[i].updateWorldMatrix(true,false);matrix.multiplyMatrices(inverseParent,sources[i].matrixWorld);batch.setMatrixAt(i,matrix);sources[i].visible=false;}
-      batch.instanceMatrix.setUsage(T.DynamicDrawUsage);batch.instanceMatrix.needsUpdate=true;batch.computeBoundingSphere();
+      for(let i=0;i<sources.length;i++){
+        const source=sources[i];
+        source.updateWorldMatrix(true,false);
+        matrix.multiplyMatrices(inverseParent,source.matrixWorld);
+        batch.setMatrixAt(i,matrix);
+        source.visible=false;
+        if(i>0&&i%128===0)await nextPreparationFrame();
+      }
+      batch.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      batch.instanceMatrix.needsUpdate=true;
+      batch.computeBoundingSphere();
       batches.push({mesh:batch,sources,level,isTree:group.isTree,parent});
+      if(++groupIndex%2===0)await nextPreparationFrame();
     }
     return batches;
   }
@@ -1926,36 +1960,69 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
   }
 
-  function createModelInstance(key, ownerId, name, asset) {
+  async function cloneModelHierarchyAsync(sourceRoot){
+    const pairs=[],clones=new Map();
+    const rootClone=sourceRoot.clone(false);
+    pairs.push({source:sourceRoot,clone:rootClone});
+    clones.set(sourceRoot,rootClone);
+    for(let cursor=0;cursor<pairs.length;cursor++){
+      const pair=pairs[cursor];
+      for(const child of pair.source.children){
+        const childClone=child.clone(false);
+        pair.clone.add(childClone);
+        clones.set(child,childClone);
+        pairs.push({source:child,clone:childClone});
+      }
+      if((cursor+1)%64===0)await nextPreparationFrame();
+    }
+    for(let i=0;i<pairs.length;i++){
+      const {source,clone}=pairs[i];
+      if(source.isSkinnedMesh&&source.skeleton){
+        const bones=source.skeleton.bones.map(bone=>clones.get(bone));
+        if(bones.every(Boolean)){
+          const inverses=source.skeleton.boneInverses.map(matrix=>matrix.clone());
+          const skeleton=new window.THREE.Skeleton(bones,inverses);
+          clone.bind(skeleton,source.bindMatrix.clone());
+          clone.bindMode=source.bindMode;
+          clone.bindMatrixInverse.copy(source.bindMatrixInverse);
+        }
+      }
+      if((i+1)%96===0)await nextPreparationFrame();
+    }
     const T=window.THREE;
-    const clone=window.PStudioSkeletonUtils?.clone
-      ? window.PStudioSkeletonUtils.clone(asset.scene)
-      : asset.scene.clone(true);
+    for(let i=0;i<pairs.length;i++){
+      const {clone}=pairs[i];
+      if(clone.matrixAutoUpdate)clone.updateMatrix();
+      if(clone.parent)clone.matrixWorld.multiplyMatrices(clone.parent.matrixWorld,clone.matrix);
+      else clone.matrixWorld.copy(clone.matrix);
+      clone.matrixWorldNeedsUpdate=false;
+      if((i+1)%192===0)await nextPreparationFrame();
+    }
+    return{root:rootClone,pairs};
+  }
+
+  async function createModelInstanceAsync(key,ownerId,name,asset){
+    const T=window.THREE;
+    const {root:clone,pairs}=await cloneModelHierarchyAsync(asset.scene);
     const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
-    // GLTFLoader places node extras on the matching Object3D, which may be a child of the scene wrapper.
-    clone.traverse(object=>{
-      const extras=object.userData||{};
+    let environmentQuality=null;
+    for(let i=0;i<pairs.length;i++){
+      const {clone:object}=pairs[i],extras=object.userData||{};
       if(extras.pstudioAutoPlayAnimation&&!clone.userData.pstudioAutoPlayAnimation)clone.userData.pstudioAutoPlayAnimation=extras.pstudioAutoPlayAnimation;
       if(extras.pstudioStreamingConfig&&!clone.userData.pstudioStreamingConfig)clone.userData.pstudioStreamingConfig=extras.pstudioStreamingConfig;
-      if(extras.pstudioEnvironmentQuality&&!clone.userData.pstudioEnvironmentQuality)clone.userData.pstudioEnvironmentQuality=extras.pstudioEnvironmentQuality;
-    });
-    clone.userData.ownerId=ownerId;
-    clone.traverse(object=>{
+      if(extras.pstudioEnvironmentQuality&&!environmentQuality)environmentQuality=extras.pstudioEnvironmentQuality;
       object.userData.ownerId=ownerId;
       object.userData.modelRoot=clone;
-      if(object.isMesh && object.material){
+      if(object.isMesh&&object.material){
         meshes.push(object);
-        // Static meshes use Three.js native frustum culling. Skinned/morph meshes keep
-        // conservative visibility because their animated bounds may exceed bind-pose bounds.
         object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0));
         scheduleAutoLOD(object,object.geometry);
-        object.castShadow=true;
-        object.receiveShadow=true;
+        object.castShadow=true;object.receiveShadow=true;
         const cloneMaterial=material=>{
           const windRole=String(object.userData?.pstudioWindPart||'');
           const waterDetailRole=String(object.userData?.pstudioWaterDetail||'');
           const roleKey=[windRole?'wind:'+windRole:'',waterDetailRole?'water-detail:'+waterDetailRole:''].filter(Boolean).join('|');
-          const cacheKey=roleKey ? (material.uuid+'|pstudio-role:'+roleKey) : material;
+          const cacheKey=roleKey?(material.uuid+'|pstudio-role:'+roleKey):material;
           let copy=materialClones.get(cacheKey);
           if(copy)return copy;
           copy=material.clone();setupLightingMaterial(copy);
@@ -1966,41 +2033,61 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           materialClones.set(cacheKey,copy);
           return copy;
         };
-        object.material=Array.isArray(object.material)
-          ? object.material.map(cloneMaterial)
-          : cloneMaterial(object.material);
+        object.material=Array.isArray(object.material)?object.material.map(cloneMaterial):cloneMaterial(object.material);
         window.PStudioEnvironmentFX?.configureObject?.(object);
-        for(const configured of (Array.isArray(object.material)?object.material:[object.material]))if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{roughness:Number.isFinite(configured.roughness)?configured.roughness:0.72,metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04});
+        for(const configured of (Array.isArray(object.material)?object.material:[object.material])){
+          if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{
+            roughness:Number.isFinite(configured.roughness)?configured.roughness:0.72,
+            metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04
+          });
+        }
         bindObjectProbeLighting(object);
       }
-    });
+      if((i+1)%96===0){
+        dispatchModelLoadProgress({name,stage:'instance-clone-and-materials',loaded:i+1,total:pairs.length,progress:(i+1)/pairs.length});
+        await nextPreparationFrame();
+      }
+    }
     clone.updateMatrixWorld(true);
-    const streamChunks=buildModelStreamingChunks(clone);
-    const foliageBatches=buildFoliageInstanceBatches(clone);updateFoliageInstanceBatches({root:clone,foliageBatches});
-    const modelBounds=new T.Box3().setFromObject(clone),modelSphere=modelBounds.getBoundingSphere(new T.Sphere());
-    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
+    const streamChunks=await buildModelStreamingChunks(clone);
+    const foliageBatches=await buildFoliageInstanceBatches(clone);
+    const bounds=new T.Box3();
+    for(let i=0;i<pairs.length;i++){
+      const object=pairs[i].clone;
+      if(object.isMesh&&object.geometry){
+        if(!object.geometry.boundingBox)object.geometry.computeBoundingBox?.();
+        if(object.geometry.boundingBox)bounds.union(object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld));
+      }
+      if((i+1)%128===0)await nextPreparationFrame();
+    }
+    if(bounds.isEmpty())bounds.setFromCenterAndSize(new T.Vector3(),new T.Vector3(1,1,1));
+    const modelSphere=bounds.getBoundingSphere(new T.Sphere());
+    clone.userData.pstudioBoundsRadius=Number.isFinite(modelSphere.radius)?modelSphere.radius:0;
+    clone.userData.pstudioBoundsCenter=modelSphere.center.clone();
     const lodMap=new Map();
-    clone.traverse(object=>{
+    for(let i=0;i<pairs.length;i++){
+      const object=pairs[i].clone;
       const match=String(object.name||'').match(/(?:^|[ _-])LOD([0-9]+)(?:$|[ _-])/i);
-      if(!match)return;
-      const level=Number(match[1]);
-      if(!lodMap.has(level))lodMap.set(level,[]);
-      lodMap.get(level).push({object,visible:object.visible});
-    });
-    const lodLevels=[...lodMap.entries()]
-      .sort((a,b)=>a[0]-b[0])
-      .map(([level,entries])=>({level,entries}));
-    const mixer=asset.animations.length ? new T.AnimationMixer(clone) : null;
+      if(match){
+        const level=Number(match[1]);
+        if(!lodMap.has(level))lodMap.set(level,[]);
+        lodMap.get(level).push({object,visible:object.visible});
+      }
+      if((i+1)%192===0)await nextPreparationFrame();
+    }
+    const lodLevels=[...lodMap.entries()].sort((a,b)=>a[0]-b[0]).map(([level,entries])=>({level,entries}));
+    const mixer=asset.animations.length?new T.AnimationMixer(clone):null;
     const resourceLease=window.PStudioResources?.retain?.('model-gpu',name)||null;
     const autoClipName=String(clone.userData?.pstudioAutoPlayAnimation||'');
     const autoClip=autoClipName?asset.animations.find(item=>item.name===autoClipName)||asset.animations.find(item=>item.name.toLowerCase().includes(autoClipName.toLowerCase())):null;
     if(mixer&&autoClip){const action=mixer.clipAction(autoClip);action.reset().setLoop(T.LoopRepeat,Infinity).play();}
-    const instance={key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,resourceLease,materialStateSignature:null,foliageBatches,streamChunks,preparing:true,preparationCancelled:false};
-    clone.visible=false;
-    modelInstances.set(key,instance);
-    modelGroup.add(clone);
-    prepareModelInstance(instance);
-    return instance;
+    return{
+      key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,
+      materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),
+      activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,
+      resourceLease,materialStateSignature:null,foliageBatches,streamChunks,
+      preparing:true,preparationCancelled:false,environmentQuality
+    };
   }
 
   function nextPreparationFrame(){return new Promise(resolve=>window.requestAnimationFrame(()=>resolve()));}
@@ -2275,7 +2362,33 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           if(!asset) { requestModelAsset(d.name); continue; }
           if(!instance || instance.name!==d.name) {
             if(instance)removeModelInstance(key);
-            instance=createModelInstance(key,ownerId,d.name,asset);
+            if(!modelInstancePromises.has(key)){
+              const buildGeneration=modelBuildGeneration;
+              const assetRevision=modelRevisions.get(d.name)||0;
+              const build=(async()=>{
+                const created=await createModelInstanceAsync(key,ownerId,d.name,asset);
+                const latest=lastCommands?.get(ownerId)||[];
+                const stillRequested=latest.some(command=>command.type==='model'&&command.name===d.name);
+                if(!stillRequested||modelBuildGeneration!==buildGeneration||(modelRevisions.get(d.name)||0)!==assetRevision){
+                  created.preparationCancelled=true;
+                  for(const material of created.materialDefaults.keys())material.dispose?.();
+                  created.resourceLease?.release?.();
+                  return null;
+                }
+                modelInstances.set(key,created);
+                modelGroup.add(created.root);
+                prepareModelInstance(created);
+                if(lastCommands)render(lastCommands);
+                return created;
+              })().catch(error=>{
+                console.error('[PStudio] Asynchronous model instance build failed:',d.name,error);
+                dispatchModelLoadProgress({name:d.name,stage:'instance-build-error',error:String(error?.message||error)});
+                return null;
+              }).finally(()=>{if(modelInstancePromises.get(key)===build)modelInstancePromises.delete(key);});
+              modelInstancePromises.set(key,build);
+            }
+            usedModels.add(key);
+            continue;
           }
           instance.ownerId=ownerId;
           instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
@@ -2452,6 +2565,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   }
   function clear() {
     if (!renderer) return;
+    modelBuildGeneration++;modelInstancePromises.clear();
     activeCameraOwnerId=null;
     for(const key of [...modelInstances.keys()])removeModelInstance(key);
     for(const batch of instancedBatches.values()){if(batch.parent)batch.parent.remove(batch);batch.geometry?.dispose?.();batch.material?.dispose?.();}instancedBatches.clear();
