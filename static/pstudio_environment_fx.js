@@ -547,7 +547,7 @@
         ].join('\n'));
       };
       material.customProgramCacheKey=()=>'pstudio-npr-toon-v1'+(previousKey?previousKey():'');
-      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'view-normal-edge-ink',version:1};
+      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1};
       toonMaterials.add(material);
       material.needsUpdate=true;
     }
