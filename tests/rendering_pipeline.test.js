@@ -405,7 +405,7 @@ test('GPU and CPU resource-cache pressure contribute to memory safety telemetry'
 
 
 test('per-instance frustum culling filters instanced draw batches against the camera projection',()=>{
-  for(const token of ['new T.Frustum()','new T.Matrix4()','camera.updateMatrixWorld(true)','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)','uniforms.planes[i].copy(worldFrustum.planes[i])'])assert.ok(renderer.includes(token),token);
+  for(const token of ['new T.Frustum()','new T.Matrix4()','camera.updateMatrixWorld(true)','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)','uniforms.planes[i]?.copy?.(worldFrustum.planes[i])'])assert.ok(renderer.includes(token),token);
 });
 
 test('GLTF scene decode timing is reported separately from binary fetch and GPU preparation',()=>{
@@ -500,7 +500,7 @@ test('GLB packet hydration failures recover through the compatible main-thread l
 });
 test('model GPU resources are retained before asynchronous instance cloning and released on failure',()=>{
   const retainAt=renderer.indexOf("resourceLease=window.PStudioResources?.retain?.('model-gpu',d.name)");
-  const buildAt=renderer.indexOf("createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease)");
+  const buildAt=renderer.indexOf("createModelInstanceAsync(key,ownerId,d.name,asset,resourceLease,phase=>{buildPhase=phase;})");
   const cloneAt=renderer.indexOf("async function cloneModelHierarchyAsync");
   assert.ok(retainAt>=0&&buildAt>retainAt,'resource lease is acquired before instance creation');
   assert.ok(cloneAt>0);
@@ -520,8 +520,9 @@ test('model build phase is reported and initial render errors do not release a c
   assert.ok(!renderer.includes("if(lastCommands)render(lastCommands);\n                return created;"));
 });
 test('optional renderer uniform writes tolerate missing or stale wrappers without aborting model setup',()=>{
-  for(const token of ["!uniforms?.enabled","!uniforms.near","!uniforms?.uTime","syncPostFXUniforms","Object.prototype.hasOwnProperty.call(uniform,'value')"])assert.ok(renderer.includes(token),token);
-  for(const token of ["setTime(water,'pstudioWaterHQ')","setTime(foliage,'pstudioFoliageHQ')","const depth=this.uniforms?.tDepth","u?.sceneDepth"])assert.ok(fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8').includes(token),token);
+  for(const token of ["!uniforms?.enabled","!uniforms.near","!uniforms?.uTime","syncPostFXUniforms"])assert.ok(renderer.includes(token),token);
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ["setTime(water,'pstudioWaterHQ')","setTime(foliage,'pstudioFoliageHQ')","const depth=this.uniforms?.tDepth","u?.sceneDepth","Object.prototype.hasOwnProperty.call(uniform,'value')"])assert.ok(fx.includes(token),token);
 });
 test('failed model instance builds are retained as explicit errors and can be retried',()=>{
   for(const token of ['modelBuildErrors.has(key)','modelBuildErrors.set(key,message)','retryModelAsset','getModelStatus',"stage:'instance-build'"])assert.ok(renderer.includes(token),token);
