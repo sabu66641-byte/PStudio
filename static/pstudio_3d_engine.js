@@ -65,6 +65,7 @@
   const transformedCollisionCache = new Map();
   let environmentTexture = null;
   let environmentSignature = '';
+  let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='';
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -2936,7 +2937,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     onPhase('hierarchy-clone');
     const {root:clone,pairs}=await cloneModelHierarchyAsync(asset.scene);
     onPhase('material-and-shader-setup');
-    const materialDefaults=new Map(),materialClones=new Map(),meshes=[];
+    const materialDefaults=new Map(),materialClones=new Map(),meshes=[],geometryOriginals=new Map(),normalGeometryClones=new Map();
     let environmentQuality=null;
     for(let i=0;i<pairs.length;i++){
       const {clone:object}=pairs[i],extras=object.userData||{};
@@ -2947,6 +2948,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.modelRoot=clone;
       if(object.isMesh&&object.material){
         meshes.push(object);
+        geometryOriginals.set(object,object.geometry);
         object.frustumCulled=!(object.isSkinnedMesh||(object.morphTargetInfluences?.length>0));
         scheduleAutoLOD(object,object.geometry);
         scheduleGeometryBVH(object.geometry);
@@ -2961,7 +2963,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           copy=material.clone();setupLightingMaterial(copy);
           materialDefaults.set(copy,{
             roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
-            metalness:Number.isFinite(material.metalness)?material.metalness:0.04
+            metalness:Number.isFinite(material.metalness)?material.metalness:0.04,
+            color:material.color?.clone?.()||null,
+            emissive:material.emissive?.clone?.()||null,
+            emissiveIntensity:Number.isFinite(material.emissiveIntensity)?material.emissiveIntensity:1,
+            side:material.side??T.FrontSide
           });
           materialClones.set(cacheKey,copy);
           return copy;
@@ -3035,7 +3041,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       key,ownerId,name,root:clone,meshes,mixer,animations:asset.animations,
       materialDefaults,lodLevels,localBoundsCenter:modelSphere.center.clone(),
       activeLOD:null,activeClip:autoClip?.name||null,activeLoop:true,speed:1,
-      resourceLease,materialStateSignature:null,foliageBatches,streamChunks,
+      resourceLease,materialStateSignature:null,foliageBatches,streamChunks,geometryOriginals,normalGeometryClones,
       preparing:true,preparationCancelled:false,environmentQuality,occlusionEligible:meshes.length<=256,
       animatedFoliageBatches:foliageBatches.filter(entry=>entry.isTree)
     };
@@ -3163,19 +3169,110 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }finally{modelPreparationPending=Math.max(0,modelPreparationPending-1);}
   }
 
+  function createProceduralSkyTexture(T,profile){
+    const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;
+    const context=canvas.getContext('2d');
+    if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
+    const gradient=context.createLinearGradient(0,0,0,canvas.height);
+    gradient.addColorStop(0,profile.skyTop);
+    gradient.addColorStop(0.34,profile.skyMid);
+    gradient.addColorStop(0.49,profile.horizon);
+    gradient.addColorStop(0.58,profile.ground);
+    gradient.addColorStop(1,profile.ground);
+    context.fillStyle=gradient;context.fillRect(0,0,canvas.width,canvas.height);
+    const sunX=Math.max(0,Math.min(1,Number(profile.sunX)||0.5))*canvas.width;
+    const sunY=Math.max(0,Math.min(1,Number(profile.sunY)||0.3))*canvas.height;
+    const sunRadius=Math.max(0,Number(profile.sunRadius)||0);
+    const glow=Math.max(0,Math.min(1,Number(profile.sunGlow)||0));
+    if(sunRadius>0&&glow>0){
+      const halo=context.createRadialGradient(sunX,sunY,1,sunX,sunY,sunRadius*5);
+      halo.addColorStop(0,'rgba(255,246,226,'+(0.42*glow)+')');
+      halo.addColorStop(0.25,'rgba(255,222,184,'+(0.16*glow)+')');
+      halo.addColorStop(1,'rgba(255,220,190,0)');
+      context.fillStyle=halo;context.fillRect(sunX-sunRadius*5,sunY-sunRadius*5,sunRadius*10,sunRadius*10);
+      context.beginPath();context.arc(sunX,sunY,sunRadius,0,Math.PI*2);
+      context.fillStyle=profile.name==='night'?'#D7E6FF':'#FFF4D9';context.fill();
+    }
+    const texture=new T.CanvasTexture(canvas);
+    texture.mapping=T.EquirectangularReflectionMapping;
+    texture.colorSpace=T.SRGBColorSpace;
+    texture.generateMipmaps=true;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.needsUpdate=true;
+    return texture;
+  }
+  function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false){
+    const api=window.PStudioSceneEnvironment;
+    const profile=api?.getPreset?.(presetName)||{
+      name:'day',skyTop:'#347CB7',skyMid:'#79BCE0',horizon:'#D7EDF7',ground:'#89977A',
+      fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
+      lightIntensity:2.35,lightX:-0.48,lightY:-0.82,lightZ:-0.31,
+      hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55
+    };
+    const signature=String(profile.name||'day');
+    const changed=signature!==scenePresetSignature;
+    if(changed){
+      const nextTexture=createProceduralSkyTexture(T,profile);
+      let nextTarget=null;
+      try{if(pmremGenerator)nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
+      catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
+      scenePresetTarget?.dispose?.();
+      scenePresetTexture?.dispose?.();
+      scenePresetTexture=nextTexture;scenePresetTarget=nextTarget;scenePresetSignature=signature;
+    }
+    if(!(hdrTexture&&hdrShowBackground)&&scenePresetTexture)scene.background=scenePresetTexture;
+    if(!hasCustomEnvironment){
+      if(environmentSignature){
+        environmentTarget?.dispose?.();environmentTarget=null;
+        environmentTexture?.dispose?.();environmentTexture=null;
+        environmentSignature='';
+      }
+      if(hdrEnvironmentTarget)scene.environment=hdrEnvironmentTarget.texture;
+      else if(scenePresetTarget?.texture)scene.environment=scenePresetTarget.texture;
+      else if(scenePresetTexture)scene.environment=scenePresetTexture;
+      if('environmentIntensity' in scene)scene.environmentIntensity=profile.environmentIntensity;
+    }
+    if(!(scene.fog instanceof T.Fog))scene.fog=new T.Fog(profile.fogColor,profile.fogNear,profile.fogFar);
+    else{scene.fog.color.set(profile.fogColor);scene.fog.near=profile.fogNear;scene.fog.far=profile.fogFar;}
+    if(hemisphereLight){
+      hemisphereLight.color.set(profile.hemisphereSky);
+      hemisphereLight.groundColor.set(profile.hemisphereGround);
+      hemisphereLight.intensity=profile.hemisphereIntensity;
+    }
+    if(csm){
+      if(csm.lightDirection)csm.lightDirection.set(profile.lightX,profile.lightY,profile.lightZ).normalize();
+      for(const light of csm.lights||[]){light.color.set(profile.lightColor);light.intensity=profile.lightIntensity;light.castShadow=true;}
+      if(changed)csm.updateFrustums?.();
+    }else if(keyLight){
+      keyLight.position.set(-profile.lightX*80,-profile.lightY*80,-profile.lightZ*80);
+      keyLight.color.set(profile.lightColor);
+      keyLight.intensity=profile.lightIntensity;
+      keyLight.castShadow=true;
+    }
+    return profile;
+  }
+
   function applyModelMaterial(instance, state) {
     if(!instance?.materialDefaults)return;
     const overrides=Array.isArray(state?.modelOverrides)?state.modelOverrides:[];
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
-      modelOverrides:overrides.map(item=>[item.name,item.roughness??null,item.metalness??null,item.color??null])
+      modelOverrides:overrides.map(item=>[
+        item.name,item.roughness??null,item.metalness??null,item.color??null,
+        item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
+      ])
     }:null);
     if(instance.materialStateSignature===signature)return;
     for(const entry of instance.foliageBatches||[]){
       if(!entry.isGeneric||!entry.sources?.length)continue;
       const needsPerNodeMaterials=overrides.some(item=>item.name!=='*'&&
-        entry.sources.some(source=>source.name===item.name&&source.material?.name!==item.name));
+        entry.sources.some(source=>source.name===item.name||(
+          (Array.isArray(source.material)?source.material:[source.material]).some(material=>material?.name===item.name)
+        )));
       if(needsPerNodeMaterials&&!entry.disabledForObjectOverride){
         entry.disabledForObjectOverride=true;
         entry.mesh.visible=false;
@@ -3201,14 +3298,52 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       ...(instance.meshes||[]).filter(object=>!object.userData.pstudioBatchedIntoStaticInstance),
       ...(instance.foliageBatches||[]).map(entry=>entry.mesh)
     ];
+    const desiredNormalTargets=new Set();
     for(const object of materialTargets){
       if(!object.material)continue;
       const materials=Array.isArray(object.material)?object.material:[object.material];
-      for(const material of materials){const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
-        material.roughness=state&&Number.isFinite(state.roughness)?state.roughness:defaults.roughness;material.metalness=state&&Number.isFinite(state.metalness)?state.metalness:defaults.metalness;
-        const override=overrides.find(item=>item.name==='*'||item.name===object.name||item.name===material.name);
-        if(override){if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));if(override.color&&material.color)material.color.set(override.color);}
+      const matching=overrides.filter(item=>item.name==='*'||item.name===object.name||materials.some(material=>material?.name===item.name));
+      if(matching.some(item=>item.recomputeNormals===true)&&object.geometry?.isBufferGeometry&&object.geometry.attributes?.position){
+        desiredNormalTargets.add(object);
+        let original=instance.geometryOriginals?.get(object);
+        if(!original){original=object.geometry;instance.geometryOriginals?.set(object,original);}
+        let normalized=instance.normalGeometryClones?.get(original);
+        if(!normalized){
+          normalized=original.clone();
+          normalized.computeVertexNormals();
+          instance.normalGeometryClones?.set(original,normalized);
+        }
+        object.geometry=normalized;
       }
+      for(const material of materials){
+        const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
+        material.roughness=defaults.roughness;
+        material.metalness=defaults.metalness;
+        if(defaults.color&&material.color)material.color.copy(defaults.color);
+        if(defaults.emissive&&material.emissive)material.emissive.copy(defaults.emissive);
+        if(Number.isFinite(defaults.emissiveIntensity))material.emissiveIntensity=defaults.emissiveIntensity;
+        material.side=defaults.side;
+        const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
+        if(!override)continue;
+        if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
+        if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
+        if(override.color&&material.color)material.color.set(override.color);
+        if(typeof override.doubleSide==='boolean')material.side=override.doubleSide?window.THREE.DoubleSide:(defaults.side??window.THREE.FrontSide);
+        if(override.emissive&&material.emissive)material.emissive.set(override.emissive);
+        if(Number.isFinite(override.emissiveIntensity)&&material.emissive)material.emissiveIntensity=Math.max(0,Math.min(8,override.emissiveIntensity));
+      }
+    }
+    for(const [object,original] of [...(instance.geometryOriginals||new Map()).entries()]){
+      if(desiredNormalTargets.has(object))continue;
+      object.geometry=original;
+      instance.geometryOriginals.delete(object);
+    }
+    const activeOriginals=new Set([...(instance.geometryOriginals?.values()||[])]);
+    for(const [original,normalized] of [...(instance.normalGeometryClones||new Map()).entries()]){
+      if(activeOriginals.has(original))continue;
+      normalized.disposeBoundsTree?.();
+      normalized.dispose?.();
+      instance.normalGeometryClones.delete(original);
     }
   }
 
@@ -3308,6 +3443,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       object.userData.pstudioLODToken=(object.userData.pstudioLODToken||0)+1;
     });
     disposedMaterials.forEach(material=>{window.PStudioEnvironmentFX?.releaseMaterial?.(material);material.dispose();});
+    for(const geometry of instance.normalGeometryClones?.values?.()||[]){geometry.disposeBoundsTree?.();geometry.dispose?.();}
+    instance.normalGeometryClones?.clear?.();instance.geometryOriginals?.clear?.();
     modelInstances.delete(key);
     modelBuildErrors.delete(key);
     instance.resourceLease?.release?.();
@@ -3325,17 +3462,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     const pendingFrameInstances=[];
     let cameraCommand=null,environment=null,cameraOwnerId=null;
-    let defaultBackground=0x171d26;
-    if(hdrTexture&&hdrShowBackground)scene.background=hdrTexture;
-    else if(scene.background?.isColor)scene.background.set(defaultBackground);
-    else scene.background=new T.Color(defaultBackground);
     scene.fog=null;
-    if(hemisphereLight) hemisphereLight.intensity=1.15;
-    if(keyLight&&!csm){keyLight.position.set(5,9,6);keyLight.intensity=2.4;}
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
-      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null}));
+      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
@@ -3600,6 +3731,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':'))){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
     for(const [key,instance] of modelInstances){if(!usedModels.has(key)&&!preservedOwners.has(instance.ownerId))removeModelInstance(key);else if(preservedOwners.has(instance.ownerId))instance.root.visible=false;}
+    applySceneEnvironmentPreset(T,environment?.preset||'day',!!(environment?.environmentSky&&environment?.environmentGround));
     if(environment){
       if(environment.background){scene.background=new T.Color(environment.background);hdrShowBackground=false;}
       if(environment.environmentSky&&environment.environmentGround){
