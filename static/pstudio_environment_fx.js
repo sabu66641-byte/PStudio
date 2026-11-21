@@ -24,7 +24,7 @@
         'uniform float uPStudioWaterDetailType;',
         'varying vec3 vPStudioWaterDetailWorld;'
       ].join('\n'));
-      shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <skinning_vertex>',[
         'float detailWave=sin(position.x*1.7+position.z*1.13+uPStudioWaterDetailTime*1.7);',
         'float detailWave2=sin(position.x*.71-position.z*1.91-uPStudioWaterDetailTime*1.13);',
         'float detailMove=mix(.009,.002,uPStudioWaterDetailType);',
