@@ -80,7 +80,7 @@ Do not send a server request every frame. Preserve the division between server-s
 
 ## Core runtime ownership boundaries
 
-- The IDE owns project serialization, selected object state, Inspector fields and calls into the renderer.
+- The IDE owns project serialization, selected object state, Scene Object Inspector fields, ECS Inspector UI and calls into the renderer. Custom ECS Component data attached to Scene Objects is serialized in the scene and validated during project-backup restore.
 - The game runtime owns ps callback state and emits frame render commands.
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations.
