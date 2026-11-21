@@ -80,8 +80,8 @@ async function serializeMaterial(material, materialIds, textures, textureIds, im
   for (const slot of MATERIAL_TEXTURE_SLOTS) {
     const texture = material[slot];
     if (!texture?.isTexture) continue;
-    if (!textures.has(texture)) textures.set(texture, textures.size);
-    textureSlots[slot] = textures.get(texture);
+    if (!textureIds.has(texture)) textureIds.set(texture, textureIds.size);
+    textureSlots[slot] = textureIds.get(texture);
   }
   return {
     id,
