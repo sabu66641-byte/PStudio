@@ -169,6 +169,13 @@
     return ecs().getEntityForSceneObject(String(objectId));
   }
 
+  function getSceneComponent(objectId, type) {
+    const api = ecs();
+    const entity = getSceneEntity(objectId);
+    if (!api || !entity || !api.hasComponent(entity, type)) return null;
+    return api.getComponent(entity, type);
+  }
+
   function ensureSceneComponent(objectId, type, initialValue) {
     const api = ecs();
     const key = String(objectId);
@@ -299,6 +306,7 @@
     isAvailable,
     getSceneEntity,
     ensureSceneComponent,
+    getSceneComponent,
     commitSceneComponent,
     getWorldState,
     commitWorldState,
