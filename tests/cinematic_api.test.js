@@ -29,8 +29,8 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
 test('time scale is initialized per Play session and scales browser simulation delta', () => {
   assert.match(runtime, /timeScale:1/);
   assert.match(runtime, /runtime\.timeScale=Math\.max\(0,Math\.min\(4,finite\(a\[0\]\)\)\)/);
-  assert.match(runtime, /const timeScale=Math\.max\(0,Math\.min\(4,Number\(runtime\?\.timeScale\?\?1\)\)\)/);
-  assert.match(runtime, /const dt=Math\.min\(0\.1,raw\*timeScale\)/);
+  assert.match(runtime, /const timeScale=Math\.max\(0,Math\.min\(4,Number\(previousTime\?\.timeScale\?\?runtime\?\.timeScale\?\?1\)\)\)/);
+  assert.match(runtime, /const dt=Math\.min\(0\.1,unscaledDeltaTime\*timeScale\)/);
   assert.match(runtime, /requires3D:needs3D/);
   assert.match(runtime, /runtime\?\.requires3D\|\|has3D/);
   assert.match(renderer, /frameDelta=Number\.isFinite\(value\)\?Math\.max\(0,Math\.min\(0\.1,value\)\):1\/60/);
