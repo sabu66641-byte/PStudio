@@ -361,6 +361,47 @@
     return record.enabled;
   }
 
+  function setSystemPriority(id, value) {
+    const record = systems.get(String(id || ''));
+    if (!record) throw new Error('ECS system is not registered: ' + String(id));
+    const priority = Number(value);
+    if (!Number.isFinite(priority)) throw new TypeError('ECS system priority must be a finite number.');
+    record.priority = priority;
+    orderedSystems.sort((a, b) => a.priority - b.priority || a.sequence - b.sequence);
+    emit('system-priority-changed', { id: record.id, priority });
+    return priority;
+  }
+
+  function getSystems() {
+    return orderedSystems.map(system => ({
+      id: system.id,
+      priority: system.priority,
+      enabled: system.enabled,
+      components: system.components.slice(),
+      sequence: system.sequence
+    }));
+  }
+
+  function getEntities(includeInactive) {
+    return Array.from(entities)
+      .filter(id => includeInactive === true || entityActive.get(id) !== false)
+      .sort((a, b) => a - b);
+  }
+
+  function getComponentTypes() {
+    return Array.from(componentDefinitions.keys()).sort();
+  }
+
+  function getEntityComponents(entity) {
+    const id = requireEntity(entity);
+    const result = [];
+    for (const [type, store] of componentStores) {
+      if (store.has(id)) result.push({ type, data: store.get(id) });
+    }
+    result.sort((a, b) => a.type.localeCompare(b.type));
+    return result;
+  }
+
   function flushDeferred() {
     if (flushingDeferred || iterationDepth > 0 || updating || deferredHead >= deferred.length) return;
     flushingDeferred = true;
@@ -463,6 +504,28 @@
     return false;
   }
 
+  function restoreSceneObjectComponents(entity, object) {
+    const entries = Array.isArray(object.ecsComponents) ? object.ecsComponents : [];
+    for (const entry of entries) {
+      const type = typeof entry?.type === 'string' ? entry.type : '';
+      if (!COMPONENT_ID.test(type) || type === 'Transform' || type === 'SceneObjectRef') continue;
+      if (!componentDefinitions.has(type)) {
+        try { registerComponent(type); }
+        catch (error) {
+          console.warn('[PStudio ECS] skipped invalid saved component type:', type, error);
+          continue;
+        }
+      }
+      const store = componentStores.get(type);
+      if (!store || store.has(entity)) continue;
+      const data = entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data) ? entry.data : {};
+      try { addComponent(entity, type, data); }
+      catch (error) {
+        console.warn('[PStudio ECS] skipped invalid saved component:', type, error);
+      }
+    }
+  }
+
   function syncSceneObjects(sceneObjects) {
     if (!Array.isArray(sceneObjects)) throw new TypeError('syncSceneObjects expects an array.');
     const seen = new Set();
@@ -486,6 +549,7 @@
         });
         sceneEntityByObjectId.set(objectId, entity);
         sceneSnapshots.set(entity, Object.assign({}, source));
+        restoreSceneObjectComponents(entity, object);
         continue;
       }
 
@@ -502,6 +566,7 @@
       sceneSnapshots.set(entity, Object.assign({}, canonical));
       const ref = getComponent(entity, 'SceneObjectRef');
       ref.name = String(object.name || '');
+      restoreSceneObjectComponents(entity, object);
     }
 
     for (const [objectId, entity] of Array.from(sceneEntityByObjectId.entries())) {
@@ -548,6 +613,11 @@
     registerSystem,
     unregisterSystem,
     setSystemEnabled,
+    setSystemPriority,
+    getSystems,
+    getEntities,
+    getComponentTypes,
+    getEntityComponents,
     createEntity,
     destroyEntity,
     addComponent,
