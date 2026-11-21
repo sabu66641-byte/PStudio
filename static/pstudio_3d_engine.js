@@ -48,6 +48,7 @@
   const CLUSTER_MAX_LIGHTS=96,CLUSTER_MAX_PER_CELL=24;
   let clusteredLightingEnabled=true,clusteredLightingActive=false,clusteredLightingResources=null;
   let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0;
+  let clusteredLightSet=new Set();
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
   let lastCommands = null;
@@ -976,7 +977,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function updateClusteredLighting(force=false){
     const resources=ensureClusteredLightingResources();
     if(!resources||!camera){
-      clusteredLightingActive=false;
+      clusteredLightingActive=false;clusteredLightSet.clear();
       for(const light of dynamicLights.values())if(light.isPointLight)light.visible=true;
       return false;
     }
@@ -1003,7 +1004,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     ].join(',');
     if(!force&&now-clusteredLightingLastUpdate<100&&signature===clusteredLightingLastSignature){
       clusteredLightingActive=clusteredLightingEnabled;
-      for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!clusteredLightingActive;
+      for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!(clusteredLightingActive&&clusteredLightSet.has(light));
       return clusteredLightingActive;
     }
     clusteredLightingLastUpdate=now;clusteredLightingLastSignature=signature;
@@ -1018,6 +1019,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       counts[cluster]=count+1;
     };
     resources.lightCount=lights.length;
+    clusteredLightSet=new Set(lights.map(entry=>entry.light));
     for(let index=0;index<lights.length;index++){
       const entry=lights[index],light=entry.light,position=entry.position,depth=-position.z,range=entry.range,base=index*12;
       resources.lightData[base]=position.x;resources.lightData[base+1]=position.y;resources.lightData[base+2]=position.z;resources.lightData[base+3]=range;
@@ -1045,7 +1047,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const viewport=renderer.getDrawingBufferSize(new T.Vector2());
     const active=clusteredLightingEnabled;
     clusteredLightingActive=active;
-    for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!active;
+    for(const light of dynamicLights.values())if(light.isPointLight)light.visible=!(active&&clusteredLightSet.has(light));
     const updateMaterial=material=>{
       const uniforms=material?.userData?.pstudioClusterLightingUniforms;
       if(!uniforms)return;
