@@ -257,7 +257,8 @@
       GameplayWorld: {
         ui: null,
         dialogue: { signature: '', speaker: '', text: '', choices: [], choice: '', lastChoice: '' }
-      }
+      },
+      ...(api.hasComponentType('ScriptSystemState') ? { ScriptSystemState: { values: {} } } : {})
     });
     return worldEntity;
   }
@@ -279,7 +280,7 @@
   function createDataEntity(type, initialValue) {
     const api = ecs();
     if (!api || !api.hasComponentType(type)) return null;
-    return api.createEntity({ [type]: initialValue || {} });
+    return api.createEntity({ [type]: initialValue || {}, ...(api.hasComponentType('ScriptSystemState') ? { ScriptSystemState: { values: {} } } : {}) });
   }
 
   function getEntityComponent(entity, type) {
