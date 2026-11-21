@@ -111,6 +111,20 @@ class PsEcsLanguageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("リテラル", response.get_json()["error"])
 
+    def test_component_member_assignment_rejects_incompatible_types(self):
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {
+                "bad.ps": (
+                    "component EnemyAI\\n    speed = 2.0\\n"
+                    "system Move(EnemyAI)\\n"
+                    '    enemy_ai.speed = "fast"\\n'
+                )
+            }},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("代入型が一致しません", response.get_json()["error"])
+
     def test_ecs_declarations_cannot_be_nested_inside_functions(self):
         response = self.client.post(
             "/game/prepare",
