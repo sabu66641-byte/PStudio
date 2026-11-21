@@ -10,7 +10,7 @@ const engine = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), '
 const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 
-test('scene environment module defines four complete immutable presets', () => {
+test('scene environment module defines four independent environment presets', () => {
   const items = presets.listPresets();
   assert.deepEqual(items.map(item => item.name), ['day', 'dusk', 'night', 'studio']);
   for (const { name } of items) {
@@ -147,7 +147,7 @@ test('GLB material overrides restore source defaults and keep normal recomputati
 test('GLB source material and source geometry are cloned before editor overrides are applied', () => {
   assert.match(renderer, /copy=material\.clone\(\);setupLightingMaterial\(copy\)/);
   assert.match(renderer, /geometryOriginals\.set\(object,object\.geometry\)/);
-  assert.match(renderer, /normalGeometryClones\.set\(original,normalized\)/);
+  assert.match(renderer, /normalGeometryClones\?\.set\(original,normalized\)/);
   assert.match(renderer, /instance\.normalGeometryClones\?\.clear\?\.\(\);instance\.geometryOriginals\?\.clear\?\.\(\)/);
 });
 
