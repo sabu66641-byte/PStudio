@@ -16,13 +16,35 @@ function section(source, start, end) {
   return source.slice(from, to);
 }
 
-test('new GLB assets request a one-shot camera frame based on world-space bounds', () => {
-  assert.match(renderer, /function frameCameraToModel\(instance\)/);
-  assert.match(renderer, /new T\.Box3\(\)\.setFromObject\(instance\.root\)/);
-  assert.match(renderer, /function frameObject\(ownerId\)/);
-  assert.match(renderer, /pendingCameraFrames\.add\(id\)/);
-  assert.match(renderer, /pendingCameraFrames\.delete\(String\(ownerId\)\)/);
-  assert.match(html, /window\.PStudio3D\?\.frameObject\?\.\(id\)/);
+test('adding a GLB keeps the current camera; framing is an explicit user action',()=>{
+  const addBlock=section(html,'function addModelToScene(assetName){','function frameSelectedModel(){');
+  assert.doesNotMatch(addBlock,/frameObject/);
+  assert.match(html,/function frameSelectedModel\(\)/);
+  assert.match(html,/onclick="frameSelectedModel\(\)"/);
+  assert.match(html,/window\.PStudio3D\?\.frameObject\?\.\(object\.id\)/);
+  assert.match(renderer,/function frameCameraToModel\(instance\)/);
+  assert.match(renderer,/function frameObject\(ownerId\)/);
+  assert.match(renderer,/pendingCameraFrames\.add\(id\)/);
+  assert.match(renderer,/pendingCameraFrames\.delete\(String\(ownerId\)\)/);
+});
+test('model draw distance uses the transformed local bounds center rather than the root pivot',()=>{
+  assert.match(renderer,/localCenter\.clone\(\)\.applyMatrix4\(object\.matrixWorld\)/);
+  assert.match(renderer,/cameraPosition\.distanceTo\(center\)-radius\*scale/);
+  assert.match(renderer,/relativeMatrix\.multiplyMatrices\(inverseRoot,object\.matrixWorld\)/);
+  assert.match(renderer,/clone\.userData\.pstudioBoundsCenter=modelSphere\.center\.clone\(\)/);
+});
+test('large model streaming keeps camera-visible chunks active and uses accurate chunk bounds',()=>{
+  assert.match(renderer,/pstudioStreamBoundsCenter=sphere\.center\.clone\(\)\.sub\(chunk\.position\)/);
+  assert.match(renderer,/worldFrustum\?\.intersectsSphere\?\.\(new T\.Sphere\(center,radius\)\)/);
+  assert.match(renderer,/chunk\.visible=active/);
+});
+test('prepared model visibility diagnostics distinguish loading success from actual scene visibility',()=>{
+  assert.match(renderer,/function getModelVisibilityDiagnostics\(instance\)/);
+  assert.match(renderer,/visibleMeshes/);
+  assert.match(renderer,/withinDrawDistance/);
+  assert.match(renderer,/pstudio-model-visibility/);
+  assert.match(engine,/pstudio-model-visibility/);
+  assert.match(renderer,/visibility:instances\.map\(getModelVisibilityDiagnostics\)/);
 });
 
 test('camera collision ignores the object currently being framed, not other geometry', () => {
