@@ -1798,7 +1798,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const key=colorSpace===window.THREE.SRGBColorSpace?'srgb':'linear';
     if(virtualTextureAtlases.has(key))return virtualTextureAtlases.get(key);
     if(!renderer||typeof renderer.copyTextureToTexture!=='function')return null;
-    const T=window.THREE,size=deviceMemoryGiB()>=8?4096:2048,pageSize=256,pagesPerAxis=size/pageSize;
+    const T=window.THREE,memory=deviceMemoryGiB(),size=memory>=8?4096:memory<=2?1024:2048,pageSize=256,pagesPerAxis=size/pageSize;
     const data=new Uint8Array(size*size*4);
     const texture=new T.DataTexture(data,size,size,T.RGBAFormat,T.UnsignedByteType);
     texture.name='PStudio_VT_Atlas_'+key;
