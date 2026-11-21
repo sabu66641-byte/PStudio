@@ -759,7 +759,9 @@
   });
   window.addEventListener('pstudio-model-error',event=>{
     const detail=event.detail||{},name=String(detail.name||'モデル');
+    const stack=String(detail.stack||'').split('\n').slice(0,10).join('\n');
     const message='3Dモデル「'+name+'」の処理に失敗しました。\n段階: '+String(detail.stage||'unknown')+'\n原因: '+String(detail.error||'不明なエラー')+
+      (stack?'\n詳細スタック:\n'+stack:'')+
       (detail.retryable===false?'\nこの端末のメモリ安全基準により読み込みを停止しました。':'\n3D表示を再選択するか Refresh で再試行できます。');
     const status=$('game-status');if(status&&!runtime?.running)status.textContent='MODEL ERROR · '+name;
     setOutput?.(message,'error');
