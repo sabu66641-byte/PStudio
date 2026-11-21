@@ -399,3 +399,12 @@ test('static model meshes use native frustum culling while animated deformation 
 test('GPU and CPU resource-cache pressure contribute to memory safety telemetry',()=>{
   for(const token of ['gpuPressure','gpuBudgetBytes','cpuResourcePressure','estimatedGpuBytes','modelPreparationPending','stagedTextureUploads'])assert.ok(renderer.includes(token),token);
 });
+
+
+test('per-instance frustum culling filters instanced draw batches against the camera projection',()=>{
+  for(const token of ['new T.Frustum()','new T.Matrix4()','camera.updateMatrixWorld(true)','worldFrustum.setFromProjectionMatrix(worldFrustumMatrix)','worldFrustum.intersectsSphere(worldFrustumSphere)'])assert.ok(renderer.includes(token),token);
+});
+
+test('GLTF scene decode timing is reported separately from binary fetch and GPU preparation',()=>{
+  for(const token of ['scene-decode-start','scene-decoded','durationMs','gpu-textures','shader-precompile','stage:\\'prepared\\''])assert.ok(renderer.includes(token),token);
+});
