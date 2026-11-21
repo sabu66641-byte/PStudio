@@ -43,7 +43,7 @@ test('camera shake is transient and restores the authored camera transform after
 });
 
 test('trail ribbons are bounded, updated from world-space samples, and disposed', () => {
-  assert.match(runtime, /target=\(sceneObjects\|\|\)\.find\(item=>String\(item\.id\)===targetKey\|\|String\(item\.name\)===targetKey\)/);
+  assert.match(runtime, /target=\(sceneObjects\|\|\[\]\)\.find\(item=>String\(item\.id\)===targetKey\|\|String\(item\.name\)===targetKey\)/);
   assert.match(renderer, /const MAX_TRAIL_POINTS=48/);
   assert.match(renderer, /const MAX_TRAIL_EFFECTS=64/);
   assert.match(renderer, /function updateTrailEffect\(key,command\)/);
