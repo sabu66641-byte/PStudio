@@ -109,7 +109,9 @@ test('large selected GLBs use one bounds outline instead of per-mesh edge geomet
 });
 test('camera collision skips recursive high-complexity model trees',()=>{
   assert.match(renderer,/pstudioHighComplexity=meshes\.length>256/);
-  assert.match(renderer,/child\.userData\?\.pstudioHighComplexity\)collisionTargets\.push\(child\)/);
+  assert.match(renderer,/if\(child\.userData\?\.pstudioHighComplexity\)continue/);
+  assert.match(renderer,/child\.updateWorldMatrix\(true,true\)/);
+  assert.match(renderer,/collisionTargets\.push\(child\)/);
   assert.match(renderer,/intersectObjects\(collisionTargets,true\)/);
   assert.doesNotMatch(renderer,/primitiveGroup\.updateMatrixWorld\(true\);\s*modelGroup\.updateMatrixWorld\(true\);\s*cameraCollisionRaycaster/);
   assert.match(renderer,/instance\.root\.visible=!instance\.preparing&&active/);
