@@ -5,6 +5,7 @@ import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples
 
 const CDN = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/';
 const TRANSFERS = new Set();
+const VIRTUAL_IMAGES = new Map();
 
 function safeJSON(value) {
   if (value === undefined || value === null) return null;
@@ -397,9 +398,47 @@ async function parseGLB(message) {
 
 self.onmessage = async event => {
   const message = event.data || {};
-  if (!Number.isSafeInteger(message.id) || message.op !== 'parse-glb') return;
-  TRANSFERS.clear();
+  if (!Number.isSafeInteger(message.id)) return;
   try {
+    if (message.op === 'register-image') {
+      if (!message.bitmap || typeof message.textureId !== 'string') throw new Error('Invalid virtual texture image registration.');
+      const previous = VIRTUAL_IMAGES.get(message.textureId);
+      try { previous?.close?.(); } catch (_) {}
+      VIRTUAL_IMAGES.set(message.textureId, message.bitmap);
+      self.postMessage({ id: message.id, ok: true, result: { registered: true, width: message.bitmap.width, height: message.bitmap.height } });
+      return;
+    }
+    if (message.op === 'extract-tile') {
+      const bitmap = VIRTUAL_IMAGES.get(String(message.textureId));
+      if (!bitmap) throw new Error('Virtual texture source image is no longer registered.');
+      if (typeof OffscreenCanvas !== 'function') {
+        const error = new Error('OffscreenCanvas is unavailable in the GLTF worker.');
+        error.code = 'PSTUDIO_VT_WORKER_CANVAS_UNAVAILABLE';
+        throw error;
+      }
+      const x = Math.max(0, Math.floor(Number(message.x) || 0));
+      const y = Math.max(0, Math.floor(Number(message.y) || 0));
+      const width = Math.max(1, Math.min(256, Math.floor(Number(message.width) || 256), bitmap.width - x));
+      const height = Math.max(1, Math.min(256, Math.floor(Number(message.height) || 256), bitmap.height - y));
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
+      if (!context) throw new Error('Virtual texture tile canvas could not be created.');
+      context.drawImage(bitmap, x, y, width, height, 0, 0, width, height);
+      const pixels = context.getImageData(0, 0, width, height).data;
+      const copy = new Uint8Array(pixels.length);
+      copy.set(pixels);
+      self.postMessage({ id: message.id, ok: true, result: { width, height, buffer: copy.buffer, length: copy.length } }, [copy.buffer]);
+      return;
+    }
+    if (message.op === 'release-image') {
+      const bitmap = VIRTUAL_IMAGES.get(String(message.textureId));
+      try { bitmap?.close?.(); } catch (_) {}
+      VIRTUAL_IMAGES.delete(String(message.textureId));
+      self.postMessage({ id: message.id, ok: true, result: { released: true } });
+      return;
+    }
+    if (message.op !== 'parse-glb') return;
+    TRANSFERS.clear();
     self.postMessage({id:message.id,progress:{stage:'worker-parse-start',loaded:0,total:message.buffer?.byteLength||0,progress:0}});
     const packet = await parseGLB(message);
     self.postMessage({id:message.id,progress:{stage:'worker-serialize-complete',loaded:message.buffer?.byteLength||0,total:message.buffer?.byteLength||0,progress:1,timings:packet.timings}});
