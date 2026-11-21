@@ -306,10 +306,10 @@ test('legacy IndexedDB records without a backend marker remain readable', async 
   assert.deepEqual(await store.getMetadata('legacy.glb'), { legacy: true });
 });
 
-test('asset store rejects a model above the one GiB limit before IndexedDB access', async () => {
+test('asset store rejects a model above the glTF 4 GiB container limit before storage access', async () => {
   const { store } = createStore(undefined);
   await assert.rejects(
-    store.put('oversize.glb', { size: 1024 * 1024 * 1024 + 1, type: 'model/gltf-binary' }),
+    store.put('oversize.glb', { size: 0xFFFFFFFF + 1, type: 'model/gltf-binary' }),
     /4GiB/
   );
 });
