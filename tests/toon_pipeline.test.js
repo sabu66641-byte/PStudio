@@ -12,6 +12,18 @@ const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8')
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
 
+function createFXMeshClass() {
+  return class Mesh {
+    constructor(geometry, material) {
+      this.isMesh = true; this.geometry = geometry; this.material = material;
+      this.userData = {}; this.children = []; this.renderOrder = 0; this.frustumCulled = true;
+      this.position = { set() {} }; this.quaternion = { set() {} }; this.scale = { set() {} };
+    }
+    add(child) { child.parent = this; this.children.push(child); }
+    remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
+  };
+}
+
 function createFX() {
   class Color {
     constructor(value) { this.set(value); }
@@ -25,7 +37,24 @@ function createFX() {
       return this;
     }
   }
-  const window = { THREE: { Color, Vector2, DoubleSide: 2 } };
+  class MeshBasicMaterial {
+    constructor(options) { Object.assign(this, options); this.userData = {}; }
+    dispose() { this.disposed = true; }
+  }
+  class Mesh {
+    constructor(geometry, material) {
+      this.isMesh = true; this.geometry = geometry; this.material = material;
+      this.userData = {}; this.children = []; this.renderOrder = 0; this.frustumCulled = true;
+      this.position = { set() {} }; this.quaternion = { set() {} }; this.scale = { set() {} };
+    }
+    add(child) { child.parent = this; this.children.push(child); }
+    remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
+  }
+  class SkinnedMesh extends Mesh {
+    constructor(g, m) { super(g, m); this.isSkinnedMesh = true; }
+    bind(skeleton, matrix) { this.skeleton = skeleton; this.bindMatrix = matrix; }
+  }
+  const window = { THREE: { Color, Vector2, MeshBasicMaterial, Mesh, SkinnedMesh, BackSide: 1, DoubleSide: 2 } };
   vm.runInNewContext(fxSource, { window, console, Math, Set, Map });
   return window.PStudioEnvironmentFX;
 }
@@ -77,7 +106,6 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
     'uPStudioToonHighlightThreshold',
     'pStudioToonRim',
     'pStudioToonSubsurface',
-    'pStudioInkEdge',
     'retained PBR hook'
   ]) assert.ok(shader.fragmentShader.includes(token), token);
   assert.match(material.customProgramCacheKey(), /pstudio-npr-toon-v1/);
@@ -85,6 +113,25 @@ test('NPR shader chains existing PBR hooks and adds three-band, rim, outline and
 
   fx.configureToon(material, { enabled: false });
   assert.equal(material.userData.pstudioToonHQ.uniforms.enabled.value, 0);
+});
+
+test('outline is an expanded back-face shell and is released with its source object', () => {
+  const fx = createFX();
+  const material = { isMeshStandardMaterial: true, userData: {}, customProgramCacheKey() { return 'pbr'; } };
+  const SourceMesh = createFXMeshClass();
+  const source = new SourceMesh({}, null);
+  fx.configureToon(material, { enabled: true, outlineColor: '#102030', outlineWidth: 0.14 }, source);
+  assert.equal(source.children.length, 1);
+  const shell = source.children[0];
+  assert.equal(shell.material.side, 1);
+  assert.equal(shell.castShadow, false);
+  assert.equal(shell.receiveShadow, false);
+  const shader = { uniforms: {}, vertexShader: '#include <common>\\n#include <begin_vertex>\\n' };
+  shell.material.onBeforeCompile(shader, {});
+  assert.ok(shader.vertexShader.includes('uPStudioOutlineExpansion'));
+  assert.ok(shader.vertexShader.includes('normalize(objectNormal)*uPStudioOutlineExpansion'));
+  fx.releaseObject(source);
+  assert.equal(source.children.length, 0);
 });
 
 test('foliage wind speed and strength are shader uniforms, not CPU vertex rewrites', () => {
