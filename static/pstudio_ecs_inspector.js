@@ -148,8 +148,8 @@
     const api = ecs();
     if (!api) return null;
     const ref = api.getComponent(entityId, 'SceneObjectRef');
-    if (!ref || !Array.isArray(window.sceneObjects || sceneObjects)) return null;
-    const objects = typeof sceneObjects !== 'undefined' ? sceneObjects : [];
+    const objects = typeof sceneObjects !== 'undefined' ? sceneObjects : window.sceneObjects;
+    if (!ref || !Array.isArray(objects)) return null;
     return objects.find(object => String(object.id) === String(ref.sceneObjectId)) || null;
   }
 
@@ -190,7 +190,8 @@
     const ref = api.getComponent(entityId, 'SceneObjectRef');
     if (ref && typeof window.selectSceneObject === 'function') {
       const object = sceneObjectForEntity(entityId);
-      if (object && String(window.selectedObjectId) !== String(object.id)) {
+      const currentObject = typeof window.selectedObject === 'function' ? window.selectedObject() : null;
+      if (object && String(currentObject?.id) !== String(object.id)) {
         window.selectSceneObject(object.id);
         return;
       }
