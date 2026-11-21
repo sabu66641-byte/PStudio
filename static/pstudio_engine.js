@@ -493,7 +493,7 @@
   }
   function buildScenePreview3D() {
     const commands = new Map();
-    commands.set('__scene__',[{type:'grid',size:12,divisions:12},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
+    commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
       const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
       const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
@@ -508,7 +508,7 @@
           : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
       const objectCommands=[];
       if(o.postProcessing)objectCommands.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
+      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity});
       if(o.shaderFragment)objectCommands.push({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
       if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
       objectCommands.push(draw);commands.set(o.id,objectCommands);
@@ -543,16 +543,19 @@
     }
   }
   function renderFrame() {
-    const commands=new Map(); for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
-    const activeCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
-    const draws=[...activeCommands.values()].flat();
+    const commands=new Map();
+    commands.set('__scene__',[{type:'environment',preset:sceneEnvironment?.preset||'day'}]);
+    for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
+    const activeCommands=new Map([...commands].filter(([id])=>id==='__scene__'||window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
+    const drawCommands=new Map([...activeCommands].filter(([id])=>id!=='__scene__'));
+    const draws=[...drawCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
-    const allDraws=[...commands.values()].flat();
+    const allDraws=draws;
     const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
     const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
-    else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(activeCommands);}
+    else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(drawCommands);}
     renderHud(hudDraws);
     const status=$('game-status'); if(status&&runtime?.running){const m=status.textContent.match(/([0-9.]+) FPS/);status.textContent='RUNNING · '+(m?m[1]:'0')+' FPS · '+(sceneObjects||[]).length+' objects · VIEW '+(use3D?'3D':'2D')+' · '+draws.length+' draw calls';}
   }
