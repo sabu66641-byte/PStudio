@@ -3316,7 +3316,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const matching=overrides.filter(item=>item.name==='*'||item.name===object.name||materials.some(material=>material?.name===item.name));
       if(matching.some(item=>item.recomputeNormals===true)&&object.geometry?.isBufferGeometry&&object.geometry.attributes?.position){
         desiredNormalTargets.add(object);
-        const original=object.geometry?.userData?.pstudioNormalSourceGeometry||object.geometry;
+        const original=object.userData?.pstudioLightmapGeometry?object.geometry:(object.geometry?.userData?.pstudioNormalSourceGeometry||object.geometry);
         instance.geometryOriginals?.set(object,original);
         let normalized=instance.normalGeometryClones?.get(original);
         if(!normalized){
