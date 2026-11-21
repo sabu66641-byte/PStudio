@@ -11,3 +11,22 @@ test('ps script globals, lifecycle and local System state use ECS Components',()
   assert.match(engine,/updateLocomotionSequence\(id\)/);
   assert.match(engine,/getLocomotionSequence\(id\)/);
 });
+
+test('Play runtime obtains rendering and collider configuration from ECS presentation Components',()=>{
+  const engine=fs.readFileSync(path.join(root,'static/pstudio_engine.js'),'utf8');
+  const bridge=fs.readFileSync(path.join(root,'static/pstudio_ecs_scene.js'),'utf8');
+  assert.match(engine,/function getRuntimePresentation\(object\)/);
+  assert.match(engine,/PStudioECSScene\?\.getRenderState\?\.\(object\)/);
+  assert.match(engine,/PStudioECSScene\?\.syncSceneObjects\?\.\(sceneObjects \|\| \[\]\)/);
+  assert.match(engine,/const presentation=getRuntimePresentation\(o\)/);
+  assert.match(engine,/presentation\.spriteRenderer/);
+  assert.match(engine,/presentation\.meshRenderer/);
+  assert.match(engine,/presentation\.material/);
+  assert.match(engine,/presentation\.postProcessing/);
+  assert.match(engine,/presentation\.particleEmitter/);
+  assert.match(engine,/\.map\(getCollisionObject\)/);
+  assert.match(engine,/ownerPresentation\.meshCollider\.enabled/);
+  for(const type of ['SpriteRenderer','MeshRenderer','MaterialSettings','PostProcessingSettings','ParticleEmitter','Collider2D','MeshCollider']){
+    assert.ok(bridge.includes("register('"+type+"'"),type);
+  }
+});
