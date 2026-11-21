@@ -1529,6 +1529,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeMesh(mesh) {
     if (!mesh) return;
+    window.PStudioEnvironmentFX?.releaseObject?.(mesh);
     mesh.userData?.pstudioLightmapTexture?.dispose?.();
     const currentGeometry=mesh.geometry,lightmapped=!!mesh.userData?.pstudioLightmapGeometry;
     if(currentGeometry?.userData){currentGeometry.userData.pstudioBVHDisposed=true;currentGeometry.userData.pstudioBVHToken=(currentGeometry.userData.pstudioBVHToken||0)+1;}
@@ -3461,6 +3462,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(instance.root.parent) instance.root.parent.remove(instance.root);
     const disposedMaterials=new Set();
     instance.root.traverse(object=>{
+      window.PStudioEnvironmentFX?.releaseObject?.(object);
       if(!object.isMesh)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials)if(material)disposedMaterials.add(material);
