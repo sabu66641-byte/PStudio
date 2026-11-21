@@ -20,6 +20,13 @@ namespace pstudio::ecs {
 
 using Entity = std::uint32_t;
 
+inline bool truthy(bool value) { return value; }
+template <class T, std::enable_if_t<std::is_arithmetic_v<T>, int> = 0>
+inline bool truthy(T value) { return value != static_cast<T>(0); }
+inline bool truthy(const std::string& value) { return !value.empty(); }
+template <class T>
+inline bool truthy(const std::vector<T>& value) { return !value.empty(); }
+
 struct Transform {
     double x{0.0}, y{0.0}, z{0.0};
     double rotationX{0.0}, rotationY{0.0}, rotationZ{0.0};
@@ -50,7 +57,10 @@ inline std::vector<std::int64_t> range(std::int64_t stop) {
     std::vector<std::int64_t> result;
     if (stop <= 0) return result;
     result.reserve(static_cast<std::size_t>(std::min<std::int64_t>(stop, 1000000)));
-    for (std::int64_t value = 0; value < stop; ++value) result.push_back(value);
+    for (std::int64_t value = 0; value < stop; ++value) {
+        if (result.size() >= 1000000) throw std::length_error("range() element limit exceeded");
+        result.push_back(value);
+    }
     return result;
 }
 
