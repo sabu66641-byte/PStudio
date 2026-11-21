@@ -920,10 +920,45 @@ def _validate_cpp_identifier(name, line=None):
         )
 
 
+def _ecs_binding_name(component_name):
+    """Convert ComponentName to the stable lower_snake_case binding used in system bodies."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", component_name).lower()
+
+
 def validate_ast(tree, allow_game=False):
-    """Validate ps semantics. Game APIs are opt-in for the browser game runtime."""
+    """Validate ps semantics. ECS declarations are currently browser-game-only."""
     functions = {}
+    component_defs = {}
+    system_defs = {}
     for node in tree.get("body", []):
+        if node.get("type") == "ComponentDef":
+            name = node.get("name", "")
+            _validate_cpp_identifier(name, node.get("line"))
+            if name in ("Transform", "SceneObjectRef"):
+                raise Exception(f"意味エラー: '{name}' はPStudio組み込みComponentのため再定義できません。")
+            if name in component_defs:
+                raise Exception(f"意味エラー: Component '{name}' が重複定義されています。")
+            fields = {}
+            for field in node.get("body", []):
+                if field.get("type") != "AssignmentExpression":
+                    raise Exception(f"意味エラー (行 {field.get('line', '?')}): Component定義内では 'field = 初期値' 形式のみ使用できます。")
+                field_name = field.get("variable", "")
+                _validate_cpp_identifier(field_name, field.get("line"))
+                if field_name in fields:
+                    raise Exception(f"意味エラー: Component '{name}' のField '{field_name}' が重複しています。")
+                value = field.get("value", {})
+                if value.get("type") not in ("Literal", "ArrayLiteral"):
+                    raise Exception(f"意味エラー: Component '{name}.{field_name}' の初期値はリテラルまたは配列にしてください。")
+                fields[field_name] = value
+            component_defs[name] = fields
+        elif node.get("type") == "SystemDef":
+            name = node.get("name", "")
+            _validate_cpp_identifier(name, node.get("line"))
+            if name in system_defs:
+                raise Exception(f"意味エラー: System '{name}' が重複定義されています。")
+            system_defs[name] = node
+        elif node.get("type") == "FunctionDef":
+            name = node["name"]
         if node.get("type") == "FunctionDef":
             name = node["name"]
             _validate_cpp_identifier(name, node.get("line"))
@@ -932,6 +967,35 @@ def validate_ast(tree, allow_game=False):
             for param in node.get("params", []):
                 _validate_cpp_identifier(param, node.get("line"))
             functions[name] = len(node.get("params", []))
+
+    if (component_defs or system_defs) and not allow_game:
+        raise Exception("意味エラー: component/system宣言はブラウザゲームスクリプト内でのみ使用できます。")
+
+    builtin_component_fields = {
+        "Transform": {
+            "x": {"type": "Literal", "value": "0.0"},
+            "y": {"type": "Literal", "value": "0.0"},
+            "z": {"type": "Literal", "value": "0.0"},
+            "rotationX": {"type": "Literal", "value": "0.0"},
+            "rotationY": {"type": "Literal", "value": "0.0"},
+            "rotationZ": {"type": "Literal", "value": "0.0"},
+            "scaleX": {"type": "Literal", "value": "1.0"},
+            "scaleY": {"type": "Literal", "value": "1.0"},
+            "scaleZ": {"type": "Literal", "value": "1.0"},
+        },
+        "SceneObjectRef": {"sceneObjectId": {"type": "Literal", "value": '""'}},
+    }
+    component_fields = {**builtin_component_fields, **component_defs}
+    binding_names = {}
+    for component_name in component_fields:
+        binding = _ecs_binding_name(component_name)
+        if binding in binding_names and binding_names[binding] != component_name:
+            raise Exception(f"意味エラー: Component binding '{binding}' が重複しています。")
+        binding_names[binding] = component_name
+    for system in system_defs.values():
+        for component_name in system.get("components", []):
+            if component_name not in component_fields:
+                raise Exception(f"意味エラー: System '{system['name']}' が未定義Component '{component_name}' を要求しています。")
 
     game_functions = GAME_FUNCTIONS if allow_game else {}
     if allow_game:
@@ -952,7 +1016,7 @@ def validate_ast(tree, allow_game=False):
                     game_globals.setdefault(item["variable"], None)
                 elif kind == "CompoundAssignment":
                     game_globals.setdefault(item["variable"], None)
-                elif kind == "FunctionDef":
+                elif kind in ("FunctionDef", "ComponentDef", "SystemDef"):
                     continue
                 elif isinstance(item.get("body"), list):
                     collect_globals(item["body"])
@@ -986,6 +1050,18 @@ def validate_ast(tree, allow_game=False):
             if not isinstance(base, str) or not base.startswith("array<"):
                 raise Exception(f"意味エラー: '{node['name']}' は配列ではありません。")
             return base[6:-1]
+        if typ == "MemberExpr":
+            owner = node.get("object", {})
+            if owner.get("type") != "Variable":
+                raise Exception("意味エラー: Componentメンバーは 'component.field' 形式で参照してください。")
+            owner_type = env.get(owner.get("value"))
+            if not isinstance(owner_type, str) or not owner_type.startswith("component:"):
+                raise Exception(f"意味エラー: '{owner.get('value')}' はComponent bindingではありません。")
+            component_name = owner_type.split(":", 1)[1]
+            field_name = node.get("property", "")
+            if field_name not in component_fields.get(component_name, {}):
+                raise Exception(f"意味エラー: Component '{component_name}' にField '{field_name}' はありません。")
+            return _literal_kind(component_fields[component_name][field_name])
         if typ == "UnaryExpr":
             op = node["op"]
             value_type = expr(node["right"], env)
@@ -1076,13 +1152,27 @@ def validate_ast(tree, allow_game=False):
                 continue
             if typ in ("BREAKStatement", "CONTINUEStatement") and loop_depth <= 0:
                 raise Exception(f"意味エラー (行 {node.get('line', '?')}): {typ.replace('Statement', '').lower()} はループ内でのみ使用できます。")
+            if typ in ("ComponentDef", "SystemDef"):
+                previous = typ
+                continue
             if typ == "FunctionDef":
                 function_env = dict(game_globals) if allow_game else {}
                 function_env.update({p: None for p in node.get("params", [])})
                 block(node.get("body", []), function_env, loop_depth=0, function_depth=function_depth + 1)
                 previous = typ
                 continue
-            if typ == "AssignmentExpression":
+            if typ in ("MemberAssignment", "MemberCompoundAssignment"):
+                target = node.get("target", {})
+                if target.get("type") != "MemberExpr":
+                    raise Exception(f"意味エラー (行 {node.get('line', '?')}): Member代入先が不正です。")
+                target_type = expr(target, env)
+                value_type = expr(node.get("value"), env)
+                if node.get("type") == "MemberCompoundAssignment":
+                    if node.get("op") not in COMPOUND_OPERATORS:
+                        raise Exception("意味エラー: 未対応のMember複合代入演算子です。")
+                    if target_type not in ("int", "float", None) or value_type not in ("int", "float", None):
+                        raise Exception("意味エラー: Member複合代入は数値Fieldに使用してください。")
+            elif typ == "AssignmentExpression":
                 _validate_cpp_identifier(node["variable"], node.get("line"))
                 env[node["variable"]] = expr(node["value"], env)
             elif typ == "CompoundAssignment":
@@ -1116,6 +1206,13 @@ def validate_ast(tree, allow_game=False):
             previous = typ
 
     block(tree.get("body", []), declared)
+
+    if allow_game:
+        for system in system_defs.values():
+            system_env = {"entity": "int", "dt": "float"}
+            for component_name in system.get("components", []):
+                system_env[_ecs_binding_name(component_name)] = "component:" + component_name
+            block(system.get("body", []), system_env, loop_depth=0, function_depth=1)
 
     if allow_game:
         for name, expected in GAME_LIFECYCLE.items():
