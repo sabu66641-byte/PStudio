@@ -33,10 +33,13 @@ test('standalone player module remains syntactically valid as an ES module sourc
 test('standalone ZIP64 writer stores UTF-8 files, CRC32 and ZIP64 metadata correctly', async () => {
   const build = createBuild();
   assert.equal(await build.crc32Blob(new Blob(['123456789'])), 0xCBF43926);
+  const progress = [];
   const zip = await build.createZip64([
     { name: 'index.html', blob: new Blob(['<h1>Game</h1>'], { type: 'text/html' }) },
     { name: 'assets/木.glb', blob: new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: 'model/gltf-binary' }) }
-  ]);
+  ], detail => progress.push(detail));
+  assert.ok(progress.some(detail => detail.stage === 'checksum'));
+  assert.ok(progress.some(detail => detail.stage === 'archive'));
   assert.equal(zip.type, 'application/zip');
   const bytes = new Uint8Array(await zip.arrayBuffer());
   assert.equal(readU32(bytes, 0), 0x04034B50);
