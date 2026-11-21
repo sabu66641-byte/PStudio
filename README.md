@@ -73,7 +73,7 @@ PStudio uses a hybrid persistent binary-asset store:
 - The IndexedDB `pstudio-binary-assets/models` object store remains the metadata index and compatibility backend. Existing IndexedDB Blob records without a backend marker remain readable without migration.
 - If OPFS is unavailable, blocked by browser policy, or rejects a write, PStudio falls back to storing the Blob in IndexedDB. A storage quota failure is reported; no browser storage backend is unlimited.
 - Storage usage and quota are browser/origin-specific. PStudio requests persistent storage where supported and uses `navigator.storage.estimate()` before writes. Browser eviction, OS free space, profile policy, and device memory still apply.
-- GLB's accepted container size is bounded by the glTF 2.0 32-bit total-length field (4 GiB minus one byte). This is a format ceiling, not a promise that any device can store or decode a model of that size. Runtime CPU/GPU budgets can still reject a model whose decoded footprint is unsafe. External `.gltf` packages remain separately capped at 30 MiB because the current importer embeds external dependencies as data URLs.
+- The GLB import ceiling remains 1 GiB to preserve the current decoder's memory-safety envelope: the GLTFLoader worker materializes the source Blob as an ArrayBuffer during parsing. OPFS improves persistent storage options, not the model decoder's RAM ceiling. Runtime CPU/GPU budgets can still reject a model whose decoded footprint is unsafe. External `.gltf` packages remain separately capped at 30 MiB because the current importer embeds external dependencies as data URLs.
 
 ### Export a standalone game
 
