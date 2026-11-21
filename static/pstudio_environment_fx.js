@@ -394,10 +394,18 @@
 
   function update(time) {
     const t=Number(time)||0;
-    for(const m of water){const u=m.userData.pstudioWaterHQ;if(u)u.time.value=t;}
-    for(const m of waterDetailMaterials){const u=m.userData.pstudioWaterDetailHQ;if(u)u.time.value=t;}
-    for(const m of foliage){const u=m.userData.pstudioFoliageHQ;if(u)u.time.value=t;}
-    for(const m of caustics){const u=m.userData.pstudioCausticsHQ;if(u)u.time.value=t;}for(const pass of cloudPasses)if(pass.uniforms?.uTime)pass.uniforms.uTime.value=t;
+    const setTime=(collection,recordKey)=>{
+      for(const material of collection){
+        const record=material?.userData?.[recordKey],uniform=record?.time;
+        if(!uniform||!Object.prototype.hasOwnProperty.call(uniform,'value')){collection.delete(material);continue;}
+        uniform.value=t;
+      }
+    };
+    setTime(water,'pstudioWaterHQ');
+    setTime(waterDetailMaterials,'pstudioWaterDetailHQ');
+    setTime(foliage,'pstudioFoliageHQ');
+    setTime(caustics,'pstudioCausticsHQ');
+    for(const pass of cloudPasses){const uniform=pass?.uniforms?.uTime;if(uniform&&Object.prototype.hasOwnProperty.call(uniform,'value'))uniform.value=t;}
   }
 
   function createVolumetricCloudPass(FX,Three) {
@@ -454,7 +462,7 @@
     const pass=new FX.ShaderPass(shader);
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
-    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){if(!this.uniforms.tDepth.value)this.uniforms.tDepth.value=readBuffer?.depthTexture||null;originalRender(renderer,writeBuffer,readBuffer,delta,mask);};
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){const depth=this.uniforms?.tDepth;if(depth&&Object.prototype.hasOwnProperty.call(depth,'value')&&!depth.value)depth.value=readBuffer?.depthTexture||null;originalRender(renderer,writeBuffer,readBuffer,delta,mask);};
     cloudPasses.add(pass);
     return pass;
   }
@@ -492,13 +500,13 @@
     };
     const pass=new FX.ShaderPass(shader);pass.enabled=false;
     const render=pass.render.bind(pass);
-    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){this.uniforms.tDepth.value=readBuffer?.depthTexture||null;render(renderer,writeBuffer,readBuffer,delta,mask);};
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){const depth=this.uniforms?.tDepth;if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||null;render(renderer,writeBuffer,readBuffer,delta,mask);};
     return pass;
   }
 
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
-    setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material.userData?.pstudioWaterHQ;if(!u)continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
+    setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
     getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
   };
