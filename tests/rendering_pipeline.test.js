@@ -282,7 +282,7 @@ test('GLB spatial chunks preserve child transforms and stream detail by GPU-awar
   for(const token of ['buildModelStreamingChunks','pstudioStreamingConfig','chunk.attach(group.children[i])','pstudioStreamChunkId','pstudioStreamLoadDistance','updateModelStreamingChunks','activeModelStreamChunks'])assert.ok(renderer.includes(token),token);
 });
 test('chunk-local GPU instance batches retain animated tree transforms but do not update static architecture every frame',()=>{
-  for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
+  for(const token of ['const inverseParent=parent.matrixWorld.clone().invert()','pstudioStreamChunkId','animatedFoliageBatches:foliageBatches.filter(entry=>entry.isTree)','const entries=instance?.animatedFoliageBatches','if(!entry.mesh.visible||!(entry.parent||root).visible)continue','parent.updateWorldMatrix(true,false)','modelInstancedBatches'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -299,7 +299,10 @@ test('tree trunk, branch and leaf tracks are all preserved by the animation-awar
   for(const token of ["windRole==='trunk'","windRole==='branch'","windRole==='leaf'","PStudio_GPU_Instances_"])assert.ok(renderer.includes(token),token);
 });
 test('static architectural instance transforms are not recomputed every animation frame',()=>{
-  assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
+  assert.ok(renderer.includes('animatedFoliageBatches:foliageBatches.filter(entry=>entry.isTree)'));
+  assert.ok(renderer.includes('const entries=instance?.animatedFoliageBatches'));
+  assert.ok(!renderer.includes('const T=window.THREE,root=instance.root;root.updateMatrixWorld(true)'));
+  assert.ok(renderer.includes('parent.updateWorldMatrix(true,false)'));
 });
 
 
@@ -355,7 +358,9 @@ test('static repeated detail geometry is eligible for chunk-local instancing',()
   assert.ok(renderer.includes('groups.get(key).sources.push(object)'));
 });
 test('GPU-updated foliage transforms skip hidden LOD and streamed chunks',()=>{
-  assert.ok(renderer.includes('if(!entry.isTree||!entry.mesh.visible||!(entry.parent||root).visible)continue'));
+  assert.ok(renderer.includes('animatedFoliageBatches:foliageBatches.filter(entry=>entry.isTree)'));
+  assert.ok(renderer.includes('const entries=instance?.animatedFoliageBatches'));
+  assert.ok(renderer.includes('if(!entry.mesh.visible||!(entry.parent||root).visible)continue'));
 });
 
 
