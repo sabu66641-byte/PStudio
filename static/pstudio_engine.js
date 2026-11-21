@@ -479,6 +479,8 @@
       case 'set_time_scale': if(a.length===1){
         if(!runtime)throw new PsRuntimeError('set_time_scale() はゲーム実行中のみ使用できます。');
         runtime.timeScale=Math.max(0,Math.min(4,finite(a[0])));
+        const stored=window.PStudioECSScene?.setTimeScale?.(runtime.timeScale);
+        if(typeof stored==='number')runtime.timeScale=stored;
         return runtime.timeScale;
       } break;
       case 'draw_trail': if(a.length===4){
@@ -787,7 +789,7 @@
   }
   function tick(time) {
     if(!runtime?.running)return;
-    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
+    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const unscaledDeltaTime=Math.min(0.1,raw);const previousTime=window.PStudioECSScene?.getTimeState?.();const timeScale=Math.max(0,Math.min(4,Number(previousTime?.timeScale??runtime?.timeScale??1)));const dt=Math.min(0.1,unscaledDeltaTime*timeScale);
     try {
       const commands=new Map();
       window.PStudioECSScene?.syncInputState?.({
@@ -798,6 +800,7 @@
         touchActive,touchX:pointerPosition.x,touchY:pointerPosition.y,
         jumpPressed:keys.has(' ')||virtualKeys.has(' ')
       });
+      window.PStudioECSScene?.syncTimeState?.({timeScale,deltaTime:dt,unscaledDeltaTime});
       for(const object of sceneObjects||[]){
         const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;
         window.PStudioPhysics?.setActive?.(object.id,active);
@@ -1125,7 +1128,7 @@
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
       window.PStudioECSScene?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;window.PStudioECSScene?.syncTimeState?.({timeScale:1,deltaTime:0,unscaledDeltaTime:0});
       if(!window.PStudioECSGameplay?.isAvailable?.())for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
       window.PStudioECSInspector?.refresh?.();
@@ -1137,7 +1140,7 @@
     } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();justPressed.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);window.PStudioECSScene?.syncInputState?.({pressedKeys:[],justPressedKeys:[],axisX:0,axisZ:0,touchActive:false,touchX:0,touchY:0,jumpPressed:false});
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;window.PStudioECSGameplay?.snapshotSceneState?.(sceneObjects || []);cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();justPressed.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);window.PStudioECSScene?.syncInputState?.({pressedKeys:[],justPressedKeys:[],axisX:0,axisZ:0,touchActive:false,touchX:0,touchY:0,jumpPressed:false});window.PStudioECSScene?.syncTimeState?.({timeScale:1,deltaTime:0,unscaledDeltaTime:0});
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
