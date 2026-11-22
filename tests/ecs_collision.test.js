@@ -55,7 +55,7 @@ test('CollisionEvent is runtime-only ECS data and emits enter/stay/exit notifica
   assert.equal(collision.commitContacts(), 1);
   assert.equal(notifications.filter(item => item.type === 'collision.stay').length, 1);
   collision.endFrame();
-  assert.equal(ecs.hasComponent(enterEntity, 'CollisionEvent'), false);
+  assert.equal(ecs.query(['CollisionEvent']).includes(enterEntity), false);
 
   collision.beginFrame();
   assert.equal(collision.commitContacts(), 1);
@@ -100,10 +100,10 @@ test('Collision event Entities remain available for one complete ECS frame and c
 
   // The previous frame event remains queryable while this frame's Systems run.
   collision.beginFrame();
-  assert.equal(ecs.hasComponent(firstFrameEntity, 'CollisionEvent'), true);
+  assert.equal(ecs.query(['CollisionEvent']).includes(firstFrameEntity), true);
   collision.commitContacts();
   collision.endFrame();
-  assert.equal(ecs.hasComponent(firstFrameEntity, 'CollisionEvent'), false);
+  assert.equal(ecs.query(['CollisionEvent']).includes(firstFrameEntity), false);
 
   collision.clear();
   assert.equal(ecs.query(['CollisionEvent']).length, 0);
