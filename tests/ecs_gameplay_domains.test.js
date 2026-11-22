@@ -53,6 +53,8 @@ test('Inventory and Equipment are runtime-only ECS Components with legacy API pa
   gameplay.defineItem('potion', 'consumable', 'heal', 25);
   gameplay.defineItem('sword', 'equipment', 'main-hand', 0);
   assert.equal(gameplay.inventoryAdd('player', 'potion', 3), 3);
+  assert.equal(gameplay.inventoryAdd('player', '__proto__', 2), 2);
+  assert.equal(gameplay.inventoryCount('player', '__proto__'), 2);
   assert.equal(gameplay.inventoryAdd('player', 'sword', 1), 1);
   assert.equal(gameplay.equipItem('player', 'sword'), true);
   assert.equal(gameplay.inventoryCount('player', 'potion'), 3);
