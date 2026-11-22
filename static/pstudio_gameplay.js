@@ -8,6 +8,10 @@
   let activeUI=null, lastDialogueChoice='';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
+  const hasOwn=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
+  function setRecordValue(record,key,value){
+    Object.defineProperty(record,String(key),{value,enumerable:true,configurable:true,writable:true});
+  }
   function stat(id){const ecsHealth=window.PStudioECSGameplay?.getHealth?.(id);if(ecsHealth)return ecsHealth;if(!stats.has(id))stats.set(id,{max:100,hp:100,configured:false});return stats.get(id);}
   function initializeECS(sceneObjects){
     const bridge=window.PStudioECSGameplay;
@@ -20,11 +24,11 @@
       getEquipment:id=>Object.fromEntries(equipment.get(id)||new Map()),
       setEquipment:(id,value)=>equipment.set(id,new Map(Object.entries(value||{}))),
       getCombat:id=>{
-        const cooldowns={};
+        const cooldowns=Object.create(null);
         const prefix=String(id)+'>';
         for(const [key,value] of attackTimes)if(key.startsWith(prefix)){
           const target=key.slice(prefix.length);
-          cooldowns[target]=typeof value==='number'?{at:value,duration:0}:value;
+          setRecordValue(cooldowns,target,typeof value==='number'?{at:value,duration:0}:value);
         }
         const combo=weaponCombos.get(id)||{count:0,time:0,weapon:''};
         return {cooldowns,comboCount:combo.count||0,comboTime:combo.time||0,comboWeapon:combo.weapon||''};
@@ -130,24 +134,24 @@
   function inventoryAdd(id,item,count=1){
     const key=String(item),amount=Math.max(1,Math.floor(number(count,1)));
     const state=window.PStudioECSGameplay?.getInventory?.(id,true);
-    if(state){const next=(Number(state.items[key])||0)+amount;state.items[key]=next;return next;}
+    if(state){const next=(hasOwn(state.items,key)?Number(state.items[key])||0:0)+amount;setRecordValue(state.items,key,next);return next;}
     const bag=inventory(id),next=(bag.get(key)||0)+amount;bag.set(key,next);return next;
   }
   function inventoryRemove(id,item,count=1){
     const key=String(item),n=Math.max(1,Math.floor(number(count,1)));
     const state=window.PStudioECSGameplay?.getInventory?.(id,true);
-    if(state){const old=Number(state.items[key])||0;if(old<n)return false;if(old===n)delete state.items[key];else state.items[key]=old-n;return true;}
+    if(state){const old=hasOwn(state.items,key)?Number(state.items[key])||0:0;if(old<n)return false;if(old===n)delete state.items[key];else setRecordValue(state.items,key,old-n);return true;}
     const bag=inventory(id),old=bag.get(key)||0;if(old<n)return false;if(old===n)bag.delete(key);else bag.set(key,old-n);return true;
   }
   function inventoryCount(id,item){
     const state=window.PStudioECSGameplay?.getInventory?.(id);
-    return state?Number(state.items[String(item)])||0:inventory(id).get(String(item))||0;
+    const key=String(item);return state?(hasOwn(state.items,key)?Number(state.items[key])||0:0):inventory(id).get(key)||0;
   }
   function defineItem(item,kind,slot,value){itemDefinitions.set(String(item),{kind:String(kind),slot:String(slot||''),value:Math.max(0,number(value))});return true;}
   function equipItem(id,item){
     const def=itemDefinitions.get(String(item));if(!def||def.kind!=='equipment'||inventoryCount(id,item)<=0)return false;
     const slot=def.slot||'main',state=window.PStudioECSGameplay?.getEquipment?.(id,true);
-    if(state){state.slots[slot]=String(item);return true;}
+    if(state){setRecordValue(state.slots,slot,String(item));return true;}
     const slots=equipment.get(id)||new Map();slots.set(slot,String(item));equipment.set(id,slots);return true;
   }
   function getEquipment(id){
