@@ -122,6 +122,12 @@ test('AIController System produces MovementIntent and the resolver applies it be
   assert.equal(gameplay.enemyAI('enemy', 'player', 20, 1.2, 4, objects, physics), 'chase');
   assert.ok(ecs.hasComponent(enemyEntity, 'AIController'));
   assert.ok(ecs.hasComponent(enemyEntity, 'MovementIntent'));
+  const movementIntent = bridge.getMovementIntent('enemy');
+  assert.equal(movementIntent.active, true);
+  assert.equal(movementIntent.x, 0);
+  assert.equal(movementIntent.z, 1);
+  assert.deepEqual(Array.from(ecs.query(['MovementIntent', 'SceneObjectRef'])), [enemyEntity]);
+  assert.equal(ecs.getSystems().find(system => system.id === 'gameplay.movement-intent')?.phase, 'postUpdate');
 
   ecs.updatePhase('postUpdate', 1 / 60, { sceneObjects: objects });
   assert.equal(gameplay.getAIState('enemy'), 'chase');
