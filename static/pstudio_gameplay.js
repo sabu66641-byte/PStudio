@@ -222,8 +222,11 @@
     if(controller){
       const ecs=window.PStudioECS,entity=ecs?.getEntityForSceneObject?.(sourceId);
       const intent=bridge.getMovementIntent?.(sourceId),reference=entity!==null&&entity!==undefined?ecs.getComponent(entity,'SceneObjectRef'):null;
-      if(entity!==null&&entity!==undefined&&intent&&reference){
-        updateAIController(entity,controller,intent,reference,{sceneObjects:objects||[]});
+      if(entity!==null&&entity!==undefined&&intent){
+        const sceneReference=reference||{sceneObjectId:String(source.id)};
+        updateAIController(entity,controller,intent,sceneReference,{
+          sceneObjects:objects||[],sourceObject:source,targetObject:target,physics
+        });
         controller.skipLegacyEvaluation=true;
       }
       return controller.state||'idle';
@@ -240,7 +243,9 @@
   function getAIState(id){return (window.PStudioECSGameplay?.getAIState?.(id)??aiStates.get(id)) || 'idle';}
   function updateAIController(entity,controller,intent,reference,context){
     const sourceId=String(reference?.sceneObjectId||''),objects=context?.sceneObjects||sceneObjects||[];
-    const source=resolveObject(sourceId,objects),target=resolveObject(controller.targetId,objects),physics=window.PStudioPhysics;
+    const source=context?.sourceObject||resolveObject(sourceId,objects);
+    const target=context?.targetObject||resolveObject(controller.targetId,objects);
+    const physics=context?.physics||window.PStudioPhysics;
     const setIntent=(x,z,active=true)=>{intent.x=x;intent.z=z;intent.maxSpeed=Math.max(0.1,number(controller.speed,3));intent.acceleration=24;intent.airControl=0.25;intent.active=active;intent.mode='ai';intent.targetId=String(controller.targetId||'');};
     if(!source||!target||!physics?.getBody?.(sourceId)){controller.state='idle';setIntent(0,0,false);return;}
     if(!isAlive(sourceId)){controller.state='dead';setIntent(0,0,true);return;}
