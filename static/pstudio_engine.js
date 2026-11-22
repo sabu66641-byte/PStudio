@@ -690,6 +690,12 @@
       }
 
       for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      const ecsAfterScripts = window.PStudioECS;
+      if (ecsAfterScripts?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime };
+        ecsAfterScripts.updatePhase?.('postUpdate', dt, ecsContext);
+        ecsAfterScripts.applySceneObjectTransforms(sceneObjects || []);
+      }
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ecsAfterPhysics = window.PStudioECS;
