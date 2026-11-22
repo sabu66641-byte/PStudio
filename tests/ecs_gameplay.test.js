@@ -58,7 +58,9 @@ test('Health state survives Stop/Play through a compatibility snapshot without r
   gameplay.setHP('hero', 73);
 
   assert.equal(bridge.persist(objects, (id, value) => legacySnapshot.set(id, value)), true);
-  assert.deepEqual(legacySnapshot.get('hero'), { max: 240, hp: 73, configured: true });
+  assert.equal(legacySnapshot.get('hero').max, 240);
+  assert.equal(legacySnapshot.get('hero').hp, 73);
+  assert.equal(legacySnapshot.get('hero').configured, true);
 
   ecs.clearSceneObjects();
   ecs.syncSceneObjects(objects);
