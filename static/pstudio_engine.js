@@ -700,7 +700,7 @@
         ecsAfterScripts.applySceneObjectTransforms(sceneObjects || []);
       }
       window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], dt);
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));if(owner?.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ownersById=new Map((sceneObjects||[]).map(item=>[String(item.id),item]));
