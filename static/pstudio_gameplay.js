@@ -8,7 +8,9 @@
   let activeUI=null, lastDialogueChoice='';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
-  function stat(id){if(!stats.has(id))stats.set(id,{max:100,hp:100,configured:false});return stats.get(id);}
+  function stat(id){const ecsHealth=window.PStudioECSGameplay?.getHealth?.(id);if(ecsHealth)return ecsHealth;if(!stats.has(id))stats.set(id,{max:100,hp:100,configured:false});return stats.get(id);}
+  function initializeECS(sceneObjects){return window.PStudioECSGameplay?.initialize?.(sceneObjects||[],id=>stats.get(id))||false;}
+  function persistECS(sceneObjects){return window.PStudioECSGameplay?.persist?.(sceneObjects||[],(id,value)=>stats.set(id,value))||false;}
   function setMaxHP(id,value){const s=stat(id);s.max=Math.max(1,number(value,100));s.hp=s.configured?clamp(s.hp,0,s.max):s.max;s.configured=true;return s.max;}
   function setHP(id,value){const s=stat(id);s.hp=clamp(number(value),0,s.max);s.configured=true;return s.hp;}
   function getHP(id){return stat(id).hp;}
@@ -102,5 +104,5 @@
     for(let i=0;i<count;i++){const tri=vertices.slice(i*9,i*9+9).map(number),a=tri.slice(0,3),b=tri.slice(3,6),c=tri.slice(6,9),ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]],nx=ab[1]*ac[2]-ab[2]*ac[1],ny=ab[2]*ac[0]-ab[0]*ac[2],nz=ab[0]*ac[1]-ab[1]*ac[0],len=Math.hypot(nx,ny,nz);if(len<1e-8||Math.abs(ny/len)<slope)continue;const id='navtri_'+nodes.length;const p={id,x:(a[0]+b[0]+c[0])/3,y:(a[1]+b[1]+c[1])/3,z:(a[2]+b[2]+c[2])/3,links:new Set()};nodes.push(p);navNodes.set(id,p);const verts=[a,b,c];for(let e=0;e<3;e++){const v1=verts[e],v2=verts[(e+1)%3],k1=v1.map(v=>Math.round(v*1000)).join(','),k2=v2.map(v=>Math.round(v*1000)).join(','),key=[k1,k2].sort().join('|');if(edgeMap.has(key)){const other=edgeMap.get(key);p.links.add(other.id);other.links.add(p.id);}else edgeMap.set(key,p);}}
     return nodes.length;}
   function resetTransient(){attackTimes.clear();weaponCombos.clear();}
-  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,defineItem,equipItem,useItem,getEquipment,getInventorySnapshot,questDefine,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,weaponAttack,comboCount,enemyAI,getAIState,openInventory,openQuestLog,closeUI,showDialogue,chooseDialogue,getDialogueChoice,getUIState,uiAction,navAddNode,navConnect,navBuildGrid,navBuildFromTriangles,navBuildFromTerrain,defineWeapon,navBlock,navNext,navClear,resetTransient,version:'2.0.0'};
+  window.PStudioGameplay={setMaxHP,setHP,getHP,getMaxHP,damage,heal,isAlive,attack,strike,follow,inventoryAdd,inventoryRemove,inventoryCount,defineItem,equipItem,useItem,getEquipment,getInventorySnapshot,questDefine,questStart,questComplete,questIsComplete,questSetProgress,questGetProgress,weaponAttack,comboCount,enemyAI,getAIState,openInventory,openQuestLog,closeUI,showDialogue,chooseDialogue,getDialogueChoice,getUIState,uiAction,navAddNode,navConnect,navBuildGrid,navBuildFromTriangles,navBuildFromTerrain,defineWeapon,navBlock,navNext,navClear,resetTransient,initializeECS,persistECS,version:'2.1.0'};
 })();
