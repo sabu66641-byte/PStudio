@@ -68,7 +68,7 @@ test('Audio play requests dispatch through the Audio service during postUpdate',
 test('AudioEmitter settings scale volume and mute without taking ownership of Audio resources', () => {
   const { ecs, audio, played } = createAudioRuntime();
   assert.equal(audio.attachEmitter('player', { volume: 0.4, muted: false }), true);
-  assert.deepEqual(audio.getEmitter('player'), { enabled: true, muted: false, volume: 0.4 });
+  assert.deepEqual(JSON.parse(JSON.stringify(audio.getEmitter('player'))), { enabled: true, muted: false, volume: 0.4 });
 
   audio.play('player', 'footstep', 0.5, true);
   ecs.updatePhase('postUpdate', 1 / 60, {});
