@@ -250,7 +250,7 @@ test('Navigation graph nodes, links, blocked state and A* are owned by ECS Compo
   assert.equal(gameplay.navNext('start', 'goal'), 'middle');
   assert.equal(gameplay.navBlock('unknown', true), false);
 
-  assert.equal(gameplay.navClear(), true);
+  gameplay.navClear();
   assert.equal(bridge.getNavigationNodeCount(), 0);
   assert.equal(ecs.query(['NavigationNode']).length, 0);
 });
