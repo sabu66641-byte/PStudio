@@ -83,7 +83,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
 - `static/pstudio_gameplay.js`: compatibility-facing gameplay API for combat, health, inventory, quests, dialogue and navigation.
-- `static/pstudio_ecs_gameplay.js`: ECS-owned gameplay state Components and Systems for Health, Inventory, Equipment, CombatState, AIController, MovementIntent, QuestProgress and DialogueSession. The bridge snapshots state at Stop to preserve Play-session persistence.
+- `static/pstudio_ecs_gameplay.js`: ECS-owned gameplay state Components and Systems for Health, Inventory, Equipment, CombatState, AIController, MovementIntent, QuestProgress, DialogueSession and NavigationNode. The bridge snapshots per-Scene-Object gameplay state at Stop; standalone Navigation graph Entities retain their existing in-memory lifetime.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
 
@@ -135,7 +135,7 @@ The legacy `PStudioGameplay` API remains the compatibility surface for existing 
 
 The existing API names and their result types remain in place. It routes HP, inventory, equipment, cooldown, combo, quest and dialogue reads/writes to ECS when a matching Scene Object/runtime is active. At Stop, the bridge snapshots state into a compatibility store and removes standalone quest/dialogue entities before Scene Object ECS teardown; the next Play restores those snapshots. The compatibility store is not an active second writer during a Play session.
 
-AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `postUpdate` phase. It writes `MovementIntent`; `gameplay.movement-intent` then applies the intent to the existing Physics controller before the fixed-step solver. The `gameplay.combat-state-maintenance` System expires old per-target cooldown records. Physics still owns its solver, item/weapon/quest definitions remain configuration data in the Gameplay service, Navigation graph data remains on that service, and `PStudioUI` continues to own DOM presentation. This is an incremental state/runtime migration, not a claim that every gameplay subsystem or infrastructure service has become ECS.
+AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `postUpdate` phase. It writes `MovementIntent`; `gameplay.movement-intent` then applies the intent to the existing Physics controller before the fixed-step solver. The `gameplay.combat-state-maintenance` System expires old per-target cooldown records. Physics still owns its solver, item/weapon/quest definitions remain configuration data in the Gameplay service, and `PStudioUI` continues to own DOM presentation. Navigation node coordinates, links, blocked state and A* next-node queries are ECS-owned by standalone `NavigationNode` Entities; the Gameplay API only provides compatibility wrappers and graph-building helpers. This is an incremental state/runtime migration, not a claim that every gameplay subsystem or infrastructure service has become ECS.
 
 ## Rendering and physics contracts
 
