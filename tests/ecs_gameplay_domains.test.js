@@ -241,6 +241,10 @@ test('Navigation graph nodes, links, blocked state and A* are owned by ECS Compo
   assert.equal(definition.persistent, false);
   assert.equal(bridge.getNavigationNodeCount(), 3);
   assert.equal(gameplay.navNext('start', 'goal'), 'middle');
+  const nearest = bridge.getNearestNavigationNodes([
+    { x: 0, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }
+  ]);
+  assert.deepEqual(Array.from(nearest, node => node.nodeId), ['start', 'goal']);
 
   const middle = bridge.getNavigationNode('middle');
   assert.deepEqual(Array.from(middle.links), ['start', 'goal']);
