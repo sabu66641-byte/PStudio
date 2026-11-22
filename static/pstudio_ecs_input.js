@@ -267,9 +267,6 @@
         const held = new Set(snapshot.keys);
         for (const key of snapshot.virtualKeys) held.add(key);
         const pressed = new Set(snapshot.pressed);
-        for (const key of snapshot.virtualKeys) {
-          if (key === ' ') pressed.add(key);
-        }
         api.forEach([TYPES.PlayerInput, TYPES.ControlIntent], (entity, binding, intent) => {
           if (!binding.enabled) {
             intent.x = 0; intent.z = 0; intent.jump = false;
