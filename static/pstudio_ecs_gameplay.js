@@ -375,7 +375,7 @@
   window.PStudioECSGameplay = Object.freeze({
     version: '2.0.0', componentTypes: Object.values(TYPES), initialize, persist,
     getHealth, getInventory, getEquipment, getCombatState, canAttack, getCombo, setCombo,
-    setAIController, setAIState, getAIState, setMovementIntent,
+    getAIController, getMovementIntent, setAIController, setAIState, getAIState, setMovementIntent,
     getQuestState, listQuests, getDialogueState, getRuntimeState
   });
 })();
