@@ -185,6 +185,14 @@ class PsEcsLanguageTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("組み込みComponent", response.get_json()["error"])
 
+    def test_builtin_collision_event_component_cannot_be_redeclared(self):
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"bad.ps": "component CollisionEvent\\n    phase = \"enter\"\\n"}},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("組み込みComponent", response.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
