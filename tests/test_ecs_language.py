@@ -180,7 +180,7 @@ class PsEcsLanguageTests(unittest.TestCase):
         for name in ("InputSnapshot", "PlayerInput", "ControlIntent"):
             response = self.client.post(
                 "/game/prepare",
-                json={"scripts": {"bad.ps": "component " + name + "\\n    x = 1\\n"}},
+                json={"scripts": {"bad.ps": "component " + name + "\n    x = 1\n"}},
             )
             self.assertEqual(response.status_code, 400)
             self.assertIn("組み込みComponent", response.get_json()["error"])
