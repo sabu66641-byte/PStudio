@@ -14,9 +14,10 @@
     Health: 'Health', Inventory: 'Inventory', Equipment: 'Equipment',
     CombatState: 'CombatState', AIController: 'AIController',
     MovementIntent: 'MovementIntent', QuestProgress: 'QuestProgress',
-    DialogueSession: 'DialogueSession'
+    DialogueSession: 'DialogueSession', NavigationNode: 'NavigationNode'
   };
   const questEntities = new Map();
+  const navigationNodeEntities = new Map();
   let dialogueEntity = null;
   let active = false;
 
@@ -90,6 +91,17 @@
       choice: { type: 'string', default: '' },
       active: { type: 'boolean', default: false }
     }, { label: 'Dialogue Session' });
+    registerType(TYPES.NavigationNode, {
+      nodeId: { type: 'string', default: '' },
+      x: { type: 'number', default: 0 },
+      y: { type: 'number', default: 0 },
+      z: { type: 'number', default: 0 },
+      links: { type: 'array', default: [] },
+      blocked: { type: 'boolean', default: false }
+    }, {
+      label: 'Navigation Node',
+      description: 'Runtime navigation graph node. Edges are stored as neighboring node IDs; the ECS Component is the source of truth.'
+    });
   }
 
   function systems() {
@@ -294,6 +306,146 @@
     ecs.addComponent(dialogueEntity, TYPES.DialogueSession);
     return ecs.getComponent(dialogueEntity, TYPES.DialogueSession);
   }
+
+  // Navigation graph data is stored on standalone ECS Entities. The Map below is
+  // only an ID-to-Entity lookup cache; it never owns node coordinates or edges.
+  function findNavigationNodeEntity(nodeId) {
+    const key = String(nodeId);
+    const cached = navigationNodeEntities.get(key);
+    if (cached !== undefined) {
+      try {
+        const data = ecs.getComponent(cached, TYPES.NavigationNode);
+        if (data && data.nodeId === key) return cached;
+      } catch (_) {}
+      navigationNodeEntities.delete(key);
+    }
+    for (const entity of ecs.query([TYPES.NavigationNode])) {
+      const data = ecs.getComponent(entity, TYPES.NavigationNode);
+      if (data.nodeId === key) {
+        navigationNodeEntities.set(key, entity);
+        return entity;
+      }
+    }
+    return null;
+  }
+
+  function getNavigationNode(nodeId) {
+    const entity = findNavigationNodeEntity(nodeId);
+    return entity === null ? null : ecs.getComponent(entity, TYPES.NavigationNode);
+  }
+
+  function getNavigationNodes() {
+    return ecs.query([TYPES.NavigationNode]).map(entity => ecs.getComponent(entity, TYPES.NavigationNode));
+  }
+
+  function getNavigationNodeCount() {
+    return ecs.query([TYPES.NavigationNode]).length;
+  }
+
+  function addNavigationNode(nodeId, x, y, z) {
+    const key = String(nodeId);
+    const existing = findNavigationNodeEntity(key);
+    if (existing !== null) {
+      // Match the previous Map.set behavior: replacing a node resets its own
+      // outgoing edges while neighboring nodes may still reference this ID.
+      ecs.setComponent(existing, TYPES.NavigationNode, {
+        nodeId: key, x: Number.isFinite(Number(x)) ? Number(x) : 0,
+        y: Number.isFinite(Number(y)) ? Number(y) : 0,
+        z: Number.isFinite(Number(z)) ? Number(z) : 0,
+        links: [], blocked: false
+      });
+      return true;
+    }
+    const entity = ecs.createEntity();
+    ecs.addComponent(entity, TYPES.NavigationNode, {
+      nodeId: key,
+      x: Number.isFinite(Number(x)) ? Number(x) : 0,
+      y: Number.isFinite(Number(y)) ? Number(y) : 0,
+      z: Number.isFinite(Number(z)) ? Number(z) : 0,
+      links: [],
+      blocked: false
+    });
+    navigationNodeEntities.set(key, entity);
+    return true;
+  }
+
+  function connectNavigationNodes(fromId, toId) {
+    const from = getNavigationNode(fromId);
+    const to = getNavigationNode(toId);
+    if (!from || !to) return false;
+    const a = String(toId), b = String(fromId);
+    if (!from.links.includes(a)) from.links.push(a);
+    if (!to.links.includes(b)) to.links.push(b);
+    return true;
+  }
+
+  function setNavigationNodeBlocked(nodeId, blocked = true) {
+    const node = getNavigationNode(nodeId);
+    if (!node) return false;
+    node.blocked = !!blocked;
+    return true;
+  }
+
+  function clearNavigationNodes() {
+    const entities = ecs.query([TYPES.NavigationNode]);
+    for (const entity of entities) ecs.destroyEntity(entity);
+    navigationNodeEntities.clear();
+    return true;
+  }
+
+  function getNearestNavigationNode(position) {
+    const point = position || {};
+    let best = null, bestDistance = Infinity;
+    for (const node of getNavigationNodes()) {
+      const distance = Math.hypot(
+        node.x - (Number(point.x) || 0),
+        node.y - (Number(point.y) || 0),
+        node.z - (Number(point.z) || 0)
+      );
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = node;
+      }
+    }
+    return best;
+  }
+
+  function findNavigationNext(startId, goalId) {
+    const start = String(startId), goal = String(goalId);
+    const startNode = getNavigationNode(start), goalNode = getNavigationNode(goal);
+    if (!startNode || !goalNode || goalNode.blocked) return '';
+    const distance = (a, b) => {
+      const p = getNavigationNode(a), q = getNavigationNode(b);
+      return p && q ? Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) : Infinity;
+    };
+    const open = [start], came = new Map();
+    const g = new Map([[start, 0]]);
+    const f = new Map([[start, distance(start, goal)]]);
+    const closed = new Set();
+    while (open.length) {
+      open.sort((a, b) => (f.get(a) || Infinity) - (f.get(b) || Infinity));
+      const id = open.shift();
+      if (id === goal) break;
+      closed.add(id);
+      const current = getNavigationNode(id);
+      if (!current) continue;
+      for (const next of current.links) {
+        const neighbor = getNavigationNode(next);
+        if (!neighbor || neighbor.blocked || closed.has(next)) continue;
+        const score = (g.get(id) || 0) + distance(id, next);
+        if (score < (g.get(next) ?? Infinity)) {
+          came.set(next, id);
+          g.set(next, score);
+          f.set(next, score + distance(next, goal));
+          if (!open.includes(next)) open.push(next);
+        }
+      }
+    }
+    if (start !== goal && !came.has(goal)) return '';
+    let step = goal;
+    while (came.get(step) !== start && came.has(step)) step = came.get(step);
+    return step === start ? '' : step;
+  }
   function copySceneState(objectId, legacy) {
     const health = getSceneComponent(objectId, TYPES.Health);
     const inventory = getInventory(objectId);
@@ -365,6 +517,7 @@
   function getRuntimeState() {
     return {
       active, componentTypes: Object.values(TYPES), questCount: questEntities.size,
+      navigationNodeCount: getNavigationNodeCount(),
       hasDialogueSession: dialogueEntity !== null,
       systems: ecs.getSystems().filter(system => system.id.startsWith('gameplay.')).map(system => system.id)
     };
@@ -376,6 +529,9 @@
     version: '2.0.0', componentTypes: Object.values(TYPES), initialize, persist,
     getHealth, getInventory, getEquipment, getCombatState, canAttack, getCombo, setCombo,
     getAIController, getMovementIntent, setAIController, setAIState, getAIState, setMovementIntent,
-    getQuestState, listQuests, getDialogueState, getRuntimeState
+    getQuestState, listQuests, getDialogueState,
+    addNavigationNode, connectNavigationNodes, getNavigationNode, getNavigationNodes,
+    getNavigationNodeCount, setNavigationNodeBlocked, clearNavigationNodes,
+    getNearestNavigationNode, findNavigationNext, getRuntimeState
   });
 })();
