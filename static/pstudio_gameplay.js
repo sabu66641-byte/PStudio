@@ -206,7 +206,7 @@
     }
     return hits;
   }
-  function comboCount(id){return window.PStudioECSGameplay?.getCombo?.(id)?.count??weaponCombos.get(id)?.count||0;}
+  function comboCount(id){return (window.PStudioECSGameplay?.getCombo?.(id)?.count??weaponCombos.get(id)?.count) || 0;}
   function enemyAI(sourceId,targetName,sightRange,attackRange,speed,objects,physics){
     const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);
     if(!source||!target||!physics?.getBody?.(sourceId))return 'idle';
@@ -224,7 +224,7 @@
     else{state='attack';physics.moveCharacter(sourceId,0,0);strike(sourceId,targetName,range,8,650,objects,physics);}
     if(state==='idle')physics.moveCharacter(sourceId,0,0);aiStates.set(sourceId,state);return state;
   }
-  function getAIState(id){return window.PStudioECSGameplay?.getAIState?.(id)??aiStates.get(id)||'idle';}
+  function getAIState(id){return (window.PStudioECSGameplay?.getAIState?.(id)??aiStates.get(id)) || 'idle';}
   function updateAIController(entity,controller,intent,reference,context){
     const sourceId=String(reference?.sceneObjectId||''),objects=context?.sceneObjects||sceneObjects||[];
     const source=resolveObject(sourceId,objects),target=resolveObject(controller.targetId,objects),physics=window.PStudioPhysics;
