@@ -784,6 +784,7 @@
     if(!runtime||!ecs)return;
     for(const id of runtime.ecsSystemIds||[]){try{ecs.unregisterSystem(id);}catch(error){console.warn('[PStudio ECS] System cleanup failed:',id,error);}}
     runtime.ecsSystemIds=[];
+    window.PStudioGameplay?.persistECS?.(sceneObjects || []);
     ecs.clearSceneObjects?.();
     for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
       try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
@@ -920,6 +921,7 @@
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
+      window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
       window.PStudioECSInspector?.refresh?.();
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
