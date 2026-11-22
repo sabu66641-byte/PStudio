@@ -60,7 +60,8 @@
       attackRange: { type: 'number', min: 0, default: 1.8 },
       speed: { type: 'number', min: 0, default: 3 },
       enabled: { type: 'boolean', default: true },
-      state: { type: 'string', default: 'idle' }
+      state: { type: 'string', default: 'idle' },
+      skipLegacyEvaluation: { type: 'boolean', default: false }
     }, { label: 'AI Controller' });
     registerType(TYPES.MovementIntent, {
       x: { type: 'number', default: 0 },
@@ -121,6 +122,10 @@
           api.forEach([TYPES.AIController, TYPES.MovementIntent, 'SceneObjectRef'],
             (entity, controller, intent, reference) => {
               if (!controller.enabled) return;
+              if (controller.skipLegacyEvaluation) {
+                controller.skipLegacyEvaluation = false;
+                return;
+              }
               window.PStudioGameplay?._ecsUpdateAI?.(entity, controller, intent, reference, context);
             });
         }
