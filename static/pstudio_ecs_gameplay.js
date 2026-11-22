@@ -224,7 +224,7 @@
     if (!state) return false;
     state.x = Number(intent.x) || 0;
     state.z = Number(intent.z) || 0;
-    state.maxSpeed = Math.max(0, Number(intent.maxSpeed) || 5);
+    state.maxSpeed = Number.isFinite(Number(intent.maxSpeed)) ? Math.max(0, Number(intent.maxSpeed)) : 5;
     state.acceleration = Math.max(0, Number(intent.acceleration) || 24);
     state.airControl = Number.isFinite(Number(intent.airControl))
       ? Math.max(0, Math.min(1, Number(intent.airControl))) : 0.25;
