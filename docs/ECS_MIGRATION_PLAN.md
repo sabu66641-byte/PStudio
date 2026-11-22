@@ -34,7 +34,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Quest state | global quests/questDefinitions Maps | QuestProgress entities; definitions remain project/gameplay config | Phase 4 implemented |
 | Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
 | Navigation | navNodes/blockedNavNodes Maps | Standalone NavigationNode Entities own node IDs, coordinates, links and blocked state; ECS bridge provides nearest-node and A* next-node queries | Phase 5 implemented; graph is runtime-only and preserves its in-memory Play/Stop lifetime |
-| Input | engine-global keyboard/touch sets | Input snapshot service + per-entity PlayerInput/ControlIntent Components | Pending |
+| Input | engine keyboard/touch event state | InputSnapshot singleton Component captures immutable per-frame state; PlayerInput mappings derive per-entity ControlIntent in an update System | Phase 6 implemented; device listeners remain in the runtime service |
 | Audio | ownerAudio Map and HTMLAudio objects | AudioEmitter/AudioCommand Components; audio service owns HTMLAudio resources | Pending |
 | Collision events | engine collision-pair Sets + Physics callbacks | ECS-facing collision events and optional contact Components | Pending |
 | Render commands | per-frame draw command Maps | Renderable/Camera/Light/Animation configuration Components consumed by renderer | Pending; renderer remains owner |
@@ -57,7 +57,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 3. **Combat and AI** — cooldown/combo data live in CombatState; AIController evaluates in postUpdate and MovementIntent resolves before Physics. Existing ps function names and synchronous AI result are preserved. (Phase 4 implemented.)
 4. **Quests and dialogue** — QuestProgress uses standalone ECS entities; DialogueSession holds conversation content/choice while PStudioUI owns presentation. Static quest definitions remain service data. (Phase 4 implemented.)
 5. **Navigation** — move node/edge/blocking data and nearest/A* graph queries to ECS-owned NavigationNode Entities while keeping existing nav built-ins stable. (Phase 5 implemented.)
-6. **Input** — introduce immutable per-frame Input snapshots and per-entity PlayerInput/ControlIntent Components; keep browser keyboard/touch listeners in the Input service.
+6. **Input** — introduce immutable per-frame InputSnapshot data and per-entity PlayerInput/ControlIntent Components; keep browser keyboard/touch listeners in the Input service. (Phase 6 implemented; existing ps input built-ins read the snapshot.)
 7. **Audio and collision events** — queue AudioCommands for the audio service, then deliver deterministic ECS-facing collision events from Physics callbacks.
 8. **Rendering-facing Components** — expose camera, light, renderable, animation, particle, water and environment configuration as Components. Renderer consumes snapshots and remains the sole owner of Three.js/GPU resources.
 9. **World streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
