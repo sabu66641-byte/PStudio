@@ -25,14 +25,14 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Transform | Scene Object fields + ECS Transform | ECS Transform with explicit editor/world coordinate adapters | Partial; two-way editor bridge remains |
 | Physics body | PStudioPhysics | PhysicsBody config + PhysicsState/PhysicsTransform Components; solver remains authoritative | Partial bridge |
 | Velocity | Gameplay/runtime code | Velocity Component + integration System | Initial System exists |
-| Health | PStudioGameplay stats Map | Health Component | Phase 3 first slice |
-| Inventory | PStudioGameplay inventories Map | Inventory Component with item-stack data and explicit save contract | Pending |
-| Equipment | PStudioGameplay equipment Map | Equipment Component with slot constraints | Pending |
+| Health | PStudioGameplay stats Map | Health Component | Phase 3 implemented |
+| Inventory | PStudioGameplay inventories Map | Inventory Component with item-count object and Stop/Play snapshot | Phase 4 implemented |
+| Equipment | PStudioGameplay equipment Map | Equipment Component with slot-to-item data | Phase 4 implemented |
 | Item/weapon definitions | PStudioGameplay definition Maps | Project-level data assets/resources; entity equipment references definitions | Pending design |
-| Combat cooldowns/combos | attackTimes / weaponCombos Maps | CombatState Component + combat Systems | Pending |
-| Enemy AI | aiStates Map + direct helper calls | AIState/Target/MovementIntent Components + phased AI Systems | Pending |
-| Quest state | global quests/questDefinitions Maps | Quest entities/Components, explicit owner and persistence semantics | Pending |
-| Dialogue | dialogueStates and activeUI globals | Dialogue domain state/events; UI service renders choices | Pending boundary |
+| Combat cooldowns/combos | attackTimes / weaponCombos Maps | CombatState Component + cooldown maintenance System | Phase 4 implemented |
+| Enemy AI | aiStates Map + direct helper calls | AIController + MovementIntent Components and postUpdate Systems | Phase 4 implemented |
+| Quest state | global quests/questDefinitions Maps | QuestProgress entities; definitions remain project/gameplay config | Phase 4 implemented |
+| Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
 | Navigation | navNodes/blockedNavNodes Maps | Navigation graph as world data; path requests/results as Components or events | Pending design |
 | Input | engine-global keyboard/touch sets | Input snapshot service + per-entity PlayerInput/ControlIntent Components | Pending |
 | Audio | ownerAudio Map and HTMLAudio objects | AudioEmitter/AudioCommand Components; audio service owns HTMLAudio resources | Pending |
@@ -52,10 +52,10 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 
 ## Safe implementation sequence
 
-1. **Health** — move HP state into ECS, keep ps built-ins unchanged, snapshot state at Stop. Add focused regression coverage. (Current phase.)
-2. **Inventory and equipment** — define item-stack schema, stack limits, slot semantics, item-definition ownership, save/load format, and rollback behavior before moving data.
-3. **Combat and AI** — move cooldown/combo/AI state to Components; replace direct per-object helper logic with ordered Systems while preserving existing function return values.
-4. **Quests and dialogue** — separate global quest definitions, per-quest progress, owner/player state, and transient dialogue presentation. Avoid attaching global project data to arbitrary Scene Objects.
+1. **Health** — move HP state into ECS, keep ps built-ins unchanged, snapshot state at Stop. (Phase 3 complete.)
+2. **Inventory and equipment** — typed runtime Components store per-entity item counts and equipment slots. Static item definitions remain service configuration; Stop/Play snapshots are regression-tested. (Phase 4 implemented; stack limits and project-asset definitions remain future work.)
+3. **Combat and AI** — cooldown/combo data live in CombatState; AIController evaluates in postUpdate and MovementIntent resolves before Physics. Existing ps function names and synchronous AI result are preserved. (Phase 4 implemented.)
+4. **Quests and dialogue** — QuestProgress uses standalone ECS entities; DialogueSession holds conversation content/choice while PStudioUI owns presentation. Static quest definitions remain service data. (Phase 4 implemented.)
 5. **Input, audio, collision events** — define immutable per-frame input snapshots, queued audio commands, and deterministic collision event delivery.
 6. **Rendering-facing Components** — expose camera, light, renderable, animation, particle, water and environment configuration as Components. Renderer consumes snapshots and remains the sole owner of Three.js/GPU resources.
 7. **Streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
