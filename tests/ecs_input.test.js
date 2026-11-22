@@ -48,7 +48,7 @@ test('InputSnapshot is an immutable, runtime-only per-frame ECS Component', () =
   assert.equal(snapshot.touchY, 88.25);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.keys), true);
-  assert.throws(() => snapshot.keys.push('w'), TypeError);
+  assert.throws(() => snapshot.keys.push('w'), error => error && error.name === 'TypeError');
 });
 
 test('Input System derives ControlIntent from keyboard, touch axes and jump edges', () => {
