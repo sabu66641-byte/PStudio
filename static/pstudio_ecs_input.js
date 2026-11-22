@@ -123,25 +123,37 @@
     }
     snapshotEntity = ecs.createEntity();
     ecs.addComponent(snapshotEntity, TYPES.InputSnapshot);
+    freezeSnapshot(ecs.getComponent(snapshotEntity, TYPES.InputSnapshot));
     return snapshotEntity;
+  }
+
+  function freezeSnapshot(state) {
+    Object.freeze(state.keys);
+    Object.freeze(state.pressed);
+    Object.freeze(state.virtualKeys);
+    return Object.freeze(state);
   }
 
   function snapshotData() {
     const entity = ensureSnapshotEntity();
-    return ecs.getComponent(entity, TYPES.InputSnapshot);
+    const state = ecs.getComponent(entity, TYPES.InputSnapshot);
+    return Object.isFrozen(state) ? state : freezeSnapshot(state);
   }
 
   function captureFrame(raw = {}) {
-    const state = snapshotData();
-    state.frame = Math.max(0, Number(state.frame) || 0) + 1;
-    state.keys = freezeKeys(raw.keys);
-    state.pressed = freezeKeys(raw.pressed);
-    state.virtualKeys = freezeKeys(raw.virtualKeys);
-    state.axisX = clampAxis(raw.axisX);
-    state.axisZ = clampAxis(raw.axisZ);
-    state.touched = raw.touched === true;
-    state.touchX = Number.isFinite(Number(raw.touchX)) ? Number(raw.touchX) : 0;
-    state.touchY = Number.isFinite(Number(raw.touchY)) ? Number(raw.touchY) : 0;
+    const current = snapshotData();
+    const state = ecs.setComponent(snapshotEntity, TYPES.InputSnapshot, {
+      frame: Math.max(0, Number(current.frame) || 0) + 1,
+      keys: freezeKeys(raw.keys),
+      pressed: freezeKeys(raw.pressed),
+      virtualKeys: freezeKeys(raw.virtualKeys),
+      axisX: clampAxis(raw.axisX),
+      axisZ: clampAxis(raw.axisZ),
+      touched: raw.touched === true,
+      touchX: Number.isFinite(Number(raw.touchX)) ? Number(raw.touchX) : 0,
+      touchY: Number.isFinite(Number(raw.touchY)) ? Number(raw.touchY) : 0
+    });
+    freezeSnapshot(state);
     return state.frame;
   }
 
@@ -289,13 +301,15 @@
   }
 
   function reset() {
-    const state = snapshotData();
-    state.frame = 0;
-    state.keys = Object.freeze([]);
-    state.pressed = Object.freeze([]);
-    state.virtualKeys = Object.freeze([]);
-    state.axisX = 0; state.axisZ = 0;
-    state.touched = false; state.touchX = 0; state.touchY = 0;
+    const state = ecs.setComponent(ensureSnapshotEntity(), TYPES.InputSnapshot, {
+      frame: 0,
+      keys: Object.freeze([]),
+      pressed: Object.freeze([]),
+      virtualKeys: Object.freeze([]),
+      axisX: 0, axisZ: 0,
+      touched: false, touchX: 0, touchY: 0
+    });
+    freezeSnapshot(state);
     ecs.forEach([TYPES.ControlIntent], (entity, intent) => {
       intent.x = 0; intent.z = 0; intent.jump = false;
       intent.jumpPressed = false; intent.active = false; intent.frame = 0;
