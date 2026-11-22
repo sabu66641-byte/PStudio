@@ -393,21 +393,28 @@
     return true;
   }
 
-  function getNearestNavigationNode(position) {
-    const point = position || {};
-    let best = null, bestDistance = Infinity;
-    for (const node of getNavigationNodes()) {
-      const distance = Math.hypot(
-        node.x - (Number(point.x) || 0),
-        node.y - (Number(point.y) || 0),
-        node.z - (Number(point.z) || 0)
-      );
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = node;
+  function getNearestNavigationNodes(positions) {
+    const targets = Array.isArray(positions) ? positions : [];
+    const best = targets.map(() => ({ node: null, distance: Infinity }));
+    ecs.forEach([TYPES.NavigationNode], (entity, node) => {
+      for (let index = 0; index < targets.length; index++) {
+        const point = targets[index] || {};
+        const distance = Math.hypot(
+          node.x - (Number(point.x) || 0),
+          node.y - (Number(point.y) || 0),
+          node.z - (Number(point.z) || 0)
+        );
+        if (distance < best[index].distance) {
+          best[index].distance = distance;
+          best[index].node = node;
+        }
       }
-    }
-    return best;
+    });
+    return best.map(item => item.node);
+  }
+
+  function getNearestNavigationNode(position) {
+    return getNearestNavigationNodes([position])[0] || null;
   }
 
   function findNavigationNext(startId, goalId) {
@@ -532,6 +539,6 @@
     getQuestState, listQuests, getDialogueState,
     addNavigationNode, connectNavigationNodes, getNavigationNode, getNavigationNodes,
     getNavigationNodeCount, setNavigationNodeBlocked, clearNavigationNodes,
-    getNearestNavigationNode, findNavigationNext, getRuntimeState
+    getNearestNavigationNode, getNearestNavigationNodes, findNavigationNext, getRuntimeState
   });
 })();
