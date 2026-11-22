@@ -33,7 +33,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Enemy AI | aiStates Map + direct helper calls | AIController + MovementIntent Components and postUpdate Systems | Phase 4 implemented |
 | Quest state | global quests/questDefinitions Maps | QuestProgress entities; definitions remain project/gameplay config | Phase 4 implemented |
 | Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
-| Navigation | navNodes/blockedNavNodes Maps | Navigation graph as world data; path requests/results as Components or events | Pending design |
+| Navigation | navNodes/blockedNavNodes Maps | Standalone NavigationNode Entities own node IDs, coordinates, links and blocked state; ECS bridge provides nearest-node and A* next-node queries | Phase 5 implemented; graph is runtime-only and preserves its in-memory Play/Stop lifetime |
 | Input | engine-global keyboard/touch sets | Input snapshot service + per-entity PlayerInput/ControlIntent Components | Pending |
 | Audio | ownerAudio Map and HTMLAudio objects | AudioEmitter/AudioCommand Components; audio service owns HTMLAudio resources | Pending |
 | Collision events | engine collision-pair Sets + Physics callbacks | ECS-facing collision events and optional contact Components | Pending |
@@ -56,10 +56,12 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 2. **Inventory and equipment** — typed runtime Components store per-entity item counts and equipment slots. Static item definitions remain service configuration; Stop/Play snapshots are regression-tested. (Phase 4 implemented; stack limits and project-asset definitions remain future work.)
 3. **Combat and AI** — cooldown/combo data live in CombatState; AIController evaluates in postUpdate and MovementIntent resolves before Physics. Existing ps function names and synchronous AI result are preserved. (Phase 4 implemented.)
 4. **Quests and dialogue** — QuestProgress uses standalone ECS entities; DialogueSession holds conversation content/choice while PStudioUI owns presentation. Static quest definitions remain service data. (Phase 4 implemented.)
-5. **Input, audio, collision events** — define immutable per-frame input snapshots, queued audio commands, and deterministic collision event delivery.
-6. **Rendering-facing Components** — expose camera, light, renderable, animation, particle, water and environment configuration as Components. Renderer consumes snapshots and remains the sole owner of Three.js/GPU resources.
-7. **Streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
-8. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
+5. **Navigation** — move node/edge/blocking data and nearest/A* graph queries to ECS-owned NavigationNode Entities while keeping existing nav built-ins stable. (Phase 5 implemented.)
+6. **Input** — introduce immutable per-frame Input snapshots and per-entity PlayerInput/ControlIntent Components; keep browser keyboard/touch listeners in the Input service.
+7. **Audio and collision events** — queue AudioCommands for the audio service, then deliver deterministic ECS-facing collision events from Physics callbacks.
+8. **Rendering-facing Components** — expose camera, light, renderable, animation, particle, water and environment configuration as Components. Renderer consumes snapshots and remains the sole owner of Three.js/GPU resources.
+9. **World streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
+10. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
 
 ## Required gates for every slice
 
