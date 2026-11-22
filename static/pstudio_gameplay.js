@@ -210,11 +210,20 @@
   function enemyAI(sourceId,targetName,sightRange,attackRange,speed,objects,physics){
     const source=resolveObject(sourceId,objects),target=resolveObject(targetName,objects);
     if(!source||!target||!physics?.getBody?.(sourceId))return 'idle';
-    const controller=window.PStudioECSGameplay?.setAIController?.(sourceId,{
+    const bridge=window.PStudioECSGameplay;
+    const controller=bridge?.setAIController?.(sourceId,{
       targetId:String(target.id),sightRange:Math.max(0,number(sightRange,12)),
       attackRange:Math.max(0,number(attackRange,1.8)),speed:Math.max(0,number(speed,3))
     });
-    if(controller)return controller.state||'idle';
+    if(controller){
+      const ecs=window.PStudioECS,entity=ecs?.getEntityForSceneObject?.(sourceId);
+      const intent=bridge.getMovementIntent?.(sourceId),reference=entity!==null&&entity!==undefined?ecs.getComponent(entity,'SceneObjectRef'):null;
+      if(entity!==null&&entity!==undefined&&intent&&reference){
+        updateAIController(entity,controller,intent,reference,{sceneObjects:objects||[]});
+        controller.skipLegacyEvaluation=true;
+      }
+      return controller.state||'idle';
+    }
     if(!isAlive(sourceId)){aiStates.set(sourceId,'dead');physics.moveCharacter(sourceId,0,0);return 'dead';}
     const a=position(source,physics),b=position(target,physics),dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz),sight=Math.max(0,number(sightRange,12)),range=Math.max(0,number(attackRange,1.8));
     let state='idle';
