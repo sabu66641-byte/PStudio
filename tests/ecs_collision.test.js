@@ -60,7 +60,11 @@ test('CollisionEvent is runtime-only ECS data and emits enter/stay/exit notifica
   collision.beginFrame();
   assert.equal(collision.commitContacts(), 1);
   assert.equal(notifications.filter(item => item.type === 'collision.exit').length, 1);
-  event = ecs.getComponent(ecs.query(['CollisionEvent'])[0], 'CollisionEvent');
+  const exitEntity = ecs.query(['CollisionEvent']).find(entity =>
+    ecs.getComponent(entity, 'CollisionEvent').phase === 'exit'
+  );
+  assert.ok(exitEntity, 'exit transition must create its own CollisionEvent Entity');
+  event = ecs.getComponent(exitEntity, 'CollisionEvent');
   assert.equal(event.phase, 'exit');
   assert.equal(event.frame, 3);
   collision.endFrame();
