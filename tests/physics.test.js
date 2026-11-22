@@ -106,3 +106,27 @@ test('exposes Physics body snapshots, controller state and explicit body removal
   assert.equal(physics.getBodyState('player'), null);
   assert.equal(physics.removeBody('player'), false);
 });
+
+test('dynamic Physics body pairs expose stable contact IDs for ECS collision events', () => {
+  const physics = createPhysics();
+  physics.createBody('zeta', 0, 1, 0, 0.5, 2, 1);
+  physics.createBody('alpha', 0.5, 1, 0, 0.5, 2, 1);
+  physics.setGravity('zeta', 0, 0, 0);
+  physics.setGravity('alpha', 0, 0, 0);
+
+  physics.step(1 / 60, new Map());
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(physics.getContactPairs())),
+    [['alpha', 'zeta']]
+  );
+
+  physics.step(1 / 120, new Map());
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(physics.getContactPairs())),
+    [['alpha', 'zeta']],
+    'render frames without a fixed Physics step must not flicker contacts'
+  );
+
+  physics.step(1 / 60, new Map());
+  assert.deepEqual(JSON.parse(JSON.stringify(physics.getContactPairs())), []);
+});
