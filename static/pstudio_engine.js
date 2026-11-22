@@ -484,7 +484,7 @@
   function updateCollisions() {
     const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
     const now=new Set();
-    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
+    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);window.PStudioECSCollision?.observePair?.('2d',a,b);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
     collisionPairs=now;
   }
 
@@ -532,6 +532,7 @@
       const key=[a.owner.id,b.owner.id].sort().join('|');
       if(now.has(key)) continue;
       now.add(key);
+      window.PStudioECSCollision?.observePair?.('3d',a.owner,b.owner);
       if(!collision3DPairs.has(key)) {
         dispatchCollision(a.owner,b.owner);
         dispatchCollision(b.owner,a.owner);
@@ -625,6 +626,7 @@
     if(!runtime?.running)return;
     const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
     try {
+      window.PStudioECSCollision?.beginFrame?.();
       const commands=new Map();
       for(const object of sceneObjects||[]){
         const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;
@@ -700,13 +702,19 @@
       }
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
+      const ownersById=new Map((sceneObjects||[]).map(item=>[String(item.id),item]));
+      for(const pair of window.PStudioPhysics?.getContactPairs?.()||[]){
+        const [aId,bId]=pair;
+        const a=ownersById.get(String(aId))||{id:String(aId),name:String(aId)};
+        const b=ownersById.get(String(bId))||{id:String(bId),name:String(bId)};
+        window.PStudioECSCollision?.observePair?.('physics',a,b);
+      }
       const ecsAfterPhysics = window.PStudioECS;
       if (ecsAfterPhysics?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime, physicsTransforms: transforms };
         ecsAfterPhysics.updatePhase?.('postPhysics', dt, ecsContext);
         ecsAfterPhysics.applySceneObjectTransforms(sceneObjects || []);
       }
-      const ownersById=new Map((sceneObjects||[]).map(item=>[item.id,item]));
       for(const [id,transform] of transforms){
         const owner=ownersById.get(id);
         const draws=commands.get(id)||[];
@@ -754,7 +762,9 @@
       runtime.contexts=commands;
       updateCollisions();
       update3DCollisions(commands);
+      window.PStudioECSCollision?.commitContacts?.();
       renderFrame();
+      window.PStudioECSCollision?.endFrame?.();
       window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null);
       justPressed.clear();
       raf=requestFrame(tick);
@@ -927,7 +937,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
@@ -940,7 +950,7 @@
     } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();window.PStudioECSCollision?.clear?.();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
