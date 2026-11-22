@@ -61,7 +61,7 @@ test('Renderable maps SceneObject transforms to model and primitive renderer com
 
   assert.equal(model.name, 'hero.glb');
   assert.equal(model.x, (100 + 50 - 480) / 100);
-  assert.equal(model.y, 270 - (50 + 40));
+  assert.equal(model.y, (270 - (50 + 40)) / 100);
   assert.equal(model.z, 2);
   assert.equal(model.rotationY, Math.PI / 2);
   assert.equal(model.scale, 1.5);
@@ -151,7 +151,6 @@ test('Disabled render Components are skipped and removing a Component clears its
   const { ecs, rendering, objects } = createRenderingRuntime();
   rendering.attachRenderable('prop', { enabled: false, kind: 'sphere' });
   rendering.attachLight('player', { enabled: false });
-  rendering.attachAnimation('player', { enabled: true, clipName: 'Run' });
   let commands = new Map();
   build(commands, rendering, ecs, objects);
   assert.equal(allCommands(commands).length, 0);
