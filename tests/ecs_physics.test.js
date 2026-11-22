@@ -99,9 +99,10 @@ test('Velocity System integrates only non-Physics entities through their ECS Tra
 test('runtime executes prePhysics ECS phase before the Physics step and postPhysics after it', () => {
   const engine = read('static/pstudio_engine.js');
   const pre = engine.indexOf("updatePhase?.('prePhysics'");
+  const postUpdate = engine.indexOf("updatePhase?.('postUpdate'");
   const step = engine.indexOf('PStudioPhysics?.step');
   const post = engine.indexOf("updatePhase?.('postPhysics'");
-  assert.ok(pre >= 0 && step > pre && post > step);
+  assert.ok(pre >= 0 && postUpdate > pre && step > postUpdate && post > step);
   assert.ok(engine.includes('ecsAfterPhysics.applySceneObjectTransforms(sceneObjects || [])'));
   assert.ok(engine.includes('ecs.applySceneObjectTransforms(sceneObjects || [])'));
 });
