@@ -197,9 +197,11 @@
     if (!state) return null;
     const key = String(targetId);
     const duration = Math.max(0, Number(cooldown) || 0);
-    const previous = state.cooldowns[key];
+    const previous = Object.prototype.hasOwnProperty.call(state.cooldowns, key) ? state.cooldowns[key] : null;
     if (previous && now - Number(previous.at || 0) < Math.max(0, Number(previous.duration) || duration)) return false;
-    state.cooldowns[key] = { at: now, duration };
+    Object.defineProperty(state.cooldowns, key, {
+      value: { at: now, duration }, enumerable: true, configurable: true, writable: true
+    });
     return true;
   }
   function getCombo(objectId) {
