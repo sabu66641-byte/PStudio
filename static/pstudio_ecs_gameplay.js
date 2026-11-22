@@ -104,7 +104,7 @@
             for (const [targetId, record] of Object.entries(state.cooldowns || {})) {
               const at = Number(record?.at);
               const duration = Math.max(0, Number(record?.duration) || 0);
-              if (!Number.isFinite(at) || now - at >= duration) delete state.cooldowns[targetId];
+              if (!Number.isFinite(at) || (duration > 0 && now - at >= duration)) delete state.cooldowns[targetId];
             }
           });
         }
@@ -138,10 +138,11 @@
             if (!intent.active) return;
             const ownerId = String(reference.sceneObjectId);
             if (physics.getBody?.(ownerId)) {
-              physics.configureController(ownerId,
-                Math.max(0.1, Number(intent.maxSpeed) || 5),
-                Math.max(0, Number(intent.acceleration) || 24),
-                Number.isFinite(Number(intent.airControl)) ? Math.max(0, Math.min(1, Number(intent.airControl))) : 0.25);
+              const maxSpeed=Number(intent.maxSpeed);
+              if(Number.isFinite(maxSpeed)&&maxSpeed>0)physics.configureController(ownerId,
+                Math.max(0.1,maxSpeed),
+                Number.isFinite(Number(intent.acceleration))?Math.max(0,Number(intent.acceleration)):24,
+                Number.isFinite(Number(intent.airControl))?Math.max(0,Math.min(1,Number(intent.airControl))):0.25);
               physics.moveCharacter(ownerId, Number(intent.x) || 0, Number(intent.z) || 0);
             }
             intent.active = false;
