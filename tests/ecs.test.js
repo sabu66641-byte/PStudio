@@ -186,20 +186,22 @@ test('Component schemas apply defaults and reject invalid fields and types', () 
   assert.equal(definition.category, 'General');
 });
 
-test('Systems run in update, prePhysics and postPhysics phases with mutable priority', () => {
+test('Systems run in update, prePhysics, postUpdate and postPhysics phases with mutable priority', () => {
   const ecs = createECS();
   const order = [];
   ecs.registerSystem({ id: 'test.main', priority: 10, phase: 'update', update() { order.push('update'); } });
   ecs.registerSystem({ id: 'test.pre', priority: -10, phase: 'prePhysics', update() { order.push('pre'); } });
-  ecs.registerSystem({ id: 'test.post', priority: 0, phase: 'postPhysics', update() { order.push('post'); } });
+  ecs.registerSystem({ id: 'test.after-scripts', priority: 0, phase: 'postUpdate', update() { order.push('postUpdate'); } });
+  ecs.registerSystem({ id: 'test.post', priority: 0, phase: 'postPhysics', update() { order.push('postPhysics'); } });
   ecs.update(0.016);
   ecs.updatePhase('prePhysics', 0.016);
+  ecs.updatePhase('postUpdate', 0.016);
   ecs.updatePhase('postPhysics', 0.016);
-  assert.deepEqual(order, ['update', 'pre', 'post']);
+  assert.deepEqual(order, ['update', 'pre', 'postUpdate', 'postPhysics']);
   assert.equal(ecs.setSystemPhase('test.main', 'postPhysics'), 'postPhysics');
   assert.equal(ecs.setSystemPriority('test.main', -20), -20);
   ecs.updatePhase('postPhysics', 0.016);
-  assert.deepEqual(order.slice(3), ['update', 'post']);
+  assert.deepEqual(order.slice(4), ['update', 'postPhysics']);
   assert.throws(() => ecs.setSystemPhase('test.main', 'render'), /Invalid ECS System phase/);
 });
 
