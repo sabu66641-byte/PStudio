@@ -82,7 +82,8 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
-- `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
+- `static/pstudio_gameplay.js`: compatibility-facing gameplay API for combat, health, inventory, quests, dialogue and navigation.
+- `static/pstudio_ecs_gameplay.js`: ECS-owned per-Scene-Object Health Component bridge; snapshots Health only at Stop to preserve existing Play-session persistence.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
 
@@ -126,6 +127,12 @@ For each runtime frame:
 `Transform` is synchronized with existing Scene Object fields, which include the editor's 2D pixel coordinate convention. Physics body positions are world units and are exposed through `PhysicsTransform` instead. This split is intentional until a single explicit world-transform conversion layer is adopted. Do not write Physics world-space positions directly into Scene Object Transform fields.
 
 The built-in `Velocity` System integrates non-Physics entities into ECS Transform. Entities with a PhysicsBody are excluded so the generic velocity integrator cannot compete with the fixed-step solver. PhysicsState and PhysicsTransform are runtime-only/read-only Components and are not serialized into the project.
+
+## Incremental gameplay-state migration
+
+The legacy `PStudioGameplay` API remains the compatibility surface for existing ps built-ins. Its per-Scene-Object Health state is now stored in the ECS `Health` Component while Play is active. The bridge initializes Health after Scene Object entities exist, routes the existing HP APIs to that Component, and snapshots the values back to the legacy compatibility store before ECS scene teardown so Stop/Play retains the previous behavior. Health is internal and runtime-only; it is not exposed as a user-authored Component or serialized into scene files.
+
+This is the first migration slice, not a claim that all gameplay maps have moved. Inventory/equipment, quest state, AI/combo state and navigation data remain on the legacy Gameplay service until each domain has an explicit ownership and persistence contract plus regression coverage. The compatibility API must not be removed until those contracts and existing ps behavior are preserved.
 
 ## Rendering and physics contracts
 
