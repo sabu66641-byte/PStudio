@@ -8,7 +8,7 @@
   const COMPONENT_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
   const COMPONENT_FIELD_ID = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
   const SYSTEM_ID = /^[a-z][a-z0-9._-]{1,63}$/;
-  const SYSTEM_PHASES = new Set(['update', 'prePhysics', 'postPhysics']);
+  const SYSTEM_PHASES = new Set(['update', 'prePhysics', 'postUpdate', 'postPhysics']);
   const SCHEMA_FIELD_TYPES = new Set(['number', 'integer', 'boolean', 'string', 'enum', 'color', 'vector3', 'array', 'json', 'entity']);
   const componentDefinitions = new Map();
   const componentStores = new Map();
