@@ -231,9 +231,9 @@
       case 'is_touched': if (!a.length) return window.PStudioECSInput?.isTouched?.()??touchActive; break;
       case 'get_touch_x': if (!a.length) return window.PStudioECSInput?.getTouchX?.()??pointerPosition.x; break;
       case 'get_touch_y': if (!a.length) return window.PStudioECSInput?.getTouchY?.()??pointerPosition.y; break;
-      case 'play_sound': if(a.length===3)return playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
-      case 'stop_sound': if(a.length===1)return stopOwnerSound(o.id,String(a[0])); break;
-      case 'set_sound_volume': if(a.length===2)return setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
+      case 'play_sound': if(a.length===3)return window.PStudioECSAudio?window.PStudioECSAudio.play(o.id,String(a[0]),a[1],a[2]):playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
+      case 'stop_sound': if(a.length===1)return window.PStudioECSAudio?window.PStudioECSAudio.stop(o.id,String(a[0])):stopOwnerSound(o.id,String(a[0])); break;
+      case 'set_sound_volume': if(a.length===2)return window.PStudioECSAudio?window.PStudioECSAudio.setVolume(o.id,String(a[0]),a[1]):setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
       case 'get_delta_time': if (!a.length) return c.dt; break;
       case 'get_width': if (!a.length) return Number(o.w)||0; break;
       case 'get_height': if (!a.length) return Number(o.h)||0; break;
@@ -937,7 +937,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();lastTime=0;
+      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
@@ -950,7 +950,7 @@
     } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();window.PStudioECSCollision?.clear?.();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();window.PStudioECSAudio?.clear?.();collisionPairs.clear();collision3DPairs.clear();window.PStudioECSCollision?.clear?.();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
@@ -1037,6 +1037,17 @@
     if(typeof renderGamePreview==='function')renderGamePreview();
     return true;
   }
+  window.PStudioAudioService=Object.freeze({
+    play:playOwnerSound,
+    stop:stopOwnerSound,
+    setVolume:setOwnerSoundVolume,
+    hasSound:(ownerId,name)=>!!ownerAudio.get(String(ownerId))?.has(String(name)),
+    hasAsset:name=>{
+      const assets=typeof projectAssets!=='undefined'&&Array.isArray(projectAssets)?projectAssets:[];
+      return assets.some(item=>item?.kind==='audio'&&String(item.name)===String(name)&&typeof (item.data||item.url)==='string');
+    },
+    getStats:()=>({owners:ownerAudio.size,instances:[...ownerAudio.values()].reduce((count,sounds)=>count+sounds.size,0)})
+  });
   window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,refreshSceneView,version:'3.1.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
