@@ -693,13 +693,14 @@
         if(list.length)commands.set(o.id,list);
       }
 
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const ecsAfterScripts = window.PStudioECS;
       if (ecsAfterScripts?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime };
         ecsAfterScripts.updatePhase?.('postUpdate', dt, ecsContext);
         ecsAfterScripts.applySceneObjectTransforms(sceneObjects || []);
       }
+      window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], dt);
+      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ownersById=new Map((sceneObjects||[]).map(item=>[String(item.id),item]));
@@ -735,6 +736,15 @@
 
         for(const draw of draws){
           if(draw.type==='camera'){
+            draw.x=finite(draw.x)+transform.dx;
+            draw.y=finite(draw.y)+transform.dy;
+            draw.z=finite(draw.z)+transform.dz;
+            draw.targetX=finite(draw.targetX)+transform.dx;
+            draw.targetY=finite(draw.targetY)+transform.dy;
+            draw.targetZ=finite(draw.targetZ)+transform.dz;
+            continue;
+          }
+          if(draw.type==='light'){
             draw.x=finite(draw.x)+transform.dx;
             draw.y=finite(draw.y)+transform.dy;
             draw.z=finite(draw.z)+transform.dz;
