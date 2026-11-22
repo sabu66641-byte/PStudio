@@ -123,7 +123,7 @@
       jumpButton.addEventListener('lostpointercapture',releaseJump);
     }
   })();
-  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); resetVirtualControls(); });
+  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); resetVirtualControls(); touchActive=false; activePointerId=null; window.PStudioECSInput?.reset?.(); });
   window.addEventListener('pstudio-model-error', e => {
     const detail=e.detail||{};
     setOutput?.('3D model load failed: '+(detail.name||'unknown')+' — '+(detail.error||'unknown error'),'error');
@@ -219,17 +219,18 @@
       case 'rotate_x': if (a.length===1) { o.rotationX=(Number(o.rotationX)||0)+finite(a[0]); return o.rotationX; } break;
       case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
       case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
-      case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]);return keys.has(k)||virtualKeys.has(k);} break;
-      case 'was_key_pressed': if (a.length===1) return justPressed.has(normalizeKey(a[0])); break;
+      case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]),input=window.PStudioECSInput;return input?input.isKeyDown(k):keys.has(k)||virtualKeys.has(k);} break;
+      case 'was_key_pressed': if (a.length===1) {const k=normalizeKey(a[0]),input=window.PStudioECSInput;return input?input.wasKeyPressed(k):justPressed.has(k);} break;
       case 'get_axis': if (a.length===1) {
-        const axis=String(a[0]).toLowerCase();
+        const axis=String(a[0]).toLowerCase(),input=window.PStudioECSInput;
+        if(input){const value=input.getAxis(axis);if(value!==null)return value;}
         if(axis==='horizontal'||axis==='x')return clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x);
         if(axis==='vertical'||axis==='z')return clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z);
         break;
       }
-      case 'is_touched': if (!a.length) return touchActive; break;
-      case 'get_touch_x': if (!a.length) return pointerPosition.x; break;
-      case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
+      case 'is_touched': if (!a.length) return window.PStudioECSInput?.isTouched?.()??touchActive; break;
+      case 'get_touch_x': if (!a.length) return window.PStudioECSInput?.getTouchX?.()??pointerPosition.x; break;
+      case 'get_touch_y': if (!a.length) return window.PStudioECSInput?.getTouchY?.()??pointerPosition.y; break;
       case 'play_sound': if(a.length===3)return playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
       case 'stop_sound': if(a.length===1)return stopOwnerSound(o.id,String(a[0])); break;
       case 'set_sound_volume': if(a.length===2)return setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
@@ -632,6 +633,7 @@
         if(!active&&!chunkAudioSuspended.has(String(object.id))){pauseOwnerAudio(object.id);chunkAudioSuspended.add(String(object.id));}
         else if(active&&chunkAudioSuspended.has(String(object.id))){resumeOwnerAudio(object.id);chunkAudioSuspended.delete(String(object.id));}
       }
+      window.PStudioECSInput?.captureFrame?.({keys,pressed:justPressed,virtualKeys,axisX:virtualAxis.x,axisZ:virtualAxis.z,touched:touchActive,touchX:pointerPosition.x,touchY:pointerPosition.y});
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
@@ -921,6 +923,7 @@
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
       }
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
+      keys.clear();justPressed.clear();resetVirtualControls();touchActive=false;activePointerId=null;window.PStudioECSInput?.reset?.();
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
@@ -943,7 +946,7 @@
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();
     window.PStudioECSInspector?.refresh?.();
-    justPressed.clear();
+    justPressed.clear();window.PStudioECSInput?.reset?.();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
