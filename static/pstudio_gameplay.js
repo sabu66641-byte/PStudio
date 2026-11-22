@@ -221,10 +221,10 @@
     });
     if(controller){
       const ecs=window.PStudioECS,entity=ecs?.getEntityForSceneObject?.(sourceId);
-      const intent=bridge.getMovementIntent?.(sourceId),reference=entity!==null&&entity!==undefined?ecs.getComponent(entity,'SceneObjectRef'):null;
-      if(entity!==null&&entity!==undefined&&intent){
+      const intent=bridge.getMovementIntent?.(sourceId,true),reference=entity!==null&&entity!==undefined?ecs.getComponent(entity,'SceneObjectRef'):null;
+      if(entity!==null&&entity!==undefined){
         const sceneReference=reference||{sceneObjectId:String(source.id)};
-        updateAIController(entity,controller,intent,sceneReference,{
+        updateAIController(entity,controller,intent||{},sceneReference,{
           sceneObjects:objects||[],sourceObject:source,targetObject:target,physics
         });
         controller.skipLegacyEvaluation=true;
