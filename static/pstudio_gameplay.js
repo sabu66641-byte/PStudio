@@ -257,18 +257,23 @@
     if(dist>range){
       controller.state='chase';let moveX=dx,moveZ=dz;
       const navigation=window.PStudioECSGameplay;
-      const navigationNodes=navigation?.getNavigationNodes?.()||[...fallbackNavNodes.values()];
-      if(navigationNodes.length){
-        const nearest=p=>{
-          if(navigation?.getNearestNavigationNode){
-            const result=navigation.getNearestNavigationNode(p);
-            if(result)return result.nodeId;
-          }
+      let start='',goal='';
+      if(navigation?.getNearestNavigationNodes){
+        const nearest=navigation.getNearestNavigationNodes([a,b]);
+        start=nearest[0]?.nodeId||'';goal=nearest[1]?.nodeId||'';
+      }else if(fallbackNavNodes.size){
+        const nearest=point=>{
           let best='',score=Infinity;
-          for(const node of navigationNodes){const d=Math.hypot(node.x-p.x,node.y-p.y,node.z-p.z);if(d<score){score=d;best=node.nodeId||node.id;}}
+          for(const node of fallbackNavNodes.values()){
+            const distance=Math.hypot(node.x-point.x,node.y-point.y,node.z-point.z);
+            if(distance<score){score=distance;best=node.id;}
+          }
           return best;
         };
-        const start=nearest(a),goal=nearest(b),nextNode=navNext(start,goal);
+        start=nearest(a);goal=nearest(b);
+      }
+      if(start&&goal){
+        const nextNode=navNext(start,goal);
         const node=(navigation?.getNavigationNode?.(nextNode||goal))||fallbackNavNodes.get(nextNode||goal);
         if(node){moveX=node.x-a.x;moveZ=node.z-a.z;}
       }
