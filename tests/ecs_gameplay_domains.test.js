@@ -220,7 +220,7 @@ test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play s
 
 test('ECS gameplay Component names cannot be redefined in browser ps code', () => {
   const script = read('app.py');
-  for (const name of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController', 'MovementIntent', 'QuestProgress', 'DialogueSession', 'NavigationNode', 'InputSnapshot', 'PlayerInput', 'ControlIntent']) {
+  for (const name of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController', 'MovementIntent', 'QuestProgress', 'DialogueSession', 'NavigationNode', 'InputSnapshot', 'PlayerInput', 'ControlIntent', 'CollisionEvent']) {
     assert.ok(script.includes('"' + name + '"'), name);
   }
 });
