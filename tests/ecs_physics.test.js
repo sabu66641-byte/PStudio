@@ -137,3 +137,8 @@ test('disabled PhysicsBody does not require a body before Play and re-enables sa
   assert.equal(ecs.hasComponent(entity, 'PhysicsState'), false);
   assert.equal(ecs.hasComponent(entity, 'PhysicsTransform'), false);
 });
+
+test('ECS Inspector exposes postUpdate as a System phase', () => {
+  const inspector = read('static/pstudio_ecs_inspector.js');
+  assert.match(inspector, /\['update', 'prePhysics', 'postUpdate', 'postPhysics'\]/);
+});
