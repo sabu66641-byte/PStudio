@@ -83,7 +83,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
 - `static/pstudio_gameplay.js`: compatibility-facing gameplay API for combat, health, inventory, quests, dialogue and navigation.
-- `static/pstudio_ecs_gameplay.js`: ECS-owned per-Scene-Object Health Component bridge; snapshots Health only at Stop to preserve existing Play-session persistence.
+- `static/pstudio_ecs_gameplay.js`: ECS-owned gameplay state Components and Systems for Health, Inventory, Equipment, CombatState, AIController, MovementIntent, QuestProgress and DialogueSession. The bridge snapshots state at Stop to preserve Play-session persistence.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
 
@@ -120,9 +120,10 @@ For each runtime frame:
 1. Run ECS Systems in the `update` phase.
 2. Run `prePhysics` Systems to create/configure bodies from ECS PhysicsBody Components.
 3. Run the existing per-Scene-Object ps callbacks and generate render/Physics commands.
-4. Run the existing fixed-step `PStudioPhysics.step()` solver.
-5. Run ECS `postPhysics` Systems to copy PhysicsState and PhysicsTransform snapshots from the solver.
-6. Update collision events and render.
+4. Run ECS `postUpdate` Systems. The gameplay AI Controller evaluates AI state and writes MovementIntent; the Movement Intent Resolver applies it to Physics before simulation.
+5. Run the fixed-step `PStudioPhysics.step()` solver.
+6. Run ECS `postPhysics` Systems to copy PhysicsState and PhysicsTransform snapshots from the solver.
+7. Update collision events and render.
 
 `Transform` is synchronized with existing Scene Object fields, which include the editor's 2D pixel coordinate convention. Physics body positions are world units and are exposed through `PhysicsTransform` instead. This split is intentional until a single explicit world-transform conversion layer is adopted. Do not write Physics world-space positions directly into Scene Object Transform fields.
 
@@ -130,9 +131,11 @@ The built-in `Velocity` System integrates non-Physics entities into ECS Transfor
 
 ## Incremental gameplay-state migration
 
-The legacy `PStudioGameplay` API remains the compatibility surface for existing ps built-ins. Its per-Scene-Object Health state is now stored in the ECS `Health` Component while Play is active. The bridge initializes Health after Scene Object entities exist, routes the existing HP APIs to that Component, and snapshots the values back to the legacy compatibility store before ECS scene teardown so Stop/Play retains the previous behavior. Health is internal and runtime-only; it is not exposed as a user-authored Component or serialized into scene files.
+The legacy `PStudioGameplay` API remains the compatibility surface for existing ps built-ins. While Play is active, the per-Scene-Object `Health`, `Inventory`, `Equipment`, `CombatState`, `AIController` and `MovementIntent` data are stored in runtime-only ECS Components. Quest progress is stored in standalone ECS entities with `QuestProgress`; the active conversation is stored in a singleton `DialogueSession`. These Components are not serialized into editor scene objects.
 
-This is the first migration slice, not a claim that all gameplay maps have moved. Inventory/equipment, quest state, AI/combo state and navigation data remain on the legacy Gameplay service until each domain has an explicit ownership and persistence contract plus regression coverage. The compatibility API must not be removed until those contracts and existing ps behavior are preserved.
+The existing API names and their result types remain in place. It routes HP, inventory, equipment, cooldown, combo, quest and dialogue reads/writes to ECS when a matching Scene Object/runtime is active. At Stop, the bridge snapshots state into a compatibility store and removes standalone quest/dialogue entities before Scene Object ECS teardown; the next Play restores those snapshots. The compatibility store is not an active second writer during a Play session.
+
+AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `postUpdate` phase. It writes `MovementIntent`; `gameplay.movement-intent` then applies the intent to the existing Physics controller before the fixed-step solver. The `gameplay.combat-state-maintenance` System expires old per-target cooldown records. Physics still owns its solver, item/weapon/quest definitions remain configuration data in the Gameplay service, Navigation graph data remains on that service, and `PStudioUI` continues to own DOM presentation. This is an incremental state/runtime migration, not a claim that every gameplay subsystem or infrastructure service has become ECS.
 
 ## Rendering and physics contracts
 
