@@ -13,6 +13,7 @@
   const modelTriangleArrayIds = new WeakMap();
   let modelTriangleArraySequence = 0;
   let accumulator = 0;
+  const contactPairs = new Map();
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const finite = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -556,7 +557,10 @@
       const a=list[i],b=list[j],lowA=a.position[1]-a.height/2,highA=a.position[1]+a.height/2,lowB=b.position[1]-b.height/2,highB=b.position[1]+b.height/2;
       if(Math.min(highA,highB)-Math.max(lowA,lowB)<=0)continue;
       let dx=b.position[0]-a.position[0],dz=b.position[2]-a.position[2],dist=Math.hypot(dx,dz),min=a.radius+b.radius;
-      if(dist>=min)continue;if(dist<1e-8){dx=1;dz=0;dist=1;}
+      if(dist>=min)continue;
+      const contactIds=[String(a.id),String(b.id)].sort();
+      contactPairs.set(JSON.stringify(contactIds),contactIds);
+      if(dist<1e-8){dx=1;dz=0;dist=1;}
       const nx=dx/dist,nz=dz/dist,inv=a.invMass+b.invMass;if(inv<=0)continue;const penetration=min-dist;
       a.position[0]-=nx*penetration*a.invMass/inv;a.position[2]-=nz*penetration*a.invMass/inv;
       b.position[0]+=nx*penetration*b.invMass/inv;b.position[2]+=nz*penetration*b.invMass/inv;
@@ -572,6 +576,7 @@
     accumulator = Math.min(accumulator + clamp(finite(frameDt), 0, 0.1), FIXED_STEP * MAX_SUBSTEPS);
     let steps = 0;
     if (accumulator + 1e-9 >= FIXED_STEP) {
+      contactPairs.clear();
       for (const body of bodies.values()) {
         if(body.active===false)continue;
         const hasCurrentForce = body.force.some(value => Math.abs(value) > 1e-12);
@@ -644,6 +649,7 @@
     bodies.clear();
     platformPositions.clear();
     staticColliderCache.clear();
+    contactPairs.clear();
     accumulator = 0;
   }
 
@@ -651,6 +657,7 @@
     createBody, getBody, getBodyState, removeBody, setActive, getPosition, setPosition, getVelocity, setVelocity,
     setGravity, beginFrame, applyForce, applyImpulse, configureController, setController,
     setStepHeight, setMaxSlope, moveCharacter, jump, isGrounded, step, clear, getStats,
+    getContactPairs: () => [...contactPairs.values()].map(pair => pair.slice()),
     version: '1.1.0'
   };
 })();
