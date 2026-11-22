@@ -111,9 +111,15 @@ test('AIController System produces MovementIntent and the resolver applies it be
     { id: 'enemy', name: 'Enemy', worldX: 0, worldZ: 0 },
     { id: 'player', name: 'Player', worldX: 0, worldZ: 8 }
   ];
-  const { ecs, gameplay, movements, physics, positions } = createRuntime(objects);
-  assert.equal(gameplay.enemyAI('enemy', 'player', 20, 1.2, 4, objects, physics), 'chase');
+  const { ecs, gameplay, bridge, movements, physics, positions } = createRuntime(objects);
   const enemyEntity = ecs.getEntityForSceneObject('enemy');
+  assert.ok(enemyEntity !== null);
+  assert.equal(ecs.getComponent(enemyEntity, 'SceneObjectRef').sceneObjectId, 'enemy');
+  assert.ok(physics.getBody('enemy'));
+  assert.equal(gameplay.getHP('enemy'), 100);
+  assert.equal(gameplay.getHP('player'), 100);
+  assert.equal(physics.getPosition('player').z, 8);
+  assert.equal(gameplay.enemyAI('enemy', 'player', 20, 1.2, 4, objects, physics), 'chase');
   assert.ok(ecs.hasComponent(enemyEntity, 'AIController'));
   assert.ok(ecs.hasComponent(enemyEntity, 'MovementIntent'));
 
