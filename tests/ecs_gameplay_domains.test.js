@@ -220,7 +220,90 @@ test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play s
 
 test('ECS gameplay Component names cannot be redefined in browser ps code', () => {
   const script = read('app.py');
-  for (const name of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController', 'MovementIntent', 'QuestProgress', 'DialogueSession']) {
+  for (const name of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController', 'MovementIntent', 'QuestProgress', 'DialogueSession', 'NavigationNode']) {
     assert.ok(script.includes('"' + name + '"'), name);
   }
+});
+
+test('Navigation graph nodes, links, blocked state and A* are owned by ECS Components', () => {
+  const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
+  const { ecs, gameplay, bridge } = createRuntime(objects);
+  assert.equal(gameplay.navAddNode('start', 0, 0, 0), true);
+  assert.equal(gameplay.navAddNode('middle', 2, 0, 0), true);
+  assert.equal(gameplay.navAddNode('goal', 4, 0, 0), true);
+  assert.equal(gameplay.navConnect('start', 'middle'), true);
+  assert.equal(gameplay.navConnect('middle', 'goal'), true);
+  assert.equal(gameplay.navConnect('missing', 'goal'), false);
+
+  assert.equal(ecs.query(['NavigationNode']).length, 3);
+  const definition = ecs.getComponentDefinition('NavigationNode');
+  assert.equal(definition.internal, true);
+  assert.equal(definition.persistent, false);
+  assert.equal(bridge.getNavigationNodeCount(), 3);
+  assert.equal(gameplay.navNext('start', 'goal'), 'middle');
+
+  const middle = bridge.getNavigationNode('middle');
+  assert.deepEqual(Array.from(middle.links), ['start', 'goal']);
+  assert.equal(gameplay.navBlock('middle', true), true);
+  assert.equal(gameplay.navNext('start', 'goal'), '');
+  assert.equal(gameplay.navBlock('middle', false), true);
+  assert.equal(gameplay.navNext('start', 'goal'), 'middle');
+  assert.equal(gameplay.navBlock('unknown', true), false);
+
+  assert.equal(gameplay.navClear(), true);
+  assert.equal(bridge.getNavigationNodeCount(), 0);
+  assert.equal(ecs.query(['NavigationNode']).length, 0);
+});
+
+test('Navigation grid and triangle graph builders create ECS-owned connected nodes', () => {
+  const { ecs, gameplay, bridge } = createRuntime([]);
+  assert.equal(gameplay.navBuildGrid(0, 0, 4, 2, 2), 6);
+  assert.equal(bridge.getNavigationNodeCount(), 6);
+  assert.equal(gameplay.navNext('grid_0_0', 'grid_2_1') !== '', true);
+
+  const triangles = [
+    0, 0, 0,  1, 0, 0,  0, 0, 1,
+    1, 0, 0,  1, 0, 1,  0, 0, 1
+  ];
+  assert.equal(gameplay.navBuildFromTriangles(triangles, 50), 2);
+  assert.equal(ecs.query(['NavigationNode']).length, 2);
+  assert.equal(gameplay.navNext('navtri_0', 'navtri_1'), 'navtri_1');
+});
+
+test('Navigation graph survives gameplay Stop/Play and Scene Object ECS teardown', () => {
+  const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
+  const { ecs, gameplay, bridge } = createRuntime(objects);
+  gameplay.navAddNode('persist-a', 0, 0, 0);
+  gameplay.navAddNode('persist-b', 1, 0, 0);
+  gameplay.navConnect('persist-a', 'persist-b');
+
+  assert.equal(gameplay.persistECS(objects), true);
+  ecs.clearSceneObjects();
+  assert.equal(bridge.getNavigationNodeCount(), 2);
+  assert.equal(gameplay.navNext('persist-a', 'persist-b'), 'persist-b');
+
+  ecs.syncSceneObjects(objects);
+  gameplay.initializeECS(objects);
+  assert.equal(bridge.getNavigationNodeCount(), 2);
+  assert.equal(gameplay.navNext('persist-a', 'persist-b'), 'persist-b');
+});
+
+test('Enemy AI uses ECS Navigation graph nodes to create its MovementIntent', () => {
+  const objects = [
+    { id: 'enemy', name: 'Enemy', worldX: 0, worldZ: 0 },
+    { id: 'player', name: 'Player', worldX: 0, worldZ: 8 }
+  ];
+  const { ecs, gameplay, bridge, movements, physics } = createRuntime(objects);
+  gameplay.navAddNode('enemy-node', 0, 0, 0);
+  gameplay.navAddNode('route-node', 4, 0, 0);
+  gameplay.navAddNode('player-node', 0, 0, 8);
+  gameplay.navConnect('enemy-node', 'route-node');
+  gameplay.navConnect('route-node', 'player-node');
+
+  assert.equal(gameplay.enemyAI('enemy', 'player', 20, 1.2, 4, objects, physics), 'chase');
+  const intent = bridge.getMovementIntent('enemy');
+  assert.equal(intent.x, 1);
+  assert.equal(intent.z, 0);
+  ecs.updatePhase('postUpdate', 1 / 60, { sceneObjects: objects });
+  assert.deepEqual(movements.at(-1), { id: 'enemy', x: 1, z: 0 });
 });
