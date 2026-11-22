@@ -197,7 +197,7 @@ class PsEcsLanguageTests(unittest.TestCase):
         for name in ("AudioEmitter", "AudioCommand"):
             response = self.client.post(
                 "/game/prepare",
-                json={"scripts": {"bad.ps": "component " + name + "\\n    enabled = true\\n"}},
+                json={"scripts": {"bad.ps": "component " + name + chr(10) + "    enabled = true" + chr(10)}},
             )
             self.assertEqual(response.status_code, 400)
             self.assertIn("組み込みComponent", response.get_json()["error"])
