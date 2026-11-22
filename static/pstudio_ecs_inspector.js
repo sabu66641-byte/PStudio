@@ -518,7 +518,7 @@
       row.appendChild(priority);
       row.appendChild(make('label', '', 'Phase'));
       const phase = make('select');
-      for (const value of ['update', 'prePhysics', 'postPhysics']) {
+      for (const value of ['update', 'prePhysics', 'postUpdate', 'postPhysics']) {
         const option = make('option', '', value);
         option.value = value;
         phase.appendChild(option);
