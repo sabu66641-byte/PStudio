@@ -35,7 +35,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
 | Navigation | navNodes/blockedNavNodes Maps | Standalone NavigationNode Entities own node IDs, coordinates, links and blocked state; ECS bridge provides nearest-node and A* next-node queries | Phase 5 implemented; graph is runtime-only and preserves its in-memory Play/Stop lifetime |
 | Input | engine keyboard/touch event state | InputSnapshot singleton Component captures immutable per-frame state; PlayerInput mappings derive per-entity ControlIntent in an update System | Phase 6 implemented; device listeners remain in the runtime service |
-| Audio | ownerAudio Map and HTMLAudio objects | AudioEmitter/AudioCommand Components; audio service owns HTMLAudio resources | Pending |
+| Audio | ownerAudio Map and HTMLAudio objects | Persistent AudioEmitter configuration + transient AudioCommand requests; existing Audio service owns HTMLAudio resources | Phase 8 implemented; commands dispatch after ps update in postUpdate |
 | Collision events | engine collision-pair Sets + Physics solver contacts | Runtime-only CollisionEvent Entities represent enter/stay/exit transitions; PStudioEvents publishes collision notifications; solver remains authoritative | Phase 7 implemented for 2D, 3D and dynamic body-pair contacts |
 | Render commands | per-frame draw command Maps | Renderable/Camera/Light/Animation configuration Components consumed by renderer | Pending; renderer remains owner |
 | Model/GLB resources | PStudio3D + AssetStore + Resources | ECS stores asset references and presentation config only | Service boundary; not a wholesale ECS rewrite |
@@ -59,7 +59,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 5. **Navigation** — move node/edge/blocking data and nearest/A* graph queries to ECS-owned NavigationNode Entities while keeping existing nav built-ins stable. (Phase 5 implemented.)
 6. **Input** — introduce immutable per-frame InputSnapshot data and per-entity PlayerInput/ControlIntent Components; keep browser keyboard/touch listeners in the Input service. (Phase 6 implemented; existing ps input built-ins read the snapshot.)
 7. **Collision Events** — preserve 2D/3D detection and Physics solver ownership; publish pair enter/stay/exit transitions as short-lived ECS CollisionEvent Entities and PStudioEvents notifications. (Phase 7 implemented.)
-8. **Audio** — queue AudioCommands for the audio service; HTMLAudio instances remain service-owned.
+8. **Audio** — store per-entity AudioEmitter settings and queue AudioCommand requests through postUpdate; keep HTMLAudio instances, chunk pause/resume and resource cleanup in the Audio service. (Phase 8 implemented.)
 9. **Rendering-facing Components** — expose camera, light, renderable, animation, particle, water and environment configuration as Components. Renderer consumes snapshots and remains the sole owner of Three.js/GPU resources.
 10. **World streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
 11. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
