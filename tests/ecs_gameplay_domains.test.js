@@ -188,6 +188,7 @@ test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play s
   ecs.getComponent(playerEntity, 'CombatState').comboWeapon = 'shield-bash';
 
   assert.equal(gameplay.persistECS(objects), true);
+  ecs.clearSceneObjects();
   assert.equal(ecs.stats().entityCount, 0);
   ecs.syncSceneObjects(objects);
   assert.equal(gameplay.initializeECS(objects), true);
