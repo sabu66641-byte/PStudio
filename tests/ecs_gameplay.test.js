@@ -48,23 +48,18 @@ test('legacy Gameplay health APIs read and mutate ECS Health during Play', () =>
   assert.equal(ecs.getComponent(entity, 'Health').hp, 110);
 });
 
-test('Health state survives Stop/Play through a compatibility snapshot without remaining duplicated at runtime', () => {
-  const { ecs, gameplay, bridge } = loadModules();
+test('Health state survives Stop/Play through the Gameplay ECS lifecycle without remaining duplicated at runtime', () => {
+  const { ecs, gameplay } = loadModules();
   const objects = [{ id: 'hero', name: 'Hero', x: 0, y: 0, z: 0 }];
-  const legacySnapshot = new Map();
   ecs.syncSceneObjects(objects);
-  bridge.initialize(objects, id => legacySnapshot.get(id));
+  gameplay.initializeECS(objects);
   gameplay.setMaxHP('hero', 240);
   gameplay.setHP('hero', 73);
 
-  assert.equal(bridge.persist(objects, (id, value) => legacySnapshot.set(id, value)), true);
-  assert.equal(legacySnapshot.get('hero').max, 240);
-  assert.equal(legacySnapshot.get('hero').hp, 73);
-  assert.equal(legacySnapshot.get('hero').configured, true);
-
+  assert.equal(gameplay.persistECS(objects), true);
   ecs.clearSceneObjects();
   ecs.syncSceneObjects(objects);
-  bridge.initialize(objects, id => legacySnapshot.get(id));
+  gameplay.initializeECS(objects);
   assert.equal(gameplay.getHP('hero'), 73);
   assert.equal(gameplay.getMaxHP('hero'), 240);
 });
