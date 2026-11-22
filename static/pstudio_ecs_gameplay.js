@@ -30,7 +30,8 @@
       source: SOURCE, label: options.label || type,
       description: options.description || '', category: options.category || 'Gameplay',
       internal: true, persistent: false, additionalProperties: false,
-      schema, create: options.create || null
+      schema,
+      ...(typeof options.create === 'function' ? { create: options.create } : {})
     });
     return true;
   }
