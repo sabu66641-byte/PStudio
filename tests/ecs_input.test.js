@@ -48,7 +48,14 @@ test('InputSnapshot is an immutable, runtime-only per-frame ECS Component', () =
   assert.equal(snapshot.touchY, 88.25);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.keys), true);
+  const snapshotEntity = ecs.query(['InputSnapshot'])[0];
+  const storedComponent = ecs.getComponent(snapshotEntity, 'InputSnapshot');
+  assert.equal(Object.isFrozen(storedComponent), true);
   assert.throws(() => snapshot.keys.push('w'), error => error && error.name === 'TypeError');
+
+  input.captureFrame({ keys: ['x'] });
+  assert.deepEqual(Array.from(snapshot.keys), ['d', 'arrowup'], 'previous frame snapshots must not change');
+  assert.deepEqual(Array.from(input.getSnapshot().keys), ['x']);
 });
 
 test('Input System derives ControlIntent from keyboard, touch axes and jump edges', () => {
