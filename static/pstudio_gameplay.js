@@ -115,7 +115,7 @@
     const a=position(source,physics),b=position(target,physics),dx=b.x-a.x,dz=b.z-a.z,dist=Math.hypot(dx,dz),stop=Math.max(0,number(stopDistance,1));
     const x=dist<=stop||dist<=0.000001?0:dx/dist,z=dist<=stop||dist<=0.000001?0:dz/dist;
     const queued=window.PStudioECSGameplay?.setMovementIntent?.(sourceId,{
-      x,z,maxSpeed:number(speed)>0?Math.max(0.1,number(speed)):5,acceleration:24,airControl:0.25,
+      x,z,maxSpeed:number(speed)>0?Math.max(0.1,number(speed)):0,acceleration:24,airControl:0.25,
       active:true,mode:'manual',targetId:String(target.id)
     });
     if(queued){const ai=window.PStudioECSGameplay?.getAIController?.(sourceId);if(ai)ai.enabled=false;return true;}
