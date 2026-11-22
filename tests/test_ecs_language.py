@@ -176,6 +176,15 @@ class PsEcsLanguageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("組み込みComponent", response.get_json()["error"])
 
+    def test_builtin_input_components_cannot_be_redeclared(self):
+        for name in ("InputSnapshot", "PlayerInput", "ControlIntent"):
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad.ps": f"component {name}\\n    x = 1\\n"}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("組み込みComponent", response.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
