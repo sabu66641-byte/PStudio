@@ -618,3 +618,29 @@ test('GPU preparation failures release the hidden-model gate and redraw the edit
   const fallback=block.slice(catchStart);
   for(const token of ['instance.preparing=false',"stage:'gpu-preparation-fallback'","window.requestAnimationFrame(()=>",'if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}'])assert.ok(fallback.includes(token),token);
 });
+
+
+test('volumetric clouds use layered density shaping, light transmittance and adaptive sample budgets',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of [
+    'uCloudCoverage','uCloudDetail','uCloudSteps','uCloudLightSteps',
+    'pCloudDensity','pHenyeyGreenstein','lightOptical','lightTransmittance',
+    'pass.setQuality','pass.configureAtmosphere','uCloudWind'
+  ])assert.ok(fx.includes(token),token);
+  assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)'));
+  assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(resolveQualityPreset(\\'auto\\'),adaptiveQualityLevel)'));
+  assert.ok(fx.includes('source.rgb*transmittance+scattering*uAtmosphereStrength'));
+  assert.doesNotThrow(()=>new Function(fx));
+});
+
+test('water v3 adds Beer-Lambert depth absorption and grazing-angle reflection response',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of [
+    'pstudio-water-hq-v3-','uPStudioWaterReflectionTint','uPStudioWaterAbsorption',
+    '1.0-exp(-waterThickness*uPStudioWaterAbsorption)','float fresnel=pow(1.0-viewFacing,5.0)',
+    'shorelineFoam','waterThickness'
+  ])assert.ok(fx.includes(token),token);
+  assert.ok(renderer.includes('transmission:0.82'));
+  assert.ok(renderer.includes('SSRPass'));
+  assert.doesNotThrow(()=>new Function(fx));
+});
