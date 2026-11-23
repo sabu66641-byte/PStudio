@@ -756,6 +756,6 @@ test('high and ultra quality presets activate GTAO automatically and adaptive qu
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  for(const token of ['function resolveShadowMapSize(requested)','gl.getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
 });
 
