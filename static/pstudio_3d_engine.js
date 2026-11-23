@@ -837,8 +837,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     }
   }
-  function endWorldChunkLoad(chunk){
-    chunk.generation++;chunk.loading=false;chunk.active=false;try{window.PStudioEvents?.emit('world.chunk.suspended',{id:chunk.id,reason:'distance'});}catch(_){}purgeWorldChunkRuntime(chunk.id);releaseChunkAssetCache(chunk);
+  function endWorldChunkLoad(chunk,preserveAssets=null){
+    chunk.generation++;chunk.loading=false;chunk.active=false;try{window.PStudioEvents?.emit('world.chunk.suspended',{id:chunk.id,reason:'distance'});}catch(_){}purgeWorldChunkRuntime(chunk.id);releaseChunkAssetCache(chunk,preserveAssets?chunk.assets.filter(name=>!preserveAssets.has(name)):chunk.assets);
     try{const result=chunk.onUnload?.({id:chunk.id,assets:chunk.assets.slice()});if(result?.catch)result.catch(error=>console.warn('[PStudio] Chunk unload callback failed:',error));}catch(error){console.warn('[PStudio] Chunk unload callback failed:',error);}
     window.PStudioResources?.trim?.('gpu');try{window.PStudioEvents?.emit('world.chunk.unloaded',{id:chunk.id});}catch(_){}
   }
@@ -853,7 +853,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some((value,index)=>value!==assets[index]));
     // Keep the registry record stable so in-flight promises retain the same object.
     // Asset-set changes invalidate the old generation before the new configuration is assigned.
-    if(old&&assetsChanged&&(old.active||old.loading))endWorldChunkLoad(old);
+    if(old&&assetsChanged&&(old.active||old.loading))endWorldChunkLoad(old,new Set(assets));
     const chunk=old||{id:key,active:o.active===true,loading:false,generation:0,error:null,lastLoadedAt:0,onLoad:null,onUnload:null};
     chunk.x=coordinate(o.x);chunk.y=coordinate(o.y);chunk.z=coordinate(o.z);
     chunk.loadDistance=loadDistance;chunk.unloadDistance=unloadDistance;
