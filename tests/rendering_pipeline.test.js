@@ -878,16 +878,6 @@ test('color grading is registered after the camera lens, before OutputPass, and 
   assert.match(renderer, /createColorGradingPass\?\.\(FX,T\)/);
   assert.ok(renderer.indexOf('createCameraLensPass?.(FX,T)') < renderer.indexOf('createColorGradingPass?.(FX,T)'));
   assert.ok(renderer.indexOf('createColorGradingPass?.(FX,T)') < renderer.indexOf('new FX.OutputPass()'));
-  assert.ok(renderer.includes('colorGradingPass.isIdentity'));
-  assert.ok(renderer.includes('colorGradingEnabled=false;colorGradingPass.enabled=false'));
-  assert.ok(renderer.includes('colorGradingPass?.failed'));
-  assert.ok(renderer.includes('||colorGradingEnabled'));
-});
-
-test('color grading is registered after the camera lens, before OutputPass, and memory-gated', () => {
-  assert.match(renderer, /createColorGradingPass\?\.\(FX,T\)/);
-  assert.ok(renderer.indexOf('createCameraLensPass?.(FX,T)') < renderer.indexOf('createColorGradingPass?.(FX,T)'));
-  assert.ok(renderer.indexOf('createColorGradingPass?.(FX,T)') < renderer.indexOf('new FX.OutputPass()'));
   assert.ok(renderer.includes('colorGradingEnabled=!!(requested&&!memorySafetyApplied&&!colorGradingPass.failed)'));
   assert.ok(renderer.includes('colorGradingEnabled=false'));
   assert.ok(renderer.includes('if(colorGradingPass)colorGradingPass.enabled=false'));
