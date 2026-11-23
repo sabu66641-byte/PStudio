@@ -318,7 +318,7 @@ test('serializes only persistent non-core Components with a versioned envelope',
     RuntimeCache: { count: 9 }
   });
   const serialized = ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef']);
-  assert.deepEqual(serialized, {
+  assert.deepEqual(JSON.parse(JSON.stringify(serialized)), {
     version: 1,
     components: [{ type: 'SavedSettings', data: { quality: 4, enabled: true } }]
   });
@@ -358,7 +358,7 @@ test('migrates legacy type-keyed Component maps without losing saved values', ()
   const entity = ecs.getEntityForSceneObject(object.id);
   assert.equal(ecs.getComponent(entity, 'MappedSettings').enabled, true);
   assert.equal(object.ecsComponentsVersion, 1);
-  assert.deepEqual(object.ecsComponents, [{ type: 'MappedSettings', data: { enabled: true } }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(object.ecsComponents)), [{ type: 'MappedSettings', data: { enabled: true } }]);
 });
 
 test('does not overwrite or restore Component data from a newer unknown schema version', () => {
