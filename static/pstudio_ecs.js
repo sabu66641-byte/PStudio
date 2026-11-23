@@ -137,7 +137,8 @@
         type: fieldType,
         label: String(descriptor.label || fieldName),
         description: String(descriptor.description || ''),
-        required: descriptor.required === true
+        required: descriptor.required === true,
+        nullable: descriptor.nullable === true
       };
       for (const key of ['min', 'max', 'step', 'maxLength']) {
         if (descriptor[key] !== undefined) {

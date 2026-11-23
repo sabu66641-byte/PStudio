@@ -282,3 +282,22 @@ test('Component definitions can be safely refreshed with new defaults and are ro
   );
   assert.equal(ecs.getComponentDefinition('Movement').schema.speed.type, 'number');
 });
+
+test('nullable schema fields retain their flag and accept null defaults and values', () => {
+  const ecs = createECS();
+  ecs.registerComponent('NullableReference', {
+    schema: {
+      target: { type: 'entity', nullable: true, default: null }
+    },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ NullableReference: {} });
+  assert.equal(ecs.getComponent(entity, 'NullableReference').target, null);
+  assert.equal(ecs.getComponentDefinition('NullableReference').schema.target.nullable, true);
+  ecs.setComponent(entity, 'NullableReference', { target: null });
+  assert.equal(ecs.getComponent(entity, 'NullableReference').target, null);
+  assert.throws(
+    () => ecs.setComponent(entity, 'NullableReference', { target: 'not-an-entity' }),
+    /must be entity/
+  );
+});

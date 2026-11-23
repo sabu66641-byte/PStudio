@@ -173,6 +173,42 @@
     for (const cache of Object.values(snapshots)) cache.delete(entity);
   }
 
+  function refreshSnapshot(name, entity) {
+    const type = TYPES[name];
+    const cache = snapshots[name];
+    if (!type || !cache || !Number.isSafeInteger(Number(entity))) return;
+    const id = Number(entity);
+    if (!ecs.hasComponent(id, type) || !ecs.hasComponent(id, 'SceneObjectRef')) {
+      cache.delete(id);
+      return;
+    }
+    const reference = ecs.getComponent(id, 'SceneObjectRef');
+    cache.set(id, {
+      ownerId: String(reference.sceneObjectId),
+      config: ecs.getComponent(id, type)
+    });
+  }
+
+  function refreshAllSnapshots() {
+    for (const name of Object.keys(TYPES)) {
+      const cache = snapshots[name];
+      const entities = ecs.query([TYPES[name], 'SceneObjectRef']);
+      const active = new Set(entities);
+      for (const id of cache.keys()) if (!active.has(id)) cache.delete(id);
+      for (const id of entities) refreshSnapshot(name, id);
+    }
+  }
+
+  function updateSnapshotFromEvent(event) {
+    const detail = event?.detail || {};
+    if (detail.type === 'SceneObjectRef') {
+      for (const name of Object.keys(TYPES)) refreshSnapshot(name, detail.entity);
+      return;
+    }
+    const name = Object.keys(TYPES).find(key => TYPES[key] === detail.type);
+    if (name) refreshSnapshot(name, detail.entity);
+  }
+
   function ensureList(commands, ownerId) {
     let list = commands.get(ownerId);
     if (!list) {
@@ -234,23 +270,41 @@
       const data = entry.config, object = objects.get(entry.ownerId);
       if (!object || !data.enabled || !data.visible) continue;
       const kind = String(data.kind || 'model');
-      const position = data.useSceneTransform ? scenePosition(object) : {
+      const useSceneTransform = data.useSceneTransform !== false;
+      const position = useSceneTransform ? scenePosition(object) : {
         x: Number(data.positionX) || 0,
         y: Number(data.positionY) || 0,
         z: Number(data.positionZ) || 0
       };
-      const rotationX = (Number(data.rotationX) || 0) * Math.PI / 180;
-      const rotationY = (Number(data.rotationY) || 0) * Math.PI / 180;
-      const rotationZ = (Number(data.rotationZ) || 0) * Math.PI / 180;
+      const rotationSource = useSceneTransform ? object : data;
+      const rotationX = (Number(rotationSource.rotationX) || 0) * Math.PI / 180;
+      const rotationY = (Number(rotationSource.rotationY) || 0) * Math.PI / 180;
+      const rotationZ = (Number(rotationSource.rotationZ) || 0) * Math.PI / 180;
       const list = ensureList(commands, entry.ownerId);
+      let drawCommand = null;
+
       if (kind === 'model') {
         const assetName = String(data.assetName || object.model || '');
-        if (!assetName || list.some(command => command.type === 'model' && command.name === assetName)) continue;
-        list.push({
+        if (!assetName) continue;
+        const existingIndex = list.findIndex(command => command.type === 'model' && command.name === assetName);
+        if (existingIndex >= 0) {
+          if (data.roughness >= 0 || data.metalness >= 0) {
+            const material = { type: 'material' };
+            if (data.roughness >= 0) material.roughness = data.roughness;
+            if (data.metalness >= 0) material.metalness = data.metalness;
+            list.splice(existingIndex, 0, material);
+          }
+          added++;
+          continue;
+        }
+        const objectScale = useSceneTransform && Number(object.modelScale) > 0
+          ? Number(object.modelScale)
+          : 1;
+        drawCommand = {
           type: 'model', name: assetName, ...position,
-          scale: Math.max(0.001, Number(data.scale) || 1),
+          scale: Math.max(0.001, (Number(data.scale) || 1) * objectScale),
           rotationX, rotationY, rotationZ, dt
-        });
+        };
       } else {
         const command = {
           type: kind, ...position, rotationX, rotationY, rotationZ,
@@ -265,14 +319,18 @@
         } else if (kind === 'cylinder' || kind === 'cone' || kind === 'capsule') {
           command.radius = data.radius; command.height = data.height;
         } else continue;
-        list.push(command);
+        drawCommand = command;
       }
+
+      // The renderer applies owner material state in command order, so material must precede
+      // the first model/primitive command rather than being appended after it.
       if (data.roughness >= 0 || data.metalness >= 0) {
         const material = { type: 'material' };
         if (data.roughness >= 0) material.roughness = data.roughness;
         if (data.metalness >= 0) material.metalness = data.metalness;
         list.push(material);
       }
+      list.push(drawCommand);
       added++;
     }
 
@@ -328,11 +386,17 @@
   registerSnapshotSystem(TYPES.Light, 'render.component.light', 'Light');
   registerSnapshotSystem(TYPES.Animation, 'render.component.animation', 'Animation');
 
+  ecs.on('component-added', updateSnapshotFromEvent);
+  ecs.on('component-updated', updateSnapshotFromEvent);
   ecs.on('component-removed', event => {
     const type = event.detail?.type;
-    if (Object.prototype.hasOwnProperty.call(TYPES, type)) clearOwnerFromSnapshots(event.detail.entity);
+    if (type === 'SceneObjectRef') clearOwnerFromSnapshots(event.detail.entity);
+    else if (Object.prototype.hasOwnProperty.call(TYPES, type)) {
+      snapshots[type].delete(event.detail.entity);
+    }
   });
   ecs.on('entity-destroyed', event => clearOwnerFromSnapshots(event.detail?.entity));
+  refreshAllSnapshots();
 
   window.PStudioECSRendering = Object.freeze({
     version: '1.0.0',

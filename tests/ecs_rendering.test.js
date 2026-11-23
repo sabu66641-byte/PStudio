@@ -180,3 +180,41 @@ test('ECS rendering commands are collected before Physics and model collider gen
   assert.match(transformLoop, /if\(draw\.type==='light'\)/);
   assert.match(transformLoop, /if\(draw\.type==='camera'\)/);
 });
+
+test('Inspector edits update render snapshots immediately without waiting for a Game System tick', () => {
+  const { ecs, rendering, objects } = createRenderingRuntime();
+  const entity = ecs.getEntityForSceneObject('prop');
+  rendering.attachRenderable('prop', { kind: 'sphere', radius: 1, useSceneTransform: true });
+  let commands = new Map();
+  assert.equal(rendering.collectCommands(commands, objects, 1 / 60), 1);
+  assert.equal(commands.get('prop')[0].type, 'sphere');
+  assert.equal(commands.get('prop')[0].radius, 1);
+
+  ecs.setComponent(entity, 'Renderable', { kind: 'sphere', radius: 2 });
+  commands = new Map();
+  assert.equal(rendering.collectCommands(commands, objects, 1 / 60), 1);
+  assert.equal(commands.get('prop')[0].radius, 2);
+});
+
+test('Renderable uses Scene Object rotation/model scale and emits material before model', () => {
+  const { ecs, rendering, objects } = createRenderingRuntime();
+  const player = objects.find(object => object.id === 'player');
+  player.rotationX = 15;
+  player.rotationY = 45;
+  player.rotationZ = -30;
+  player.modelScale = 2;
+  rendering.attachRenderable('player', {
+    kind: 'model', assetName: 'hero.glb', scale: 1.5,
+    useSceneTransform: true, roughness: 0.2, metalness: 0.4
+  });
+  const commands = new Map();
+  rendering.collectCommands(commands, objects, 1 / 60);
+  const list = commands.get('player');
+  const modelIndex = list.findIndex(item => item.type === 'model');
+  const materialIndex = list.findIndex(item => item.type === 'material');
+  assert.ok(materialIndex >= 0 && materialIndex < modelIndex);
+  assert.equal(list[modelIndex].scale, 3);
+  assert.equal(list[modelIndex].rotationX, 15 * Math.PI / 180);
+  assert.equal(list[modelIndex].rotationY, 45 * Math.PI / 180);
+  assert.equal(list[modelIndex].rotationZ, -30 * Math.PI / 180);
+});
