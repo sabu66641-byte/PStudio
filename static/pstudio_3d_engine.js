@@ -3322,9 +3322,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const profile=api?.getPreset?.(presetName)||{
       name:'day',skyTop:'#347CB7',skyMid:'#79BCE0',horizon:'#D7EDF7',ground:'#89977A',
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
-      lightIntensity:2.35,lightX:-0.48,lightY:-0.82,lightZ:-0.31,
+      lightIntensity:2.35,lightX:-0.35,lightY:-0.89,lightZ:-0.28,
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
-      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0,moonDirectionY:1,moonDirectionZ:0,moonIntensity:0,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
