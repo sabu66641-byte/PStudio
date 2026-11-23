@@ -644,3 +644,28 @@ test('GPU preparation failures release the hidden-model gate and redraw the edit
   const fallback=block.slice(catchStart);
   for(const token of ['instance.preparing=false',"stage:'gpu-preparation-fallback'","window.requestAnimationFrame(()=>",'if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}'])assert.ok(fallback.includes(token),token);
 });
+
+test('ECS VisualFX configuration is bridged before Physics and preserves renderer ownership', () => {
+  const visualFx = fs.readFileSync(path.join(root, 'static/pstudio_ecs_visualfx.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const type of ['Environment', 'Fog', 'Water', 'PostFX', 'ParticleEmitter', 'Trail']) {
+    assert.ok(app.includes('"' + type + '"'), type + ' must be reserved');
+    assert.ok(visualFx.includes(type), type + ' must be registered by the VisualFX bridge');
+  }
+  assert.ok(html.indexOf('pstudio_ecs_rendering.js') < html.indexOf('pstudio_ecs_visualfx.js'));
+  assert.ok(html.indexOf('pstudio_ecs_visualfx.js') < html.indexOf('pstudio_ecs_inspector.js'));
+  assert.ok(engine.indexOf('window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt)') <
+    engine.indexOf('const physicsCommands'));
+  assert.ok(engine.includes('window.PStudioECSVisualFX?.clear?.()'));
+  assert.ok(engine.includes("'Environment','Fog','Water','PostFX','ParticleEmitter','Trail'"));
+  assert.doesNotThrow(() => new Function(visualFx));
+});
+
+test('legacy and ECS water rendering honor the configured opacity', () => {
+  assert.ok(renderer.includes('const waterOpacity=Math.max(0.05,Math.min(1,Number.isFinite(Number(d.opacity))?Number(d.opacity):1))'));
+  assert.ok(renderer.includes('material.opacity=waterOpacity'));
+  assert.ok(renderer.includes('material.transparent=waterOpacity<0.999'));
+  assert.ok(renderer.includes('material.depthWrite=waterOpacity>=0.999'));
+});

@@ -39,8 +39,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Collision events | engine collision-pair Sets + Physics solver contacts | Runtime-only CollisionEvent Entities represent enter/stay/exit transitions; PStudioEvents publishes collision notifications; solver remains authoritative | Phase 7 implemented for 2D, 3D and dynamic body-pair contacts |
 | Render commands | per-frame draw command Maps | Persistent Renderable/Camera/Light/Animation configuration Components are snapshotted by ECS Systems and translated to existing renderer commands; Three.js/GPU resources remain renderer-owned | Phase 9 implemented for models, primitives, cameras, point/spot lights and animation clips/layers/locomotion |
 | Model/GLB resources | PStudio3D + AssetStore + Resources | ECS stores asset references and presentation config only | Service boundary; not a wholesale ECS rewrite |
-| Environment / post FX | PStudio3D + EnvironmentFX | Environment/Water/Fog/Light configuration Components consumed by renderer | Pending |
-| Particles/trails | renderer-owned transient GPU systems | Emitter/Trail configuration Components; renderer owns GPU buffers | Pending |
+| Environment / post FX | PStudio3D + EnvironmentFX | Persistent Environment/Fog/Water/PostFX Components emit renderer commands; PStudio3D retains environment textures, water materials, post-processing passes and GPU resources | Phase 11 implemented; legacy ps commands preserved |
+| Particles/trails | renderer-owned transient GPU systems | Persistent ParticleEmitter/Trail configuration Components feed existing renderer commands; PStudio3D retains particle simulation, trail sampling, buffers and disposal; one-shot bursts remain transient service commands | Phase 11 implemented |
 | World chunks/streaming | PStudio3D chunk manager | Persistent WorldPartition and StreamingInterest Components snapshot region membership and multiple prioritized interest points; PStudio3D retains async asset jobs, chunk activation, GPU leases and rendering | Phase 10 implemented; generation-safe reconfiguration, multi-interest hysteresis and bounded load concurrency |
 | HUD/game UI | PStudioUI DOM renderer + Gameplay UI state | UI state/events may be ECS data; DOM stays in UI service | Pending boundary |
 | Events | PStudioEvents | Remains shared event infrastructure, with ECS adapters | Keep service |
@@ -62,8 +62,11 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 8. **Audio** — store per-entity AudioEmitter settings and queue AudioCommand requests through postUpdate; keep HTMLAudio instances, chunk pause/resume and resource cleanup in the Audio service. (Phase 8 implemented.)
 9. **Rendering-facing Components** — expose Camera, Light, Renderable and Animation configuration as persistent Components; ECS Systems translate snapshots to existing renderer commands before Physics, while PStudio3D retains Three.js/GPU ownership. (Phase 9 implemented for camera, light, model/primitive and animation commands; particles/water/environment remain pending.)
 10. **World streaming** — connect WorldPartition membership and multiple StreamingInterest points to the renderer's chunk manager. ECS owns serializable partition/interest configuration; PStudio3D retains async loading, activation, GPU resource leases and disposal. (Phase 10 implemented.)
+11. **Visual effects configuration** — move environment, fog, water, post-FX, particle-emitter and trail configuration to persistent Components; keep shaders, GPU simulation, particle buffers, trail geometry and post-FX passes inside PStudio3D. One-shot particle bursts remain transient commands. (Phase 11 implemented.)
+12. **Module lifecycle** — connect dependency-aware module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS. (Pending.)
 11. **Module lifecycle** — connect dependency-aware module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS. (Pending.)
-12. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
+13. **HUD/UI state boundary** — move persistent gameplay UI/overlay intent to ECS while PStudioUI remains the DOM renderer. (Pending.)
+14. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
 
 ## Required gates for every slice
 

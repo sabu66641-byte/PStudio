@@ -233,3 +233,12 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - `PStudio3D` remains the owner of asynchronous model requests, generation tokens, chunk activation/suspension, GPU resource leases, cache eviction and mesh/model disposal. ECS never owns promises or renderer resources.
 - Chunk re-registration updates a stable record rather than replacing it. Asset-set changes invalidate the prior generation, preserve assets shared with the replacement configuration and ignore stale async completions. Load scheduling combines multiple interest points and respects a bounded concurrent-load budget.
 - Stop clears ECS streaming registrations and interest points before renderer teardown. Persistent Component data remains stored on Scene Objects and is restored on the next Play.
+
+
+## ECS Visual FX Configuration Bridge
+
+- Persistent `Environment`, `Fog`, `Water`, and `PostFX` Components describe scene-level rendering configuration; `ParticleEmitter` and `Trail` Components describe per-Scene Object effects.
+- `PStudioECSVisualFX` snapshots these values through ECS Systems and translates them into the existing renderer command stream before Physics.
+- `PStudio3D` remains the exclusive owner of water materials/shaders, environment textures, post-processing passes, particle simulation/buffers and trail geometry/disposal. ECS stores no Three.js objects or GPU handles.
+- Legacy ps rendering built-ins remain supported. Global Environment/Fog and PostFX Component commands are inserted before script-authored commands so existing ps script overrides retain precedence.
+- One-shot `emit_particles` remains a transient command, not a persistent Component; `PStudioUI` continues to own DOM presentation.
