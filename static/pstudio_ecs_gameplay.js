@@ -14,10 +14,17 @@
     Health: 'Health', Inventory: 'Inventory', Equipment: 'Equipment',
     CombatState: 'CombatState', AIController: 'AIController',
     MovementIntent: 'MovementIntent', QuestProgress: 'QuestProgress',
-    DialogueSession: 'DialogueSession', NavigationNode: 'NavigationNode'
+    DialogueSession: 'DialogueSession', NavigationNode: 'NavigationNode',
+    ItemDefinition: 'ItemDefinition', QuestDefinition: 'QuestDefinition',
+    WeaponDefinition: 'WeaponDefinition'
   };
   const questEntities = new Map();
   const navigationNodeEntities = new Map();
+  const definitionEntities = {
+    ItemDefinition: new Map(),
+    QuestDefinition: new Map(),
+    WeaponDefinition: new Map()
+  };
   let dialogueEntity = null;
   let active = false;
 
@@ -102,6 +109,24 @@
       label: 'Navigation Node',
       description: 'Runtime navigation graph node. Edges are stored as neighboring node IDs; the ECS Component is the source of truth.'
     });
+    registerType(TYPES.ItemDefinition, {
+      definitionId: { type: 'string', required: true, maxLength: 128 },
+      kind: { type: 'string', default: '', maxLength: 64 },
+      slot: { type: 'string', default: '', maxLength: 64 },
+      value: { type: 'number', min: 0, default: 0 }
+    }, { label: 'Item Definition', description: 'Static project gameplay definition; inventory counts live on Inventory Components.' });
+    registerType(TYPES.QuestDefinition, {
+      definitionId: { type: 'string', required: true, maxLength: 128 },
+      prerequisite: { type: 'string', default: '', maxLength: 128 },
+      rewardItem: { type: 'string', default: '', maxLength: 128 },
+      rewardCount: { type: 'integer', min: 0, default: 0 }
+    }, { label: 'Quest Definition', description: 'Static quest requirements and rewards; live progress lives on QuestProgress Components.' });
+    registerType(TYPES.WeaponDefinition, {
+      definitionId: { type: 'string', required: true, maxLength: 128 },
+      range: { type: 'number', min: 0.1, default: 2 },
+      arc: { type: 'number', min: 1, max: 360, default: 100 },
+      multiplier: { type: 'number', min: 0, default: 1 }
+    }, { label: 'Weapon Definition', description: 'Static weapon combat parameters; cooldowns and combo state live on CombatState Components.' });
   }
 
   function systems() {
@@ -260,6 +285,62 @@
     return true;
   }
   function getAIState(objectId) { return getAIController(objectId)?.state ?? null; }
+
+  function getDefinitionEntity(type, id, create = false, initial = null) {
+    const key = String(id);
+    if (!key || key.length > 128) return null;
+    const cache = definitionEntities[type];
+    if (!cache || !TYPES[type]) return null;
+    let entity = cache.get(key);
+    if (entity !== undefined) {
+      try {
+        const current = ecs.getComponent(entity, TYPES[type]);
+        if (current?.definitionId === key) return entity;
+      } catch (_) {}
+      cache.delete(key);
+    }
+    if (!create) return null;
+    entity = ecs.createEntity();
+    try {
+      ecs.addComponent(entity, TYPES[type], { definitionId: key, ...(initial || {}) });
+      cache.set(key, entity);
+      return entity;
+    } catch (error) {
+      try { ecs.destroyEntity(entity); } catch (_) {}
+      throw error;
+    }
+  }
+
+  function setDefinition(type, id, values) {
+    const key = String(id);
+    if (!key || key.length > 128) throw new TypeError('Gameplay definition ID must contain 1–128 characters.');
+    const entity = getDefinitionEntity(type, key, true, values);
+    if (entity === null) return false;
+    ecs.setComponent(entity, TYPES[type], { definitionId: key, ...(values || {}) });
+    return true;
+  }
+
+  function getDefinition(type, id) {
+    const entity = getDefinitionEntity(type, id, false);
+    if (entity === null) return null;
+    const data = ecs.getComponent(entity, TYPES[type]);
+    const result = {};
+    for (const [key, value] of Object.entries(data || {})) {
+      if (key !== 'definitionId') result[key] = clone(value);
+    }
+    return result;
+  }
+
+  function listDefinitions(type) {
+    const cache = definitionEntities[type];
+    if (!cache) return [];
+    const result = [];
+    for (const [id] of cache) {
+      const definition = getDefinition(type, id);
+      if (definition) result.push({ id, ...definition });
+    }
+    return result.sort((a, b) => a.id.localeCompare(b.id));
+  }
 
   function getQuestEntity(questId, create = false, initial = null) {
     const key = String(questId);
@@ -537,6 +618,27 @@
     getHealth, getInventory, getEquipment, getCombatState, canAttack, getCombo, setCombo,
     getAIController, getMovementIntent, setAIController, setAIState, getAIState, setMovementIntent,
     getQuestState, listQuests, getDialogueState,
+    setItemDefinition: (id, value) => setDefinition('ItemDefinition', id, {
+      kind: String(value?.kind || '').slice(0, 64),
+      slot: String(value?.slot || '').slice(0, 64),
+      value: Math.max(0, Number(value?.value) || 0)
+    }),
+    getItemDefinition: id => getDefinition('ItemDefinition', id),
+    listItemDefinitions: () => listDefinitions('ItemDefinition'),
+    setQuestDefinition: (id, value) => setDefinition('QuestDefinition', id, {
+      prerequisite: String(value?.prerequisite || '').slice(0, 128),
+      rewardItem: String(value?.rewardItem || '').slice(0, 128),
+      rewardCount: Math.max(0, Math.floor(Number(value?.rewardCount) || 0))
+    }),
+    getQuestDefinition: id => getDefinition('QuestDefinition', id),
+    listQuestDefinitions: () => listDefinitions('QuestDefinition'),
+    setWeaponDefinition: (id, value) => setDefinition('WeaponDefinition', id, {
+      range: Math.max(0.1, Number(value?.range) || 2),
+      arc: Math.max(1, Math.min(360, Number(value?.arc) || 100)),
+      multiplier: Math.max(0, Number(value?.multiplier) || 0)
+    }),
+    getWeaponDefinition: id => getDefinition('WeaponDefinition', id),
+    listWeaponDefinitions: () => listDefinitions('WeaponDefinition'),
     addNavigationNode, connectNavigationNodes, getNavigationNode, getNavigationNodes,
     getNavigationNodeCount, setNavigationNodeBlocked, clearNavigationNodes,
     getNearestNavigationNode, getNearestNavigationNodes, findNavigationNext, getRuntimeState

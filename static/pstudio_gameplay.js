@@ -147,9 +147,17 @@
     const state=window.PStudioECSGameplay?.getInventory?.(id);
     const key=String(item);return state?(hasOwn(state.items,key)?Number(state.items[key])||0:0):inventory(id).get(key)||0;
   }
-  function defineItem(item,kind,slot,value){itemDefinitions.set(String(item),{kind:String(kind),slot:String(slot||''),value:Math.max(0,number(value))});return true;}
+  function getItemDefinition(item){
+    return window.PStudioECSGameplay?.getItemDefinition?.(String(item))||itemDefinitions.get(String(item))||null;
+  }
+  function defineItem(item,kind,slot,value){
+    const id=String(item),definition={kind:String(kind),slot:String(slot||''),value:Math.max(0,number(value))};
+    const bridge=window.PStudioECSGameplay;
+    if(bridge?.setItemDefinition)return bridge.setItemDefinition(id,definition);
+    itemDefinitions.set(id,definition);return true;
+  }
   function equipItem(id,item){
-    const def=itemDefinitions.get(String(item));if(!def||def.kind!=='equipment'||inventoryCount(id,item)<=0)return false;
+    const def=getItemDefinition(item);if(!def||def.kind!=='equipment'||inventoryCount(id,item)<=0)return false;
     const slot=def.slot||'main',state=window.PStudioECSGameplay?.getEquipment?.(id,true);
     if(state){setRecordValue(state.slots,slot,String(item));return true;}
     const slots=equipment.get(id)||new Map();slots.set(slot,String(item));equipment.set(id,slots);return true;
@@ -160,15 +168,23 @@
     return entries.map(([slot,item])=>({slot,item}));
   }
   function useItem(id,item){
-    const def=itemDefinitions.get(String(item));if(!def||def.kind!=='consumable'||inventoryCount(id,item)<=0)return false;
+    const def=getItemDefinition(item);if(!def||def.kind!=='consumable'||inventoryCount(id,item)<=0)return false;
     if(!inventoryRemove(id,item,1))return false;if(def.slot==='heal')heal(id,def.value);return true;
   }
   function getInventorySnapshot(id){
-    return inventoryEntries(id).map(([item,count])=>({item,count,definition:itemDefinitions.get(item)||null,equipped:getEquipment(id).some(e=>e.item===item)}));
+    return inventoryEntries(id).map(([item,count])=>({item,count,definition:getItemDefinition(item),equipped:getEquipment(id).some(e=>e.item===item)}));
   }
-  function questDefine(id,prerequisite,rewardItem,rewardCount){questDefinitions.set(String(id),{prerequisite:String(prerequisite||''),rewardItem:String(rewardItem||''),rewardCount:Math.max(0,Math.floor(number(rewardCount,0)))});return true;}
+  function getQuestDefinition(id){
+    return window.PStudioECSGameplay?.getQuestDefinition?.(String(id))||questDefinitions.get(String(id))||null;
+  }
+  function questDefine(id,prerequisite,rewardItem,rewardCount){
+    const key=String(id),definition={prerequisite:String(prerequisite||''),rewardItem:String(rewardItem||''),rewardCount:Math.max(0,Math.floor(number(rewardCount,0)))};
+    const bridge=window.PStudioECSGameplay;
+    if(bridge?.setQuestDefinition)return bridge.setQuestDefinition(key,definition);
+    questDefinitions.set(key,definition);return true;
+  }
   function questStart(id){
-    const key=String(id),def=questDefinitions.get(key);
+    const key=String(id),def=getQuestDefinition(key);
     if(def?.prerequisite&&!questIsComplete(def.prerequisite))return false;
     const state=window.PStudioECSGameplay?.getQuestState?.(key,true,{started:true,complete:false,progress:0,target:1,rewarded:false});
     if(state){state.started=true;return true;}
@@ -179,7 +195,7 @@
     const key=String(id),state=window.PStudioECSGameplay?.getQuestState?.(key,true,{started:true,complete:false,progress:0,target:1,rewarded:false});
     const q=state||quests.get(key)||{started:true,complete:false,progress:0,target:1,rewarded:false};
     q.started=true;q.complete=true;q.progress=q.target;
-    if(!q.rewarded&&ownerId){const def=questDefinitions.get(key);if(def?.rewardItem&&def.rewardCount>0)inventoryAdd(ownerId,def.rewardItem,def.rewardCount);q.rewarded=true;}
+    if(!q.rewarded&&ownerId){const def=getQuestDefinition(key);if(def?.rewardItem&&def.rewardCount>0)inventoryAdd(ownerId,def.rewardItem,def.rewardCount);q.rewarded=true;}
     if(!state)quests.set(key,q);return true;
   }
   function questIsComplete(id){
@@ -197,10 +213,18 @@
     const state=window.PStudioECSGameplay?.getQuestState?.(String(id));
     const q=state||quests.get(String(id));return q?q.progress:0;
   }
-  function defineWeapon(name,range,arcDegrees,damageMultiplier=1){weaponDefinitions.set(String(name),{range:Math.max(0.1,number(range,2)),arc:clamp(number(arcDegrees,100),1,360),multiplier:Math.max(0,number(damageMultiplier,1))});return true;}
+  function getWeaponDefinition(name){
+    return window.PStudioECSGameplay?.getWeaponDefinition?.(String(name))||weaponDefinitions.get(String(name))||null;
+  }
+  function defineWeapon(name,range,arcDegrees,damageMultiplier=1){
+    const id=String(name),definition={range:Math.max(0.1,number(range,2)),arc:clamp(number(arcDegrees,100),1,360),multiplier:Math.max(0,number(damageMultiplier,1))};
+    const bridge=window.PStudioECSGameplay;
+    if(bridge?.setWeaponDefinition)return bridge.setWeaponDefinition(id,definition);
+    weaponDefinitions.set(id,definition);return true;
+  }
   function weaponAttack(sourceId,weapon,radius,amount,comboWindow,objects,physics){
     const source=resolveObject(sourceId,objects);if(!source||!isAlive(sourceId))return 0;
-    const weaponDef=weaponDefinitions.get(String(weapon)),attackRange=weaponDef?.range??Math.max(0,number(radius)),minimumFacing=weaponDef?Math.cos(weaponDef.arc*Math.PI/360):0.25,weaponDamage=Math.max(0,number(amount))*(weaponDef?.multiplier??1);
+    const weaponDef=getWeaponDefinition(weapon),attackRange=weaponDef?.range??Math.max(0,number(radius)),minimumFacing=weaponDef?Math.cos(weaponDef.arc*Math.PI/360):0.25,weaponDamage=Math.max(0,number(amount))*(weaponDef?.multiplier??1);
     const now=Date.now(),old=window.PStudioECSGameplay?.getCombo?.(sourceId)||weaponCombos.get(sourceId),windowMs=Math.max(150,number(comboWindow,1100));const combo=old&&now-old.time<=windowMs?old.count%5+1:1;
     const comboState={count:combo,time:now,weapon:String(weapon)};
     if(!window.PStudioECSGameplay?.setCombo?.(sourceId,comboState))weaponCombos.set(sourceId,comboState);
