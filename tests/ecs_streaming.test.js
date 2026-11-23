@@ -49,7 +49,7 @@ test('renderer re-registration preserves the live chunk object and cancels chang
   assert.deepEqual(Array.from(record.assets), ['b.glb', 'c.glb']);
 });
 
-test('stale asynchronous chunk completions never release assets belonging to a newer generation', async () => {
+test('stale asynchronous chunk completions release only obsolete assets and retain shared assets for a newer generation', async () => {
   const renderer = read('static/pstudio_3d_engine.js');
   const source = extractFunction(renderer, 'function beginWorldChunkLoad', 'function releaseChunkAssetCache');
   let resolveAsset;
@@ -66,20 +66,20 @@ test('stale asynchronous chunk completions never release assets belonging to a n
   );
   const chunk = {
     id: 'async-zone', generation: 0, loading: false, active: false,
-    assets: ['old.glb'], onLoad: null, onUnload: null
+    assets: ['old.glb', 'shared.glb'], onLoad: null, onUnload: null
   };
   begin(chunk);
   assert.equal(chunk.loading, true);
   chunk.generation++;
-  chunk.loading = false;
-  chunk.assets = ['new.glb'];
+  chunk.loading = true;
+  chunk.assets = ['new.glb', 'shared.glb'];
   resolveAsset({});
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(chunk.active, false);
-  assert.equal(chunk.loading, false);
-  assert.deepEqual(releases, [], 'obsolete completion cannot release the new asset set');
+  assert.equal(chunk.loading, true, 'newer in-flight generation remains active');
+  assert.deepEqual(releases, [['async-zone', ['old.glb']]], 'obsolete-only assets are released while shared/new assets remain protected');
   assert.deepEqual(events, []);
 });
 
