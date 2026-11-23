@@ -250,3 +250,11 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - `PStudioGameplay` reads/writes overlay intent through `PStudioECSUI`; Game Stop clears the transient Component.
 - `UIOverlay` is internal and non-persistent: it is not written into project backups or scene files.
 - `PStudioUI` continues to own DOM elements, buttons, layout, accessibility and actual display. ECS does not create or retain DOM nodes.
+
+
+## ECS Module Lifecycle Mirror
+
+- Each registered `PStudioModules` entry is mirrored by a standalone runtime-only `ModuleState` Entity.
+- The bridge listens to registration, state-change, enabled, disabled and unregistration events; it also rebuilds the mirror from the registry on synchronization.
+- `PStudioModules` remains authoritative for dependency resolution, conflict checks, async activate/deactivate callbacks, rollback and unregister guards. ECS does not run module hooks or own module resources.
+- Module state Components are internal and non-persistent; they are not written into scenes or project backups.

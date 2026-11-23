@@ -45,7 +45,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | HUD/game UI | PStudioUI DOM renderer + Gameplay UI state | Transient UIOverlay singleton Component owns active inventory/quest/dialogue intent; PStudioUI retains DOM, input widgets and presentation | Phase 12 implemented; state resets at Game Stop and is not serialized |
 | Events | PStudioEvents | Remains shared event infrastructure, with ECS adapters | Keep service |
 | Jobs | PStudioJobs cooperative queue | Jobs remain async infrastructure; ECS stores task state only where gameplay needs it | Keep service |
-| Modules | PStudioModules registry | Modules register/unregister ECS Components and Systems through lifecycle hooks | Integration pending |
+| Modules | PStudioModules registry | ModuleState mirror Components track registration, activation/deactivation, errors and enabled state; PStudioModules remains authoritative for dependencies, async hooks and rollback | Phase 13 implemented; ECS mirror is runtime-only |
 | Assets/storage | PStudioAssetStore / IndexedDB | ECS stores stable asset IDs, never binary asset payloads | Keep service |
 | Editor/Inspector | templates/index.html | Inspector reads/writes ECS definitions and selected-entity Components | Existing partial integration |
 | Scene/project persistence | editor serializer and project backup | Explicit Component serialization allowlist and versioned migration | Partial |
@@ -64,7 +64,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 10. **World streaming** — connect WorldPartition membership and multiple StreamingInterest points to the renderer's chunk manager. ECS owns serializable partition/interest configuration; PStudio3D retains async loading, activation, GPU resource leases and disposal. (Phase 10 implemented.)
 11. **Visual effects configuration** — move environment, fog, water, post-FX, particle-emitter and trail configuration to persistent Components; keep shaders, GPU simulation, particle buffers, trail geometry and post-FX passes inside PStudio3D. One-shot particle bursts remain transient commands. (Phase 11 implemented.)
 12. **HUD/UI state boundary** — move transient active inventory/quest/dialogue overlay intent to a UIOverlay singleton Component; PStudioUI remains the DOM renderer. (Phase 12 implemented.)
-13. **Module lifecycle** — connect dependency-aware module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS. (Pending.)
+13. **Module lifecycle** — mirror module registration and state transitions into runtime-only ModuleState entities; PStudioModules retains dependency resolution, async activation/deactivation, rollback and service cleanup. (Phase 13 implemented.)
 14. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
 
 ## Required gates for every slice
