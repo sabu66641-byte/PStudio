@@ -4,6 +4,115 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const read = path => fs.readFileSync(path, 'utf8');
+function extractFunction(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start);
+  assert.ok(start >= 0 && end > start, 'function extraction markers exist: ' + startMarker);
+  return source.slice(start, end).trim();
+}
+
+test('renderer re-registration preserves the live chunk object and cancels changed asset generations before replacement', () => {
+  const renderer = read('static/pstudio_3d_engine.js');
+  const source = extractFunction(renderer, 'function registerWorldChunk', 'function assignObjectToChunk');
+  const worldChunks = new Map();
+  const invalidated = [];
+  const register = new Function('worldChunks', 'endWorldChunkLoad', source + '; return registerWorldChunk;')(
+    worldChunks,
+    chunk => {
+      invalidated.push(chunk.id);
+      chunk.generation++;
+      chunk.loading = false;
+      chunk.active = false;
+    }
+  );
+
+  const first = register('district-a', { x: 1, assets: ['a.glb'], loadDistance: 100 });
+  const record = worldChunks.get('district-a');
+  record.loading = true;
+  record.generation = 4;
+  const same = register('district-a', { x: 2, assets: ['a.glb'], loadDistance: 120 });
+  assert.equal(worldChunks.get('district-a'), record, 'the registry object identity is stable');
+  assert.equal(record.loading, true, 'in-flight load state is not overwritten');
+  assert.equal(record.generation, 4);
+  assert.equal(same.loading, true);
+  assert.equal(same.x, undefined, 'the public registration result does not leak mutable coordinates');
+  assert.equal(first.id, 'district-a');
+
+  register('district-a', { x: 3, assets: ['b.glb'], loadDistance: 130 });
+  assert.deepEqual(invalidated, ['district-a']);
+  assert.equal(record.loading, false);
+  assert.equal(record.active, false);
+  assert.equal(record.generation, 5);
+  assert.deepEqual(Array.from(record.assets), ['b.glb']);
+});
+
+test('stale asynchronous chunk completions never release assets belonging to a newer generation', async () => {
+  const renderer = read('static/pstudio_3d_engine.js');
+  const source = extractFunction(renderer, 'function beginWorldChunkLoad', 'function releaseChunkAssetCache');
+  let resolveAsset;
+  const releases = [];
+  const events = [];
+  const begin = new Function(
+    'Promise', 'requestModelAsset', 'releaseChunkAssetCache', 'window', 'Date', source + '; return beginWorldChunkLoad;'
+  )(
+    Promise,
+    () => new Promise(resolve => { resolveAsset = resolve; }),
+    (chunk, assets) => releases.push([chunk.id, Array.from(assets)]),
+    { PStudioEvents: { emit: (...args) => events.push(args) } },
+    Date
+  );
+  const chunk = {
+    id: 'async-zone', generation: 0, loading: false, active: false,
+    assets: ['old.glb'], onLoad: null, onUnload: null
+  };
+  begin(chunk);
+  assert.equal(chunk.loading, true);
+  chunk.generation++;
+  chunk.loading = false;
+  chunk.assets = ['new.glb'];
+  resolveAsset({});
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(chunk.active, false);
+  assert.equal(chunk.loading, false);
+  assert.deepEqual(releases, [], 'obsolete completion cannot release the new asset set');
+  assert.deepEqual(events, []);
+});
+
+test('chunk scheduler combines multiple interests and enforces prioritized concurrent load budgets', () => {
+  const renderer = read('static/pstudio_3d_engine.js');
+  const source = extractFunction(renderer, 'function updateWorldChunkStates', 'function setWorldRenderConfig');
+  const worldChunks = new Map([
+    ['near-low', { id: 'near-low', x: 0, y: 0, z: 0, loadDistance: 100, unloadDistance: 150, active: false, loading: false }],
+    ['near-high', { id: 'near-high', x: 1000, y: 0, z: 0, loadDistance: 100, unloadDistance: 150, active: false, loading: false }],
+    ['held-by-second-interest', { id: 'held-by-second-interest', x: 1100, y: 0, z: 0, loadDistance: 100, unloadDistance: 180, active: true, loading: false }],
+    ['outside-all', { id: 'outside-all', x: 5000, y: 0, z: 0, loadDistance: 100, unloadDistance: 180, active: true, loading: false }]
+  ]);
+  const started = [], ended = [];
+  const fn = new Function(
+    'worldStreamingInterests', 'camera', 'worldChunks', 'worldRenderConfig',
+    'beginWorldChunkLoad', 'endWorldChunkLoad',
+    source + '; return updateWorldChunkStates;'
+  )(
+    [
+      { id: 'main', x: 1000, y: 0, z: 0, loadMultiplier: 1, unloadMultiplier: 1, priority: 20 },
+      { id: 'companion', x: 0, y: 0, z: 0, loadMultiplier: 1, unloadMultiplier: 1, priority: 5 }
+    ],
+    null, worldChunks, { maxConcurrentChunkLoads: 1 },
+    chunk => { started.push(chunk.id); chunk.loading = true; },
+    chunk => { ended.push(chunk.id); chunk.loading = false; chunk.active = false; }
+  );
+  fn();
+  assert.deepEqual(started, ['near-high'], 'the higher priority interest wins the single available load slot');
+  assert.deepEqual(ended, ['outside-all'], 'the second interest keeps its nearby active region resident');
+
+  // Once the first slot is occupied by an in-flight request, additional requests wait.
+  started.length = 0;
+  fn();
+  assert.deepEqual(started, []);
+});
+
 
 function createStreamingRuntime(objects) {
   const calls = {
