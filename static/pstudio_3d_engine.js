@@ -1132,6 +1132,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(energy<=minBounceEnergy)break;
       }
       for(const item of sourceProbes)if(!directProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
+      finalProbes.grid={min:{x:Number(min.x),y:Number(min.y),z:Number(min.z)},max:{x:Number(max.x),y:Number(max.y),z:Number(max.z)},dimensions:dims.slice(),order:'x-fastest'};
       bakedLightProbe=null;bakedLightProbeVolume=finalProbes;bakedGIBounces=completedBounces;
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
@@ -2792,18 +2793,43 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     target.y+=c[0].y*.886227*w+c[1].y*1.023327*y*w+c[2].y*1.023327*z*w+c[3].y*1.023327*x*w+c[4].y*.858086*x*y*w+c[5].y*.858086*y*z*w+c[6].y*.247708*(3*z*z-1)*w+c[7].y*.858086*x*z*w+c[8].y*.429043*(x*x-y*y)*w;
     target.z+=c[0].z*.886227*w+c[1].z*1.023327*y*w+c[2].z*1.023327*z*w+c[3].z*1.023327*x*w+c[4].z*.858086*x*y*w+c[5].z*.858086*y*z*w+c[6].z*.247708*(3*z*z-1)*w+c[7].z*.858086*x*z*w+c[8].z*.429043*(x*x-y*y)*w;
   }
+  function getProbeVolumeWeights(position,volume){
+    if(!position||!volume?.length)return[];
+    const grid=volume.grid,dimensions=grid?.dimensions;
+    if(grid?.order==='x-fastest'&&Array.isArray(dimensions)&&dimensions.length===3){
+      const nx=Number(dimensions[0]),ny=Number(dimensions[1]),nz=Number(dimensions[2]);
+      const min=grid.min,max=grid.max;
+      const boundsValid=['x','y','z'].every(axis=>Number.isFinite(Number(min?.[axis]))&&Number.isFinite(Number(max?.[axis]))&&Number(max[axis])>Number(min[axis]));
+      if(Number.isInteger(nx)&&Number.isInteger(ny)&&Number.isInteger(nz)&&nx>=2&&ny>=2&&nz>=2&&nx*ny*nz===volume.length&&boundsValid){
+        const coordinate=(axis,count)=>{
+          const normalized=(Number(position[axis])-Number(min[axis]))/(Number(max[axis])-Number(min[axis]))*(count-1);
+          const value=Math.max(0,Math.min(count-1,Number.isFinite(normalized)?normalized:0));
+          const low=Math.floor(value);
+          return{low,high:Math.min(count-1,low+1),blend:value-low};
+        };
+        const x=coordinate('x',nx),y=coordinate('y',ny),z=coordinate('z',nz);
+        const samples=[];let total=0;
+        for(let zi=0;zi<2;zi++)for(let yi=0;yi<2;yi++)for(let xi=0;xi<2;xi++){
+          const ix=xi?x.high:x.low,iy=yi?y.high:y.low,iz=zi?z.high:z.low;
+          const weight=(xi?x.blend:1-x.blend)*(yi?y.blend:1-y.blend)*(zi?z.blend:1-z.blend);
+          const item=volume[(iz*ny+iy)*nx+ix];
+          if(item?.light?.sh?.coefficients&&weight>1e-8){samples.push({item,weight});total+=weight;}
+        }
+        if(total>0)return samples.map(sample=>({item:sample.item,weight:sample.weight/total}));
+      }
+    }
+    // Old/unstructured probe arrays retain the inverse-distance compatibility path.
+    const nearest=volume.map(item=>({item,d:item.position.distanceToSquared(position)})).sort((a,b)=>a.d-b.d);
+    if(!nearest.length)return[];
+    if(nearest[0].d<=1e-8)return[{item:nearest[0].item,weight:1}];
+    const count=Math.max(1,Math.min(8,Math.floor(Number(worldRenderConfig.probeBlendCount)||4)));
+    const selected=nearest.slice(0,count),sum=selected.reduce((value,entry)=>value+1/Math.max(.25,entry.d),0);
+    if(sum<=0)return[];
+    return selected.map(entry=>({item:entry.item,weight:(1/Math.max(.25,entry.d))/sum}));
+  }
   function evaluateProbeSH(position,normal,target=new window.THREE.Vector3()){
     const volume=bakedLightProbeVolume;target.set(0,0,0);if(!volume?.length)return target;
-    let p0=null,p1=null,p2=null,p3=null,d0=Infinity,d1=Infinity,d2=Infinity,d3=Infinity;
-    for(const item of volume){const d=item.position.distanceToSquared(position);
-      if(d<d0){p3=p2;d3=d2;p2=p1;d2=d1;p1=p0;d1=d0;p0=item;d0=d;}
-      else if(d<d1){p3=p2;d3=d2;p2=p1;d2=d1;p1=item;d1=d;}
-      else if(d<d2){p3=p2;d3=d2;p2=item;d2=d;}
-      else if(d<d3){p3=item;d3=d;}
-    }
-    const w0=p0?1/Math.max(.25,d0):0,w1=p1?1/Math.max(.25,d1):0,w2=p2?1/Math.max(.25,d2):0,w3=p3?1/Math.max(.25,d3):0,sum=w0+w1+w2+w3;
-    if(sum<=0)return target;
-    if(p0)addProbeSH(p0,w0/sum,normal,target);if(p1)addProbeSH(p1,w1/sum,normal,target);if(p2)addProbeSH(p2,w2/sum,normal,target);if(p3)addProbeSH(p3,w3/sum,normal,target);
+    for(const sample of getProbeVolumeWeights(position,volume))addProbeSH(sample.item,sample.weight,normal,target);
     return target.set(Math.max(0,target.x),Math.max(0,target.y),Math.max(0,target.z));
   }
   const halfFloatScratch=new Float32Array(1),halfUintScratch=new Uint32Array(halfFloatScratch.buffer);
@@ -2910,8 +2936,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   }
   function updateObjectProbeUniforms(object,material){
     const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;const center=new window.THREE.Vector3();object.getWorldPosition(center);
-    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;for(const e of near){e.w=1/Math.max(0.25,e.d);sum+=e.w;}
-    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const e of near){const coeff=e.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,e.w/Math.max(1e-8,sum)*e.item.baseIntensity);}}
+    const samples=getProbeVolumeWeights(center,volume);
+    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const sample of samples){const coeff=sample.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,sample.weight*sample.item.baseIntensity);}}
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
@@ -4451,7 +4477,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       stagedTextureUploads,
       parallelShaderCompileSupported,
       frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled&&!volumetricFogPass?.failed,failed:!!volumetricFogPass?.failed,lastError:volumetricFogPass?.lastError||null,manualOverride:volumetricFogManualOverride,resolutionScale:volumetricFogPass?.getResolutionScale?.()||0,steps:volumetricFogPass?.uniforms?.uSteps?.value||0}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,probeInterpolation:!bakedLightProbeVolume?.length?'none':bakedLightProbeVolume.grid?'trilinear-grid-sh':'inverse-distance-fallback',bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled&&!volumetricFogPass?.failed,failed:!!volumetricFogPass?.failed,lastError:volumetricFogPass?.lastError||null,manualOverride:volumetricFogManualOverride,resolutionScale:volumetricFogPass?.getResolutionScale?.()||0,steps:volumetricFogPass?.uniforms?.uSteps?.value||0}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
