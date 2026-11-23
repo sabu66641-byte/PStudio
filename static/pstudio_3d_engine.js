@@ -312,7 +312,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;applyVolumetricQuality(resolveQualityPreset('auto'),adaptiveQualityLevel);
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;applyVolumetricQuality(resolveQualityPreset('auto'),adaptiveQualityLevel);applyCameraLensQuality(resolveQualityPreset('auto'),adaptiveQualityLevel,false);
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
