@@ -131,6 +131,58 @@ function fogTarget(target) {
   return !!target && typeof target === 'object' && target.texture?.target === target;
 }
 
+test('fog fails open to the unmodified scene while god-ray shader errors propagate to Bloom fallback', () => {
+  const { fx, Three } = loadEnvironmentFx();
+  const shaderPass = function ShaderPass() {};
+  const fog = fx.createVolumetricFogPass({ ShaderPass: shaderPass }, Three);
+  const rays = fx.createGodRaysPass({ ShaderPass: shaderPass }, Three);
+  const readBuffer = { texture: { id: 'original-frame' }, depthTexture: { id: 'depth' } };
+  const writeBuffer = { id: 'composer-output' };
+  let fogRenderCalls = 0;
+  const fogRenderer = {
+    autoClear: false,
+    targets: [],
+    setRenderTarget(target) { this.targets.push(target); },
+    render() {
+      fogRenderCalls++;
+      if (fogRenderCalls === 1) throw new Error('unsupported fog shader');
+    }
+  };
+
+  fog.enabled = true;
+  fog.render(fogRenderer, writeBuffer, readBuffer);
+  assert.equal(fog.failed, true);
+  assert.equal(fog.enabled, false);
+  assert.match(fog.lastError, /unsupported fog shader/);
+  assert.equal(fogRenderer.autoClear, false);
+  assert.ok(fogRenderer.targets.includes(writeBuffer), 'fog fallback composites the original frame');
+  assert.equal(fogRenderCalls, 2, 'the failed fog shader is followed by one source-frame fallback');
+
+  assert.throws(() => rays.render({
+    autoClear: false,
+    setRenderTarget() {},
+    render() { throw new Error('unsupported ray shader'); }
+  }, writeBuffer, readBuffer), /unsupported ray shader/);
+  assert.equal(rays.failed, true);
+  assert.match(rays.lastError, /unsupported ray shader/);
+
+  fog.resetFailure();
+  rays.resetFailure();
+  assert.equal(fog.failed, false);
+  assert.equal(rays.failed, false);
+  fog.dispose();
+  rays.dispose();
+});
+
+test('renderer does not re-enable a failed volumetric pass every frame and exposes failure state', () => {
+  assert.ok(renderer.includes('volumetricFogEnabled&&depthPrepassReady&&!volumetricFogPass.failed'));
+  assert.ok(renderer.includes('godRaysEnabled&&!godRaysPass.failed'));
+  assert.ok(renderer.includes('volumetricFogPass?.resetFailure?.()'));
+  assert.ok(renderer.includes('godRaysPass?.resetFailure?.()'));
+  assert.ok(renderer.includes('failed:!!volumetricFogPass?.failed'));
+  assert.ok(renderer.includes('failed:!!godRaysPass?.failed'));
+});
+
 test('quality tiers gate expensive volumetrics and progressively scale resolution and samples', () => {
   for (const [name, fogScale, fogSteps, rayScale, samples] of [
     ['mobile', '.25', '4', '.25', '4'],
