@@ -887,3 +887,9 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
   assert.ok(html.includes('.game-toolbar{overflow-x:auto'));
   assert.ok(html.includes('@media(max-width:700px){.render-quality-label{display:none}'));
 });
+
+
+test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-quality-selector1'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-quality-selector1'));
+});
