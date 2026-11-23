@@ -625,9 +625,10 @@
         }
         if(cameraLensPass){
           const lensDepthReady=!!(cameraLensDofEnabled&&depthPrepassReady&&!cameraLensPass.failed);
-          cameraLensPass.enabled=!!((lensDepthReady||cameraLensChromaticAberration>0)&&!cameraLensPass.failed);
+          const lensChromaticAllowed=!!(cameraLensChromaticAberration>0&&!memorySafetyApplied&&deviceMemoryGiB()>2);
+          cameraLensPass.enabled=!!((lensDepthReady||lensChromaticAllowed)&&!cameraLensPass.failed);
           const u=cameraLensPass.uniforms;
-          if(cameraLensPass.enabled&&u){
+          if(u){
             if(u.tDepth)u.tDepth.value=lensDepthReady?waterDepthTarget?.depthTexture||null:null;
             if(u.uDepthValid)u.uDepthValid.value=lensDepthReady?1:0;
             if(u.uDofEnabled)u.uDofEnabled.value=lensDepthReady?1:0;
@@ -635,7 +636,7 @@
             if(u.uAperture)u.uAperture.value=cameraLensAperture;
             if(u.uNear)u.uNear.value=camera.near;
             if(u.uFar)u.uFar.value=camera.far;
-            if(u.uChromaticAberration)u.uChromaticAberration.value=cameraLensChromaticAberration;
+            if(u.uChromaticAberration)u.uChromaticAberration.value=lensChromaticAllowed?cameraLensChromaticAberration:0;
             cameraLensPass.setResolutionScale?.(lensDepthReady?cameraLensQualityScale:1);
           }
         }
