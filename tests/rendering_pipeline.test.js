@@ -12,7 +12,7 @@ const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
-  for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
+  for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js', 'RectAreaLightUniformsLib.js']) {
     assert.ok(html.includes(addon), addon);
   }
   assert.ok(html.includes('three@0.160.0'));
@@ -24,13 +24,33 @@ test('mobile auto quality applies an adaptive starting scale rather than full de
   assert.ok(renderer.includes("scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel]"));
 });
 test('quality presets configure render resolution and shadow filtering', () => {
-  for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
+  for (const preset of ['mobile', 'balanced', 'high', 'ultra', 'cinematic']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));
   assert.ok(renderer.includes('PCFSoftShadowMap'));
   assert.ok(renderer.includes('setQualityPreset:applyQualityPreset'));
   assert.ok(renderer.includes('getStats:'));
   assert.ok(renderer.includes('composer?.setPixelRatio?.(renderer.getPixelRatio())'));
   assert.ok(renderer.includes('composer.setPixelRatio?.(renderer.getPixelRatio())'));
+  assert.ok(renderer.includes("if(name==='cinematic')return memory<=2?'mobile':memory<6?'ultra':'cinematic'"));
+  assert.ok(renderer.includes('pixelRatio:2.5'));
+  assert.ok(renderer.includes("fogSteps:32,rayScale:1,raySamples:48"));
+  assert.ok(renderer.includes("samples:selected==='cinematic'?64"));
+  assert.ok(renderer.includes("selected==='cinematic'?3"));
+  assert.ok(renderer.includes("qualityPreset=(()=>{try{const value=window.localStorage?.getItem('pstudio-render-quality-v1')"));
+  assert.ok(html.includes('id="scene-render-quality"'));
+  assert.ok(html.includes('function setSceneRenderQuality(value)'));
+  assert.ok(html.includes('option value="cinematic"'));
+});
+
+test('Studio lighting uses area-light softboxes with a safe fallback and only activates for the Studio preset',()=>{
+  assert.ok(html.includes('RectAreaLightUniformsLib.js'));
+  assert.ok(html.includes('RectAreaLightUniformsLib.init()'));
+  assert.ok(renderer.includes('new T.RectAreaLight'));
+  assert.ok(renderer.includes("window.PStudioRectAreaLightsReady&&T.RectAreaLight"));
+  assert.ok(renderer.includes("studioLightingBackend='directional-fallback'"));
+  assert.ok(renderer.includes("setStudioLightingRig(signature==='studio',T)"));
+  assert.ok(renderer.includes("next.preset==='studio'?0.36:1"));
+  assert.ok(renderer.includes('studioLighting:{enabled:!!studioLightingGroup?.visible,backend:studioLightingBackend}'));
 });
 
 test('HDR loading and baked diffuse probe APIs are exposed with boundaries', () => {
