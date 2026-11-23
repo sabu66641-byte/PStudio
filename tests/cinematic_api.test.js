@@ -15,7 +15,7 @@ const architecture = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'),
 
 test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   for (const [name, arity] of [
-    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4], ['set_camera_lens', 4]
+    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4], ['set_camera_lens', 4], ['set_color_grading', 6]
   ]) assert.match(app, new RegExp('"' + name + '": ' + arity));
   assert.match(app, /"set_god_rays": \(2, 3\)/);
   assert.match(app, /game_functions = GAME_FUNCTIONS if allow_game else \{\}/);
@@ -26,6 +26,9 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\|\|a\.length===3\)/);
   assert.match(runtime, /case 'set_camera_lens': if\(a\.length===4\)/);
   assert.match(runtime, /setCameraLens\?\.\(dofEnabled,focusDistance,aperture,chromaticAberration\)/);
+  assert.match(runtime, /case 'set_color_grading': if\(a\.length===6\)/);
+  assert.match(runtime, /setColorGrading\?\.\(exposure,contrast,saturation,temperature,vignette,filmGrain\)/);
+  assert.match(renderer, /setColorGrading:\(exposure=0,contrast=1,saturation=1,temperature=0,vignette=0,filmGrain=0\)/);
   assert.match(renderer, /setCameraLens:\(dofEnabled,focusDistance=12,aperture=2\.8,chromaticAberration=0\)/);
 });
 
@@ -101,15 +104,15 @@ test('God Rays uses the active light, precedes OutputPass, and safely falls back
   assert.match(renderer, /setGodRays:\(enabled,intensity=1,decay=\.965\)/);
 });
 
-test('the Scene API help and technical docs describe all five cinematic calls', () => {
-  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays', 'set_camera_lens']) {
+test('the Scene API help and technical docs describe all six cinematic calls', () => {
+  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays', 'set_camera_lens', 'set_color_grading']) {
     assert.ok(html.includes(name), name + ' in Inspector API help');
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261123-camera-lens-phase3/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-camera-lens-phase3/);
-  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-camera-lens-phase3/);
+  assert.match(html, /pstudio_engine\.js\?v=20261123-color-grading-phase4/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-color-grading-phase4/);
+  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-color-grading-phase4/);
 });
 
 test('camera lens pass uses depth-aware low-resolution DoF and fail-open compositing', () => {
