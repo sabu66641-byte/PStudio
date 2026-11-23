@@ -55,7 +55,7 @@ Do not send a server request every frame. Preserve the division between server-s
 
 - `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching.
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
-- `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, preset-driven solar elevation and Rayleigh/Mie physical sky with twilight enhancement and procedural fallback, adaptive height-aware volumetric fog/clouds, depth-aware PBR water, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, GPU particle rendering, instancing and world chunks.
+- `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, preset-driven solar elevation, moonlight, Rayleigh/Mie physical sky, twilight enhancement and procedural fallback, adaptive height-aware volumetric fog/clouds, depth-aware PBR water, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
 - `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
