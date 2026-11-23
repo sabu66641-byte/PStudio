@@ -283,3 +283,11 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - `QuestProgress` and `DialogueSession` are standalone, non-project-persistent ECS Entities. They remain in ECS across Game Stop/Play instead of being copied into `PStudioGameplay` Maps and reconstructed on the next start.
 - `PlayerInput` stores durable per-entity key bindings and is serialized with its Scene Object. Its `ControlIntent` remains transient and is recreated by the PlayerInput Component lifecycle hook.
 - A saved Scene Object with a newer unsupported Component schema is never overwritten by an older runtime. Unregistered Component records in the current supported schema are preserved for modules/plugins that are not loaded in the current session.
+
+
+## Project Backup ECS Component Preservation
+
+- Project backup import reconstructs a sanitized Scene Object model; it must explicitly copy `ecsComponentsVersion` and `ecsComponents`, otherwise all ECS-only gameplay/rendering/physics data would be silently lost.
+- Legacy v0 array and type-keyed Component payloads are retained for the ECS core's migration path.
+- Current supported Component payloads are copied with bounded per-object size/count limits.
+- Newer future schema payloads are treated as opaque JSON and preserved without normalization or downgrade; older runtime restoration will skip them.

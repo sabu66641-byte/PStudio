@@ -69,7 +69,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 15. **Gameplay definition entities** — move Item/Quest/Weapon definition records into standalone ECS entities while keeping ps definition APIs compatible. (Phase 15 implemented.)
 16. **Transform and Physics parity** — keep ECS Transform and PhysicsBody/State as runtime state, verify two-way editor synchronization and config changes, and retain Scene Object serialization and the fixed-step solver as service adapters. (Phase 16 implemented; adapters intentionally remain.)
 17. **Gameplay state persistence integration** — write persistent per-Scene Object gameplay Components through the versioned serializer; retain QuestProgress/DialogueSession standalone Entities across Stop/Play; preserve unknown/future Component payloads; persist PlayerInput mapping configuration. (Phase 17 implemented.)
-18. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
+18. **Project backup ECS preservation** — reconstructing Scene Objects during backup import must preserve versioned, legacy and unknown-future ECS Component payloads rather than dropping them. (Phase 18 implemented.)
+19. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
 
 ## Required gates for every slice
 

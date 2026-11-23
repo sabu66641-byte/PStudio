@@ -192,3 +192,51 @@ test('procedural scene environment releases the unused room PMREM when switching
   assert.match(renderer,/scenePresetTarget=nextTarget/);
   assert.match(renderer,/scene\.environment=scenePresetTarget\.texture/);
 });
+
+test('project backup Scene Object reconstruction preserves v1 ECS Components and legacy v0 payloads', () => {
+  const start = html.indexOf('function copySavedEcsComponentPayload');
+  const end = html.indexOf('\\nfunction validateAndBuildBackup', start);
+  assert.ok(start >= 0 && end > start);
+  const source = html.slice(start, end);
+  const copyPayload = new Function('window', source + '\\nreturn copySavedEcsComponentPayload;')({
+    PStudioECS: { sceneComponentSchemaVersion: 1 }
+  });
+  const legacyArray = { ecsComponents: [{ type: 'Health', data: { hp: 25 } }] };
+  const restoredArray = copyPayload(legacyArray, {});
+  assert.equal(restoredArray.ecsComponentsVersion, 0);
+  assert.deepEqual(restoredArray.ecsComponents, legacyArray.ecsComponents);
+
+  const legacyMap = { ecsComponents: { Inventory: { items: { potion: 2 } } } };
+  const restoredMap = copyPayload(legacyMap, {});
+  assert.equal(restoredMap.ecsComponentsVersion, 0);
+  assert.deepEqual(restoredMap.ecsComponents, legacyMap.ecsComponents);
+
+  const v1 = {
+    ecsComponentsVersion: 1,
+    ecsComponents: [
+      { type: 'Renderable', data: { assetName: 'tree.glb', scale: 2 } },
+      { type: 'PluginSettings', data: { enabled: true } }
+    ]
+  };
+  const restoredV1 = copyPayload(v1, {});
+  assert.equal(restoredV1.ecsComponentsVersion, 1);
+  assert.deepEqual(restoredV1.ecsComponents, v1.ecsComponents);
+});
+
+test('project backup preserves opaque future ECS schemas and rejects malformed/current oversized payloads', () => {
+  const start = html.indexOf('function copySavedEcsComponentPayload');
+  const end = html.indexOf('\\nfunction validateAndBuildBackup', start);
+  const copyPayload = new Function('window', html.slice(start, end) + '\\nreturn copySavedEcsComponentPayload;')({
+    PStudioECS: { sceneComponentSchemaVersion: 1 }
+  });
+  const future = {
+    ecsComponentsVersion: 7,
+    ecsComponents: { schema: 'future-map', records: [{ type: 'FutureType', data: [1, 2, 3] }] }
+  };
+  const copy = copyPayload(future, {});
+  assert.deepEqual(copy, future);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 'future', ecsComponents: [] }, {}), /version is invalid/);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 1, ecsComponents: { invalid: true } }, {}), /must be an array/);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 1, ecsComponents: Array.from({ length: 129 }, (_, i) => ({ type: 'C' + i, data: {} })) }, {}), /at most 128/);
+  assert.throws(() => copyPayload({ ecsComponents: { a: 'x'.repeat(1024 * 1024 + 1) } }, {}), /1 MB/);
+});
