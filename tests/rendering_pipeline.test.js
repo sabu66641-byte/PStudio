@@ -801,3 +801,31 @@ test('render authoring configuration is ECS-owned and Inspector writes Component
   assert.doesNotThrow(() => new Function(rendering));
   assert.doesNotThrow(() => new Function(engine));
 });
+
+test('legacy and ECS render-authoring data both trigger 3D initialization before migration', () => {
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  assert.ok(engine.includes('!!object.model'));
+  assert.ok(engine.includes('object.shaderFragment!==undefined'));
+  assert.ok(engine.includes('object.toonMaterialSettings!==undefined'));
+  assert.ok(engine.includes('object.modelMaterialOverrides!==undefined'));
+  assert.ok(engine.includes('object.postProcessing!==undefined'));
+  assert.ok(engine.includes('object.particleEmitter!==undefined'));
+  assert.ok(engine.includes("'ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'"));
+});
+
+test('render authoring Inspector handlers are syntactically valid and no longer write legacy properties', () => {
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const start = html.indexOf('const ecsMaterialsMigratedScenes');
+  const end = html.indexOf('function serializeScene', start);
+  assert.ok(start >= 0 && end > start);
+  const inspectorSource = html.slice(start, end);
+  assert.doesNotThrow(() => new Function(inspectorSource));
+  for (const legacy of [
+    'o.toonMaterialSettings=',
+    'o.modelMaterialOverrides=',
+    'o.postProcessing=',
+    'o.particleEmitter=',
+    'o.shaderFragment=',
+    'o.modelScale='
+  ]) assert.equal(inspectorSource.includes(legacy), false, legacy);
+});

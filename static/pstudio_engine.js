@@ -958,7 +958,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const hasECS3D=(sceneObjects||[]).some(object=>Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].includes(entry?.type)&&entry.data?.enabled!==false));
+      const hasECS3D=(sceneObjects||[]).some(object=>!!object.model||object.collider===true||object.shaderFragment!==undefined||object.toonMaterialSettings!==undefined||object.modelMaterialOverrides!==undefined||object.postProcessing!==undefined||object.particleEmitter!==undefined||Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].includes(entry?.type)&&entry.data?.enabled!==false));
       const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
