@@ -183,6 +183,17 @@ test('renderer does not re-enable a failed volumetric pass every frame and expos
   assert.ok(renderer.includes('failed:!!godRaysPass?.failed'));
 });
 
+test('memory pressure disables fog, clouds and god rays without deleting the requested settings', () => {
+  const memorySafety = renderer.slice(renderer.indexOf('function sampleMemoryPressure'), renderer.indexOf('function drawFrame'));
+  assert.ok(memorySafety.includes('memorySafetyApplied=true'));
+  assert.ok(memorySafety.includes('volumetricCloudsEnabled=false'));
+  assert.ok(memorySafety.includes('volumetricFogEnabled=false'));
+  assert.ok(memorySafety.includes('godRaysEnabled=false'));
+  assert.ok(memorySafety.includes('godRaysFallbackEnabled=false'));
+  assert.ok(memorySafety.includes('if(godRaysPass)godRaysPass.enabled=false'));
+  assert.ok(renderer.includes('godRaysRequested'));
+});
+
 test('quality tiers gate expensive volumetrics and progressively scale resolution and samples', () => {
   for (const [name, fogScale, fogSteps, rayScale, samples] of [
     ['mobile', '.25', '4', '.25', '4'],
