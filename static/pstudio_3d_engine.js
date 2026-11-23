@@ -906,7 +906,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function clearWorldStreamingInterests(){worldStreamingInterests=[];return true;}
   function updateWorldChunkStates(){
     const interests=worldStreamingInterests;
-    if(!interests.length&&!camera)return;
+    const useCameraFallback=interests.length===0&&!!camera;
     const loadCandidates=[];
     let loadingCount=0;
     for(const chunk of worldChunks.values()){
@@ -926,7 +926,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
             }
           }
         }
-      }else{
+      }else if(useCameraFallback){
         const dx=chunk.x-camera.position.x,dy=chunk.y-camera.position.y,dz=chunk.z-camera.position.z;
         const distance=Math.hypot(dx,dy,dz);
         shouldStay=distance<=chunk.unloadDistance;

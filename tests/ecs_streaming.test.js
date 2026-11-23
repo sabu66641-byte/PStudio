@@ -404,3 +404,27 @@ test('destroying a Scene Object entity immediately drops its World Streaming sna
   assert.deepEqual(runtime.calls.unregister, ['destroyed-region']);
   assert.equal(runtime.streaming.getStats().partitions, 0);
 });
+
+test('active chunks unload when no StreamingInterest and no fallback camera remain', () => {
+  const source = extractFunction(
+    read('static/pstudio_3d_engine.js'),
+    'function updateWorldChunkStates',
+    'function setWorldRenderConfig'
+  );
+  const worldChunks = new Map([
+    ['active', { id: 'active', x: 0, y: 0, z: 0, loadDistance: 100, unloadDistance: 150, active: true, loading: false }],
+    ['loading', { id: 'loading', x: 500, y: 0, z: 0, loadDistance: 100, unloadDistance: 150, active: false, loading: true }]
+  ]);
+  const ended = [];
+  const update = new Function(
+    'worldStreamingInterests', 'camera', 'worldChunks', 'worldRenderConfig',
+    'beginWorldChunkLoad', 'endWorldChunkLoad',
+    source + '; return updateWorldChunkStates;'
+  )(
+    [], null, worldChunks, { maxConcurrentChunkLoads: 2 },
+    () => assert.fail('no demand should start new loads'),
+    chunk => { ended.push(chunk.id); chunk.active = false; chunk.loading = false; }
+  );
+  update();
+  assert.deepEqual(ended.sort(), ['active', 'loading']);
+});
