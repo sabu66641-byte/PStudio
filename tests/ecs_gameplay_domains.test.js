@@ -184,7 +184,7 @@ test('QuestProgress and DialogueSession Components preserve progression and UI-f
   assert.equal(bridge.getRuntimeState().hasDialogueSession, true);
 });
 
-test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play snapshots', () => {
+test('Health, Inventory, Equipment and CombatState persist in versioned ECS scene data while QuestProgress and DialogueSession remain ECS-owned across Stop/Play', () => {
   const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
   const { ecs, gameplay, bridge } = createRuntime(objects);
   gameplay.defineItem('herb', 'consumable', 'heal', 5);
@@ -201,13 +201,27 @@ test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play s
   ecs.getComponent(playerEntity, 'CombatState').comboTime = Date.now();
   ecs.getComponent(playerEntity, 'CombatState').comboWeapon = 'shield-bash';
 
+  const questEntity = ecs.query(['QuestProgress'])[0];
+  const dialogueEntity = ecs.query(['DialogueSession'])[0];
   assert.equal(gameplay.persistECS(objects), true);
-  ecs.clearSceneObjects();
+  assert.equal(objects[0].ecsComponentsVersion, 1);
+  const savedTypes = objects[0].ecsComponents.map(entry => entry.type).sort();
+  assert.deepEqual(savedTypes, ['CombatState', 'Equipment', 'Health', 'Inventory']);
+  assert.equal(ecs.clearSceneObjects(), true);
   assert.equal(ecs.query(['SceneObjectRef']).length, 0);
-  assert.equal(ecs.query(['ItemDefinition']).length, 2, 'static gameplay definitions survive the Scene Object Stop/Play boundary');
-  assert.equal(ecs.stats().entityCount, 2);
+  assert.equal(ecs.query(['ItemDefinition']).length, 2);
+  assert.equal(ecs.query(['QuestProgress'])[0], questEntity);
+  assert.equal(ecs.query(['DialogueSession'])[0], dialogueEntity);
+  assert.equal(ecs.stats().entityCount, 4);
+
   ecs.syncSceneObjects(objects);
   assert.equal(gameplay.initializeECS(objects), true);
+  const restoredPlayer = ecs.getEntityForSceneObject('player');
+  assert.notEqual(restoredPlayer, playerEntity);
+  assert.equal(ecs.hasComponent(restoredPlayer, 'Health'), true);
+  assert.equal(ecs.hasComponent(restoredPlayer, 'Inventory'), true);
+  assert.equal(ecs.hasComponent(restoredPlayer, 'Equipment'), true);
+  assert.equal(ecs.hasComponent(restoredPlayer, 'CombatState'), true);
 
   assert.equal(bridge.getItemDefinition('herb').value, 5);
   assert.equal(bridge.getItemDefinition('shield').slot, 'off-hand');

@@ -158,3 +158,37 @@ test('PlayerInput attachment follows Scene Object lifetime and detaches cleanly'
   assert.equal(input.getControlIntent('player'), null);
   assert.deepEqual(objects.map(object => object.id), ['player']);
 });
+
+test('PlayerInput key bindings are persistent Inspector configuration and recreate transient ControlIntent', () => {
+  const { ecs, input, objects } = createInputRuntime();
+  assert.equal(input.attachPlayerInput('player', {
+    enabled: true,
+    leftKeys: ['j'], rightKeys: ['l'],
+    forwardKeys: ['i'], backwardKeys: ['k'],
+    jumpKeys: ['enter']
+  }), true);
+  const entity = ecs.getEntityForSceneObject('player');
+  const definition = ecs.getComponentDefinition('PlayerInput');
+  assert.equal(definition.persistent, true);
+  assert.equal(definition.internal, false);
+  assert.equal(ecs.getComponentDefinition('ControlIntent').persistent, false);
+  assert.ok(ecs.hasComponent(entity, 'ControlIntent'));
+
+  const serialized = ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], objects[0]);
+  objects[0].ecsComponentsVersion = serialized.version;
+  objects[0].ecsComponents = serialized.components;
+  ecs.clearSceneObjects();
+  ecs.syncSceneObjects(objects);
+
+  const restored = ecs.getEntityForSceneObject('player');
+  assert.ok(restored);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(input.getPlayerInput('player'))),
+    {
+      enabled: true, leftKeys: ['j'], rightKeys: ['l'],
+      forwardKeys: ['i'], backwardKeys: ['k'], jumpKeys: ['enter']
+    }
+  );
+  assert.ok(ecs.hasComponent(restored, 'ControlIntent'), 'transient ControlIntent is recreated by PlayerInput.onAdd');
+  assert.equal(input.getControlIntent('player').active, false);
+});

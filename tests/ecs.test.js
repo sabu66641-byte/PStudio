@@ -400,3 +400,51 @@ test('scene Component migration skips duplicate and invalid entries deterministi
   assert.equal(ecs.getComponent(entity, 'UniqueSettings').value, 5);
   assert.equal(object.ecsComponentsVersion, 1);
 });
+
+test('versioned serializer preserves unregistered saved Components alongside current ECS Components', () => {
+  const ecs = createECS();
+  ecs.registerComponent('KnownSettings', {
+    schema: { quality: { type: 'integer', default: 1 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ KnownSettings: { quality: 4 } });
+  const object = {
+    id: 'unknown-component-owner', x: 0, y: 0, ecsComponentsVersion: 1,
+    ecsComponents: [
+      { type: 'PluginOwnedSettings', data: { enabled: true, tags: ['kept'] } }
+    ]
+  };
+  const serialized = ecs.serializeEntityComponents(entity, [], object);
+  assert.deepEqual(JSON.parse(JSON.stringify(serialized)), {
+    version: 1,
+    components: [
+      { type: 'KnownSettings', data: { quality: 4 } },
+      { type: 'PluginOwnedSettings', data: { enabled: true, tags: ['kept'] } }
+    ]
+  });
+});
+
+test('versioned serializer refuses to write over newer or invalid saved Component schemas', () => {
+  const ecs = createECS();
+  ecs.registerComponent('CurrentSettings', {
+    schema: { value: { type: 'integer', default: 1 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ CurrentSettings: { value: 5 } });
+  const future = {
+    id: 'future-owner', ecsComponentsVersion: 99,
+    ecsComponents: [{ type: 'FutureSettings', data: { value: 99 } }]
+  };
+  const beforeFuture = JSON.stringify(future);
+  assert.equal(ecs.serializeEntityComponents(entity, [], future), null);
+  assert.equal(JSON.stringify(future), beforeFuture);
+
+  const malformed = {
+    id: 'malformed-owner', ecsComponentsVersion: 'unknown',
+    ecsComponents: [{ type: 'FutureSettings', data: { value: 99 } }]
+  };
+  const beforeMalformed = JSON.stringify(malformed);
+  assert.equal(ecs.serializeEntityComponents(entity, [], malformed), null);
+  assert.equal(JSON.stringify(malformed), beforeMalformed);
+  assert.equal(ecs.sceneComponentSchemaVersion, 1);
+});

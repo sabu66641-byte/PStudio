@@ -65,7 +65,9 @@
       persistent: options.persistent === true,
       additionalProperties: false,
       schema,
-      create
+      create,
+      ...(typeof options.onAdd === 'function' ? { onAdd: options.onAdd } : {}),
+      ...(typeof options.onRemove === 'function' ? { onRemove: options.onRemove } : {})
     });
     return true;
   }
@@ -101,7 +103,16 @@
       forwardKeys: [...DEFAULT_KEYS.forwardKeys],
       backwardKeys: [...DEFAULT_KEYS.backwardKeys],
       jumpKeys: [...DEFAULT_KEYS.jumpKeys]
-    }), 'Per-entity keyboard mapping used to derive ControlIntent.', { persistent: true, internal: false });
+    }), 'Per-entity keyboard mapping used to derive ControlIntent.', {
+      persistent: true,
+      internal: false,
+      onAdd(entity, value, api) {
+        if (!api.hasComponent(entity, TYPES.ControlIntent)) api.addComponent(entity, TYPES.ControlIntent);
+      },
+      onRemove(entity, value, api) {
+        if (api.hasComponent(entity, TYPES.ControlIntent)) api.removeComponent(entity, TYPES.ControlIntent);
+      }
+    });
 
     registerComponent(TYPES.ControlIntent, {
       x: { type: 'number', default: 0 },

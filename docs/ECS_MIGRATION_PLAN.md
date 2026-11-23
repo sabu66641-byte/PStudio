@@ -25,16 +25,16 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Transform | Scene Object fields + ECS Transform | ECS Transform is the runtime component; the Scene Object bridge performs deterministic two-way editor/project synchronization and transform application | Runtime ownership migrated; editor/project adapter intentionally remains |
 | Physics body | PStudioPhysics | PhysicsBody configuration and PhysicsState/PhysicsTransform snapshots are ECS Components; the fixed-step PStudioPhysics solver remains the physics service | ECS state/configuration migrated; solver adapter intentionally remains |
 | Velocity | Gameplay/runtime code | Velocity Component + integration System; PhysicsBody entities are excluded from the Transform integrator | Implemented; solver-driven bodies use PStudioPhysics |
-| Health | PStudioGameplay stats Map | Health Component | Phase 3 implemented |
-| Inventory | PStudioGameplay inventories Map | Inventory Component with item-count object and Stop/Play snapshot | Phase 4 implemented |
-| Equipment | PStudioGameplay equipment Map | Equipment Component with slot-to-item data | Phase 4 implemented |
+| Health | PStudioGameplay stats Map | Health Component stored in the Scene Object's versioned ECS payload | Phase 3 runtime / Phase 17 persistence implemented |
+| Inventory | PStudioGameplay inventories Map | Inventory Component stored in the Scene Object's versioned ECS payload | Phase 4 runtime / Phase 17 persistence implemented |
+| Equipment | PStudioGameplay equipment Map | Equipment Component stored in the Scene Object's versioned ECS payload | Phase 4 runtime / Phase 17 persistence implemented |
 | Item/weapon/quest definitions | PStudioGameplay definition Maps | Standalone ItemDefinition/WeaponDefinition/QuestDefinition Entities hold gameplay configuration; legacy defineItem/defineWeapon/questDefine APIs write through to ECS | Phase 15 implemented; definitions are runtime config, distinct from per-entity state |
-| Combat cooldowns/combos | attackTimes / weaponCombos Maps | CombatState Component + cooldown maintenance System | Phase 4 implemented |
+| Combat cooldowns/combos | attackTimes / weaponCombos Maps | CombatState Component stored in the Scene Object's versioned ECS payload + cooldown maintenance System | Phase 4 runtime / Phase 17 persistence implemented |
 | Enemy AI | aiStates Map + direct helper calls | AIController + MovementIntent Components and postUpdate Systems | Phase 4 implemented |
-| Quest state | PStudioGameplay quests Map + ECS | QuestProgress standalone entities; QuestDefinition is a separate ECS definition Entity; legacy quest APIs write through to ECS | Phase 4 state / Phase 15 definitions implemented |
-| Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
+| Quest state | PStudioGameplay quests Map + ECS | QuestProgress standalone Entities remain in ECS across Stop/Play; QuestDefinition is a separate ECS definition Entity | Phase 4 runtime / Phase 15 definitions / Phase 17 session lifecycle implemented |
+| Dialogue | dialogueStates and activeUI globals | DialogueSession standalone ECS Entity remains in ECS across Stop/Play; PStudioUI still owns DOM presentation | Phase 4 runtime / Phase 17 session lifecycle implemented |
 | Navigation | navNodes/blockedNavNodes Maps | Standalone NavigationNode Entities own node IDs, coordinates, links and blocked state; ECS bridge provides nearest-node and A* next-node queries | Phase 5 implemented; graph is runtime-only and preserves its in-memory Play/Stop lifetime |
-| Input | engine keyboard/touch event state | InputSnapshot singleton Component captures immutable per-frame state; PlayerInput mappings derive per-entity ControlIntent in an update System | Phase 6 implemented; device listeners remain in the runtime service |
+| Input | engine keyboard/touch event state | InputSnapshot/ControlIntent are transient; PlayerInput key mappings are persistent Inspector-editable Components stored with their Scene Object | Phase 6 runtime / Phase 17 PlayerInput persistence implemented |
 | Audio | ownerAudio Map and HTMLAudio objects | Persistent AudioEmitter configuration + transient AudioCommand requests; existing Audio service owns HTMLAudio resources | Phase 8 implemented; commands dispatch after ps update in postUpdate |
 | Collision events | engine collision-pair Sets + Physics solver contacts | Runtime-only CollisionEvent Entities represent enter/stay/exit transitions; PStudioEvents publishes collision notifications; solver remains authoritative | Phase 7 implemented for 2D, 3D and dynamic body-pair contacts |
 | Render commands | per-frame draw command Maps | Persistent Renderable/Camera/Light/Animation configuration Components are snapshotted by ECS Systems and translated to existing renderer commands; Three.js/GPU resources remain renderer-owned | Phase 9 implemented for models, primitives, cameras, point/spot lights and animation clips/layers/locomotion |
@@ -68,7 +68,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 14. **Versioned Component persistence** — store persistent Components behind an explicit scene schema version, migrate unversioned v0 Component arrays/maps, preserve unknown future versions, and test round-trip/invalid data. (Phase 14 implemented.)
 15. **Gameplay definition entities** — move Item/Quest/Weapon definition records into standalone ECS entities while keeping ps definition APIs compatible. (Phase 15 implemented.)
 16. **Transform and Physics parity** — keep ECS Transform and PhysicsBody/State as runtime state, verify two-way editor synchronization and config changes, and retain Scene Object serialization and the fixed-step solver as service adapters. (Phase 16 implemented; adapters intentionally remain.)
-17. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
+17. **Gameplay state persistence integration** — write persistent per-Scene Object gameplay Components through the versioned serializer; retain QuestProgress/DialogueSession standalone Entities across Stop/Play; preserve unknown/future Component payloads; persist PlayerInput mapping configuration. (Phase 17 implemented.)
+18. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
 
 ## Required gates for every slice
 

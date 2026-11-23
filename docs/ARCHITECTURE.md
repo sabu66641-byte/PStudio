@@ -275,3 +275,11 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - Existing `PStudioGameplay.defineItem`, `defineWeapon` and `questDefine` APIs remain supported and write through to the ECS definition Components.
 - Definition ID-to-Entity Maps are lookup caches only; definition records live in ECS.
 - Definitions are runtime project configuration rebuilt by the existing ps definition calls. They are not automatically serialized into Scene Object data; project-authored data assets remain a separate content-authoring concern.
+
+
+## Gameplay State and Session Persistence
+
+- `Health`, `Inventory`, `Equipment`, `CombatState` and `AIController` are persistent Scene Object Components. On Game Stop, `PStudioECSGameplay` writes them through the same versioned `ecsComponentsVersion` serializer used by the Inspector; the legacy Map snapshot is no longer the normal persistence path.
+- `QuestProgress` and `DialogueSession` are standalone, non-project-persistent ECS Entities. They remain in ECS across Game Stop/Play instead of being copied into `PStudioGameplay` Maps and reconstructed on the next start.
+- `PlayerInput` stores durable per-entity key bindings and is serialized with its Scene Object. Its `ControlIntent` remains transient and is recreated by the PlayerInput Component lifecycle hook.
+- A saved Scene Object with a newer unsupported Component schema is never overwritten by an older runtime. Unregistered Component records in the current supported schema are preserved for modules/plugins that are not loaded in the current session.

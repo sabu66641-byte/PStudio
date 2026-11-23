@@ -739,3 +739,24 @@ test('gameplay definitions are ECS-owned standalone Components behind legacy ps 
   assert.doesNotThrow(() => new Function(bridge));
   assert.doesNotThrow(() => new Function(gameplay));
 });
+
+test('gameplay state uses versioned Scene Object ECS persistence and leaves Quest/Dialogue in ECS between Plays', () => {
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_ecs_gameplay.js'), 'utf8');
+  const wrapper = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const input = fs.readFileSync(path.join(root, 'static/pstudio_ecs_input.js'), 'utf8');
+  const core = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
+  for (const type of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController']) {
+    assert.ok(gameplay.includes("label: '" + type) || gameplay.includes("label: '" + type.replace(/([A-Z])/g, ' $1').trim()));
+    assert.ok(gameplay.includes('persistent: true'));
+  }
+  assert.ok(gameplay.includes("ecs.serializeEntityComponents("));
+  assert.ok(!gameplay.includes('clearStandaloneEntities();'));
+  assert.ok(wrapper.includes('return bridge.persist(sceneObjects||[],legacy)'));
+  assert.ok(input.includes('persistent: true'));
+  assert.ok(input.includes("onAdd(entity, value, api)"));
+  assert.ok(core.includes('sceneComponentSchemaVersion: SCENE_COMPONENTS_VERSION'));
+  assert.ok(core.includes('sceneObject = null'));
+  assert.doesNotThrow(() => new Function(gameplay));
+  assert.doesNotThrow(() => new Function(wrapper));
+  assert.doesNotThrow(() => new Function(input));
+});
