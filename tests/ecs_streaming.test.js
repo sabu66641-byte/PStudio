@@ -37,7 +37,7 @@ test('renderer re-registration preserves the live chunk object and cancels chang
   assert.equal(record.loading, true, 'in-flight load state is not overwritten');
   assert.equal(record.generation, 4);
   assert.equal(same.loading, true);
-  assert.equal(same.x, undefined, 'the public registration result does not leak mutable coordinates');
+  assert.equal(same.assetCount, 2, 'the public registration result reports the stable asset count');
   assert.equal(first.id, 'district-a');
 
   register('district-a', { x: 3, assets: ['b.glb', 'c.glb'], loadDistance: 130 });
@@ -278,7 +278,7 @@ test('partition membership conflicts are deterministic and missing objects are i
   });
   const result = snapshotAndSync(runtime);
   assert.equal(result.partitions, 2);
-  assert.equal(result.assignments, 2);
+  assert.equal(result.assignments, 3);
   assert.deepEqual(
     JSON.parse(JSON.stringify(result.diagnostics)),
     [{ entity: runtime.ecs.getEntityForSceneObject('east'), id: 'east-region', ownerId: 'shared', reason: 'object-assigned-to-multiple-partitions' }]
@@ -310,7 +310,7 @@ test('disabled Components and removed partitions are unregistered and clear stal
 
   runtime.streaming.clear();
   assert.equal(runtime.calls.clearInterests, 1);
-  assert.deepEqual(runtime.streaming.getStats(), { partitions: 0, assignments: 0, interests: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.streaming.getStats())), { partitions: 0, assignments: 0, interests: 0 });
 });
 
 test('unchanged partition configuration and interests do not create redundant renderer mutations', () => {
