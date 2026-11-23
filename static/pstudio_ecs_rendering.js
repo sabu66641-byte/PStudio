@@ -301,8 +301,11 @@
   }
 
   function getState() {
+    const cameras = ecs.query([TYPES.Camera]);
+    const activeCameras = cameras.some(entity => ecs.getComponent(entity, TYPES.Camera)?.enabled !== false);
     return Object.freeze({
-      cameras: ecs.query([TYPES.Camera]).length,
+      cameras: cameras.length,
+      activeCameras: activeCameras ? 1 : 0,
       lights: ecs.query([TYPES.Light]).length,
       renderables: ecs.query([TYPES.Renderable]).length,
       animations: ecs.query([TYPES.Animation]).length
