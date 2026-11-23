@@ -628,7 +628,7 @@ test('volumetric clouds use layered density shaping, light transmittance and ada
     'pass.setQuality','pass.configureAtmosphere','uCloudWind'
   ])assert.ok(fx.includes(token),token);
   assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)'));
-  assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(resolveQualityPreset(\\'auto\\'),adaptiveQualityLevel)'));
+  assert.ok(renderer.includes("volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel)"));
   assert.ok(fx.includes('source.rgb*transmittance+scattering*uAtmosphereStrength'));
   assert.doesNotThrow(()=>new Function(fx));
 });
