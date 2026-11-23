@@ -3533,7 +3533,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     texture.userData=texture.userData||{};
-    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?2100:0,proceduralCloudLayers:name==='day'||name==='dusk'};
+    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?8200:0,proceduralCloudLayers:name==='day'||name==='dusk'};
     return texture;
   }
   function enhancePhysicalSkyShader(sky,Three){
