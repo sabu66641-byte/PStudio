@@ -700,8 +700,9 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   const quality=fog.setQuality('ultra',2);
   assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:24});
   assert.equal(fog.uniforms.uFogSteps.value,24);
-  api.configureAtmosphere({sunDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
-  assert.ok(Math.abs(fog.uniforms.uSunDirection.value.y-0.8728715609)<1e-8);
+  api.configureAtmosphere({sunDirection:[-0.4,-0.4,-0.4],lightDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
+  assert.ok(Math.abs(fog.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'fog must follow the key light/moon direction when supplied');
+  assert.ok(Math.abs(cloud.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'cloud scattering must follow the same atmospheric light direction');
   assert.equal(fog.uniforms.uSunColor.value.value,'#ffb06f');
   assert.equal(fog.uniforms.uFogColor.value.value,'#bb897e');
   assert.equal(fog.uniforms.uFogAmbientColor.value.value,'#c5a0b8');
