@@ -967,6 +967,7 @@
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     window.PStudioECSStreaming?.clear?.();
     window.PStudioECSVisualFX?.clear?.();
+    window.PStudioECSUI?.clear?.();
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();

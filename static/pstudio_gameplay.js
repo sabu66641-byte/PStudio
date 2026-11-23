@@ -281,35 +281,53 @@
     }
     controller.state='attack';setIntent(0,0,true);strike(sourceId,target.id,range,8,650,objects,physics);
   }
-  function openInventory(id){activeUI={type:'inventory',ownerId:String(id)};return true;}
-  function openQuestLog(id){activeUI={type:'quests',ownerId:String(id)};return true;}
-  function closeUI(){activeUI=null;return true;}
+  function setUIOverlay(overlay){
+    const bridge=window.PStudioECSUI;
+    if(bridge?.open)return bridge.open(overlay.type,overlay.ownerId||'');
+    activeUI=overlay?{type:String(overlay.type),ownerId:String(overlay.ownerId||'')}:null;
+    return true;
+  }
+  function getActiveUI(){
+    const bridge=window.PStudioECSUI;
+    return bridge?bridge.getOverlay():activeUI;
+  }
+  function clearActiveUI(){
+    const bridge=window.PStudioECSUI;
+    if(bridge?.close){activeUI=null;return bridge.close();}
+    activeUI=null;return true;
+  }
+  function openInventory(id){return setUIOverlay({type:'inventory',ownerId:String(id)});}
+  function openQuestLog(id){return setUIOverlay({type:'quests',ownerId:String(id)});}
+  function closeUI(){return clearActiveUI();}
   function showDialogue(speaker,text,choice1,choice2,choice3){
     const choices=[choice1,choice2,choice3].filter(v=>String(v||'').trim()),signature=[speaker,text,...choices].join('|');
     const state=window.PStudioECSGameplay?.getDialogueState?.(true);
     const target=state||dialogueStates;
     if(target.signature!==signature){target.signature=signature;target.choice='';lastDialogueChoice='';}
     target.speaker=String(speaker);target.text=String(text);target.choices=choices;
-    if(state)state.active=!target.choice;activeUI=target.choice?null:{type:'dialogue'};return true;
+    if(state)state.active=!target.choice;
+    if(target.choice)clearActiveUI();else setUIOverlay({type:'dialogue',ownerId:''});
+    return true;
   }
   function chooseDialogue(index){
     const state=window.PStudioECSGameplay?.getDialogueState?.(),target=state||dialogueStates;
     const choice=target.choices?.[Math.max(0,Math.min(target.choices.length-1,Math.floor(number(index))))];
-    lastDialogueChoice=choice||'';target.choice=lastDialogueChoice;if(state)state.active=false;activeUI=null;return lastDialogueChoice;
+    lastDialogueChoice=choice||'';target.choice=lastDialogueChoice;if(state)state.active=false;clearActiveUI();return lastDialogueChoice;
   }
   function getDialogueChoice(){return window.PStudioECSGameplay?.getDialogueState?.()?.choice??lastDialogueChoice;}
   function getUIState(){
-    if(!activeUI)return null;
-    if(activeUI.type==='dialogue'){
+    const overlay=getActiveUI();
+    if(!overlay)return null;
+    if(overlay.type==='dialogue'){
       const state=window.PStudioECSGameplay?.getDialogueState?.()||dialogueStates;
       return {type:'dialogue',speaker:state.speaker,text:state.text,choices:state.choices||[],choice:state.choice||''};
     }
-    const id=activeUI.ownerId;
-    if(activeUI.type==='inventory')return {type:'inventory',ownerId:id,items:getInventorySnapshot(id),equipment:getEquipment(id),hp:getHP(id),maxHp:getMaxHP(id)};
+    const id=overlay.ownerId;
+    if(overlay.type==='inventory')return {type:'inventory',ownerId:id,items:getInventorySnapshot(id),equipment:getEquipment(id),hp:getHP(id),maxHp:getMaxHP(id)};
     const questList=window.PStudioECSGameplay?.listQuests?.()||[...quests.entries()].map(([quest,q])=>({quest,...q}));
     return {type:'quests',ownerId:id,quests:questList};
   }
-  function uiAction(action,item,slot){if(!activeUI)return false;const id=activeUI.ownerId;if(action==='use')return useItem(id,item);if(action==='equip')return equipItem(id,item);if(action==='close')return closeUI();if(action==='dialogue')return chooseDialogue(item);return false;}
+  function uiAction(action,item,slot){const overlay=getActiveUI();if(!overlay)return false;const id=overlay.ownerId;if(action==='use')return useItem(id,item);if(action==='equip')return equipItem(id,item);if(action==='close')return closeUI();if(action==='dialogue')return chooseDialogue(item);return false;}
 
   function navNodeCount(){
     const navigation=window.PStudioECSGameplay;
