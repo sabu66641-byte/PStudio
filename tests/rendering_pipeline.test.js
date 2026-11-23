@@ -31,7 +31,7 @@ test('quality presets configure render resolution and shadow filtering', () => {
   assert.ok(renderer.includes('getStats:'));
   assert.ok(renderer.includes('composer?.setPixelRatio?.(renderer.getPixelRatio())'));
   assert.ok(renderer.includes('composer.setPixelRatio?.(renderer.getPixelRatio())'));
-  assert.ok(renderer.includes("if(name==='cinematic')return memory<=2?'mobile':memory<6?'ultra':'cinematic'"));
+  assert.ok(renderer.includes("if(name==='cinematic')return memory<=2?'mobile':memory<=3?'balanced':memory<4?'high':memory<6?'ultra':'cinematic'"));
   assert.ok(renderer.includes('pixelRatio:2.5'));
   assert.ok(renderer.includes("fogSteps:32,rayScale:1,raySamples:48"));
   assert.ok(renderer.includes("samples:selected==='cinematic'?64"));
