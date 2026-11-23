@@ -282,6 +282,18 @@ function callBuiltin(c, name, a) {
       case 'set_point_light': if(a.length===6){c.draw.push({type:'light',kind:'point',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),intensity:Math.max(0,finite(a[3])),color:String(a[4]),distance:Math.max(0,finite(a[5]))});return null;} break;
       case 'set_spot_light': if(a.length===9){c.draw.push({type:'light',kind:'spot',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),intensity:Math.max(0,finite(a[6])),color:String(a[7]),angle:Math.max(0.01,Math.min(1.55,finite(a[8])))});return null;} break;
       case 'set_environment': if(a.length===3){c.draw.push({type:'environment',environmentSky:String(a[0]),environmentGround:String(a[1]),environmentIntensity:Math.max(0,finite(a[2]))});return null;} break;
+      case 'set_atmosphere': if(a.length===4){
+        const current=runtime?.atmosphere||sceneEnvironment||{preset:'day'};
+        const settings=window.PStudioAtmosphere?.normalize?.({
+          preset:current.preset,
+          elevation:finite(a[0]),azimuth:finite(a[1]),
+          turbidity:finite(a[2]),cloudDensity:finite(a[3])
+        },current.preset);
+        if(!settings)throw new PsRuntimeError('Atmosphere module is unavailable.');
+        if(runtime)runtime.atmosphere=settings;
+        c.draw.push({type:'environment',preset:settings.preset,...settings});
+        return null;
+      } break;
       case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:sprite.color||'#66835a'});return null;} break;
       case 'draw_water': if(a.length===7){c.draw.push({type:'water',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),color:String(a[5]),opacity:Math.max(0.05,Math.min(1,finite(a[6])))});return null;} break;
       case 'emit_particles': if(a.length===7){c.draw.push({type:'particles',burstId:++particleSequence,x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),count:Math.max(1,Math.min(400,Math.floor(finite(a[3])))),color:String(a[4]),speed:Math.max(0,finite(a[5])),lifetime:Math.max(0.05,Math.min(10,finite(a[6]))),dt:c.dt});return null;} break;
@@ -619,7 +631,7 @@ function callBuiltin(c, name, a) {
   function buildScenePreview3D() {
     window.syncEcsSceneMaterials?.();
     const commands = new Map();
-    commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
+    commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',...window.PStudioAtmosphere?.normalize?.(sceneEnvironment||{preset:'day'},sceneEnvironment?.preset||'day')},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const object of sceneObjects || []) {
       const sprite=sceneSpriteConfig(object);
       const x=((Number(object.x)||0)+sprite.width/2-480)/100;
@@ -671,7 +683,7 @@ function callBuiltin(c, name, a) {
   }
   function renderFrame() {
     const commands=new Map();
-    commands.set('__scene__',[{type:'environment',preset:sceneEnvironment?.preset||'day'}]);
+    commands.set('__scene__',[{type:'environment',...window.PStudioAtmosphere?.normalize?.(runtime?.atmosphere||sceneEnvironment||{preset:'day'},(runtime?.atmosphere||sceneEnvironment)?.preset||'day')}]);
     for(const [id,draws] of runtime?.contexts||[])commands.set(id,Array.isArray(draws)?draws:(draws?.draw||[]));
     const activeCommands=new Map([...commands].filter(([id])=>id==='__scene__'||window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
     const drawCommands=new Map([...activeCommands].filter(([id])=>id!=='__scene__'));
@@ -999,7 +1011,7 @@ function callBuiltin(c, name, a) {
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
       const hasECS3D=(sceneObjects||[]).some(object=>!!sceneRenderableAsset(object)||!!object.model||['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].some(type=>{const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object.id));return entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,type)&&window.PStudioECS.getComponent(entity,type).enabled!==false;}));
-      const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
+      const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays|set_atmosphere)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
@@ -1011,7 +1023,7 @@ function callBuiltin(c, name, a) {
       if(!window.PStudioECSScript)throw new PsRuntimeError('PStudio ECS Script Runtime bridge is unavailable.');
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
       window.syncEcsSceneMaterials?.();
-      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
+      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,atmosphere:window.PStudioAtmosphere?.normalize?.(sceneEnvironment||{preset:'day'},sceneEnvironment?.preset||'day')||{preset:'day'},ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
       window.PStudioECSScript.sync(sceneObjects || []);
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
