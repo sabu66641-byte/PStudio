@@ -232,7 +232,7 @@
       for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
-      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
@@ -248,7 +248,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
