@@ -160,3 +160,63 @@ test('camera lens pass uses depth-aware low-resolution DoF and fail-open composi
   assert.equal(renderer.autoClear, false, 'renderer clear state is restored');
   pass.dispose();
 });
+
+test('color grading pass is neutral by default, bounds controls and fails open on shader errors', () => {
+  class Scene { constructor() { this.children = []; } add(item) { this.children.push(item); } }
+  class OrthographicCamera {}
+  class PlaneGeometry { dispose() {} }
+  class ShaderMaterial { constructor(options) { Object.assign(this, options); } dispose() {} }
+  class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; } }
+  class ShaderPass {
+    constructor(shader) {
+      this.uniforms = shader.uniforms;
+      this.material = { dispose() {} };
+      this.enabled = false;
+      this.renderToScreen = false;
+      this.failNextRender = false;
+    }
+    render() {
+      if (this.failNextRender) { this.failNextRender = false; throw new Error('color grade shader failed'); }
+    }
+  }
+  const Three = { Scene, OrthographicCamera, PlaneGeometry, ShaderMaterial, Mesh };
+  const window = { THREE: Three };
+  vm.runInNewContext(fxSource, { window, console, Math, Set, Map, Number, Object });
+  const pass = window.PStudioEnvironmentFX.createColorGradingPass({ ShaderPass }, Three);
+  assert.ok(pass);
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.isIdentity(), true);
+  assert.equal(pass.setSettings({ exposure: 9, contrast: -2, saturation: 3, temperature: -4, vignette: 2, filmGrain: 5 }).exposure, 3);
+  assert.deepEqual(
+    ['exposure', 'contrast', 'saturation', 'temperature', 'vignette', 'filmGrain'].map(key => pass.getStats()[key]),
+    [3, 0, 2, -1, 1, 1]
+  );
+  pass.setSettings({ exposure: 0, contrast: 1, saturation: 1, temperature: 0, vignette: 0, filmGrain: 0 });
+  assert.equal(pass.isIdentity(), true);
+  pass.setSettings({ exposure: 0.5, contrast: 1.1, saturation: 1.2, temperature: 0.2, vignette: 0.35, filmGrain: 0.08 });
+  assert.equal(pass.isIdentity(), false);
+  pass.setSize(1920, 1080);
+  assert.equal(pass.getStats().aspect, 1920 / 1080);
+  pass.setTime(3.5);
+  assert.equal(pass.getStats().time, 3.5);
+  for (const token of ['exp2(uExposure)', 'uContrast', 'uSaturation', 'uTemperature', 'uVignette', 'uFilmGrain', 'pStudioGrainHash']) {
+    assert.ok(fxSource.includes(token), token);
+  }
+  pass.enabled = true;
+  pass.failNextRender = true;
+  let copies = 0;
+  const renderer = {
+    autoClear: false,
+    setRenderTarget() {},
+    render() { copies++; }
+  };
+  pass.render(renderer, {}, { texture: {} });
+  assert.equal(pass.failed, true);
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.lastError, 'color grade shader failed');
+  assert.equal(copies, 1, 'the source frame is copied when grading fails');
+  assert.equal(renderer.autoClear, false, 'renderer autoClear is restored');
+  pass.resetFailure();
+  assert.equal(pass.failed, false);
+  pass.dispose();
+});
