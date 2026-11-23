@@ -681,3 +681,35 @@ test('water v3 adds Beer-Lambert depth absorption and grazing-angle reflection r
   assert.ok(renderer.includes('SSRPass'));
   assert.doesNotThrow(()=>new Function(fx));
 });
+
+test('volumetric fog synchronizes preset lighting and adapts its ray-march budget',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const sandbox={window:{},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  class Vector3{constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}}
+  class Vector2{constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}}
+  class Matrix4{}
+  class Color{constructor(value){this.value=value;}set(value){this.value=value;return this;}}
+  class ShaderPass{constructor(shader){this.uniforms=shader.uniforms;this.shader=shader;this.render=()=>{};this.userData={};}}
+  const three={DepthTexture:class{},Matrix4,Vector2,Vector3,Color};
+  const cloud=api.createVolumetricCloudPass({ShaderPass},three);
+  const fog=api.createVolumetricFogPass({ShaderPass},three);
+  assert.ok(fog);
+  const quality=fog.setQuality('ultra',2);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:24});
+  assert.equal(fog.uniforms.uFogSteps.value,24);
+  api.configureAtmosphere({sunDirection:[-0.4,-0.4,-0.4],lightDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
+  assert.ok(Math.abs(fog.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'fog must follow the key light/moon direction when supplied');
+  assert.ok(Math.abs(cloud.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'cloud scattering must follow the same atmospheric light direction');
+  assert.equal(fog.uniforms.uSunColor.value.value,'#ffb06f');
+  assert.equal(fog.uniforms.uFogColor.value.value,'#bb897e');
+  assert.equal(fog.uniforms.uFogAmbientColor.value.value,'#c5a0b8');
+  assert.equal(fog.uniforms.uFogDensity.value,.0032);
+  assert.equal(fog.uniforms.uHeightFalloff.value,.012);
+  assert.equal(fog.uniforms.uBaseHeight.value,3);
+  assert.equal(fog.uniforms.uFogAnisotropy.value,.58);
+  assert.ok(fog.shader.fragmentShader.includes('henyeyGreenstein'));
+  assert.ok(fog.shader.fragmentShader.includes('groundHaze'));
+});

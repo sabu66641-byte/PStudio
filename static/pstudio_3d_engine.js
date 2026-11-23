@@ -232,7 +232,7 @@
       for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
-      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
@@ -248,7 +248,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass)volumetricFogPass.enabled=volumetricFogEnabled;
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
@@ -3210,12 +3210,54 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.needsUpdate=true;
     return texture;
   }
+  function enhancePhysicalSkyShader(sky,Three){
+    const material=sky?.material;
+    if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
+    const marker='gl_FragColor = vec4( retColor, 1.0 );';
+    const uniformMarker='uniform vec3 up;';
+    const source=String(material.fragmentShader||'');
+    if(!source.includes(marker)||!source.includes(uniformMarker)){
+      console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
+      return false;
+    }
+    if(!material.uniforms.pStudioMoonDirection)material.uniforms.pStudioMoonDirection={value:new Three.Vector3(0,1,0)};
+    if(!material.uniforms.pStudioMoonIntensity)material.uniforms.pStudioMoonIntensity={value:0};
+    const enhancement=[
+      'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
+      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
+      'float pStudioSunAlignment=max(dot(direction,vSunDirection),0.0);',
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,34.0);',
+      'vec3 pStudioWarmHorizon=vec3(1.0,0.34,0.19);',
+      'retColor=mix(retColor,max(retColor,pStudioWarmHorizon),pStudioHorizonBand*pStudioTwilight*0.28);',
+      'retColor+=vec3(1.0,0.48,0.24)*pStudioSolarHalo*pStudioTwilight*0.16;',
+      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;',
+      'float pStudioNightAmount=1.0-smoothstep(-0.52,-0.18,vSunDirection.y);',
+      'vec2 pStudioStarCoord=vec2(atan(direction.z,direction.x),asin(clamp(direction.y,-1.0,1.0)))*vec2(145.0,92.0);',
+      'vec2 pStudioStarCell=floor(pStudioStarCoord);',
+      'float pStudioStarSeed=fract(sin(dot(pStudioStarCell,vec2(127.1,311.7)))*43758.5453);',
+      'float pStudioStarDistance=length(fract(pStudioStarCoord)-vec2(0.5));',
+      'float pStudioStarDisc=(1.0-smoothstep(0.018,0.085,pStudioStarDistance))*step(0.993,pStudioStarSeed);',
+      'float pStudioStarVisibility=pStudioNightAmount*smoothstep(-0.03,0.16,direction.y);',
+      'retColor+=vec3(0.62,0.75,1.0)*pStudioStarDisc*(0.55+0.45*pStudioStarSeed)*pStudioStarVisibility*0.72;',
+      'float pStudioMoonAlignment=max(dot(direction,normalize(pStudioMoonDirection)),0.0);',
+      'float pStudioMoonDisc=smoothstep(0.99994,0.999985,pStudioMoonAlignment);',
+      'float pStudioMoonHalo=pow(pStudioMoonAlignment,150.0);',
+      'retColor+=vec3(0.58,0.69,0.9)*pStudioMoonDisc*pStudioMoonIntensity*pStudioNightAmount*0.78;',
+      'retColor+=vec3(0.28,0.4,0.66)*pStudioMoonHalo*pStudioMoonIntensity*pStudioNightAmount*0.035;'
+    ].join('\n');
+    const shaderWithMoonUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform vec3 pStudioMoonDirection;\nuniform float pStudioMoonIntensity;');
+    material.fragmentShader=shaderWithMoonUniforms.replace(marker,enhancement+'\n'+marker);
+    material.needsUpdate=true;
+    material.userData.pstudioAtmosphereEnhanced=true;
+    return true;
+  }
   function updatePhysicalSkyPreset(T,profile){
     if(!window.PStudioSky||!scene)return false;
     try{
       if(!physicalSky){
         physicalSky=new window.PStudioSky();
         physicalSky.name='PStudioPhysicalSky';
+        enhancePhysicalSkyShader(physicalSky,T);
         physicalSky.scale.setScalar(450000);
         physicalSky.frustumCulled=false;
         if(physicalSky.material){physicalSky.material.depthWrite=false;physicalSky.material.fog=false;}
@@ -3223,17 +3265,40 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
       const uniforms=physicalSky.material?.uniforms;
       if(!uniforms?.sunPosition?.value||!uniforms?.turbidity||!uniforms?.rayleigh||!uniforms?.mieCoefficient||!uniforms?.mieDirectionalG)return false;
-      const atmospheric={
-        day:{turbidity:2.4,rayleigh:2.15,mie:.0052,g:.8},
-        dusk:{turbidity:7.2,rayleigh:1.45,mie:.012,g:.84},
-        night:{turbidity:10,rayleigh:.12,mie:.003,g:.8},
-        studio:{turbidity:2.1,rayleigh:1.65,mie:.004,g:.78}
-      }[profile.name]||{turbidity:2.8,rayleigh:2,mie:.005,g:.8};
-      uniforms.turbidity.value=atmospheric.turbidity;
-      uniforms.rayleigh.value=atmospheric.rayleigh;
-      uniforms.mieCoefficient.value=atmospheric.mie;
-      uniforms.mieDirectionalG.value=atmospheric.g;
-      uniforms.sunPosition.value.set(-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)).normalize();
+      uniforms.turbidity.value=Math.max(0,Math.min(20,Number(profile.skyTurbidity)||2.4));
+      uniforms.rayleigh.value=Math.max(0,Math.min(4,Number(profile.skyRayleigh)||2.0));
+      uniforms.mieCoefficient.value=Math.max(0,Math.min(0.1,Number(profile.skyMieCoefficient)||0.005));
+      uniforms.mieDirectionalG.value=Math.max(0,Math.min(0.99,Number(profile.skyMieDirectionalG)||0.8));
+      const sunDirection=new T.Vector3(
+        Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+        Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+        Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+      );
+      if(sunDirection.lengthSq()<1e-8)sunDirection.set(0,1,0);
+      sunDirection.normalize();
+      // Sky.js uses a 450,000-unit atmosphere scale in its sun-fade calculation.
+      // A unit vector keeps the direction but breaks the physical elevation response.
+      uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
+      if(uniforms.pStudioMoonDirection?.value){
+        const moonDirection=new T.Vector3(
+          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
+          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
+          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
+        );
+        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
+        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
+      }
+      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
+      if(uniforms.pStudioMoonDirection?.value){
+        const moonDirection=new T.Vector3(
+          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
+          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
+          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
+        );
+        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
+        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
+      }
+      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
       physicalSky.visible=!(hdrTexture&&hdrShowBackground);
       if(camera)physicalSky.position.copy(camera.position);
       return true;
@@ -3257,9 +3322,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const profile=api?.getPreset?.(presetName)||{
       name:'day',skyTop:'#347CB7',skyMid:'#79BCE0',horizon:'#D7EDF7',ground:'#89977A',
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
-      lightIntensity:2.35,lightX:-0.48,lightY:-0.82,lightZ:-0.31,
+      lightIntensity:2.35,lightX:-0.35,lightY:-0.89,lightZ:-0.28,
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
-      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0,moonDirectionY:1,moonDirectionZ:0,moonIntensity:0,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
@@ -3321,9 +3386,22 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       keyLight.intensity=profile.lightIntensity;
       keyLight.castShadow=true;
     }
+    const skySunDirection=[
+      Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+      Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+      Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+    ];
+    const atmosphericLightDirection=[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)];
     window.PStudioEnvironmentFX?.configureAtmosphere?.({
-      sunDirection:[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)],
-      sunColor:profile.lightColor,fogColor:profile.fogColor
+      sunDirection:skySunDirection,
+      lightDirection:atmosphericLightDirection,
+      sunColor:profile.atmosphereSunColor||profile.lightColor,
+      fogColor:profile.fogColor,
+      fogAmbientColor:profile.hemisphereSky||profile.fogColor,
+      fogDensity:Number.isFinite(Number(profile.fogDensity))?Number(profile.fogDensity):0.0018,
+      fogHeightFalloff:Number.isFinite(Number(profile.fogHeightFalloff))?Number(profile.fogHeightFalloff):0.018,
+      fogBaseHeight:Number.isFinite(Number(profile.fogBaseHeight))?Number(profile.fogBaseHeight):0,
+      fogAnisotropy:Number.isFinite(Number(profile.fogAnisotropy))?Number(profile.fogAnisotropy):0.42
     });
     return profile;
   }

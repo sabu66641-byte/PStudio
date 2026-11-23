@@ -18,9 +18,9 @@
       fogFar: 1450,
       lightColor: '#FFF1D6',
       lightIntensity: 2.35,
-      lightX: -0.48,
-      lightY: -0.82,
-      lightZ: -0.31,
+      lightX: -0.35,
+      lightY: -0.89,
+      lightZ: -0.28,
       hemisphereSky: '#D9EEFF',
       hemisphereGround: '#68725C',
       hemisphereIntensity: 0.95,
@@ -28,7 +28,11 @@
       sunX: 0.72,
       sunY: 0.29,
       sunRadius: 17,
-      sunGlow: 0.55
+      sunGlow: 0.55,
+      skySunX: 0.35, skySunY: 0.89, skySunZ: 0.28,
+      skyTurbidity: 2.2, skyRayleigh: 2.15, skyMieCoefficient: 0.0048, skyMieDirectionalG: 0.82,
+      atmosphereSunColor: '#FFF4DF', moonDirectionX: 0, moonDirectionY: 1, moonDirectionZ: 0, moonIntensity: 0,
+      fogDensity: 0.0018, fogHeightFalloff: 0.018, fogBaseHeight: 0, fogAnisotropy: 0.42
     }),
     dusk: Object.freeze({
       label: '夕方',
@@ -41,9 +45,9 @@
       fogFar: 1100,
       lightColor: '#FFC08C',
       lightIntensity: 1.55,
-      lightX: -0.78,
-      lightY: -0.48,
-      lightZ: -0.36,
+      lightX: -0.89,
+      lightY: -0.12,
+      lightZ: -0.44,
       hemisphereSky: '#C5A0B8',
       hemisphereGround: '#43394D',
       hemisphereIntensity: 0.62,
@@ -51,7 +55,11 @@
       sunX: 0.77,
       sunY: 0.43,
       sunRadius: 23,
-      sunGlow: 0.9
+      sunGlow: 0.9,
+      skySunX: 0.89, skySunY: 0.12, skySunZ: 0.44,
+      skyTurbidity: 8.2, skyRayleigh: 2.25, skyMieCoefficient: 0.018, skyMieDirectionalG: 0.88,
+      atmosphereSunColor: '#FFB06F', moonDirectionX: 0, moonDirectionY: 1, moonDirectionZ: 0, moonIntensity: 0,
+      fogDensity: 0.0032, fogHeightFalloff: 0.012, fogBaseHeight: 0, fogAnisotropy: 0.58
     }),
     night: Object.freeze({
       label: '夜',
@@ -73,8 +81,12 @@
       environmentIntensity: 0.3,
       sunX: 0.8,
       sunY: 0.25,
-      sunRadius: 8,
-      sunGlow: 0.16
+      sunRadius: 0,
+      sunGlow: 0,
+      skySunX: -0.18, skySunY: -0.52, skySunZ: 0.84,
+      skyTurbidity: 2.8, skyRayleigh: 1.12, skyMieCoefficient: 0.0012, skyMieDirectionalG: 0.78,
+      atmosphereSunColor: '#9DBBEA', moonDirectionX: 0.38, moonDirectionY: 0.88, moonDirectionZ: 0.27, moonIntensity: 0.78,
+      fogDensity: 0.00085, fogHeightFalloff: 0.024, fogBaseHeight: 0, fogAnisotropy: 0.28
     }),
     studio: Object.freeze({
       label: 'スタジオ',
@@ -87,9 +99,9 @@
       fogFar: 1650,
       lightColor: '#FFF8EA',
       lightIntensity: 2.1,
-      lightX: -0.62,
-      lightY: -0.72,
-      lightZ: -0.31,
+      lightX: -0.42,
+      lightY: -0.82,
+      lightZ: -0.38,
       hemisphereSky: '#E1E9F2',
       hemisphereGround: '#46505D',
       hemisphereIntensity: 1.0,
@@ -97,7 +109,11 @@
       sunX: 0.5,
       sunY: 0.28,
       sunRadius: 0,
-      sunGlow: 0
+      sunGlow: 0,
+      skySunX: 0.42, skySunY: 0.82, skySunZ: 0.38,
+      skyTurbidity: 2.0, skyRayleigh: 1.95, skyMieCoefficient: 0.0042, skyMieDirectionalG: 0.8,
+      atmosphereSunColor: '#FFF8EA', moonDirectionX: 0, moonDirectionY: 1, moonDirectionZ: 0, moonIntensity: 0,
+      fogDensity: 0.0011, fogHeightFalloff: 0.02, fogBaseHeight: 0, fogAnisotropy: 0.34
     })
   });
 

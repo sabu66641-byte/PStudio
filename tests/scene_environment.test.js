@@ -198,10 +198,39 @@ test('official Three.js physical sky is primary while procedural panorama remain
   assert.ok(html.includes("three/addons/objects/Sky.js"));
   assert.ok(html.includes("window.PStudioSky = null"));
   for(const token of [
-    'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.set',
+    'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000)',
+    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight','pStudioNightAmount','pStudioStarDisc','pStudioMoonAlignment','pStudioMoonDisc','pStudioMoonIntensity','uniform vec3 pStudioMoonDirection',
     'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
     'pmremGenerator.fromScene(skyScene,0.04)','physicalSky.visible=!hdrBackgroundVisible'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('Procedural sky texture unavailable'));
+});
+
+test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
+  const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
+  for(const [name,profile] of Object.entries({day,dusk,night,studio})){
+    for(const field of ['skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','atmosphereSunColor','moonDirectionX','moonDirectionY','moonDirectionZ','moonIntensity','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
+      assert.ok(Object.prototype.hasOwnProperty.call(profile,field),name+': '+field);
+    assert.ok(Math.hypot(profile.skySunX,profile.skySunY,profile.skySunZ)>.9,name+' sun direction');
+    assert.ok(profile.fogDensity>0,name+' fog density');
+  }
+  for(const profile of [day,dusk,studio]){
+    assert.ok(Math.abs(profile.skySunX+profile.lightX)<.02,'visible sun and direct light X must align: '+profile.name);
+    assert.ok(Math.abs(profile.skySunY+profile.lightY)<.02,'visible sun and direct light Y must align: '+profile.name);
+    assert.ok(Math.abs(profile.skySunZ+profile.lightZ)<.02,'visible sun and direct light Z must align: '+profile.name);
+  }
+  assert.equal(day.moonIntensity,0);
+  assert.equal(dusk.moonIntensity,0);
+  assert.ok(night.moonIntensity>.5,'night moon should be visible');
+  assert.ok(Math.abs(night.moonDirectionX+night.lightX)<.02,'night moon and moonlight X must align');
+  assert.ok(Math.abs(night.moonDirectionY+night.lightY)<.02,'night moon and moonlight Y must align');
+  assert.ok(Math.abs(night.moonDirectionZ+night.lightZ)<.02,'night moon and moonlight Z must align');
+  assert.ok(day.skySunY>.8,'day sun should be high in the sky');
+  assert.ok(dusk.skySunY>0&&dusk.skySunY<.2,'dusk sun should sit close to the horizon');
+  assert.ok(night.skySunY<0,'night sun should be below the horizon');
+  assert.equal(night.sunRadius,0,'night fallback must not draw a sun disc');
+  assert.equal(night.sunGlow,0,'night fallback must not draw a solar halo');
+  assert.ok(dusk.skyTurbidity>day.skyTurbidity,'dusk needs a richer aerosol scattering profile');
+  assert.ok(night.fogDensity<day.fogDensity,'night haze should be subtler than daytime haze');
 });
