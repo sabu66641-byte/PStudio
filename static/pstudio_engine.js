@@ -428,10 +428,11 @@ function callBuiltin(c, name, a) {
         c.draw.push({type:'trail',targetId:String(target.id),x,y,z,color:String(a[1]),width:Math.max(0.001,Math.min(1,finite(a[2]))),duration:Math.max(0.05,Math.min(10,finite(a[3]))),dt:c.dt});
         return true;
       } break;
-      case 'set_god_rays': if(a.length===2){
+      case 'set_god_rays': if(a.length===2||a.length===3){
         if(runtime)runtime.requires3D=true;
         const enabled=truthy(a[0]),intensity=Math.max(0,Math.min(2,finite(a[1])));
-        const result=window.PStudio3D?.setGodRays?.(enabled,intensity)??null;
+        const decay=a.length===3?Math.max(.8,Math.min(.995,finite(a[2]))):.965;
+        const result=window.PStudio3D?.setGodRays?.(enabled,intensity,decay)??null;
         c.draw.push({type:'camera_fx'});
         return result;
       } break;
