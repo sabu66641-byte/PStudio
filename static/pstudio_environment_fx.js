@@ -78,7 +78,7 @@
       shallow:{value:new Three.Color('#65d9bf')},
       deep:{value:new Three.Color('#08727d')},
       foam:{value:new Three.Color('#e3fff6')},
-      mode:{value:waterfall?1:0}
+      mode:{value:waterfall?1:0},reflection:{value:new Three.Color('#b8d9e8')},absorption:{value:0.19}
     };
     const old = material.onBeforeCompile, oldKey = material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile = function(shader, renderer) {
@@ -86,7 +86,8 @@
       Object.assign(shader.uniforms,{
         uPStudioWaterTime:u.time,uPStudioWaterAmplitude:u.amplitude,uPStudioWaterBounds:u.bounds,
         uPStudioWaterShallow:u.shallow,uPStudioWaterDeep:u.deep,uPStudioWaterFoam:u.foam,uPStudioWaterMode:u.mode,
-        uPStudioSceneDepth:u.sceneDepth,uPStudioWaterViewport:u.viewport,uPStudioCameraNear:u.near,uPStudioCameraFar:u.far,uPStudioSceneDepthValid:u.sceneDepthValid
+        uPStudioSceneDepth:u.sceneDepth,uPStudioWaterViewport:u.viewport,uPStudioCameraNear:u.near,uPStudioCameraFar:u.far,uPStudioSceneDepthValid:u.sceneDepthValid,
+        uPStudioWaterReflectionTint:u.reflection,uPStudioWaterAbsorption:u.absorption
       });
       shader.vertexShader = addAfter(shader.vertexShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform float uPStudioWaterAmplitude;',
@@ -115,7 +116,7 @@
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform vec4 uPStudioWaterBounds;',
         'uniform vec3 uPStudioWaterShallow;','uniform vec3 uPStudioWaterDeep;','uniform vec3 uPStudioWaterFoam;',
-        'uniform float uPStudioWaterMode;','uniform sampler2D uPStudioSceneDepth;','uniform vec2 uPStudioWaterViewport;','uniform float uPStudioCameraNear;','uniform float uPStudioCameraFar;','uniform float uPStudioSceneDepthValid;','varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
+        'uniform float uPStudioWaterMode;','uniform vec3 uPStudioWaterReflectionTint;','uniform float uPStudioWaterAbsorption;','uniform sampler2D uPStudioSceneDepth;','uniform vec2 uPStudioWaterViewport;','uniform float uPStudioCameraNear;','uniform float uPStudioCameraFar;','uniform float uPStudioSceneDepthValid;','varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <color_fragment>',[
         'vec2 wuv=(vPStudioWaterLocal.xz-uPStudioWaterBounds.xy)/max(uPStudioWaterBounds.zw,vec2(.001));',
@@ -129,9 +130,10 @@
         'float sceneLinear=(2.0*uPStudioCameraNear*uPStudioCameraFar)/max(1e-5,uPStudioCameraFar+uPStudioCameraNear-sceneZ*(uPStudioCameraFar-uPStudioCameraNear));',
         'float waterLinear=(2.0*uPStudioCameraNear*uPStudioCameraFar)/max(1e-5,uPStudioCameraFar+uPStudioCameraNear-waterZ*(uPStudioCameraFar-uPStudioCameraNear));',
         'float waterThickness=max(0.0,sceneLinear-waterLinear);',
-        'depth=smoothstep(.18,10.0,waterThickness);',
+        'depth=1.0-exp(-waterThickness*uPStudioWaterAbsorption);',
         'float shorelineFoam=1.0-smoothstep(.035,.95,waterThickness);',
-        'foamBand=max(foamBand*.22,shorelineFoam*(.58+.42*sin(vPStudioWaterWorld.x*.61+vPStudioWaterWorld.z*.47+uPStudioWaterTime*1.8)));',
+        'float foamNoise=.5+.5*sin(vPStudioWaterWorld.x*.61+vPStudioWaterWorld.z*.47+uPStudioWaterTime*1.8)*sin(vPStudioWaterWorld.z*.83-vPStudioWaterWorld.x*.39-uPStudioWaterTime*1.13);',
+         'foamBand=max(foamBand*.22,shorelineFoam*(.52+.48*foamNoise));',
         '}',
         'float variation=.5+.5*sin(vPStudioWaterWorld.x*.043+sin(vPStudioWaterWorld.z*.037)*1.8);',
         'vec3 depthColor=mix(uPStudioWaterShallow,uPStudioWaterDeep,clamp(depth*.88+variation*.12,0.0,1.0));',
@@ -144,12 +146,17 @@
         'float microB=sin(vPStudioWaterWorld.z*1.94-vPStudioWaterWorld.x*.83-uPStudioWaterTime*1.8);',
         'float crossRipple=sin((vPStudioWaterWorld.x+vPStudioWaterWorld.z)*3.1+uPStudioWaterTime*2.9);',
         'vec3 rippleN=normalize(vec3(.095*microA+.028*crossRipple,1.0,.09*microB-.024*crossRipple));',
-        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*.13);'
+        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*.18);',
+         'float viewFacing=clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0);',
+         'float fresnel=pow(1.0-viewFacing,5.0);',
+         'float crest=.5+.5*sin(vPStudioWaterWorld.x*.31+vPStudioWaterWorld.z*.27+uPStudioWaterTime*1.22);',
+         'diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterReflectionTint,clamp(fresnel*.28,0.0,.28));',
+         'diffuseColor.rgb+=uPStudioWaterReflectionTint*pow(max(crest,0.0),18.0)*.012;'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <roughnessmap_fragment>',
         'roughnessFactor=clamp(roughnessFactor+.035*(.5+.5*sin(vPStudioWaterWorld.x*2.0+vPStudioWaterWorld.z*1.7+uPStudioWaterTime)),.035,.34);');
     };
-    material.customProgramCacheKey = () => 'pstudio-water-hq-v2-'+(waterfall?'fall':'surface')+(oldKey?oldKey():'');
+    material.customProgramCacheKey = () => 'pstudio-water-hq-v3-'+(waterfall?'fall':'surface')+(oldKey?oldKey():'');
     material.userData.pstudioWaterHQ = u;
     if(object?.userData)object.userData.pstudioWaterSurface=true;
     material.roughness = waterfall ? 0.12 : 0.075;
@@ -414,55 +421,110 @@
       uniforms:{
         tDiffuse:{value:null},tDepth:{value:null},uInverseProjection:{value:new Three.Matrix4()},
         uCameraWorld:{value:new Three.Matrix4()},uFogColor:{value:new Three.Color('#bfe2eb')},
-        uSunDirection:{value:new Three.Vector3(-.42,.78,-.46).normalize()},uTime:{value:0},
-        uCloudBase:{value:54},uCloudTop:{value:108},uCloudDensity:{value:.78},uCloudScale:{value:.0095},
-        uAtmosphereStrength:{value:.96}
+        uSunDirection:{value:new Three.Vector3(-.42,.78,-.46).normalize()},
+        uSunColor:{value:new Three.Color('#fff0d4')},uTime:{value:0},
+        uCloudBase:{value:54},uCloudTop:{value:108},uCloudDensity:{value:.78},
+        uCloudScale:{value:.0095},uCloudCoverage:{value:.48},uCloudDetail:{value:.58},
+        uCloudWind:{value:new Three.Vector2(-.8,.32)},uCloudSteps:{value:24},
+        uCloudLightSteps:{value:1},uAtmosphereStrength:{value:.96}
       },
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader:[
         'uniform sampler2D tDiffuse;uniform sampler2D tDepth;',
         'uniform mat4 uInverseProjection;uniform mat4 uCameraWorld;',
-        'uniform vec3 uFogColor;uniform vec3 uSunDirection;',
-        'uniform float uTime;uniform float uCloudBase;uniform float uCloudTop;uniform float uCloudDensity;uniform float uCloudScale;uniform float uAtmosphereStrength;',
+        'uniform vec3 uFogColor;uniform vec3 uSunDirection;uniform vec3 uSunColor;',
+        'uniform float uTime;uniform float uCloudBase;uniform float uCloudTop;uniform float uCloudDensity;',
+        'uniform float uCloudScale;uniform float uCloudCoverage;uniform float uCloudDetail;',
+        'uniform vec2 uCloudWind;uniform float uCloudSteps;uniform float uCloudLightSteps;uniform float uAtmosphereStrength;',
         'varying vec2 vUv;',
         'float pHash(vec3 p){p=fract(p*.3183099+vec3(.1,.17,.13));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}',
         'float pNoise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);',
         'float n000=pHash(i);float n100=pHash(i+vec3(1,0,0));float n010=pHash(i+vec3(0,1,0));float n110=pHash(i+vec3(1,1,0));',
         'float n001=pHash(i+vec3(0,0,1));float n101=pHash(i+vec3(1,0,1));float n011=pHash(i+vec3(0,1,1));float n111=pHash(i+vec3(1,1,1));',
         'return mix(mix(mix(n000,n100,f.x),mix(n010,n110,f.x),f.y),mix(mix(n001,n101,f.x),mix(n011,n111,f.x),f.y),f.z);}',
-        'float pFbm(vec3 p){float n=0.0;float a=.56;for(int i=0;i<4;i++){n+=pNoise(p)*a;p=p*2.03+vec3(7.1,3.7,5.3);a*=.5;}return n/1.0625;}',
+        'float pFbm(vec3 p){float n=0.0;float a=.55;for(int i=0;i<3;i++){n+=pNoise(p)*a;p=p*2.03+vec3(7.1,3.7,5.3);a*=.5;}return n/.9625;}',
+        'float pCloudDensity(vec3 worldPosition){',
+        'float height=clamp((worldPosition.y-uCloudBase)/max(1.0,uCloudTop-uCloudBase),0.0,1.0);',
+        'float vertical=smoothstep(.012,.16,height)*(1.0-smoothstep(.62,.985,height));',
+        'vec3 q=worldPosition*uCloudScale+vec3(uCloudWind.x*uTime*.0008,0.0,uCloudWind.y*uTime*.0008);',
+        'vec3 warp=vec3(pNoise(q*.52+vec3(17.0,3.0,9.0)),pNoise(q*.52+vec3(4.0,19.0,2.0)),pNoise(q*.52+vec3(9.0,7.0,21.0)))-.5;',
+        'float body=pFbm(q+warp*.52);float detail=pNoise(q*4.15+vec3(12.0,5.0,7.0));',
+        'float erosion=(1.0-detail)*uCloudDetail*.16;',
+        'float threshold=mix(.68,.34,clamp(uCloudCoverage,0.0,1.0));',
+        'float billow=smoothstep(threshold-.18,threshold+.13,body-erosion+(.5-height)*.045);',
+        'return billow*vertical*uCloudDensity*1.25;',
+        '}',
+        'float pHenyeyGreenstein(float cosineAngle,float g){float g2=g*g;return (1.0-g2)/(12.5663706*pow(max(.001,1.0+g2-2.0*g*cosineAngle),1.5));}',
         'void main(){',
         'vec4 source=texture2D(tDiffuse,vUv);float depth=texture2D(tDepth,vUv).x;',
-        'vec4 clip=vec4(vUv*2.0-1.0,1.0,1.0);vec4 viewH=uInverseProjection*clip;vec3 viewRay=normalize(viewH.xyz/max(abs(viewH.w),1e-5));',
+        'if(depth<.99999||uCloudDensity<=.001||uAtmosphereStrength<=.001){gl_FragColor=source;return;}',
+        'vec4 clip=vec4(vUv*2.0-1.0,1.0,1.0);vec4 viewH=uInverseProjection*clip;',
+        'vec3 viewRay=normalize(viewH.xyz/max(abs(viewH.w),1e-5));',
         'vec3 ray=normalize(mat3(uCameraWorld)*viewRay);vec3 origin=uCameraWorld[3].xyz;',
-        'float horizon=pow(1.0-clamp(max(ray.y,0.0),0.0,1.0),3.2);',
-        'vec3 atmosphere=mix(vec3(.22,.55,.76),uFogColor,horizon);',
-        'float sunGlow=pow(max(dot(ray,normalize(uSunDirection)),0.0),38.0);',
-        'vec3 skyColor=atmosphere+vec3(.23,.20,.13)*sunGlow;',
-        'if(depth<.99999){gl_FragColor=source;return;}',
-        'float cloudAlpha=0.0;vec3 cloudColor=vec3(0.0);',
-        'if(ray.y>.025){float t0=(uCloudBase-origin.y)/ray.y;float t1=(uCloudTop-origin.y)/ray.y;',
-        'float begin=max(0.0,min(t0,t1));float finish=max(t0,t1);',
-        'if(finish>begin){float span=finish-begin;float stepLen=span/22.0;float trans=1.0;',
-        'for(int i=0;i<22;i++){float t=begin+(float(i)+.5)*stepLen;vec3 p=origin+ray*t;',
-        'vec3 q=p*uCloudScale+vec3(-uTime*.006,0.0,uTime*.0028);',
-        'float large=pFbm(q);float detail=pFbm(q*3.1+vec3(12.0,4.0,7.0));',
-        'float vertical=smoothstep(uCloudBase,uCloudBase+9.0,p.y)*(1.0-smoothstep(uCloudTop-14.0,uCloudTop,p.y));',
-        'float density=smoothstep(.49,.72,large+detail*.12)*vertical*uCloudDensity;',
-        'float alpha=1.0-exp(-density*stepLen*.028);',
-        'float light=.64+.36*pow(max(dot(normalize(uSunDirection),normalize(vec3(.22,.72,.31))),0.0),2.0);',
-        'vec3 lit=mix(vec3(.48,.66,.72),vec3(.98,1.0,.97),clamp(light+detail*.15,0.0,1.0));',
-        'cloudColor+=lit*alpha*trans;trans*=1.0-alpha;if(trans<.025)break;',
-        '}cloudAlpha=1.0-trans;}}',
-        'vec3 finalSky=mix(skyColor,cloudColor,cloudAlpha)+vec3(.23,.2,.16)*sunGlow*.22;',
-        'gl_FragColor=vec4(mix(source.rgb,finalSky,clamp(uAtmosphereStrength,0.0,1.0)),source.a);',
+        'if(ray.y<=.012){gl_FragColor=source;return;}',
+        'float t0=(uCloudBase-origin.y)/ray.y;float t1=(uCloudTop-origin.y)/ray.y;',
+        'float begin=max(0.0,min(t0,t1));float finish=min(max(t0,t1),5200.0);',
+        'if(finish<=begin){gl_FragColor=source;return;}',
+        'float steps=clamp(uCloudSteps,8.0,40.0);float stepLength=(finish-begin)/steps;',
+        'float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
+        'float transmittance=1.0;vec3 scattering=vec3(0.0);vec3 sun=normalize(uSunDirection);',
+        'float phase=pHenyeyGreenstein(dot(-ray,sun),.68);',
+        'for(int i=0;i<40;i++){if(float(i)>=steps||transmittance<.018)break;',
+        'float travel=begin+(float(i)+jitter)*stepLength;vec3 p=origin+ray*travel;',
+        'float density=pCloudDensity(p);if(density<=.002)continue;',
+        'float lightOptical=0.0;',
+        'for(int j=0;j<2;j++){if(float(j)>=uCloudLightSteps)break;',
+        'vec3 lightPoint=p+sun*(10.0+float(j)*18.0);',
+        'lightOptical+=pCloudDensity(lightPoint)*(10.0+float(j)*18.0)*.012;',
+        '}',
+        'float lightTransmittance=exp(-lightOptical*1.35);',
+        'float extinction=density*stepLength*.018;',
+        'float alpha=1.0-exp(-extinction);',
+        'float powder=1.0-exp(-density*1.7);',
+        'float forwardScatter=clamp(phase*2.2,0.0,1.65);',
+        'vec3 ambient=mix(uFogColor*vec3(.48,.58,.72),vec3(.74,.81,.9),clamp(ray.y*.5+.45,0.0,1.0));',
+        'vec3 direct=uSunColor*(.38+forwardScatter*1.25)*lightTransmittance;',
+        'float silverLining=pow(clamp(1.0-lightTransmittance,0.0,1.0),.42)*.18;',
+        'vec3 cloudLight=ambient*(.58+.22*pow(1.0-pow(1.0-pow(1.0-density,2.0),2.0),2.0))+direct*pow(powder,.72)+uSunColor*silverLining;',
+        'scattering+=cloudLight*(alpha*transmittance);transmittance*=1.0-alpha;',
+        '}',
+        'vec3 result=source.rgb*transmittance+scattering*uAtmosphereStrength;',
+        'gl_FragColor=vec4(result,source.a);',
         '}'
       ].join('\n')
     };
     const pass=new FX.ShaderPass(shader);
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
-    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){const depth=this.uniforms?.tDepth;if(depth&&Object.prototype.hasOwnProperty.call(depth,'value')&&!depth.value)depth.value=readBuffer?.depthTexture||null;originalRender(renderer,writeBuffer,readBuffer,delta,mask);};
+    pass.setQuality=(preset='high',adaptiveLevel=2)=>{
+      const base={mobile:8,balanced:14,high:26,ultra:36,cinematic:40}[String(preset)]||26;
+      const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
+      const factor=[.58,.78,1][level];
+      const steps=Math.max(8,Math.min(40,Math.round(base*factor)));
+      const lightSteps=preset==='ultra'||preset==='cinematic'?2:1;
+      pass.uniforms.uCloudSteps.value=steps;
+      pass.uniforms.uCloudLightSteps.value=lightSteps;
+      pass.userData=pass.userData||{};
+      pass.userData.pstudioCloudQuality={preset,adaptiveLevel:level,steps,lightSteps};
+      return {...pass.userData.pstudioCloudQuality};
+    };
+    pass.configureAtmosphere=(settings={})=>{
+      const uniforms=pass.uniforms;
+      const direction=settings.sunDirection;
+      if(Array.isArray(direction)&&direction.length>=3&&direction.slice(0,3).every(Number.isFinite)){
+        uniforms.uSunDirection.value.set(direction[0],direction[1],direction[2]).normalize();
+      }
+      if(settings.sunColor&&uniforms.uSunColor.value?.set)uniforms.uSunColor.value.set(settings.sunColor);
+      if(settings.fogColor&&uniforms.uFogColor.value?.set)uniforms.uFogColor.value.set(settings.fogColor);
+      if(Number.isFinite(Number(settings.cloudDensity)))uniforms.uCloudDensity.value=Math.max(0,Math.min(2,Number(settings.cloudDensity)));
+      return true;
+    };
+    pass.setQuality('high',2);
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
+      const depth=this.uniforms?.tDepth;
+      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||depth.value;
+      originalRender(renderer,writeBuffer,readBuffer,delta,mask);
+    };
     cloudPasses.add(pass);
     return pass;
   }
@@ -506,6 +568,7 @@
 
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
+    configureAtmosphere(settings={}){for(const pass of cloudPasses)pass?.configureAtmosphere?.(settings);return true;},
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
     getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
