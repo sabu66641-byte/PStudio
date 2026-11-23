@@ -97,6 +97,16 @@ test('primitive cache uses the same mesh object for caching and rendering', () =
 test('object-local SH GI blends probes and supports iterative diffuse bounce capture',()=>{
   for(const x of ['bakeLightProbeVolume','iterative-multibounce-diffuse-sh-gi','pstudio-object-sh-v1','pstudioEvaluateSH','updateObjectProbeUniforms','bounces','bounceStrength'])assert.ok(renderer.includes(x),x);
 });
+test('structured SH probe volumes use trilinear interpolation and preserve inverse-distance fallback',()=>{
+  assert.match(renderer,/finalProbes\.grid=\{min:/);
+  assert.match(renderer,/dimensions:dims\.slice\(\),order:'x-fastest'/);
+  assert.match(renderer,/function getProbeVolumeWeights\(position,volume\)/);
+  assert.match(renderer,/volume\[\(iz\*ny\+iy\)\*nx\+ix\]/);
+  assert.match(renderer,/getProbeVolumeWeights\(position,volume\)/);
+  assert.match(renderer,/const samples=getProbeVolumeWeights\(center,volume\)/);
+  assert.match(renderer,/Old\/unstructured probe arrays retain the inverse-distance compatibility path/);
+  assert.match(renderer,/probeInterpolation:!bakedLightProbeVolume\?\.length\?'none':bakedLightProbeVolume\.grid\?'trilinear-grid-sh':'inverse-distance-fallback'/);
+});
 test('three-cascade shadows load the version-aligned CSM addon with fallback',()=>{
   assert.ok(html.includes('three/addons/csm/CSM.js'));
   for(const x of ['window.PStudioCSM','cascades:3','csm.setupMaterial','csm.update()'])assert.ok(renderer.includes(x),x);
