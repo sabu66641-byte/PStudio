@@ -51,7 +51,7 @@ test('renderer re-registration preserves the live chunk object and cancels chang
 
 test('stale asynchronous chunk completions release only obsolete assets and retain shared assets for a newer generation', async () => {
   const renderer = read('static/pstudio_3d_engine.js');
-  const source = extractFunction(renderer, 'function beginWorldChunkLoad', 'function releaseChunkAssetCache');
+  const source = extractFunction(renderer, 'function releaseStaleChunkAssets', 'function releaseChunkAssetCache');
   let resolveAsset;
   const releases = [];
   const events = [];
