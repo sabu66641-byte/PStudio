@@ -111,7 +111,7 @@ test('the Scene API help and technical docs describe all six cinematic calls', (
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
   assert.match(html, /pstudio_engine\.js\?v=20261123-color-grading-phase4/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-color-grading-phase4/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-studio-quality-phase1/);
   assert.match(html, /pstudio_environment_fx\.js\?v=20261123-color-grading-phase4/);
 });
 

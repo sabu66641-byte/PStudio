@@ -2,6 +2,13 @@
 
 This document records the current repository structure and the responsibilities of each subsystem. It is intended to be the shared technical reference for future PStudio work. Update it whenever an API contract, ownership boundary, or execution path changes.
 
+## Rendering quality and studio lighting
+
+The Scene Environment inspector exposes persistent local quality choices: Auto, Mobile, Balanced, High, Ultra and Cinematic. Auto retains the renderer's adaptive frame-time controller; manual choices hold their tier unless the device-memory safety gate resolves an unsupported tier downward. Cinematic requires a reported device-memory budget of at least 6 GiB and increases pixel-ratio cap, GTAO sampling, volumetric raymarch work and depth-of-field resolution. Quality tiers must remain monotonic in GPU workload; do not silently reduce their work to conceal performance regressions.
+
+The Studio environment enables a three-softbox lighting rig. RectAreaLight is used only after RectAreaLightUniformsLib initializes successfully; otherwise the rig uses non-shadowing directional fill/rim lights. The physical sun key is reduced in Studio mode so the softboxes shape the subject. Other environment presets keep the atmospheric sun lighting and disable the studio rig. This remains a real-time rasterized preview, not path tracing or physically simulated global illumination.
+
+
 ## Product direction
 
 PStudio is a general-purpose game development environment. Its core is not tied to a particular game, IP, genre, or combat system. The intended scope includes 2D and 3D games, action games, RPGs, simulations, puzzle games, visual novels, and large-world projects.
