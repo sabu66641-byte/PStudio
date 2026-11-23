@@ -163,7 +163,7 @@ AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `po
 - KTX2Loader/Basis Universal transcoding supports assets that already contain KHR_texture_basisu. It does not encode ordinary PNG/JPEG images into KTX2 at runtime; asset encoding is a separate import/build step and must not silently resample or discard source detail.
 - Model import and GLB preparation emit phase/progress events. Progress is reported only where a real byte/item count exists; IndexedDB persistence is represented as a phase because the current browser storage API does not expose byte-level write progress.
 - Occlusion is optional CPU ray-based visibility testing accelerated by BVH when available; it is not hardware GPU occlusion queries.
-- Spatial SH probe GI and its iterative diffuse bounces are approximations, not physically complete dynamic path tracing.
+- Spatial SH probe GI and its iterative diffuse bounces are approximations, not physically complete dynamic path tracing. Structured probe grids use bounds-aware 3D trilinear interpolation for object-local indirect diffuse lighting; legacy or unstructured probe arrays retain inverse-distance blending. Keep probe bounds/dimensions attached to each baked grid and preserve the fallback when changing the runtime interpolation path.
 - UV lightmaps use a per-triangle atlas and probe-derived diffuse irradiance. They are not a seam-aware UV unwrap or full direct-shadow bake.
 - World chunk streaming currently follows the 3D camera path; a generic 2D partition scheduler is not yet implemented.
 

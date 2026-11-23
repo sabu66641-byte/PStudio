@@ -538,7 +538,7 @@ Select a non-model Scene object and use the **Shader Editor** graph or GLSL edit
 
 ## Rendering Engine 1.6 — Spatial Irradiance and Large-World Rendering
 
-`PStudio3D.bakeLightProbeVolume(options)` captures a bounded grid of spherical-harmonic (SH) irradiance probes (2–4 samples per axis, at most 32 probes, 32–128 cube resolution). The current renderer now performs per-object interpolation from the nearest probes and feeds the result into the indirect-diffuse term of standard/physical materials. It is a baked, object-local diffuse GI approximation; it is not a full dynamic ray-traced solution or a UV lightmap texture baker. Re-bake after major static lighting, geometry or environment changes.
+`PStudio3D.bakeLightProbeVolume(options)` captures a bounded grid of spherical-harmonic (SH) irradiance probes (2–4 samples per axis, at most 32 probes, 32–128 cube resolution). Structured grids preserve their bounds and dimensions, allowing per-object 3D trilinear interpolation of the eight surrounding SH samples before the irradiance is added to standard/physical materials. Legacy or unstructured probe arrays retain inverse-distance blending. This remains a baked, object-local diffuse GI approximation; it is not a full dynamic ray-traced solution or a UV lightmap texture baker. Re-bake after major static lighting, geometry or environment changes.
 
 ```js
 await PStudio3D.bakeLightProbeVolume({
@@ -566,7 +566,7 @@ Directional shadow coverage follows the camera target and snaps its center to sh
 
 ### Object-local indirect lighting
 
-The spatial probe volume now supplies each supported mesh with SH coefficients interpolated at that object's world-space position. The nearest four probes are weighted by inverse distance. Standard and physical materials evaluate the interpolated SH irradiance in the indirect-diffuse shader path. `PStudio3D.bakeLightProbeVolume(options)` supports bounded iterative capture passes:
+The spatial probe volume supplies each supported mesh with SH coefficients evaluated at that object's world-space position. Regular probe grids use 3D trilinear interpolation across the eight surrounding grid samples; weights are clamped to the baked volume bounds and normalized when samples are available. Legacy or unstructured probe arrays use inverse-distance weighting, with `probeBlendCount` controlling that fallback. Standard and physical materials evaluate the interpolated SH irradiance in the indirect-diffuse shader path. `PStudio3D.bakeLightProbeVolume(options)` supports bounded iterative capture passes:
 
 ```js
 await PStudio3D.bakeLightProbeVolume({
