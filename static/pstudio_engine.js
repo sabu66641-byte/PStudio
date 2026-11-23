@@ -701,6 +701,7 @@
       }
       window.PStudioECSStreaming?.sync?.(sceneObjects || []);
       window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], dt);
+      window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt);
       for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));if(owner?.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
@@ -938,7 +939,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const hasECS3D=(sceneObjects||[]).some(object=>Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest'].includes(entry?.type)&&entry.data?.enabled!==false));
+      const hasECS3D=(sceneObjects||[]).some(object=>Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail'].includes(entry?.type)&&entry.data?.enabled!==false));
       const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
@@ -965,6 +966,7 @@
     if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();window.PStudioECSAudio?.clear?.();collisionPairs.clear();collision3DPairs.clear();window.PStudioECSCollision?.clear?.();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
     window.PStudioECSStreaming?.clear?.();
+    window.PStudioECSVisualFX?.clear?.();
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();

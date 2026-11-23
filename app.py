@@ -940,7 +940,7 @@ def validate_ast(tree, allow_game=False, external_components=None):
         if node.get("type") == "ComponentDef":
             name = node.get("name", "")
             _validate_cpp_identifier(name, node.get("line"))
-            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "CombatState", "AIController", "MovementIntent", "QuestProgress", "DialogueSession", "NavigationNode", "InputSnapshot", "PlayerInput", "ControlIntent", "CollisionEvent", "AudioEmitter", "AudioCommand", "Renderable", "Camera", "Light", "Animation", "WorldPartition", "StreamingInterest"):
+            if name in ("Transform", "SceneObjectRef", "Velocity", "PhysicsBody", "PhysicsState", "PhysicsTransform", "Health", "Inventory", "Equipment", "CombatState", "AIController", "MovementIntent", "QuestProgress", "DialogueSession", "NavigationNode", "InputSnapshot", "PlayerInput", "ControlIntent", "CollisionEvent", "AudioEmitter", "AudioCommand", "Renderable", "Camera", "Light", "Animation", "WorldPartition", "StreamingInterest", "Environment", "Fog", "Water", "PostFX", "ParticleEmitter", "Trail"):
                 raise Exception(f"意味エラー: '{name}' はPStudio組み込みComponentのため再定義できません。")
             if name in component_defs:
                 raise Exception(f"意味エラー: Component '{name}' が重複定義されています。")
