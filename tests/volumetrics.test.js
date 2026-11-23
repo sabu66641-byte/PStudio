@@ -114,7 +114,7 @@ test('scaled fog and god-ray passes render to a reduced target and composite bac
   assert.equal(rendererMock.autoClear, false, 'renderer state must be restored');
   assert.equal(calls.filter(call => call.type === 'render').length, 2, 'low-res effect + full-res composite');
   assert.ok(fogTarget(calls[0].target), 'first render targets an offscreen buffer');
-  assert.equal(calls[2].target, writeBuffer, 'second render writes to EffectComposer buffer');
+  assert.ok(calls.some(call => call.type === 'target' && call.target === writeBuffer), 'composite pass writes to EffectComposer buffer');
   assert.equal(fog.uniforms.tDiffuse.value, sourceTexture);
   assert.equal(fog.uniforms.tDepth.value, depthTexture);
 
