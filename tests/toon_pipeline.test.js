@@ -63,7 +63,7 @@ test('game API registry validates set_toon_material as a 14-argument browser-onl
   assert.match(app, /"set_toon_material": 14/);
   assert.match(runtime, /case 'set_toon_material': if\(a\.length===14\)/);
   assert.match(runtime, /set_toon_material\|set_background/);
-  assert.match(runtime, /type:'toon_material',toon:/);
+  assert.match(runtime, /window\.PStudioECSMaterials\?\.collectCommands/);
   assert.match(renderer, /d\.type==='toon_material'/);
 });
 
@@ -197,7 +197,7 @@ test('toon controls persist as per-model overrides and are forwarded to the rend
 test('shared Inspector NPR settings apply to primitive script owners and wind-only stays on PBR', () => {
   assert.ok(html.includes('id="obj-toon-controls"'));
   assert.ok(html.includes('applySelectedToonMaterial()'));
-  assert.match(html, /o\.toonMaterialSettings=toon/);
+  assert.match(html, /setSceneToonMaterial\(o,toon\)/);
   assert.match(html, /sourceObjectToon=item\.toonMaterialSettings/);
   assert.match(html, /restored\.toonMaterialSettings=\{/);
   assert.match(runtime, /type:'toon_material',toon:o\.toonMaterialSettings/);
