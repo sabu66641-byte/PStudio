@@ -70,6 +70,28 @@ class ExampleProjectRegressionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("set_atmosphere", response.get_json()["error"])
 
+    def test_god_rays_api_accepts_legacy_and_decay_arguments(self):
+        legacy = self.validate_game_scripts({
+            "legacy_god_rays.ps": "func start()\n    set_god_rays(true, 0.7)\n"
+        })
+        modern = self.validate_game_scripts({
+            "modern_god_rays.ps": "func start()\n    set_god_rays(true, 0.7, 0.97)\n"
+        })
+        self.assertIn("legacy_god_rays.ps", legacy)
+        self.assertIn("modern_god_rays.ps", modern)
+
+    def test_god_rays_api_rejects_invalid_argument_counts(self):
+        for source in [
+            "func start()\n    set_god_rays(true)\n",
+            "func start()\n    set_god_rays(true, 0.7, 0.97, 1)\n",
+        ]:
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad_god_rays.ps": source}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("set_god_rays", response.get_json()["error"])
+
     def test_game_prepare_rejects_oversized_combined_script_payload(self):
         response = self.client.post(
             "/game/prepare",
