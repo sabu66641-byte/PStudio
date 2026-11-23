@@ -43,14 +43,15 @@ Do not send a server request every frame. Preserve the division between server-s
 
 ### Cinematic game-script APIs
 
-The four Step 4 APIs remain browser-game-runtime-only and are registered in `GAME_FUNCTIONS` for `validate_ast(..., allow_game=True)`. They do not enter the regular C++17 built-in table:
+The cinematic presentation APIs are browser-game-runtime-only and are registered in `GAME_FUNCTIONS` for `validate_ast(..., allow_game=True)`. They do not enter the regular C++17 built-in table:
 
 - `camera_shake(intensity, duration)` delegates a bounded transient impulse to `PStudio3D.cameraShake()`; the renderer applies it only while drawing and restores the authored camera transform after the frame.
 - `set_time_scale(scale)` sets the browser runtime's simulation multiplier. The scaled `dt` is shared by script callbacks, ECS, physics and render-command clocks; wall-clock browser APIs and audio playback are deliberately unaffected.
 - `draw_trail(target_id, color, width, duration)` resolves a scene object by id or name and emits a world-space trail sample. The renderer owns bounded ribbon geometry and disposes expired/evicted effects.
-- `set_god_rays(enabled, intensity)` toggles a screen-space ShaderPass before OutputPass. Missing or failed God Rays rendering falls back to the existing Bloom pass where available.
+- `set_god_rays(enabled, intensity, decay)` toggles sun-projected screen-space radial shafts before OutputPass. The optional third argument preserves the original two-argument call. If the pass fails, the renderer switches to the existing Bloom fallback.
+- `set_camera_lens(dof_enabled, focus_distance, aperture, chromatic_aberration)` configures depth-of-field and chromatic aberration through `PStudio3D.setCameraLens()`. The renderer owns the depth-aware 12-tap low-resolution DoF pass, its full-resolution composite and RGB edge shift; the API remains isolated from normal C++17 execution. DoF consumes the existing opaque-scene depth prepass and is disabled when that depth is unavailable. Lens shader errors fail open to the untouched source frame.
 
-The trail pool is capped at 64 effects × 48 samples. The screen-space God Rays shader uses 20 texture samples per output pixel; desktop/mobile GPU compile, frame-time and visual equivalence checks remain real-device quality gates. A failed optional God Rays pass must not prevent the base renderer or other post-processing from running.
+The trail pool is capped at 64 effects × 48 samples. God Rays uses up to 32 radial samples per output pixel; DoF uses 12 depth-aware taps per low-resolution pixel. Transparent, wind-deformed foliage, static foliage batches and sky geometry are excluded from the current depth prepass, so DoF edge quality for those objects is not guaranteed. Desktop/mobile GPU compile, frame-time and visual equivalence still require real-device validation. A failed optional post-processing pass must not prevent the base renderer or other effects from running.
 
 ### ps ECS declarations and runtime bridge
 
@@ -79,7 +80,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching.
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_atmosphere.js`: Rayleigh/Mie atmospheric sky sampling, sun direction and equirectangular environment generation.
-- `static/pstudio_environment_fx.js`: water, foliage, volumetric cloud/fog rendering and screen-space god rays. Fog and god-ray passes use independent downscaled render targets and full-resolution composites; quality profiles bound step/sample counts and resolution scale.
+- `static/pstudio_environment_fx.js`: water, foliage, volumetric cloud/fog rendering, God Rays and the camera-lens pass. Fog, God Rays and depth-of-field use bounded, independently scaled render targets with full-resolution composites; quality profiles bound their resolution, steps and samples.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
