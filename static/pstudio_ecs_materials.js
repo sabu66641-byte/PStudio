@@ -394,6 +394,47 @@
     ecs.setComponent(entity, TYPES.MeshCollider, { enabled: false });
     return writeSceneObject(entity, object);
   }
+  function getRenderableAsset(ownerId, objects) {
+    const component = get(ownerId, 'Renderable', objects);
+    if (component?.assetName) return String(component.assetName);
+    const object = objectFor(ownerId, objects || window.sceneObjects);
+    return String(object?.model || '');
+  }
+  function setRenderableAsset(ownerId, assetName, objects) {
+    const list = objects || window.sceneObjects;
+    const object = objectFor(ownerId, list), entity = entityFor(ownerId, list);
+    if (!object || entity === null || !ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
+    const name = String(assetName || '').trim().slice(0, 160);
+    const current = ecs.hasComponent(entity, 'Renderable') ? ecs.getComponent(entity, 'Renderable') : null;
+    if (!name) {
+      if (current) ecs.removeComponent(entity, 'Renderable');
+    } else if (current) {
+      ecs.setComponent(entity, 'Renderable', {
+        ...current, kind: 'model', assetName: name, useSceneTransform: current.useSceneTransform !== false
+      });
+    } else {
+      ecs.addComponent(entity, 'Renderable', {
+        kind: 'model', assetName: name, scale: 1, useSceneTransform: true
+      });
+    }
+    const saved = writeSceneObject(entity, object);
+    if (saved && typeof window.persistProject === 'function') window.persistProject();
+    return saved;
+  }
+  function renameRenderableAsset(oldName, newName, objects) {
+    let changed = 0;
+    for (const object of objects || window.sceneObjects || []) {
+      const entity = ecs.getEntityForSceneObject(String(object.id));
+      if (entity === null || !ecs.hasComponent(entity, 'Renderable')) continue;
+      const current = ecs.getComponent(entity, 'Renderable');
+      if (String(current.assetName) !== String(oldName)) continue;
+      if (!setRenderableAsset(object.id, newName, objects)) {
+        throw new Error('Could not persist Renderable asset rename for ' + object.id);
+      }
+      changed++;
+    }
+    return changed;
+  }
   function getRenderableScale(ownerId, objects) {
     const component = get(ownerId, 'Renderable', objects);
     if (component) return Number(component.scale) || 1;
@@ -403,21 +444,24 @@
   function setRenderableScale(ownerId, scale, objects) {
     const list = objects || window.sceneObjects;
     const object = objectFor(ownerId, list), entity = entityFor(ownerId, list);
-    if (!object || entity === null || !object.model) return false;
-    if (!ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
+    if (!object || entity === null || !ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
+    const current = ecs.hasComponent(entity, 'Renderable') ? ecs.getComponent(entity, 'Renderable') : null;
+    const assetName = String(current?.assetName || object.model || '');
+    if (!assetName) return false;
     const next = clamp(scale, 0.001, 1000, 1);
-    if (ecs.hasComponent(entity, 'Renderable')) {
-      const current = ecs.getComponent(entity, 'Renderable');
+    if (current) {
       ecs.setComponent(entity, 'Renderable', {
-        ...current, kind: 'model', assetName: current.assetName || object.model, scale: next
+        ...current, kind: 'model', assetName, scale: next
       });
     } else {
       ecs.addComponent(entity, 'Renderable', {
-        kind: 'model', assetName: object.model, scale: next, useSceneTransform: true
+        kind: 'model', assetName, scale: next, useSceneTransform: true
       });
     }
     delete object.modelScale;
-    return writeSceneObject(entity, object);
+    const saved = writeSceneObject(entity, object);
+    if (saved && typeof window.persistProject === 'function') window.persistProject();
+    return saved;
   }
   function clear() {
     for (const cache of Object.values(snapshots)) cache.clear();
@@ -440,6 +484,7 @@
     getMaterialOverrides, setMaterialOverrides,
     getShaderMaterial, setShaderMaterial, resetShaderMaterial,
     getMeshCollider, setMeshCollider,
+    getRenderableAsset, setRenderableAsset, renameRenderableAsset,
     getRenderableScale, setRenderableScale,
     clear,
     getStats: () => Object.freeze(Object.fromEntries(
