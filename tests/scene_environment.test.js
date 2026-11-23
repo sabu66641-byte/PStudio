@@ -194,29 +194,62 @@ test('procedural scene environment releases the unused room PMREM when switching
 });
 
 
-test('official Three.js physical sky is primary while procedural panorama remains a compatibility fallback',()=>{
+test('atmosphere renderer calibrates physical-sky exposure and always draws a detailed authored panorama in the editor',()=>{
   assert.ok(html.includes("three/addons/objects/Sky.js"));
   assert.ok(html.includes("window.PStudioSky = null"));
   for(const token of [
     'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000)',
     'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight',
+    'pStudioAtmosphereExposure','pStudioTwilightStrength',
     'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
     'pmremGenerator.fromScene(skyScene,0.04)','scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)',
-    'physicalSky.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible'
+    'if(physicalSky)physicalSky.visible=false'
   ])assert.ok(renderer.includes(token),token);
-  assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
-  assert.ok(renderer.includes('Procedural sky texture unavailable'));
-  assert.ok(renderer.includes('const width=canvas.width,height=canvas.height,isNight=profile.name===\'night\''));
-  assert.ok(renderer.includes('for(let i=0;i<280;i++)'));
-  assert.ok(renderer.includes('moonDirectionX'));
-  assert.ok(renderer.includes('const moonX=((moonPhi/(Math.PI*2)+0.5+1)%1)*width;'),'the panorama moon must use Three.js equirectangular longitude mapping');
-  assert.ok(renderer.includes('scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)'));
+  assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
+  assert.ok(renderer.includes('const width=2048,height=1024;'));
+  assert.ok(renderer.includes('for(let i=0;i<2100;i++)'));
+  assert.ok(renderer.includes('const moonRadius=27'));
+  assert.ok(renderer.includes('scene.background=scenePresetTexture'));
+  assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
+  assert.ok(renderer.includes('uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45))'));
 });
+
+test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
+  assert.match(renderer,/Milky Way: a broad, low-contrast galactic band/);
+  assert.match(renderer,/for\(let i=0;i<2100;i\+\+\)/);
+  assert.match(renderer,/const moonRadius=27/);
+  assert.match(renderer,/Lunar maria and crater rims/);
+  assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
+});
+
+test('day and dusk panoramas include cloud texture, aligned solar discs and distinct warm twilight treatment',()=>{
+  assert.match(renderer,/const directionUv=\(x,y,z\)=>/);
+  assert.match(renderer,/const sun=directionUv\(/);
+  assert.match(renderer,/Soft, broken cloud banks and fine cirrus/);
+  assert.match(renderer,/pStudioWarmHorizon/);
+  assert.ok(presets.getPreset('dusk').skySunY<presets.getPreset('day').skySunY);
+});
+
+test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
+  assert.match(renderer,/function gridDivisionsForDistance\(baseDivisions,distance\)/);
+  assert.match(renderer,/function updateEditorGridPresentation\(\)/);
+  assert.match(renderer,/const opacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
+  assert.match(renderer,/function disposeGrid\(grid\)/);
+  assert.match(renderer,/for\(const material of gridMaterials\(grid\)\)material\?\.dispose\?\.\(\)/);
+});
+
+test('editor orbit cannot rotate below the ground grid while gameplay camera keeps its full pitch range',()=>{
+  assert.match(renderer,/function clampEditorOrbitPitch\(value\)/);
+  assert.match(renderer,/if\(window\.PStudioEngine\?\.isRunning\?\.\(\)\)return Math\.max\(-1\.35,Math\.min\(1\.35,pitch\)\)/);
+  assert.match(renderer,/const maxDownward=Math\.max\(-1\.35,baseElevation-\.065\)/);
+  assert.match(renderer,/orbitPitch=clampEditorOrbitPitch\(orbitPitch\)/);
+});
+
 
 test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
   const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
   for(const [name,profile] of Object.entries({day,dusk,night,studio})){
-    for(const field of ['skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','atmosphereSunColor','moonDirectionX','moonDirectionY','moonDirectionZ','moonIntensity','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
+    for(const field of ['skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','skyExposure','twilightStrength','atmosphereSunColor','moonDirectionX','moonDirectionY','moonDirectionZ','moonIntensity','moonPhase','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
       assert.ok(Object.prototype.hasOwnProperty.call(profile,field),name+': '+field);
     assert.ok(Math.hypot(profile.skySunX,profile.skySunY,profile.skySunZ)>.9,name+' sun direction');
     assert.ok(profile.fogDensity>0,name+' fog density');
@@ -233,11 +266,14 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(Math.abs(night.moonDirectionY+night.lightY)<.02,'night moon and moonlight Y must align');
   assert.ok(Math.abs(night.moonDirectionZ+night.lightZ)<.02,'night moon and moonlight Z must align');
   assert.ok(day.skySunY>.8,'day sun should be high in the sky');
-  assert.ok(dusk.skySunY>0&&dusk.skySunY<.2,'dusk sun should sit close to the horizon');
+  assert.ok(dusk.skySunY>0&&dusk.skySunY<.1,'dusk sun should sit close to the horizon');
   assert.ok(night.skySunY<0,'night sun should be below the horizon');
   assert.equal(night.sunRadius,0,'night fallback must not draw a sun disc');
   assert.equal(night.sunGlow,0,'night fallback must not draw a solar halo');
   assert.ok(dusk.skyTurbidity>day.skyTurbidity,'dusk needs a richer aerosol scattering profile');
+  assert.ok(day.skyExposure<.6,'physical daylight sky must be calibrated below PStudio global exposure');
+  assert.ok(dusk.twilightStrength>.8,'dusk shader needs a deliberate warm horizon treatment');
+  assert.ok(night.moonIntensity>.9,'night moon should be clearly visible');
   assert.ok(night.fogDensity<day.fogDensity,'night haze should be subtler than daytime haze');
 });
 

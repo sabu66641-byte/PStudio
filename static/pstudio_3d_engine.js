@@ -103,6 +103,14 @@
     });
   }
 
+  function clampEditorOrbitPitch(value){
+    const pitch=Number(value)||0;
+    if(window.PStudioEngine?.isRunning?.())return Math.max(-1.35,Math.min(1.35,pitch));
+    const horizontal=Math.hypot(cameraBase[0]-cameraTarget[0],cameraBase[2]-cameraTarget[2]);
+    const baseElevation=Math.atan2(cameraBase[1]-cameraTarget[1],Math.max(1e-6,horizontal));
+    const maxDownward=Math.max(-1.35,baseElevation-.065);
+    return Math.max(-1.35,Math.min(maxDownward,pitch));
+  }
   function setupControls() {
     if (controlsReady) return;
     controlsReady = true;
@@ -171,13 +179,13 @@
       if(pointerMode==='pinch'&&activePointers.size>=2){const pts=[...activePointers.values()];const distance=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);const midpoint={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2};if(!pinchGestureMode&&pinchGestureStart){const zoomDelta=Math.abs(distance-pinchGestureStart.distance);const panDelta=Math.hypot(midpoint.x-pinchGestureStart.midpoint.x,midpoint.y-pinchGestureStart.midpoint.y);if(Math.max(zoomDelta,panDelta)>5)pinchGestureMode=zoomDelta>panDelta*1.15?'zoom':'pan';}if(pinchGestureMode==='zoom'&&pinchDistance>0){zoom=clampCameraZoom(zoom*(pinchDistance/Math.max(1,distance)));updateCameraZoomReadout();}else if(pinchGestureMode==='pan'&&pinchMidpoint)panCamera(midpoint.x-pinchMidpoint.x,midpoint.y-pinchMidpoint.y);pinchDistance=distance;pinchMidpoint=midpoint;}
       else if(pointerMode==='orbit'){
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
-        orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));pointerStart={x:e.clientX,y:e.clientY};
+        orbitYaw+=dx*0.006;orbitPitch=clampEditorOrbitPitch(orbitPitch+dy*0.006);pointerStart={x:e.clientX,y:e.clientY};
       }else if(pointerMode==='pan'){panCamera(e.clientX-pointerStart.x,e.clientY-pointerStart.y);pointerStart={x:e.clientX,y:e.clientY};}
       else if(pointerMode==='locked-object'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){
         // When model manipulation is locked, dragging over the model orbits the camera.
         pointerMode='orbit';dragInfo=null;lastObjectTap=null;
         const dx=e.clientX-pointerStart.x,dy=e.clientY-pointerStart.y;
-        orbitYaw+=dx*0.006;orbitPitch=Math.max(-1.35,Math.min(1.35,orbitPitch+dy*0.006));
+        orbitYaw+=dx*0.006;orbitPitch=clampEditorOrbitPitch(orbitPitch+dy*0.006);
         pointerStart={x:e.clientX,y:e.clientY};
       }else if(pointerMode==='object-pending'&&dragInfo&&Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)>6){pointerMode='object';}else if(pointerMode==='object'&&dragInfo){
         const rect=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);raycaster.setFromCamera(pointerNdc,camera);
@@ -518,9 +526,51 @@
     try{window.dispatchEvent(new CustomEvent('pstudio-memory-snapshot',{detail:{...snapshot,pressure,memorySafetyApplied}}));}catch(_){}
   }
 
+  function gridMaterials(grid){
+    return Array.isArray(grid?.material)?grid.material:(grid?.material?[grid.material]:[]);
+  }
+  function disposeGrid(grid){
+    grid?.geometry?.dispose?.();
+    for(const material of gridMaterials(grid))material?.dispose?.();
+  }
+  function gridDivisionsForDistance(baseDivisions,distance){
+    const base=Math.max(8,Math.floor(Number(baseDivisions)||100));
+    if(base<64)return base;
+    if(distance>700)return 16;
+    if(distance>430)return 24;
+    if(distance>250)return 40;
+    return base;
+  }
+  function updateEditorGridPresentation(){
+    if(!camera||!gridCache.size||!window.THREE)return;
+    const T=window.THREE;
+    for(const [key,entry] of gridCache){
+      let grid=entry;
+      const baseSize=Math.max(1,Number(grid.userData?.pstudioGridBaseSize)||500);
+      const baseDivisions=Math.max(8,Number(grid.userData?.pstudioGridBaseDivisions)||100);
+      const distance=camera.position.distanceTo(grid.position);
+      const divisions=gridDivisionsForDistance(baseDivisions,distance);
+      if(divisions!==(Number(grid.userData?.pstudioGridDivisions)||baseDivisions)){
+        const next=new T.GridHelper(baseSize,divisions,0x718093,0x3b4856);
+        next.position.copy(grid.position);
+        next.userData={...grid.userData,pstudioGridDivisions:divisions};
+        gridGroup.remove(grid);disposeGrid(grid);gridGroup.add(next);gridCache.set(key,next);grid=next;
+      }
+      const farScale=Math.max(1,Math.min(3,distance/240));
+      grid.scale.setScalar(farScale);
+      const opacity=distance>900?.14:distance>520?.19:distance>280?.25:distance>140?.32:.42;
+      for(const material of gridMaterials(grid)){
+        material.transparent=true;
+        material.opacity=opacity;
+        material.depthWrite=false;
+        material.toneMapped=false;
+      }
+    }
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     if(physicalSky?.visible)physicalSky.position.copy(camera.position);
+    updateEditorGridPresentation();
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
@@ -646,7 +696,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     scene.environment=nextTarget.texture;
     hdrShowBackground=options.background!==false;
     if(hdrShowBackground)scene.background=texture;
-    if(physicalSky)physicalSky.visible=!hdrShowBackground;
+    if(physicalSky)physicalSky.visible=false;
     scene.environmentIntensity=Math.max(0,Math.min(5,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
     if(previousTarget&&previousTarget!==nextTarget)previousTarget.dispose?.();
     if(previousTexture&&previousTexture!==texture)previousTexture.dispose?.();
@@ -1358,6 +1408,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if (cameraUpdateRaf) { window.cancelAnimationFrame(cameraUpdateRaf); cameraUpdateRaf = 0; }
     if (!renderer || !camera || !window.THREE) return;
     const T = window.THREE;
+    orbitPitch=clampEditorOrbitPitch(orbitPitch);
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
     const offset = new T.Vector3(cameraBase[0], cameraBase[1], cameraBase[2]).sub(target).multiplyScalar(zoom);
     offset.applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
@@ -3231,69 +3282,197 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   }
 
   function createProceduralSkyTexture(T,profile){
-    const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;
+    const canvas=document.createElement('canvas');
+    const width=2048,height=1024;
+    canvas.width=width;canvas.height=height;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
-    const width=canvas.width,height=canvas.height,isNight=profile.name==='night';
+    const name=String(profile.name||'day');
+    const palettes={
+      day:[[0,'#174879'],[.12,'#246BA8'],[.3,'#4C95C9'],[.43,'#82B8D8'],[.485,'#C4DDE6'],[.51,'#DCE5E2'],[.55,'#879998'],[.68,'#4B595A'],[1,'#313B3D']],
+      dusk:[[0,'#151B43'],[.14,'#332653'],[.29,'#71345F'],[.39,'#B74E5A'],[.465,'#ED7957'],[.495,'#FFB46D'],[.525,'#D27C65'],[.6,'#584052'],[1,'#1A2032']],
+      night:[[0,'#020611'],[.16,'#050D20'],[.32,'#09162B'],[.43,'#142641'],[.49,'#1A2D45'],[.515,'#1C2A3D'],[.57,'#0B1423'],[1,'#02050B']],
+      studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
+    };
     const gradient=context.createLinearGradient(0,0,0,height);
-    gradient.addColorStop(0,profile.skyTop);
-    gradient.addColorStop(0.34,profile.skyMid);
-    gradient.addColorStop(0.49,profile.horizon);
-    gradient.addColorStop(0.58,profile.ground);
-    gradient.addColorStop(1,profile.ground);
+    for(const [stop,color] of (palettes[name]||palettes.day))gradient.addColorStop(stop,color);
     context.fillStyle=gradient;context.fillRect(0,0,width,height);
 
-    if(isNight){
-      // A deterministic star field keeps the panorama stable between preset switches.
-      let seed=0x51f15e;
-      const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-      for(let i=0;i<280;i++){
-        const x=random()*width,y=8+random()*height*.465;
-        const horizonFade=1-Math.pow(y/(height*.5),2)*.72;
-        const radius=random()<.045?1.25:.38+random()*.62;
-        const alpha=(.24+random()*.58)*horizonFade;
-        const blue=random()>.72;
+    let seed=(name==='night'?0x73a9d1:name==='dusk'?0x36d91b:name==='studio'?0x492731:0x19c0ffee)>>>0;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const directionUv=(x,y,z)=>{
+      const length=Math.hypot(x,y,z)||1;
+      const ny=Math.max(-1,Math.min(1,y/length));
+      const u=((Math.atan2(z,x)/(Math.PI*2)+0.5)%1+1)%1;
+      return{x:u*width,y:Math.acos(ny)/Math.PI*height};
+    };
+
+    if(name==='night'){
+      // Milky Way: a broad, low-contrast galactic band with darker dust lanes.
+      context.save();
+      context.globalCompositeOperation='screen';
+      context.lineCap='round';
+      context.lineJoin='round';
+      context.beginPath();
+      context.moveTo(-120,height*.78);
+      context.bezierCurveTo(width*.28,height*.76,width*.48,height*.39,width+100,height*.17);
+      context.lineWidth=height*.22;
+      context.strokeStyle='rgba(91,119,190,0.12)';
+      context.shadowColor='rgba(105,133,215,0.28)';
+      context.shadowBlur=95;
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-80,height*.73);
+      context.bezierCurveTo(width*.24,height*.67,width*.55,height*.38,width+60,height*.22);
+      context.lineWidth=height*.075;
+      context.strokeStyle='rgba(151,168,220,0.095)';
+      context.shadowColor='rgba(141,161,225,0.22)';
+      context.shadowBlur=54;
+      context.stroke();
+      context.restore();
+
+      context.save();
+      context.globalCompositeOperation='multiply';
+      context.lineCap='round';
+      context.beginPath();
+      context.moveTo(width*.18,height*.69);
+      context.bezierCurveTo(width*.38,height*.62,width*.55,height*.35,width*.82,height*.27);
+      context.lineWidth=height*.052;
+      context.strokeStyle='rgba(2,8,24,0.22)';
+      context.stroke();
+      context.restore();
+
+      // Dense, deterministic stars with a wide dynamic range and restrained color variation.
+      for(let i=0;i<2100;i++){
+        const x=random()*width,y=10+random()*height*.485;
+        const galacticCenterY=height*(.78-.58*(x/width));
+        const band=Math.exp(-Math.pow((y-galacticCenterY)/(height*.12),2));
+        const roll=random();
+        const radius=roll>.992?1.9+random()*1.2:roll>.91?1.0+random()*.65:.34+random()*.58;
+        const alpha=Math.min(.98,(.16+random()*.54+band*.28)*(radius>1.8?1.12:1));
+        const tint=random();
+        const color=tint>.88?'196,211,255':tint>.68?'204,222,255':tint<.08?'255,224,190':'238,244,255';
+        if(radius>1.7){
+          const halo=context.createRadialGradient(x,y,0,x,y,radius*7);
+          halo.addColorStop(0,'rgba('+color+','+(alpha*.24).toFixed(3)+')');
+          halo.addColorStop(1,'rgba('+color+',0)');
+          context.fillStyle=halo;context.fillRect(x-radius*7,y-radius*7,radius*14,radius*14);
+        }
         context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
-        context.fillStyle=blue
-          ?'rgba(177,207,255,'+alpha.toFixed(3)+')'
-          :'rgba(231,239,255,'+alpha.toFixed(3)+')';
+        context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fill();
+        if(radius>2.5&&random()>.35){
+          context.strokeStyle='rgba('+color+','+(alpha*.34).toFixed(3)+')';
+          context.lineWidth=.7;
+          context.beginPath();context.moveTo(x-radius*2.4,y);context.lineTo(x+radius*2.4,y);
+          context.moveTo(x,y-radius*2.4);context.lineTo(x,y+radius*2.4);context.stroke();
+        }
       }
 
+      const moon=directionUv(
+        Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):.38,
+        Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):.88,
+        Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
+      );
       const moonIntensity=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
-      const moonVector=[
-        Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):0.38,
-        Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):0.88,
-        Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):0.27
-      ];
-      const moonLength=Math.hypot(...moonVector)||1;
-      const moonY=Math.max(-1,Math.min(1,moonVector[1]/moonLength));
-      const moonPhi=Math.atan2(moonVector[2],moonVector[0]);
-      const moonX=((moonPhi/(Math.PI*2)+0.5+1)%1)*width;
-      const moonCanvasY=Math.acos(moonY)/Math.PI*height;
-      if(moonIntensity>0){
-        const halo=context.createRadialGradient(moonX,moonCanvasY,1,moonX,moonCanvasY,30);
-        halo.addColorStop(0,'rgba(195,216,255,'+(0.2*moonIntensity)+')');
-        halo.addColorStop(.22,'rgba(139,174,232,'+(0.09*moonIntensity)+')');
-        halo.addColorStop(1,'rgba(113,151,215,0)');
-        context.fillStyle=halo;context.fillRect(moonX-30,moonCanvasY-30,60,60);
-        context.beginPath();context.arc(moonX,moonCanvasY,2.25,0,Math.PI*2);
-        context.fillStyle='rgba(231,239,255,'+(0.92*moonIntensity)+')';context.fill();
+      if(moonIntensity>.001){
+        const moonRadius=27;
+        const halo=context.createRadialGradient(moon.x,moon.y,moonRadius*.12,moon.x,moon.y,moonRadius*7.2);
+        halo.addColorStop(0,'rgba(199,219,255,'+(moonIntensity*.30)+')');
+        halo.addColorStop(.18,'rgba(158,190,245,'+(moonIntensity*.16)+')');
+        halo.addColorStop(.46,'rgba(107,147,213,'+(moonIntensity*.065)+')');
+        halo.addColorStop(1,'rgba(83,122,194,0)');
+        context.fillStyle=halo;
+        context.fillRect(moon.x-moonRadius*7.2,moon.y-moonRadius*7.2,moonRadius*14.4,moonRadius*14.4);
+
+        const phase=Math.max(.5,Math.min(1,Number(profile.moonPhase)||.84));
+        const phaseDarkness=Math.max(0,Math.min(.68,(1-phase)*1.8));
+        context.save();
+        context.beginPath();context.arc(moon.x,moon.y,moonRadius,0,Math.PI*2);context.clip();
+        const lunar=context.createRadialGradient(moon.x-moonRadius*.38,moon.y-moonRadius*.43,moonRadius*.08,moon.x,moon.y,moonRadius*1.3);
+        lunar.addColorStop(0,'#F1F3F7');lunar.addColorStop(.48,'#DCE2EC');lunar.addColorStop(.82,'#B9C5D5');lunar.addColorStop(1,'#8494AA');
+        context.fillStyle=lunar;context.fillRect(moon.x-moonRadius,moon.y-moonRadius,moonRadius*2,moonRadius*2);
+
+        // Lunar maria and crater rims give the disc visible structure instead of a white dot.
+        context.fillStyle='rgba(73,88,111,0.19)';
+        context.beginPath();context.ellipse(moon.x-moonRadius*.22,moon.y-moonRadius*.10,moonRadius*.34,moonRadius*.22,-.45,0,Math.PI*2);context.fill();
+        context.beginPath();context.ellipse(moon.x+moonRadius*.25,moon.y+moonRadius*.31,moonRadius*.23,moonRadius*.14,.35,0,Math.PI*2);context.fill();
+        for(let i=0;i<58;i++){
+          const angle=random()*Math.PI*2,distance=Math.sqrt(random())*moonRadius*.83;
+          const x=moon.x+Math.cos(angle)*distance,y=moon.y+Math.sin(angle)*distance;
+          const r=1.0+random()*3.2;
+          context.beginPath();context.ellipse(x,y,r,r*(.65+random()*.4),random()*Math.PI,0,Math.PI*2);
+          context.fillStyle='rgba(72,86,108,'+(0.08+random()*.14)+')';context.fill();
+          context.strokeStyle='rgba(249,251,255,'+(0.08+random()*.13)+')';context.lineWidth=.7;context.stroke();
+        }
+        const terminator=context.createLinearGradient(moon.x-moonRadius,moon.y,moon.x+moonRadius,moon.y);
+        terminator.addColorStop(0,'rgba(7,15,30,'+phaseDarkness.toFixed(3)+')');
+        terminator.addColorStop(.22,'rgba(7,15,30,'+(phaseDarkness*.35).toFixed(3)+')');
+        terminator.addColorStop(.58,'rgba(7,15,30,0)');
+        terminator.addColorStop(1,'rgba(7,15,30,0)');
+        context.fillStyle=terminator;context.fillRect(moon.x-moonRadius,moon.y-moonRadius,moonRadius*2,moonRadius*2);
+        context.restore();
       }
     }else{
-      const sunX=Math.max(0,Math.min(1,Number(profile.sunX)||0.5))*width;
-      const sunY=Math.max(0,Math.min(1,Number(profile.sunY)||0.3))*height;
-      const sunRadius=Math.max(0,Number(profile.sunRadius)||0);
-      const glow=Math.max(0,Math.min(1,Number(profile.sunGlow)||0));
-      if(sunRadius>0&&glow>0){
-        const halo=context.createRadialGradient(sunX,sunY,1,sunX,sunY,sunRadius*6);
-        halo.addColorStop(0,'rgba(255,246,226,'+(0.44*glow)+')');
-        halo.addColorStop(.24,'rgba(255,222,184,'+(0.18*glow)+')');
-        halo.addColorStop(1,'rgba(255,220,190,0)');
-        context.fillStyle=halo;context.fillRect(sunX-sunRadius*6,sunY-sunRadius*6,sunRadius*12,sunRadius*12);
-        context.beginPath();context.arc(sunX,sunY,sunRadius,0,Math.PI*2);
-        context.fillStyle='#FFF4D9';context.fill();
+      const sun=directionUv(
+        Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+        Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+        Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+      );
+      const dusk=name==='dusk';
+      const sunRadius=Math.max(6,Number(profile.sunRadius)||10);
+      const glowStrength=Math.max(0,Math.min(1,Number(profile.sunGlow)||.45));
+      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.44:height*.30));
+      horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.27)':'rgba(255,238,196,0.22)');
+      horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.13)':'rgba(159,210,245,0.10)');
+      horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
+      context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+
+      // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
+      context.save();
+      context.globalCompositeOperation='screen';
+      for(let i=0;i<(dusk?76:58);i++){
+        const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
+        const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
+        context.save();context.translate(x,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
+        const cloud=context.createRadialGradient(0,0,2,0,0,rx);
+        if(dusk){
+          cloud.addColorStop(0,'rgba(255,178,148,0.16)');
+          cloud.addColorStop(.46,'rgba(225,130,134,0.09)');
+          cloud.addColorStop(1,'rgba(190,117,163,0)');
+        }else{
+          cloud.addColorStop(0,'rgba(246,252,255,0.15)');
+          cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
+          cloud.addColorStop(1,'rgba(210,232,247,0)');
+        }
+        context.fillStyle=cloud;context.beginPath();context.arc(0,0,rx,0,Math.PI*2);context.fill();
+        context.restore();
       }
+      context.lineCap='round';context.lineJoin='round';
+      for(let i=0;i<(dusk?62:84);i++){
+        const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
+        context.beginPath();context.moveTo(x,y);
+        context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
+        context.lineWidth=1+random()*(dusk?7:5);
+        context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
+        context.globalAlpha=.12+random()*.22;
+        context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
+        context.shadowBlur=7+random()*18;
+        context.stroke();
+      }
+      context.restore();
+
+      const glowRadius=sunRadius*(dusk?22:15);
+      const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
+      halo.addColorStop(0,dusk?'rgba(255,240,203,'+(0.56*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+      halo.addColorStop(.12,dusk?'rgba(255,178,121,'+(0.34*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.13*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+      halo.addColorStop(1,'rgba(255,255,255,0)');
+      context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      context.beginPath();context.arc(sun.x,sun.y,sunRadius,0,Math.PI*2);
+      context.fillStyle=dusk?'#FFF0D5':'#FFFCEB';context.fill();
+      context.beginPath();context.arc(sun.x,sun.y,sunRadius*.72,0,Math.PI*2);
+      context.strokeStyle=dusk?'rgba(255,220,173,0.78)':'rgba(255,255,255,0.72)';context.lineWidth=1.2;context.stroke();
     }
 
     const texture=new T.CanvasTexture(canvas);
@@ -3302,35 +3481,42 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.generateMipmaps=true;
     texture.minFilter=T.LinearMipmapLinearFilter;
     texture.magFilter=T.LinearFilter;
-    texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
+    texture.userData=texture.userData||{};
+    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?2100:0,proceduralCloudLayers:name==='day'||name==='dusk'};
     return texture;
   }
-  function enhancePhysicalSkyShader(sky,Three){
+  function enhancePhysicalSkyShader  function enhancePhysicalSkyShader(sky,Three){
     const material=sky?.material;
     if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
     const marker='gl_FragColor = vec4( retColor, 1.0 );';
+    const uniformMarker='uniform vec3 up;';
     const source=String(material.fragmentShader||'');
-    if(!source.includes(marker)){
+    if(!source.includes(marker)||!source.includes(uniformMarker)){
       console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
       return false;
     }
+    material.uniforms.pStudioAtmosphereExposure={value:.45};
+    material.uniforms.pStudioTwilightStrength={value:0};
     const enhancement=[
-      'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
-      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
+      'retColor*=pStudioAtmosphereExposure;',
+      'float pStudioHorizonBand=exp(-abs(direction.y)*10.0);',
+      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y))*pStudioTwilightStrength;',
       'float pStudioSunAlignment=max(dot(direction,vSunDirection),0.0);',
-      'float pStudioSolarHalo=pow(pStudioSunAlignment,34.0);',
-      'vec3 pStudioWarmHorizon=vec3(1.0,0.34,0.19);',
-      'retColor=mix(retColor,max(retColor,pStudioWarmHorizon),pStudioHorizonBand*pStudioTwilight*0.28);',
-      'retColor+=vec3(1.0,0.48,0.24)*pStudioSolarHalo*pStudioTwilight*0.16;',
-      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;'
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,18.0);',
+      'vec3 pStudioWarmHorizon=mix(vec3(0.96,0.22,0.12),vec3(1.0,0.53,0.24),smoothstep(-0.12,0.34,direction.y));',
+      'retColor=mix(retColor,pStudioWarmHorizon,pStudioHorizonBand*pStudioTwilight*0.42);',
+      'retColor+=vec3(1.0,0.34,0.16)*pStudioSolarHalo*pStudioTwilight*0.13;',
+      'retColor+=vec3(0.36,0.53,0.82)*pow(pStudioSunAlignment,24.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.018;'
     ].join('\n');
-    material.fragmentShader=source.replace(marker,enhancement+'\n'+marker);
+    const shaderWithUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform float pStudioAtmosphereExposure;\nuniform float pStudioTwilightStrength;');
+    material.fragmentShader=shaderWithUniforms.replace(marker,enhancement+'\n'+marker);
     material.needsUpdate=true;
     material.userData.pstudioAtmosphereEnhanced=true;
     return true;
   }
-  function updatePhysicalSkyPreset(T,profile){
+  function updatePhysicalSkyPreset  function updatePhysicalSkyPreset(T,profile){
     if(!window.PStudioSky||!scene)return false;
     try{
       if(!physicalSky){
@@ -3355,18 +3541,19 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       );
       if(sunDirection.lengthSq()<1e-8)sunDirection.set(0,1,0);
       sunDirection.normalize();
-      // Sky.js needs this scale for its elevation-dependent solar fade.
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
+      if(uniforms.pStudioAtmosphereExposure)uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45));
+      if(uniforms.pStudioTwilightStrength)uniforms.pStudioTwilightStrength.value=Math.max(0,Math.min(1,Number(profile.twilightStrength)||0));
       physicalSky.visible=true;
       if(camera)physicalSky.position.copy(camera.position);
       return true;
     }catch(error){
-      console.warn('[PStudio] Physical sky setup failed; the procedural panorama fallback will be used.',error);
+      console.warn('[PStudio] Physical sky setup failed; the procedural panorama environment will be used.',error);
       physicalSky?.parent?.remove?.(physicalSky);physicalSky=null;
       return false;
     }
   }
-  function createPhysicalSkyEnvironmentTarget(T){
+  function createPhysicalSkyEnvironmentTarget  function createPhysicalSkyEnvironmentTarget(T){
     if(!physicalSky||!pmremGenerator)return null;
     const probe=physicalSky.clone();
     probe.visible=true;probe.position.set(0,0,0);
@@ -3382,39 +3569,34 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
       lightIntensity:2.35,lightX:-0.35,lightY:-0.89,lightZ:-0.28,
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
-      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0.38,moonDirectionY:0.88,moonDirectionZ:0.27,moonIntensity:0.78,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0.38,moonDirectionY:0.88,moonDirectionZ:0.27,moonIntensity:0.78,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,skyExposure:0.45,twilightStrength:0,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
     if(changed){
       let nextTexture=null,nextTarget=null;
-      // Sky.js models daylight/twilight scattering, not a convincing sun-below-horizon night.
+      try{nextTexture=createProceduralSkyTexture(T,profile);}
+      catch(error){console.warn('[PStudio] Procedural atmosphere texture creation failed; a solid horizon fallback will be used.',error);}
+      // The physical Sky shader is retained for high-dynamic-range environment lighting,
+      // but the editor background always uses the authored panorama to avoid exposure blowout.
       const physicalSkyReady=profile.name!=='night'&&updatePhysicalSkyPreset(T,profile);
       if(physicalSkyReady&&pmremGenerator){
         try{nextTarget=createPhysicalSkyEnvironmentTarget(T);}
-        catch(error){console.warn('[PStudio] Physical sky PMREM generation failed; switching to the procedural panorama.',error);}
+        catch(error){console.warn('[PStudio] Physical sky PMREM generation failed; using the matching procedural environment.',error);}
       }
       scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget);
-      if(!scenePresetUsesPhysicalSky){
-        try{nextTexture=createProceduralSkyTexture(T,profile);}
-        catch(error){console.warn('[PStudio] Procedural sky texture unavailable; using a color background while retaining scene lighting.',error);}
-        if(nextTexture&&pmremGenerator){
-          try{nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
-          catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
-        }
+      if(!nextTarget&&nextTexture&&pmremGenerator){
+        try{nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
+        catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
       }
       scenePresetTarget?.dispose?.();
       scenePresetTexture?.dispose?.();
       scenePresetTexture=nextTexture;scenePresetTarget=nextTarget;scenePresetSignature=signature;
     }
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    if(physicalSky){
-      physicalSky.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible;
-      if(physicalSky.visible&&camera)physicalSky.position.copy(camera.position);
-    }
+    if(physicalSky)physicalSky.visible=false;
     if(!hdrBackgroundVisible){
-      if(scenePresetUsesPhysicalSky&&physicalSky?.visible)scene.background=null;
-      else if(scenePresetTexture)scene.background=scenePresetTexture;
+      if(scenePresetTexture)scene.background=scenePresetTexture;
       else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0');
     }
     if(!hasCustomEnvironment){
@@ -3876,15 +4058,22 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         }
         if (d.type==='grid') {
           let grid=gridCache.get(key);
-          const signature=String(d.size)+':'+String(d.divisions);
+          const baseSize=Math.max(1,Number(d.size)||500),baseDivisions=Math.max(8,Number(d.divisions)||100);
+          const signature=String(baseSize)+':'+String(baseDivisions);
+          const gridPosition=new T.Vector3(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+          const distance=camera?camera.position.distanceTo(gridPosition):0;
+          const divisions=gridDivisionsForDistance(baseDivisions,distance);
           if(!grid||grid.userData.signature!==signature){
-            if(grid){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
-            grid=new T.GridHelper(d.size,d.divisions,0x7b8797,0x394352);
+            if(grid){gridGroup.remove(grid);disposeGrid(grid);}
+            grid=new T.GridHelper(baseSize,divisions,0x718093,0x3b4856);
             grid.userData.signature=signature;
+            grid.userData.pstudioGridBaseSize=baseSize;
+            grid.userData.pstudioGridBaseDivisions=baseDivisions;
+            grid.userData.pstudioGridDivisions=divisions;
             gridCache.set(key,grid);
             gridGroup.add(grid);
           }
-          grid.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
+          grid.position.copy(gridPosition);
           usedGrids.add(key);
           continue;
         }
@@ -3949,7 +4138,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const [key,effect] of particleBursts){if(particleClock>=effect.expiresAt){disposeGpuParticleSystem(effect.system);particleBursts.delete(key);}}
     updateGpuParticleSystems();
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':'))){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
-    for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();gridCache.delete(key);}}
+    for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);disposeGrid(grid);gridCache.delete(key);}}
     for(const [key,instance] of modelInstances){if(!usedModels.has(key)&&!preservedOwners.has(instance.ownerId))removeModelInstance(key);else if(preservedOwners.has(instance.ownerId))instance.root.visible=false;}
     applySceneEnvironmentPreset(T,environment?.preset||'day',!!(environment?.environmentSky&&environment?.environmentGround));
     if(environment){
