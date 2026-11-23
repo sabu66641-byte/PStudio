@@ -23,6 +23,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execut
 - `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
 - `static/pstudio_modules.js` — dependency-aware module registry.
 - `static/pstudio_ecs.js` — entity-component-system storage and scheduler.
+- `static/pstudio_ecs_rendering.js` — Camera, Light, Renderable and Animation Components bridged to the existing renderer.
+- `static/pstudio_ecs_streaming.js` — persistent WorldPartition and StreamingInterest Components bridged to PStudio3D chunk management.
 - `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
 - `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
@@ -541,6 +543,9 @@ Large-world controls:
 - `PStudio3D.registerWorldChunk(id, { x, y, z, loadDistance, unloadDistance })` defines a render/asset activation region with hysteresis.
 - `PStudio3D.assignObjectToChunk(ownerId, id)` associates a Scene Object with a chunk. Inactive chunks stop issuing render commands while cached geometry/model instances are retained.
 - `PStudio3D.unregisterWorldChunk(id)` removes a chunk and owner assignments.
+- `PStudio3D.setWorldStreamingInterests([{ id, x, y, z, priority, loadMultiplier, unloadMultiplier }])` supplies multiple player/camera interest points. Active chunks remain resident while any interest stays within its unload radius.
+- `PStudio3D.setWorldRenderConfig({ maxConcurrentChunkLoads })` bounds concurrent chunk asset loads (1–32; default 4).
+- Scene authoring can use persistent `WorldPartition` Components for region membership and `StreamingInterest` Components for moving/static interest points; the ECS bridge synchronizes them before Physics and rendering. The renderer remains responsible for async asset loading and GPU resource lifetime.
 - Three.js frustum culling remains enabled for ordinary meshes and model submeshes. Instanced batches compact visible instances and refresh selection mappings.
 
 Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This describes the earlier single-camera baseline; the later Rendering Engine 1.7 section documents the optional three-cascade CSM path and single-camera fallback. Chunk streaming was subsequently extended in Rendering Engine 1.8 to suspend owner scripts, physics, ECS iteration and owner audio while preserving runtime state.

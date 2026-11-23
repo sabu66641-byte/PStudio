@@ -41,7 +41,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Model/GLB resources | PStudio3D + AssetStore + Resources | ECS stores asset references and presentation config only | Service boundary; not a wholesale ECS rewrite |
 | Environment / post FX | PStudio3D + EnvironmentFX | Environment/Water/Fog/Light configuration Components consumed by renderer | Pending |
 | Particles/trails | renderer-owned transient GPU systems | Emitter/Trail configuration Components; renderer owns GPU buffers | Pending |
-| World chunks/streaming | PStudio3D chunk manager | WorldPartition/StreamingInterest Components and Systems; renderer retains GPU cache ownership | Pending |
+| World chunks/streaming | PStudio3D chunk manager | Persistent WorldPartition and StreamingInterest Components snapshot region membership and multiple prioritized interest points; PStudio3D retains async asset jobs, chunk activation, GPU leases and rendering | Phase 10 implemented; generation-safe reconfiguration, multi-interest hysteresis and bounded load concurrency |
 | HUD/game UI | PStudioUI DOM renderer + Gameplay UI state | UI state/events may be ECS data; DOM stays in UI service | Pending boundary |
 | Events | PStudioEvents | Remains shared event infrastructure, with ECS adapters | Keep service |
 | Jobs | PStudioJobs cooperative queue | Jobs remain async infrastructure; ECS stores task state only where gameplay needs it | Keep service |
@@ -61,8 +61,9 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 7. **Collision Events** — preserve 2D/3D detection and Physics solver ownership; publish pair enter/stay/exit transitions as short-lived ECS CollisionEvent Entities and PStudioEvents notifications. (Phase 7 implemented.)
 8. **Audio** — store per-entity AudioEmitter settings and queue AudioCommand requests through postUpdate; keep HTMLAudio instances, chunk pause/resume and resource cleanup in the Audio service. (Phase 8 implemented.)
 9. **Rendering-facing Components** — expose Camera, Light, Renderable and Animation configuration as persistent Components; ECS Systems translate snapshots to existing renderer commands before Physics, while PStudio3D retains Three.js/GPU ownership. (Phase 9 implemented for camera, light, model/primitive and animation commands; particles/water/environment remain pending.)
-10. **World streaming and module lifecycle** — connect world-partition interest and module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS.
-11. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
+10. **World streaming** — connect WorldPartition membership and multiple StreamingInterest points to the renderer's chunk manager. ECS owns serializable partition/interest configuration; PStudio3D retains async loading, activation, GPU resource leases and disposal. (Phase 10 implemented.)
+11. **Module lifecycle** — connect dependency-aware module activation to ECS System lifecycle without moving resource disposal or async job execution into ECS. (Pending.)
+12. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
 
 ## Required gates for every slice
 

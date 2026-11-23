@@ -223,3 +223,13 @@ For future modifications:
 The asset UI stores GLB and bundled JSON glTF data in IndexedDB under the original asset name. GLB is decoded by `static/pstudio_gltf_worker.js`; JSON glTF is loaded by the renderer-compatible Three.js GLTFLoader using a Blob URL because the worker parser intentionally validates the GLB 2.0 binary header. The renderer then reconstructs/instances the scene, prepares textures, and renders it.
 
 Worker hydration failures can use the main-thread GLTFLoader fallback when the input is not structurally invalid and the failure does not indicate memory exhaustion. Model errors are surfaced as `pstudio-model-error` events, with retry/status APIs owned by `PStudio3D`. The editor's “added to scene” message confirms scene registration only; it does not claim that asynchronous model loading or GPU preparation has completed.
+
+
+## ECS World Streaming Bridge
+
+- `WorldPartition` is a persistent Scene Object Component describing a region center, load/unload radii, explicit member Scene Object IDs and model assets to preload.
+- `StreamingInterest` is a persistent Component for a moving or fixed world position. Multiple interests are supported, with per-interest priority and independent load/unload multipliers.
+- ECS snapshot Systems run in `postUpdate`; `PStudioECSStreaming.sync()` updates region registration, member assignments and the interest list before Physics and rendering consume owner activation state.
+- `PStudio3D` remains the owner of asynchronous model requests, generation tokens, chunk activation/suspension, GPU resource leases, cache eviction and mesh/model disposal. ECS never owns promises or renderer resources.
+- Chunk re-registration updates a stable record rather than replacing it. Asset-set changes invalidate the prior generation, preserve assets shared with the replacement configuration and ignore stale async completions. Load scheduling combines multiple interest points and respects a bounded concurrent-load budget.
+- Stop clears ECS streaming registrations and interest points before renderer teardown. Persistent Component data remains stored on Scene Objects and is restored on the next Play.

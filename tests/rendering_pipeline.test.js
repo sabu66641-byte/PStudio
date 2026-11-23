@@ -323,6 +323,32 @@ test('streaming chunks are constructed from top-level world children for this GL
 });
 
 
+test('world chunk registry preserves in-flight state and invalidates asset changes safely',()=>{
+  const start=renderer.indexOf('function registerWorldChunk');
+  const end=renderer.indexOf('function assignObjectToChunk',start);
+  assert.ok(start>=0&&end>start);
+  const block=renderer.slice(start,end);
+  assert.ok(block.includes('const chunk=old||'));
+  assert.ok(block.includes('assetsChanged&&(old.active||old.loading)'));
+  assert.ok(block.includes('const retainedAssets=new Set(old.assets.filter(name=>assets.includes(name)))'));
+  assert.ok(block.includes('endWorldChunkLoad(old,retainedAssets)'));
+  assert.ok(block.includes('worldChunks.set(key,chunk)'));
+  assert.ok(block.includes('loading:chunk.loading'));
+  assert.ok(renderer.includes('const requestedAssets=chunk.assets.slice()'));
+  assert.ok(renderer.includes('if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}'));
+  assert.ok(renderer.includes('const retained=(chunk.active||chunk.loading)?new Set(chunk.assets||[]):new Set()'));
+  assert.ok(renderer.includes('const stale=(requestedAssets||[]).filter(name=>!retained.has(name))'));
+  assert.ok(renderer.includes('releaseChunkAssetCache(chunk,requestedAssets)'));
+});
+test('world chunk streaming supports multiple interest positions and bounded prioritized loading',()=>{
+  for(const token of [
+    'setWorldStreamingInterests','clearWorldStreamingInterests',
+    'worldStreamingInterests=[]','const interests=worldStreamingInterests',
+    'Math.hypot(dx,dy,dz)','maxConcurrentChunkLoads',
+    'loadCandidates.sort((a,b)=>b.priority-a.priority',
+    'for(let index=0;index<Math.min(budget,loadCandidates.length);index++)'
+  ])assert.ok(renderer.includes(token),token);
+});
 test('triplanar projection honors scale and normal blend values authored in GLB material extras',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   assert.ok(fx.includes('material.userData?.pstudioTriplanarScale'));
