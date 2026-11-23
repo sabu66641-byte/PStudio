@@ -766,3 +766,38 @@ test('gameplay state uses versioned Scene Object ECS persistence and leaves Ques
   assert.doesNotThrow(() => new Function(wrapper));
   assert.doesNotThrow(() => new Function(input));
 });
+
+test('render authoring configuration is ECS-owned and Inspector writes Components rather than legacy Scene Object fields', () => {
+  const materials = fs.readFileSync(path.join(root, 'static/pstudio_ecs_materials.js'), 'utf8');
+  const rendering = fs.readFileSync(path.join(root, 'static/pstudio_ecs_rendering.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  const visual = html.indexOf('pstudio_ecs_visualfx.js');
+  const authoring = html.indexOf('pstudio_ecs_materials.js');
+  const inspector = html.indexOf('pstudio_ecs_inspector.js');
+  assert.ok(visual >= 0 && authoring > visual && inspector > authoring);
+  for (const type of ['ToonMaterial', 'MaterialOverrides', 'ShaderMaterial', 'MeshCollider']) {
+    assert.ok(materials.includes(type), type);
+    assert.ok(app.includes('"' + type + '"'), type + ' must be reserved');
+  }
+  assert.ok(engine.includes('window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || [])'));
+  assert.ok(engine.includes("ecs?.hasComponent?.(entity,'MeshCollider')"));
+  assert.ok(engine.includes('window.syncEcsSceneMaterials?.()'));
+  const uiStart = html.indexOf('function selectSceneObject');
+  const uiEnd = html.indexOf('function serializeScene', uiStart);
+  const inspectorRegion = html.slice(uiStart, uiEnd);
+  for (const legacy of [
+    'o.toonMaterialSettings', 'o.modelMaterialOverrides', 'o.postProcessing',
+    'o.particleEmitter', 'o.shaderFragment', 'o.modelScale'
+  ]) assert.equal(inspectorRegion.includes(legacy), false, legacy);
+  assert.ok(inspectorRegion.includes('setSceneToonMaterial'));
+  assert.ok(inspectorRegion.includes('setSceneMaterialOverrides'));
+  assert.ok(inspectorRegion.includes('setScenePostFX'));
+  assert.ok(inspectorRegion.includes('setSceneParticleEmitter'));
+  assert.ok(inspectorRegion.includes('setSceneShaderFragment'));
+  assert.ok(inspectorRegion.includes('setSceneMeshCollider'));
+  assert.doesNotThrow(() => new Function(materials));
+  assert.doesNotThrow(() => new Function(rendering));
+  assert.doesNotThrow(() => new Function(engine));
+});

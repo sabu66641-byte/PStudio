@@ -291,3 +291,12 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - Legacy v0 array and type-keyed Component payloads are retained for the ECS core's migration path.
 - Current supported Component payloads are copied with bounded per-object size/count limits.
 - Newer future schema payloads are treated as opaque JSON and preserved without normalization or downgrade; older runtime restoration will skip them.
+
+
+## ECS Rendering Authoring Configuration
+
+- `ToonMaterial`, `MaterialOverrides`, `ShaderMaterial` and `MeshCollider` are persistent Inspector-facing Scene Object Components.
+- Existing legacy Scene Object fields (`toonMaterialSettings`, `modelMaterialOverrides`, `shaderFragment`, `modelScale`, `collider`, `postProcessing`, `particleEmitter`) are migrated once into the same versioned `ecsComponents` payload and removed from the active Scene Object model.
+- Inspector reads and writes ECS Components. The engine converts them to the existing `toon_material`, `model_material`, `material`, PostFX, particle-emitter and mesh-collider command paths.
+- Three.js materials, shader programs/uniform buffers, GLB material instances, model triangle caches and Physics solver collision structures remain owned by PStudio3D/PStudioPhysics; ECS stores only JSON-safe authoring configuration and references.
+- If a Scene Object has an unsupported future Component schema, migration and Inspector writes are blocked without mutating the saved data.
