@@ -436,6 +436,16 @@ function callBuiltin(c, name, a) {
         c.draw.push({type:'camera_fx'});
         return result;
       } break;
+      case 'set_camera_lens': if(a.length===4){
+        if(runtime)runtime.requires3D=true;
+        const dofEnabled=truthy(a[0]);
+        const focusDistance=Math.max(.1,Math.min(100000,finite(a[1])));
+        const aperture=Math.max(1.2,Math.min(22,finite(a[2])));
+        const chromaticAberration=Math.max(0,Math.min(1,finite(a[3])));
+        const result=window.PStudio3D?.setCameraLens?.(dofEnabled,focusDistance,aperture,chromaticAberration)??null;
+        c.draw.push({type:'camera_fx'});
+        return result;
+      } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
