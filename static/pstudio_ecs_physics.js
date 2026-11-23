@@ -12,6 +12,7 @@
   }
 
   const bodyOwners = new Map();
+  const bodyConfigPositions = new Map();
   const hasType = type => ecs.hasComponentType(type);
 
   if (!hasType('Velocity')) {
@@ -108,6 +109,7 @@
         const ownerId = bodyOwners.get(entity);
         if (ownerId !== undefined) window.PStudioPhysics?.removeBody?.(ownerId);
         bodyOwners.delete(entity);
+        bodyConfigPositions.delete(entity);
         if (api.hasComponent(entity, 'PhysicsState')) api.removeComponent(entity, 'PhysicsState');
         if (api.hasComponent(entity, 'PhysicsTransform')) api.removeComponent(entity, 'PhysicsTransform');
       }
@@ -157,11 +159,30 @@
             if (state) state.active = false;
             return;
           }
+          const existingBody = physics.getBody(ownerId);
           physics.createBody(
             ownerId,
             config.positionX, config.positionY, config.positionZ,
             config.radius, config.height, config.mass
           );
+          const configuredPosition = {
+            x: Number(config.positionX),
+            y: Number(config.positionY),
+            z: Number(config.positionZ)
+          };
+          const previousPosition = bodyConfigPositions.get(entity);
+          if (existingBody && previousPosition) {
+            // Do not overwrite the Solver's simulated motion every frame.
+            // Only explicit ECS config edits teleport the body.
+            for (const [axis, index] of [['x', 0], ['y', 1], ['z', 2]]) {
+              if (!Object.is(previousPosition[axis], configuredPosition[axis])) {
+                physics.setPosition(ownerId, index, configuredPosition[axis]);
+              }
+            }
+          }
+          // For an existing legacy body with no ECS position snapshot, preserve its
+          // current Solver position and begin tracking edits from the current config.
+          bodyConfigPositions.set(entity, configuredPosition);
           physics.setActive(ownerId, true);
           physics.setGravity(ownerId, config.gravityX, config.gravityY, config.gravityZ);
           physics.setController(ownerId, config.controllerEnabled ? {

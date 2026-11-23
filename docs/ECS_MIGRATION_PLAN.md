@@ -22,9 +22,9 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Domain | Current ownership | ECS direction | Status |
 |---|---|---|---|
 | Scene entity identity | Scene Objects + ECS mirror | ECS Entity with SceneObjectRef bridge | Existing bridge |
-| Transform | Scene Object fields + ECS Transform | ECS Transform with explicit editor/world coordinate adapters | Partial; two-way editor bridge remains |
-| Physics body | PStudioPhysics | PhysicsBody config + PhysicsState/PhysicsTransform Components; solver remains authoritative | Partial bridge |
-| Velocity | Gameplay/runtime code | Velocity Component + integration System | Initial System exists |
+| Transform | Scene Object fields + ECS Transform | ECS Transform is the runtime component; the Scene Object bridge performs deterministic two-way editor/project synchronization and transform application | Runtime ownership migrated; editor/project adapter intentionally remains |
+| Physics body | PStudioPhysics | PhysicsBody configuration and PhysicsState/PhysicsTransform snapshots are ECS Components; the fixed-step PStudioPhysics solver remains the physics service | ECS state/configuration migrated; solver adapter intentionally remains |
+| Velocity | Gameplay/runtime code | Velocity Component + integration System; PhysicsBody entities are excluded from the Transform integrator | Implemented; solver-driven bodies use PStudioPhysics |
 | Health | PStudioGameplay stats Map | Health Component | Phase 3 implemented |
 | Inventory | PStudioGameplay inventories Map | Inventory Component with item-count object and Stop/Play snapshot | Phase 4 implemented |
 | Equipment | PStudioGameplay equipment Map | Equipment Component with slot-to-item data | Phase 4 implemented |

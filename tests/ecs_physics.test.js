@@ -142,3 +142,59 @@ test('ECS Inspector exposes postUpdate as a System phase', () => {
   const inspector = read('static/pstudio_ecs_inspector.js');
   assert.match(inspector, /\['update', 'prePhysics', 'postUpdate', 'postPhysics'\]/);
 });
+
+test('PhysicsBody position edits apply once without resetting solver movement every frame', () => {
+  const { ecs, physics } = createRuntimeModules();
+  ecs.syncSceneObjects([{ id: 'mover', name: 'Mover', x: 0, y: 0, z: 0 }]);
+  const entity = ecs.getEntityForSceneObject('mover');
+  ecs.addComponent(entity, 'PhysicsBody', {
+    positionX: 2, positionY: 4, positionZ: -3
+  });
+
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.deepEqual(
+    [physics.getPosition('mover').x, physics.getPosition('mover').y, physics.getPosition('mover').z],
+    [2, 4, -3]
+  );
+
+  physics.setPosition('mover', 0, 9);
+  physics.setPosition('mover', 1, 8);
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.deepEqual(
+    [physics.getPosition('mover').x, physics.getPosition('mover').y, physics.getPosition('mover').z],
+    [9, 8, -3]
+  );
+
+  const config = ecs.getComponent(entity, 'PhysicsBody');
+  ecs.setComponent(entity, 'PhysicsBody', { ...config, positionX: 12 });
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.deepEqual(
+    [physics.getPosition('mover').x, physics.getPosition('mover').y, physics.getPosition('mover').z],
+    [12, 8, -3]
+  );
+
+  physics.setPosition('mover', 0, 14);
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.equal(physics.getPosition('mover').x, 14);
+
+  const nextConfig = ecs.getComponent(entity, 'PhysicsBody');
+  ecs.setComponent(entity, 'PhysicsBody', { ...nextConfig, positionY: 7 });
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.deepEqual(
+    [physics.getPosition('mover').x, physics.getPosition('mover').y, physics.getPosition('mover').z],
+    [14, 7, -3]
+  );
+});
+
+test('adding PhysicsBody to an existing legacy Physics body preserves its current Solver position', () => {
+  const { ecs, physics } = createRuntimeModules();
+  physics.createBody('legacy-owner', 6, 5, 4, 0.35, 1.8, 1);
+  ecs.syncSceneObjects([{ id: 'legacy-owner', name: 'Legacy Owner', x: 0, y: 0, z: 0 }]);
+  const entity = ecs.getEntityForSceneObject('legacy-owner');
+  ecs.addComponent(entity, 'PhysicsBody', {});
+  ecs.updatePhase('prePhysics', 1 / 60);
+  assert.deepEqual(
+    [physics.getPosition('legacy-owner').x, physics.getPosition('legacy-owner').y, physics.getPosition('legacy-owner').z],
+    [6, 5, 4]
+  );
+});
