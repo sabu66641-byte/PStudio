@@ -118,7 +118,7 @@ test('camera collision skips recursive high-complexity model trees',()=>{
 });
 test('selected GLB models remain visible while being edited', () => {
   assert.match(renderer, /String\(c\.owner\)===String\(selectedOwnerId\)/);
-  assert.match(renderer, /instance\\.root\\.visible=!instance\\.preparing&&active&&instance\\.root\\.userData\\.pstudioRenderableVisible!==false&&(isSelected\\|\\|instance\\.occlusionEligible===false\\|\\|!instance\\.root\\.userData\\.pstudioOccluded)/);
+  assert.match(renderer, /instance\.root\.visible=!instance\.preparing&&active&&instance\.root\.userData\.pstudioRenderableVisible!==false&&(isSelected\|\|instance\.occlusionEligible===false\|\|!instance\.root\.userData\.pstudioOccluded)/);
 });
 
 test('native GLTF material shaders remain untouched unless a probe volume is baked', () => {
