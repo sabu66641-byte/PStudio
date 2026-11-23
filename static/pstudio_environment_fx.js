@@ -845,7 +845,7 @@
         'color+=vec3(grain*uFilmGrain*.035);',
         'gl_FragColor=vec4(max(color,vec3(0.0)),source.a);',
         '}'
-      ].join('\\n')
+      ].join('\n')
     };
     const pass=new FX.ShaderPass(shader);
     const originalRender=pass.render.bind(pass);
