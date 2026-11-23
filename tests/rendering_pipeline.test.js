@@ -248,7 +248,7 @@ test('world-space triplanar PBR projects albedo, normal, roughness and metalness
 });
 test('volumetric cloud pass raymarches a procedural cloud field and atmospheric horizon',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
-  for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','STEPS','cloudAlpha','uSunDirection'])assert.ok(fx.includes(token),token);
+  for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
   for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
@@ -645,6 +645,10 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
     set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
     normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}
   }
+  class Vector2{
+    constructor(x=0,y=0){this.set(x,y);}
+    set(x,y){this.x=x;this.y=y;return this;}
+  }
   class Matrix4{}
   class Color{
     constructor(value){this.value=value;}
@@ -653,7 +657,7 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   class ShaderPass{
     constructor(shader){this.uniforms=shader.uniforms;this.shader=shader;this.render=()=>{};this.userData={};}
   }
-  const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector3,Color});
+  const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
   assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:36,lightSteps:2});
