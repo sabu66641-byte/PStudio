@@ -357,8 +357,7 @@
       type: 'postfx',
       bloom: entry.data.bloom === true,
       ssao: entry.data.ssao === true,
-      strength: clamp(entry.data.strength, 0, 2, 0.7),
-      ecsEntity: entity
+      strength: clamp(entry.data.strength, 0, 2, 0.7)
     });
     return 1;
   }

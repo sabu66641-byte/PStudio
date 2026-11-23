@@ -333,7 +333,12 @@ test('streaming bridge and engine lifecycle remain integrated without moving ren
   const app = read('app.py');
   assert.ok(engine.includes('window.PStudioECSStreaming?.sync?.(sceneObjects || [])'));
   assert.ok(engine.includes('window.PStudioECSStreaming?.clear?.()'));
-  assert.ok(engine.includes("['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest']"));
+  for (const type of ['Camera', 'Light', 'Renderable', 'Animation', 'WorldPartition', 'StreamingInterest', 'Environment', 'Fog', 'Water', 'PostFX', 'ParticleEmitter', 'Trail']) {
+    assert.ok(engine.includes("'" + type + "'"), type + ' must trigger 3D renderer initialization');
+  }
+  assert.ok(engine.includes('window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt)'));
+  assert.ok(engine.includes('window.PStudioECSVisualFX?.clear?.()'));
+
   assert.ok(html.indexOf('pstudio_ecs_rendering.js') < html.indexOf('pstudio_ecs_streaming.js'));
   assert.ok(html.indexOf('pstudio_ecs_streaming.js') < html.indexOf('pstudio_ecs_inspector.js'));
   for (const token of [
