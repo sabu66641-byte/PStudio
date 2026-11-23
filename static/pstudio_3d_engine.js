@@ -232,7 +232,7 @@
     const qualityLevel=Math.max(0,Math.min(2,Math.floor(Number(level)||0)));
     const safe=qualityLevel>0&&!memorySafetyApplied&&deviceMemoryGiB()>2;
     const scaleFactor=qualityLevel===1?.68:1;
-    const fogRequested=volumetricFogManualOverride===null?profile.fog:volumetricFogManualOverride;
+    const fogRequested=!!(profile.fog&&(volumetricFogManualOverride===null||volumetricFogManualOverride));
     volumetricFogEnabled=!!(safe&&fogRequested&&volumetricFogPass);
     if(volumetricFogPass){
       volumetricFogPass.enabled=volumetricFogEnabled;
