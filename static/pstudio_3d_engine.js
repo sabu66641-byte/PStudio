@@ -526,9 +526,9 @@
       const current=renderer?.getPixelRatio?.()||1;
       renderer?.setPixelRatio?.(Math.max(.65,current*.82));
       composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
-      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;
+      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;godRaysEnabled=false;godRaysFallbackEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
-      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
+      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;if(godRaysPass)godRaysPass.enabled=false;
       const cache=window.PStudioResources?.stats?.();
       if(cache){
         window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
