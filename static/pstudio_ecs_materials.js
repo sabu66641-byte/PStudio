@@ -323,12 +323,14 @@
     if (!(commands instanceof Map)) throw new TypeError('Material commands must be a Map.');
     const owners = new Set((Array.isArray(sceneObjects) ? sceneObjects : []).map(o => String(o.id)));
     let added = 0;
-    for (const type of ['ToonMaterial', 'MaterialOverrides', 'ShaderMaterial']) {
+    for (const type of ['ShaderMaterial', 'MaterialOverrides', 'ToonMaterial']) {
       for (const entry of snapshots[type].values()) {
         if (!owners.has(entry.ownerId)) continue;
         const pending = [];
         if (type === 'ToonMaterial') {
-          pending.push({ type: 'toon_material', toon: clone(entry.config.settings || {}) });
+          const settings = entry.config.settings || {};
+          if (!settings.enabled && !(Number(settings.windStrength) > 0)) continue;
+          pending.push({ type: 'toon_material', toon: clone(settings) });
         } else if (type === 'MaterialOverrides') {
           for (const override of normalizeOverrides(entry.config.overrides)) {
             pending.push({

@@ -554,8 +554,7 @@
     }
   }
   function buildScenePreview3D() {
-    window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-    window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects || []);
+    window.syncEcsSceneMaterials?.();
     const commands = new Map();
     commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
@@ -646,7 +645,6 @@
       if (ecs?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime };
         ecs.syncSceneObjects(sceneObjects || []);
-        window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects || []);
         for(const object of sceneObjects||[])ecs.setSceneObjectActive?.(object.id,window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false);
         ecs.update(dt, ecsContext);
         ecs.updatePhase?.('prePhysics', dt, ecsContext);
@@ -960,7 +958,7 @@
     const attached=(sceneObjects||[]).filter(o=>o.script);
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const hasECS3D=(sceneObjects||[]).some(object=>Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail'].includes(entry?.type)&&entry.data?.enabled!==false));
+      const hasECS3D=(sceneObjects||[]).some(object=>Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].includes(entry?.type)&&entry.data?.enabled!==false));
       const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
@@ -971,6 +969,7 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
+      window.syncEcsSceneMaterials?.();
       runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
       for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
       registerEcsRuntime(data.scripts);
