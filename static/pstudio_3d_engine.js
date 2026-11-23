@@ -8,7 +8,13 @@
   let renderer = null;
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false;
-  let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
+  function readSavedQualityPreset(){
+    try{
+      const saved=window.localStorage?.getItem('pstudio-render-quality')||'auto';
+      return ['auto','mobile','balanced','high','ultra'].includes(saved)?saved:'auto';
+    }catch(_){return 'auto';}
+  }
+  let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
@@ -225,7 +231,30 @@
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
     ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
   };
-  function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
+  function qualityHardwareCapabilities(){
+    let maxTextureSize=Number(renderer?.capabilities?.maxTextureSize)||0;
+    if(!maxTextureSize){
+      try{const gl=renderer?.getContext?.();maxTextureSize=Number(gl?.getParameter?.(gl.MAX_TEXTURE_SIZE))||0;}catch(_){}
+    }
+    if(!maxTextureSize)maxTextureSize=4096;
+    return{
+      memoryGiB:deviceMemoryGiB(),
+      cpuCores:Math.max(1,Number(window.navigator?.hardwareConcurrency)||4),
+      maxTextureSize,
+      touch:Number(window.navigator?.maxTouchPoints||0)>0,
+      pixelRatio:Math.max(1,Number(window.devicePixelRatio)||1)
+    };
+  }
+  function resolveQualityPreset(name){
+    if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';
+    const hardware=qualityHardwareCapabilities();
+    const {memoryGiB,cpuCores,maxTextureSize,touch}=hardware;
+    // Choose the strongest sensible starting tier, then adapt from real frame timing.
+    if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return 'mobile';
+    if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return 'balanced';
+    if(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192)return 'ultra';
+    return 'high';
+  }
 
   function resolveShadowMapSize(requested){
     let maxTextureSize=4096;
@@ -235,7 +264,7 @@
       if(Number.isFinite(queried)&&queried>0)maxTextureSize=queried;
     }catch(_){}
     const memory=deviceMemoryGiB();
-    const memoryCap=memory<=2?1024:memory<=4?2048:4096;
+    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):4096;
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
     return Math.min(requestedSize,hardwareCap);
@@ -247,7 +276,7 @@
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
-    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
+    const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
       const initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'&&deviceMemoryGiB()>2?[0.68,0.84,1][adaptiveQualityLevel]:1;
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio*initialAdaptiveScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
@@ -262,6 +291,8 @@
       lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile});}catch(_){}
+    try{window.localStorage?.setItem('pstudio-render-quality',qualityPreset);}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied}}));}catch(_){}
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
   function applyAdaptiveQuality(){
@@ -277,6 +308,7 @@
     const mapSize=resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel]),lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied}}));}catch(_){}
   }
 
   function ensureRenderer(){
@@ -510,6 +542,7 @@
     lastMemoryPressure=pressure;
     if(pressure>=.82&&!memorySafetyApplied){
       memorySafetyApplied=true;
+      try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:true}}));}catch(_){}
       // Drop only expensive screen-space effects and render scale; never dispose retained scene assets.
       const current=renderer?.getPixelRatio?.()||1;
       renderer?.setPixelRatio?.(Math.max(.65,current*.82));
@@ -4346,7 +4379,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     },
     setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
     setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(40,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
-    getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
+    getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,hardware:qualityHardwareCapabilities()}),
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,

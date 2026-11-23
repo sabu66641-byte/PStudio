@@ -382,10 +382,12 @@ test('failed model loading clears pending promises so the same model can be retr
 test('renderer exposes live memory telemetry and activates a safe graphics mode under memory pressure',()=>{
   for(const token of ['function memorySnapshot()','function sampleMemoryPressure()','pstudio-memory-snapshot','heapPressure','modelPressure','memorySafetyApplied','getMemoryStats:memorySnapshot'])assert.ok(renderer.includes(token),token);
 });
-test('low-memory devices disable hardware MSAA and receive conservative quality settings',()=>{
+test('low-memory devices disable hardware MSAA and Auto selects conservative tiers without overriding manual quality',()=>{
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
-  assert.ok(renderer.includes('if(memory<=2)return \'mobile\''));
-  assert.ok(renderer.includes('pixelRatio:0.8'));
+  assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
+  assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
+  assert.ok(renderer.includes('qualityPreset===\'auto\'?(memory<=2?1024:memory<=4?2048:4096):4096'));
+  assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
 
@@ -856,3 +858,32 @@ test('contact shadows are profile/adaptive controlled, use the depth prepass, an
   assert.ok(renderer.includes('contactShadowPass.enabled=contactShadowsEnabled&&!waterDepthPrepassFailed&&!!waterDepthTarget?.depthTexture'));
 });
 
+
+
+test('manual quality presets are never silently downgraded; auto selects a tier from hardware capabilities',()=>{
+  assert.match(renderer,/if\(name!=='auto'\)return QUALITY_PROFILES\[name\]\?name:'balanced'/);
+  assert.match(renderer,/if\(memoryGiB<=2\|\|cpuCores<=2\|\|maxTextureSize<2048\)return 'mobile'/);
+  assert.match(renderer,/if\(memoryGiB<=3\|\|cpuCores<4\|\|maxTextureSize<4096\|\|\(touch&&memoryGiB<=4\)\)return 'balanced'/);
+  assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'ultra'/);
+  assert.match(renderer,/const baseProfile=QUALITY_PROFILES\[selected\],profile=baseProfile/);
+  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):4096/);
+});
+
+test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
+  assert.match(renderer,/readSavedQualityPreset\(\)/);
+  assert.match(renderer,/localStorage\?\.getItem\('pstudio-render-quality'\)/);
+  assert.match(renderer,/localStorage\?\.setItem\('pstudio-render-quality',qualityPreset\)/);
+  assert.match(renderer,/getQualityPreset:\(\)=>\(\{requested:qualityPreset,active:resolveQualityPreset\(qualityPreset\),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,hardware:qualityHardwareCapabilities\(\)\}\)/);
+  assert.match(renderer,/pstudio-quality-state-changed/);
+  assert.match(engine,/window\.setPStudioQualityPreset=function\(name\)/);
+  assert.match(engine,/updatePStudioQualityControl\(\)/);
+});
+
+test('scene toolbar exposes all five render quality tiers and keeps the control usable on mobile',()=>{
+  for(const value of ['auto','mobile','balanced','high','ultra'])assert.match(html,new RegExp('option value="'+value+'"'));
+  assert.ok(html.includes('id="render-quality-select"'));
+  assert.ok(html.includes('id="render-quality-active"'));
+  assert.ok(html.includes('setPStudioQualityPreset(this.value)'));
+  assert.ok(html.includes('.game-toolbar{overflow-x:auto'));
+  assert.ok(html.includes('@media(max-width:700px){.render-quality-label{display:none}'));
+});
