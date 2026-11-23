@@ -690,3 +690,20 @@ test('gameplay UI overlay intent is owned by a transient ECS Component while PSt
   assert.doesNotThrow(() => new Function(gameplay));
   assert.doesNotThrow(() => new Function(engine));
 });
+
+test('module lifecycle state is mirrored into transient ECS entities without moving activation ownership', () => {
+  const modules = fs.readFileSync(path.join(root, 'static/pstudio_modules.js'), 'utf8');
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_ecs_modules.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  assert.ok(modules.includes("emit('state-changed'"));
+  for (const state of ['activating', 'enabled', 'deactivating', 'registered', 'error']) assert.ok(bridge.includes("'" + state + "'"));
+  assert.ok(bridge.includes("const TYPE = 'ModuleState'"));
+  assert.ok(bridge.includes('persistent: false'));
+  assert.ok(bridge.includes('internal: true'));
+  assert.ok(app.includes('"ModuleState"'));
+  assert.ok(html.indexOf('pstudio_modules.js') < html.indexOf('pstudio_ecs.js'));
+  assert.ok(html.indexOf('pstudio_ecs.js') < html.indexOf('pstudio_ecs_modules.js'));
+  assert.doesNotThrow(() => new Function(modules));
+  assert.doesNotThrow(() => new Function(bridge));
+});
