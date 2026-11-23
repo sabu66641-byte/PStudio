@@ -614,7 +614,7 @@
       window.PStudioECS?.syncSceneObjects?.(sceneObjects||[]);
     }
     window.PStudioECSRendering?.buildCommands?.(commands,sceneObjects||[],1/60);
-    const activeCommands=new Map([...commands].filter(([id])=>id==='__scene__'||window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
+    const activeCommands=new Map([...commands].filter(([id])=>id==='__scene__'||id==='__ecs_camera__'||window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
     const allDrawCommands=new Map([...activeCommands].filter(([id])=>id!=='__scene__'));
     const drawCommands=new Map([...allDrawCommands].filter(([id])=>window.PStudioECSRendering?.isVisible?.(id)!==false));
     const draws=[...drawCommands.values()].flat();
