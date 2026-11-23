@@ -611,7 +611,7 @@
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
     configureAtmosphere(settings={}){
-      const direction=settings.sunDirection;
+      const direction=settings.lightDirection||settings.sunDirection;
       const applyDirection=uniform=>{
         if(!uniform?.value?.set||!Array.isArray(direction)||direction.length<3||!direction.slice(0,3).every(Number.isFinite))return;
         uniform.value.set(direction[0],direction[1],direction[2]).normalize();
