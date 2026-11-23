@@ -546,8 +546,8 @@
     applyCameraShake();updateTrailEffects();
     const hiddenStaticSky=[];
     try{
-      renderWaterDepthPrepass();
-      if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
+      const depthPrepassReady=renderWaterDepthPrepass()&&!!waterDepthTarget?.depthTexture;
+      if(volumetricCloudsEnabled&&depthPrepassReady)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
@@ -560,8 +560,8 @@
           update(uniforms);
         };
         if(volumetricFogPass){
-          volumetricFogPass.enabled=volumetricFogEnabled;
-          syncPostFXUniforms(volumetricFogPass,['uInverseProjection','uCameraWorld','uTime','uFogColor','uSunDirection','tDepth'],u=>{
+          volumetricFogPass.enabled=volumetricFogEnabled&&depthPrepassReady;
+          if(volumetricFogPass.enabled)syncPostFXUniforms(volumetricFogPass,['uInverseProjection','uCameraWorld','uTime','uFogColor','uSunDirection','tDepth'],u=>{
             u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;
             if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);
             const sun=window.PStudioAtmosphere?.sunDirection?.(atmosphereSettings)||[.22,.88,.42];
@@ -570,8 +570,8 @@
           });
         }
         if(volumetricCloudPass){
-          volumetricCloudPass.enabled=volumetricCloudsEnabled;
-          syncPostFXUniforms(volumetricCloudPass,['uInverseProjection','uCameraWorld','uTime','tDepth'],u=>{
+          volumetricCloudPass.enabled=volumetricCloudsEnabled&&depthPrepassReady;
+          if(volumetricCloudPass.enabled)syncPostFXUniforms(volumetricCloudPass,['uInverseProjection','uCameraWorld','uTime','tDepth'],u=>{
             u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;
           });
         }
