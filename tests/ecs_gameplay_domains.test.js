@@ -186,7 +186,7 @@ test('QuestProgress and DialogueSession Components preserve progression and UI-f
 
 test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play snapshots', () => {
   const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
-  const { ecs, gameplay } = createRuntime(objects);
+  const { ecs, gameplay, bridge } = createRuntime(objects);
   gameplay.defineItem('herb', 'consumable', 'heal', 5);
   gameplay.inventoryAdd('player', 'herb', 4);
   gameplay.defineItem('shield', 'equipment', 'off-hand', 0);
