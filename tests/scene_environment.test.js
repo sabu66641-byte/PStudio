@@ -72,7 +72,7 @@ test('renderer builds a procedural sky panorama and falls back safely if Canvas 
     'context.createLinearGradient',
     'context.createRadialGradient',
     'function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false)',
-    'Procedural sky texture unavailable; using a color background',
+    'Procedural atmosphere texture creation failed; a solid horizon fallback will be used',
     'Procedural sky PMREM generation failed; using the equirectangular texture directly',
     "else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0')"
   ]) assert.ok(renderer.includes(token), token);
@@ -284,13 +284,14 @@ test('night preset uses a dedicated dark procedural panorama and never exposes t
   assert.ok(night.skyMid.toLowerCase()==='#0b1930');
   assert.ok(night.horizon.toLowerCase()==='#1b2a43');
   assert.match(renderer,/profile\.name!=='night'&&updatePhysicalSkyPreset\(T,profile\)/);
-  assert.match(renderer,/physicalSky\.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible/);
-  assert.match(renderer,/if\(scenePresetUsesPhysicalSky&&physicalSky\?\.visible\)scene\.background=null/);
+  assert.match(renderer,/if\(physicalSky\)physicalSky\.visible=false/);
+  assert.match(renderer,/if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
 });
 
-test('physical-sky PMREM failure activates the procedural background instead of leaving the failed sky mesh visible',()=>{
+test('physical-sky PMREM failure activates the procedural panorama as both visible sky and available environment source',()=>{
   assert.match(renderer,/scenePresetUsesPhysicalSky=!!\(physicalSkyReady&&nextTarget\)/);
-  assert.match(renderer,/if\(!scenePresetUsesPhysicalSky\)\{[\s\S]*?nextTexture=createProceduralSkyTexture\(T,profile\)/);
-  assert.match(renderer,/else if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
+  assert.match(renderer,/try\{nextTexture=createProceduralSkyTexture\(T,profile\)\}/);
+  assert.match(renderer,/if\(!nextTarget&&nextTexture&&pmremGenerator\)/);
+  assert.match(renderer,/if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
   assert.match(renderer,/else scene\.background=new T\.Color\(profile\.horizon\|\|profile\.skyMid\|\|'#79BCE0'\)/);
 });
