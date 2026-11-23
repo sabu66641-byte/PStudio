@@ -217,8 +217,8 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
 test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
   assert.match(renderer,/A dark, periodic starfield with a structured Milky Way/);
   assert.match(renderer,/four seeded noise octaves/i);
-  assert.match(renderer,/for\(let i=0;i<2100;i\+\+\)/);
-  assert.match(renderer,/const galacticCenterY=height\*\(\.43-\.27\*\(x\/width\)\)/);
+  assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
+  assert.match(renderer,/const galacticCenterY=\.315\+\.115\*Math\.sin\(angle-\.72\)\+\.035\*Math\.sin\(angle\*2\+1\.1\)/);
   assert.match(renderer,/const moonRadius=48/);
   assert.match(renderer,/Lunar maria and crater rims/);
   assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
