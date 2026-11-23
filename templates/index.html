@@ -811,7 +811,7 @@ function syncSceneRenderQualityControls(result=null){
  const ratio=Number(profile?.pixelRatio);
  const shadow=Number(profile?.shadowSize);
  const detail=Number.isFinite(ratio)&&Number.isFinite(shadow)?' · 描画倍率 '+ratio.toFixed(2)+' · 影 '+shadow+'px':'';
- const limited=active!==sceneRenderQuality?'端末のメモリ条件により '+renderQualityLabel(active)+' に制限中。':'';
+ const limited=sceneRenderQuality!=='auto'&&active!==sceneRenderQuality?'端末のメモリ条件により '+renderQualityLabel(active)+' に制限中。':'';
  status.textContent=limited+'適用品質：'+renderQualityLabel(active)+'（'+load+'）'+detail;
 }
 function setSceneRenderQuality(value){
