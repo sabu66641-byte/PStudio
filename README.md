@@ -110,6 +110,7 @@ func on_collision(other)
 | `draw_rect(x, y, w, h)` | Queue a rectangle for the current frame |
 | `draw_circle(x, y, radius)` | Queue a circle for the current frame |
 | `draw_sprite(name, x, y)` | Draw an imported image asset at its native size |
+| `set_atmosphere(elevation, azimuth, turbidity, cloud_density)` | Set the physical sky and cloud parameters; angles are degrees, azimuth 0° points north (+Z), turbidity is 1–10 and cloud density is 0–1 |
 | `len(value)` / `range(...)` | Standard ps helpers supported by the game runtime |
 
 The selected object's **Enable Collider** checkbox is stored in the scene file. Collision detection supports rectangle-rectangle, circle-circle and circle-rectangle pairs. A callback is dispatched once on collision-enter to each participating object's attached script if that script defines `on_collision(other)`.
