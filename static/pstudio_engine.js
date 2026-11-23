@@ -154,7 +154,7 @@
   function makeContext(object, dt) {
     return {
       object, dt, draw: [], steps: 0, callDepth: 0,
-      env: runtime.states.get(object.id) || Object.create(null),
+      env: window.PStudioECSScript?.getVariables?.(object.id) || Object.create(null),
       funcs: Object.create(null),
       output: []
     };
@@ -540,9 +540,9 @@ function callBuiltin(c, name, a) {
     return left.x<right.x+right.w&&left.x+left.w>right.x&&left.y<right.y+right.h&&left.y+left.h>right.y;
   }
   function dispatchCollision(object, other) {
-    const state=runtime.states.get(object.id);if(!state)return;
+    const state=window.PStudioECSScript?.getVariables?.(object.id);if(!state)return;
     const c=setupContext(object,0);c.steps=0;
-    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
+    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
     const objs=(sceneObjects||[]).filter(o=>sceneCollider2DEnabled(o)&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
@@ -714,18 +714,19 @@ function callBuiltin(c, name, a) {
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         const script=astForScript(sceneScriptFile(o));if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
-        if(!runtime.initialized.has(o.id)){
-          runtime.initialized.add(o.id);
+        const lifecycle=window.PStudioECSScript?.getLifecycle?.(o.id);
+        if(!lifecycle)throw new PsRuntimeError('ECS Script Runtime state is unavailable for Scene Object: '+o.id);
+        if(!lifecycle.initialized){
+          lifecycle.initialized=true;
           const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');
           if(topLevel.length)execBlock(c,topLevel,c.env);
         }
-        if(!runtime.started.has(o.id)){
-          runtime.started.add(o.id);
+        if(!lifecycle.started){
+          lifecycle.started=true;
           if(c.funcs.start)callFunction(c,'start',[]);
         }
         c.dt=dt;
         if(c.funcs.update)callFunction(c,'update',[dt]);
-        runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
         commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
@@ -787,7 +788,7 @@ function callBuiltin(c, name, a) {
 
         if(transform.landed){
           runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
-          runtime.landSequences.set(id,runtime.nextLandSequence);
+          window.PStudioECSScript?.setLifecycleByEntity?.(window.PStudioECS?.getEntityForSceneObject?.(String(id)),{landSequence:runtime.nextLandSequence});
         }
 
         for(const draw of draws){
@@ -821,7 +822,7 @@ function callBuiltin(c, name, a) {
             draw.grounded=transform.grounded;
             draw.speed=transform.horizontalSpeed;
             draw.velocityY=transform.velocityY;
-            draw.landSequence=runtime.landSequences.get(id)||0;
+            draw.landSequence=window.PStudioECSScript?.getLifecycle?.(id)?.landSequence||0;
           }
         }
       }
@@ -869,12 +870,12 @@ function callBuiltin(c, name, a) {
     for(const id of runtime.ecsSystemIds||[]){try{ecs.unregisterSystem(id);}catch(error){console.warn('[PStudio ECS] System cleanup failed:',id,error);}}
     runtime.ecsSystemIds=[];
     window.PStudioGameplay?.persistECS?.(sceneObjects || []);
+    window.PStudioECSScript?.clear?.();
     ecs.clearSceneObjects?.();
     for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
       try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
     }
     runtime.ecsComponentTypes=[];
-    runtime.ecsStates?.clear?.();
   }
   function registerEcsRuntime(asts){
     const ecs=window.PStudioECS;
@@ -906,7 +907,6 @@ function callBuiltin(c, name, a) {
     }
     runtime.ecsComponentTypes=[];
     runtime.ecsSystemIds=[];
-    runtime.ecsStates=new Map();
     try{
       for(const [name,definition] of definitions){
         const create=()=>Object.fromEntries(Object.entries(definition.defaults).map(([key,value])=>[key,cloneEcsDefault(value)]));
@@ -944,6 +944,10 @@ function callBuiltin(c, name, a) {
           }
         }
       }
+      window.PStudioECSScript?.setSystemDefinitions?.(systemDefs.map(({filename,node})=>({
+        id:ecsSystemRuntimeId(filename,node.name),
+        components:(node.components||[]).map(String)
+      })));
       for(const {filename,node} of systemDefs){
         const systemId=ecsSystemRuntimeId(filename,node.name);
         const componentNames=(node.components||[]).map(String);
@@ -959,7 +963,7 @@ function callBuiltin(c, name, a) {
               const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
               const stateKey=systemId+':'+entity;
               const c=makeContext(object,dt);
-              c.env=runtime.ecsStates.get(stateKey)||Object.create(null);
+              c.env=window.PStudioECSScript?.getSystemStateByEntity?.(entity,systemId)||Object.create(null);
               c.env.entity=entity;c.env.dt=dt;
               componentNames.forEach((component,index)=>{c.env[ecsBindingName(component)]=values[index];});
               c.funcs=Object.create(null);
@@ -967,7 +971,7 @@ function callBuiltin(c, name, a) {
               c.steps=0;
               try{execBlock(c,node.body||[],c.env);}
               catch(signal){if(!(signal&&signal.kind===RETURN))throw signal;}
-              runtime.ecsStates.set(stateKey,c.env);
+              if(!window.PStudioECSScript?.setSystemStateByEntity?.(entity,systemId,c.env))throw new PsRuntimeError('ScriptSystemState is unavailable for Entity '+entity+' / '+systemId);
               if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
             });
           }
@@ -1004,10 +1008,11 @@ function callBuiltin(c, name, a) {
       keys.clear();justPressed.clear();resetVirtualControls();touchActive=false;activePointerId=null;window.PStudioECSInput?.reset?.();
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
+      if(!window.PStudioECSScript)throw new PsRuntimeError('PStudio ECS Script Runtime bridge is unavailable.');
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
       window.syncEcsSceneMaterials?.();
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
-      for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
+      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
+      window.PStudioECSScript.sync(sceneObjects || []);
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
       window.PStudioECSInspector?.refresh?.();
