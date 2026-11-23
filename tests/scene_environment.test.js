@@ -206,7 +206,7 @@ test('official Three.js physical sky is primary while procedural panorama remain
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('Procedural sky texture unavailable'));
-  assert.ok(renderer.includes('const width=canvas.width,height=canvas.height,isNight=profile.name===\\'night\\''));
+  assert.ok(renderer.includes('const width=canvas.width,height=canvas.height,isNight=profile.name===\'night\''));
   assert.ok(renderer.includes('for(let i=0;i<280;i++)'));
   assert.ok(renderer.includes('moonDirectionX'));
   assert.ok(renderer.includes('scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)'));

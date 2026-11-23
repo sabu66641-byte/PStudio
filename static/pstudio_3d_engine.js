@@ -3306,7 +3306,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.needsUpdate=true;
     return texture;
   }
-  function enhancePhysicalSkyShader  function enhancePhysicalSkyShader(sky,Three){
+  function enhancePhysicalSkyShader(sky,Three){
     const material=sky?.material;
     if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
     const marker='gl_FragColor = vec4( retColor, 1.0 );';
@@ -3330,7 +3330,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     material.userData.pstudioAtmosphereEnhanced=true;
     return true;
   }
-  function updatePhysicalSkyPreset  function updatePhysicalSkyPreset(T,profile){
+  function updatePhysicalSkyPreset(T,profile){
     if(!window.PStudioSky||!scene)return false;
     try{
       if(!physicalSky){
@@ -3366,7 +3366,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       return false;
     }
   }
-  function createPhysicalSkyEnvironmentTarget  function createPhysicalSkyEnvironmentTarget(T){
+  function createPhysicalSkyEnvironmentTarget(T){
     if(!physicalSky||!pmremGenerator)return null;
     const probe=physicalSky.clone();
     probe.visible=true;probe.position.set(0,0,0);
