@@ -232,5 +232,15 @@ class PsEcsLanguageTests(unittest.TestCase):
 
 
 
+    def test_builtin_ui_overlay_component_cannot_be_redeclared(self):
+        response = self.client.post(
+            "/game/prepare",
+            json={"scripts": {"bad.ps": "component UIOverlay" + chr(10) + "    visible = true" + chr(10)}},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("組み込みComponent", response.get_json()["error"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -669,3 +669,24 @@ test('legacy and ECS water rendering honor the configured opacity', () => {
   assert.ok(renderer.includes('material.transparent=waterOpacity<0.999'));
   assert.ok(renderer.includes('material.depthWrite=waterOpacity>=0.999'));
 });
+
+test('gameplay UI overlay intent is owned by a transient ECS Component while PStudioUI remains the renderer', () => {
+  const ui = fs.readFileSync(path.join(root, 'static/pstudio_ecs_ui.js'), 'utf8');
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const token of ['openInventory', 'openQuestLog', 'showDialogue', 'chooseDialogue', 'getUIState', 'uiAction']) {
+    assert.ok(gameplay.includes(token), token);
+  }
+  assert.ok(gameplay.includes('window.PStudioECSUI'));
+  assert.ok(ui.includes("const TYPE = 'UIOverlay'"));
+  assert.ok(ui.includes('persistent: false'));
+  assert.ok(ui.includes('internal: true'));
+  assert.ok(app.includes('"UIOverlay"'));
+  assert.ok(engine.includes('window.PStudioECSUI?.clear?.()'));
+  assert.ok(engine.includes('window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null)'));
+  assert.ok(html.includes('pstudio_ecs_ui.js'));
+  assert.doesNotThrow(() => new Function(ui));
+  assert.doesNotThrow(() => new Function(gameplay));
+  assert.doesNotThrow(() => new Function(engine));
+});

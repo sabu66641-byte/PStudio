@@ -242,3 +242,11 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - `PStudio3D` remains the exclusive owner of water materials/shaders, environment textures, post-processing passes, particle simulation/buffers and trail geometry/disposal. ECS stores no Three.js objects or GPU handles.
 - Legacy ps rendering built-ins remain supported. Global Environment/Fog and PostFX Component commands are inserted before script-authored commands so existing ps script overrides retain precedence.
 - One-shot `emit_particles` remains a transient command, not a persistent Component; `PStudioUI` continues to own DOM presentation.
+
+
+## ECS UI Intent Bridge
+
+- A singleton `UIOverlay` Component stores which gameplay overlay is currently active (inventory, quests or dialogue) and its optional Scene Object owner.
+- `PStudioGameplay` reads/writes overlay intent through `PStudioECSUI`; Game Stop clears the transient Component.
+- `UIOverlay` is internal and non-persistent: it is not written into project backups or scene files.
+- `PStudioUI` continues to own DOM elements, buttons, layout, accessibility and actual display. ECS does not create or retain DOM nodes.
