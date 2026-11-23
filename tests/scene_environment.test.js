@@ -198,10 +198,26 @@ test('official Three.js physical sky is primary while procedural panorama remain
   assert.ok(html.includes("three/addons/objects/Sky.js"));
   assert.ok(html.includes("window.PStudioSky = null"));
   for(const token of [
-    'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.set',
+    'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000)',
+    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight',
     'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
     'pmremGenerator.fromScene(skyScene,0.04)','physicalSky.visible=!hdrBackgroundVisible'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('Procedural sky texture unavailable'));
+});
+
+test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
+  const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
+  for(const [name,profile] of Object.entries({day,dusk,night,studio})){
+    for(const field of ['skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','atmosphereSunColor','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
+      assert.ok(Object.prototype.hasOwnProperty.call(profile,field),name+': '+field);
+    assert.ok(Math.hypot(profile.skySunX,profile.skySunY,profile.skySunZ)>.9,name+' sun direction');
+    assert.ok(profile.fogDensity>0,name+' fog density');
+  }
+  assert.ok(day.skySunY>.8,'day sun should be high in the sky');
+  assert.ok(dusk.skySunY>0&&dusk.skySunY<.2,'dusk sun should sit close to the horizon');
+  assert.ok(night.skySunY<0,'night sun should be below the horizon');
+  assert.ok(dusk.skyTurbidity>day.skyTurbidity,'dusk needs a richer aerosol scattering profile');
+  assert.ok(night.fogDensity<day.fogDensity,'night haze should be subtler than daytime haze');
 });
