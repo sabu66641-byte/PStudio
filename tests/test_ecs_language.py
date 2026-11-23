@@ -212,7 +212,7 @@ class PsEcsLanguageTests(unittest.TestCase):
             self.assertIn("組み込みComponent", response.get_json()["error"])
 
     def test_builtin_rendering_components_cannot_be_redeclared(self):
-        for name in ("Renderable", "Camera", "Light", "Animation", "ToonMaterial", "MaterialOverrides", "ShaderMaterial", "MeshCollider"):
+        for name in ("Renderable", "Camera", "Light", "Animation", "ToonMaterial", "MaterialOverrides", "ShaderMaterial", "MeshCollider", "ScriptAttachment", "SpriteRenderer", "Collider2D", "EditorObjectSettings"):
             response = self.client.post(
                 "/game/prepare",
                 json={"scripts": {"bad.ps": "component " + name + chr(10) + "    enabled = true" + chr(10)}},
@@ -254,6 +254,16 @@ class PsEcsLanguageTests(unittest.TestCase):
 
     def test_builtin_gameplay_definition_components_cannot_be_redeclared(self):
         for name in ("ItemDefinition", "QuestDefinition", "WeaponDefinition"):
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad.ps": "component " + name + chr(10) + "    enabled = true" + chr(10)}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("組み込みComponent", response.get_json()["error"])
+
+
+    def test_builtin_scene_behavior_components_cannot_be_redeclared(self):
+        for name in ("ScriptAttachment", "SpriteRenderer", "Collider2D", "EditorObjectSettings"):
             response = self.client.post(
                 "/game/prepare",
                 json={"scripts": {"bad.ps": "component " + name + chr(10) + "    enabled = true" + chr(10)}},

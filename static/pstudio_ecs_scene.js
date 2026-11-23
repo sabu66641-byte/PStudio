@@ -104,8 +104,16 @@
   function safeScriptFile(value) {
     const file = String(value || '').trim();
     if (!file) return '';
-    if (file.length > 160 || /[\\/\\\\\u0000-\u001f]/.test(file) || !file.toLowerCase().endsWith('.ps')) {
-      throw new TypeError('ScriptAttachment requires a valid .ps project file name.');
+    const segments = file.split('/');
+    if (
+      file.length > 160 ||
+      file.startsWith('/') ||
+      file.includes('\\\\') ||
+      /[\u0000-\u001f]/.test(file) ||
+      segments.some(segment => !segment || segment === '.' || segment === '..') ||
+      !file.toLowerCase().endsWith('.ps')
+    ) {
+      throw new TypeError('ScriptAttachment requires a safe relative .ps project path.');
     }
     return file;
   }

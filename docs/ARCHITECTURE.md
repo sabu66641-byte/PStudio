@@ -300,3 +300,13 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - Inspector reads and writes ECS Components. The engine converts them to the existing `toon_material`, `model_material`, `material`, PostFX, particle-emitter and mesh-collider command paths.
 - Three.js materials, shader programs/uniform buffers, GLB material instances, model triangle caches and Physics solver collision structures remain owned by PStudio3D/PStudioPhysics; ECS stores only JSON-safe authoring configuration and references.
 - If a Scene Object has an unsupported future Component schema, migration and Inspector writes are blocked without mutating the saved data.
+
+
+## ECS Scene Behavior and 2D Presentation
+
+- `ScriptAttachment` stores a safe relative `.ps` project path and enabled state. The Runtime still compiles/executes ASTs and owns per-script locals/functions.
+- `SpriteRenderer` stores an image asset reference, enabled flag, dimensions, tint, primitive shape, layer and sort order. AssetStore owns image bytes/decoding; Canvas/Three.js own drawing.
+- `Collider2D` stores overlap/trigger intent. The Engine collision service still computes bounds/pairs and emits events.
+- `Renderable.assetName` is authoritative for 3D model references; AssetStore/Renderer continue to own GLB bytes and loaded model resources.
+- `EditorObjectSettings` stores persistent manipulation permission; pointer/DOM interaction remains editor-service logic.
+- Legacy Scene Object fields `script`, `sprite`, `color`, `shape`, `w/h`, `model`, `modelScale`, `collider` and `manipulationEnabled` are migrated once into the versioned ECS Component payload and removed from the active Scene Object object. Future-version payloads are not modified.

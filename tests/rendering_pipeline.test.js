@@ -829,3 +829,26 @@ test('render authoring Inspector handlers are syntactically valid and no longer 
     'o.modelScale='
   ]) assert.equal(inspectorSource.includes(legacy), false, legacy);
 });
+
+test('runtime and Editor preview use ECS Scene Components for scripts, sprite bounds, color and colliders', () => {
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const scene = fs.readFileSync(path.join(root, 'static/pstudio_ecs_scene.js'), 'utf8');
+  const materials = fs.readFileSync(path.join(root, 'static/pstudio_ecs_materials.js'), 'utf8');
+  assert.ok(engine.includes('astForScript(sceneScriptFile(object))'));
+  assert.ok(engine.includes('astForScript(sceneScriptFile(o))'));
+  assert.ok(engine.includes('sceneSpriteConfig(object)'));
+  assert.ok(engine.includes('sceneObjectBounds2D(a)'));
+  assert.ok(engine.includes('sceneCollider2DEnabled(o)'));
+  assert.ok(engine.includes('sceneRenderableAsset(object)'));
+  assert.ok(engine.includes('window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || [])'));
+  assert.ok(html.includes('getSceneSpriteRenderer(object)'));
+  assert.ok(html.includes('getSceneScriptFile(object)'));
+  assert.ok(html.includes('setSceneScriptFile(object,fileName)'));
+  assert.ok(html.includes('setSceneRenderableAsset(object,assetName)'));
+  assert.ok(html.includes('window.PStudioECSScene?.renameScriptFile'));
+  assert.ok(html.includes('window.PStudioECSScene?.renameSpriteAsset'));
+  assert.ok(materials.includes('function renameRenderableAsset'));
+  assert.doesNotThrow(() => new Function(scene));
+  assert.doesNotThrow(() => new Function(engine));
+});
