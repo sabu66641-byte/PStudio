@@ -277,8 +277,8 @@
     }
     if (cameras.length) {
       cameras.sort((a, b) => b.priority - a.priority || a.entity - b.entity);
-      const sceneCommands = commands.get('__scene__') || [];
-      commands.set('__scene__', [...sceneCommands, cameras[0].command]);
+      // This dedicated final entry makes ECS camera priority authoritative over legacy per-object set_camera calls.
+      commands.set('__ecs_camera__', [cameras[0].command]);
     }
 
     return {
