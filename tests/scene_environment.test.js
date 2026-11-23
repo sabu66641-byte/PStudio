@@ -217,7 +217,8 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
 test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
   assert.match(renderer,/Milky Way: a broad, low-contrast galactic band/);
   assert.match(renderer,/for\(let i=0;i<2100;i\+\+\)/);
-  assert.match(renderer,/const moonRadius=27/);
+  assert.match(renderer,/const galacticCenterY=height\*\(\.43-\.27\*\(x\/width\)\)/);
+  assert.match(renderer,/const moonRadius=48/);
   assert.match(renderer,/Lunar maria and crater rims/);
   assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
 });
@@ -290,7 +291,7 @@ test('night preset uses a dedicated dark procedural panorama and never exposes t
 
 test('physical-sky PMREM failure activates the procedural panorama as both visible sky and available environment source',()=>{
   assert.match(renderer,/scenePresetUsesPhysicalSky=!!\(physicalSkyReady&&nextTarget\)/);
-  assert.match(renderer,/try\{nextTexture=createProceduralSkyTexture\(T,profile\)\}/);
+  assert.match(renderer,/try\{nextTexture=createProceduralSkyTexture\(T,profile\);?\}/);
   assert.match(renderer,/if\(!nextTarget&&nextTexture&&pmremGenerator\)/);
   assert.match(renderer,/if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
   assert.match(renderer,/else scene\.background=new T\.Color\(profile\.horizon\|\|profile\.skyMid\|\|'#79BCE0'\)/);

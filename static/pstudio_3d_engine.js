@@ -3314,16 +3314,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       context.lineCap='round';
       context.lineJoin='round';
       context.beginPath();
-      context.moveTo(-120,height*.78);
-      context.bezierCurveTo(width*.28,height*.76,width*.48,height*.39,width+100,height*.17);
+      context.moveTo(-120,height*.43);
+      context.bezierCurveTo(width*.28,height*.39,width*.48,height*.24,width+100,height*.12);
       context.lineWidth=height*.22;
       context.strokeStyle='rgba(91,119,190,0.12)';
       context.shadowColor='rgba(105,133,215,0.28)';
       context.shadowBlur=95;
       context.stroke();
       context.beginPath();
-      context.moveTo(-80,height*.73);
-      context.bezierCurveTo(width*.24,height*.67,width*.55,height*.38,width+60,height*.22);
+      context.moveTo(-80,height*.40);
+      context.bezierCurveTo(width*.24,height*.36,width*.55,height*.20,width+60,height*.17);
       context.lineWidth=height*.075;
       context.strokeStyle='rgba(151,168,220,0.095)';
       context.shadowColor='rgba(141,161,225,0.22)';
@@ -3345,10 +3345,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       // Dense, deterministic stars with a wide dynamic range and restrained color variation.
       for(let i=0;i<2100;i++){
         const x=random()*width,y=10+random()*height*.485;
-        const galacticCenterY=height*(.78-.58*(x/width));
+        const galacticCenterY=height*(.43-.27*(x/width));
         const band=Math.exp(-Math.pow((y-galacticCenterY)/(height*.12),2));
         const roll=random();
-        const radius=roll>.992?1.9+random()*1.2:roll>.91?1.0+random()*.65:.34+random()*.58;
+        const radius=roll>.996?3.2+random()*1.6:roll>.90?1.35+random()*.95:.42+random()*.66;
         const alpha=Math.min(.98,(.16+random()*.54+band*.28)*(radius>1.8?1.12:1));
         const tint=random();
         const color=tint>.88?'196,211,255':tint>.68?'204,222,255':tint<.08?'255,224,190':'238,244,255';
@@ -3361,7 +3361,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fill();
-        if(radius>2.5&&random()>.35){
+        if(radius>3.8&&random()>.45){
           context.strokeStyle='rgba('+color+','+(alpha*.34).toFixed(3)+')';
           context.lineWidth=.7;
           context.beginPath();context.moveTo(x-radius*2.4,y);context.lineTo(x+radius*2.4,y);
@@ -3376,7 +3376,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       );
       const moonIntensity=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
       if(moonIntensity>.001){
-        const moonRadius=27;
+        const moonRadius=48;
         const halo=context.createRadialGradient(moon.x,moon.y,moonRadius*.12,moon.x,moon.y,moonRadius*7.2);
         halo.addColorStop(0,'rgba(199,219,255,'+(moonIntensity*.30)+')');
         halo.addColorStop(.18,'rgba(158,190,245,'+(moonIntensity*.16)+')');
