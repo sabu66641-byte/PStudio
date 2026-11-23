@@ -92,7 +92,7 @@ Keep these boundaries explicit. Avoid silently duplicating ownership of transfor
 
 ### Rendering
 
-- Day/dusk/studio use the Three.js Rayleigh/Mie physical sky only when setup and PMREM generation both succeed. Night uses a dedicated dark equirectangular panorama with deterministic stars and a moon; failed physical-sky setup switches both the visible background and available environment lighting to the procedural fallback.
+- The visible scene-editor sky is a 2048×1024 preset panorama with aligned solar direction, layered day/dusk cirrus, and a detailed night Milky Way/star/moon treatment. Day/dusk/studio retain the Three.js Rayleigh/Mie Sky model for PMREM lighting only, with a sky-local exposure compensation; the global renderer exposure is not reduced. A matching panorama PMREM is the fallback. The distant ground grid adapts density/opacity and safely disposes its material array; editor orbit stays above the ground plane while gameplay camera motion retains its wider pitch range.
 - Regular baked SH probe volumes are stored in x-fastest grid order and sampled with trilinear interpolation; sparse/legacy probe sets use the bounded inverse-distance fallback. This remains baked diffuse GI, not dynamic ray tracing.
 - Generated terrain meshes use a dedicated height/slope/noise PBR shader layer. It is attached only to the procedural terrain material path; imported GLTF material preservation and existing water/foliage shader hooks remain separate.
 - High/ultra quality profiles enable GTAO when the addon is available. Shadow-map allocation is capped by the active WebGL `MAX_TEXTURE_SIZE` and device-memory class, including during adaptive quality changes.
