@@ -110,7 +110,7 @@ test('Renderable visibility and Animation playback intent are projected without 
   rendering.buildCommands(commands, objects, 1 / 30);
   const list = commands.get('hero');
   assert.deepEqual(
-    list.slice(0, 4).map(item => item.type),
+    Array.from(list.slice(0, 4), item => item.type),
     ['renderable', 'animation', 'animation_blend', 'model']
   );
   assert.deepEqual(
@@ -139,7 +139,7 @@ test('stale Scene Object entities are ignored and absent Renderable Components r
   assert.equal(rendering.isVisible('visible'), false);
   ecs.syncSceneObjects([]);
   assert.equal(rendering.isVisible('visible'), true);
-  assert.deepEqual(rendering.getState(), { cameras: 0, lights: 0, renderables: 0, animations: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(rendering.getState())), { cameras: 0, lights: 0, renderables: 0, animations: 0 });
 });
 
 test('engine and renderer consume ECS rendering commands without taking resource ownership', () => {
