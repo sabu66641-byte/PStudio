@@ -614,6 +614,28 @@
     for(const pass of cloudPasses){const uniform=pass?.uniforms?.uTime;if(uniform&&Object.prototype.hasOwnProperty.call(uniform,'value'))uniform.value=t;}
   }
 
+  function configureAtmosphere(settings={}) {
+    const source=settings&&typeof settings==='object'?settings:{};
+    const direction=Array.isArray(source.sunDirection)?source.sunDirection:null;
+    const density=Number(source.cloudDensity);
+    const fogColor=source.fogColor;
+    for(const pass of cloudPasses){
+      const uniforms=pass?.uniforms;
+      if(direction&&uniforms?.uSunDirection?.value?.set){
+        uniforms.uSunDirection.value.set(
+          Number(direction[0])||0,
+          Number.isFinite(Number(direction[1]))?Number(direction[1]):1,
+          Number(direction[2])||0
+        ).normalize();
+      }
+      if(Number.isFinite(density)&&uniforms?.uCloudDensity){
+        uniforms.uCloudDensity.value=Math.max(0,Math.min(1,density));
+      }
+      if(fogColor&&uniforms?.uFogColor?.value?.set)uniforms.uFogColor.value.set(fogColor);
+    }
+    return {cloudPasses:cloudPasses.size,cloudDensity:Number.isFinite(density)?Math.max(0,Math.min(1,density)):null};
+  }
+
   function createVolumetricCloudPass(FX,Three) {
     if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
     const shader={
@@ -641,10 +663,8 @@
         'vec4 source=texture2D(tDiffuse,vUv);float depth=texture2D(tDepth,vUv).x;',
         'vec4 clip=vec4(vUv*2.0-1.0,1.0,1.0);vec4 viewH=uInverseProjection*clip;vec3 viewRay=normalize(viewH.xyz/max(abs(viewH.w),1e-5));',
         'vec3 ray=normalize(mat3(uCameraWorld)*viewRay);vec3 origin=uCameraWorld[3].xyz;',
-        'float horizon=pow(1.0-clamp(max(ray.y,0.0),0.0,1.0),3.2);',
-        'vec3 atmosphere=mix(vec3(.22,.55,.76),uFogColor,horizon);',
         'float sunGlow=pow(max(dot(ray,normalize(uSunDirection)),0.0),38.0);',
-        'vec3 skyColor=atmosphere+vec3(.23,.20,.13)*sunGlow;',
+        'vec3 skyColor=source.rgb+vec3(.23,.20,.13)*sunGlow;',
         'if(depth<.99999){gl_FragColor=source;return;}',
         'float cloudAlpha=0.0;vec3 cloudColor=vec3(0.0);',
         'if(ray.y>.025){float t0=(uCloudBase-origin.y)/ray.y;float t1=(uCloudTop-origin.y)/ray.y;',
@@ -746,7 +766,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,configureAtmosphere,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     configureToon,
     releaseObject(object){releaseOutline(object);},
