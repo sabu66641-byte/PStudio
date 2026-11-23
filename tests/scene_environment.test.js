@@ -198,7 +198,7 @@ test('project backup Scene Object reconstruction preserves v1 ECS Components and
   const end = html.indexOf('function validateAndBuildBackup', start + 1);
   assert.ok(start >= 0 && end > start);
   const source = html.slice(start, end);
-  const copyPayload = new Function('window', source + '\\nreturn copySavedEcsComponentPayload;')({
+  const copyPayload = new Function('window', source + '\nreturn copySavedEcsComponentPayload;')({
     PStudioECS: { sceneComponentSchemaVersion: 1 }
   });
   const legacyArray = { ecsComponents: [{ type: 'Health', data: { hp: 25 } }] };
@@ -226,7 +226,7 @@ test('project backup Scene Object reconstruction preserves v1 ECS Components and
 test('project backup preserves opaque future ECS schemas and rejects malformed/current oversized payloads', () => {
   const start = html.indexOf('function copySavedEcsComponentPayload');
   const end = html.indexOf('function validateAndBuildBackup', start + 1);
-  const copyPayload = new Function('window', html.slice(start, end) + '\\nreturn copySavedEcsComponentPayload;')({
+  const copyPayload = new Function('window', html.slice(start, end) + '\nreturn copySavedEcsComponentPayload;')({
     PStudioECS: { sceneComponentSchemaVersion: 1 }
   });
   const future = {
