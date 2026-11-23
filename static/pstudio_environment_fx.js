@@ -727,7 +727,8 @@
       uniforms:{
         tDiffuse:{value:null},
         tEffect:{value:target.texture},
-        uIntensity:{value:1}
+        uIntensity:{value:1},
+        ...(shader.compositeUniforms||{})
       },
       vertexShader:shader.vertexShader,
       fragmentShader:compositeFragment,
@@ -769,6 +770,7 @@
         const previousAutoClear=renderer.autoClear;
         try{
           renderer.autoClear=true;
+          if(typeof shader.beforeRender==='function')shader.beforeRender({renderer,writeBuffer,readBuffer,uniforms});
           renderer.setRenderTarget(target);
           renderer.render(processScene,camera);
           compositeMaterial.uniforms.tDiffuse.value=readBuffer.texture;
@@ -785,7 +787,8 @@
             fallbackMaterial.uniforms.tDiffuse.value=readBuffer.texture;
             renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
             renderer.render(fallbackScene,camera);
-            console.warn('[PStudio] Volumetric fog failed; the original scene frame was preserved and fog was disabled.',error);
+            if(shader.label==='Camera lens')console.warn('[PStudio] Camera lens failed; the original scene frame was preserved and lens effects were disabled.',error);
+            else console.warn('[PStudio] Volumetric fog failed; the original scene frame was preserved and fog was disabled.',error);
           }catch(fallbackError){
             console.error('[PStudio] Volumetric fog fallback could not composite the source frame.',fallbackError);
             throw fallbackError;
@@ -803,6 +806,99 @@
       }
     };
     pass.setSize(1,1);
+    return pass;
+  }
+
+  function createCameraLensPass(FX,Three) {
+    if(!Three?.Vector2)return null;
+    const chromatic={value:0};
+    const shader={
+      label:'Camera lens',
+      uniforms:{
+        tDiffuse:{value:null},
+        tDepth:{value:null},
+        uDepthValid:{value:0},
+        uDofEnabled:{value:0},
+        uFocusDistance:{value:12},
+        uAperture:{value:2.8},
+        uNear:{value:.1},
+        uFar:{value:1600},
+        uTexelSize:{value:new Three.Vector2(1,1)},
+        uMaxBlurPixels:{value:12},
+        uChromaticAberration:chromatic
+      },
+      compositeUniforms:{uChromaticAberration:chromatic},
+      beforeRender({readBuffer,uniforms}){
+        const width=Math.max(1,Number(readBuffer?.width)||1);
+        const height=Math.max(1,Number(readBuffer?.height)||1);
+        uniforms.uTexelSize.value.set(1/width,1/height);
+      },
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse;uniform sampler2D tDepth;',
+        'uniform float uDepthValid;uniform float uDofEnabled;',
+        'uniform float uFocusDistance;uniform float uAperture;',
+        'uniform float uNear;uniform float uFar;uniform vec2 uTexelSize;',
+        'uniform float uMaxBlurPixels;varying vec2 vUv;',
+        'float pStudioLinearDepth(float rawDepth){',
+        'return (uNear*uFar)/max(uNear,uFar-rawDepth*(uFar-uNear));}',
+        'void main(){',
+        'vec4 center=texture2D(tDiffuse,vUv);',
+        'if(uDofEnabled<0.5||uDepthValid<0.5){gl_FragColor=center;return;}',
+        'float rawDepth=texture2D(tDepth,vUv).x;',
+        'float centerDepth=pStudioLinearDepth(rawDepth);',
+        'float focus=max(0.1,uFocusDistance);',
+        'float fStop=clamp(uAperture,1.2,22.0);',
+        'float coc=clamp(abs(centerDepth-focus)/focus*(2.8/fStop)*6.0,0.0,uMaxBlurPixels);',
+        'if(coc<0.35){gl_FragColor=center;return;}',
+        'vec3 accum=center.rgb;float total=1.0;',
+        'for(int i=0;i<12;i++){',
+        'float fi=float(i);float angle=fi*2.39996323;',
+        'float radial=sqrt((fi+0.5)/12.0);',
+        'vec2 offset=vec2(cos(angle),sin(angle))*uTexelSize*coc*radial;',
+        'vec2 sampleUv=clamp(vUv+offset,vec2(0.001),vec2(0.999));',
+        'float sampleRaw=texture2D(tDepth,sampleUv).x;',
+        'float sampleDepth=pStudioLinearDepth(sampleRaw);',
+        'float tolerance=max(0.035,centerDepth*0.0125);',
+        'float depthWeight=exp(-abs(sampleDepth-centerDepth)/tolerance);',
+        'vec3 sampleColor=texture2D(tDiffuse,sampleUv).rgb;',
+        'accum+=sampleColor*depthWeight;total+=depthWeight;',
+        '}',
+        'vec3 blurred=accum/max(total,1e-5);',
+        'float blurMix=smoothstep(0.25,3.0,coc);',
+        'gl_FragColor=vec4(mix(center.rgb,blurred,blurMix),center.a);',
+        '}'
+      ].join('\n')
+    };
+    const composite=[
+      'uniform sampler2D tDiffuse;uniform sampler2D tEffect;',
+      'uniform float uChromaticAberration;varying vec2 vUv;',
+      'void main(){',
+      'vec2 radial=vUv-vec2(0.5);float radius2=dot(radial,radial);',
+      'vec2 shift=radial*(uChromaticAberration*0.012*radius2);',
+      'vec2 redUv=clamp(vUv+shift,vec2(0.001),vec2(0.999));',
+      'vec2 blueUv=clamp(vUv-shift,vec2(0.001),vec2(0.999));',
+      'vec4 center=texture2D(tEffect,vUv);',
+      'float red=texture2D(tEffect,redUv).r;',
+      'float blue=texture2D(tEffect,blueUv).b;',
+      'gl_FragColor=vec4(red,center.g,blue,center.a);',
+      '}'
+    ].join('\n');
+    const pass=createScaledFullscreenPass(Three,shader,composite,.5,true);
+    if(!pass)return null;
+    pass.setDofEnabled=value=>{shader.uniforms.uDofEnabled.value=value?1:0;return !!value;};
+    pass.setFocusDistance=value=>{shader.uniforms.uFocusDistance.value=Math.max(.1,Math.min(100000,Number(value)||12));return shader.uniforms.uFocusDistance.value;};
+    pass.setAperture=value=>{shader.uniforms.uAperture.value=Math.max(1.2,Math.min(22,Number(value)||2.8));return shader.uniforms.uAperture.value;};
+    pass.setChromaticAberration=value=>{chromatic.value=Math.max(0,Math.min(1,Number(value)||0));return chromatic.value;};
+    pass.setMaxBlurPixels=value=>{shader.uniforms.uMaxBlurPixels.value=Math.max(1,Math.min(18,Number(value)||12));return shader.uniforms.uMaxBlurPixels.value;};
+    pass.getStats=()=>({
+      resolutionScale:pass.getResolutionScale(),
+      focusDistance:shader.uniforms.uFocusDistance.value,
+      aperture:shader.uniforms.uAperture.value,
+      chromaticAberration:chromatic.value,
+      maxBlurPixels:shader.uniforms.uMaxBlurPixels.value,
+      samples:12
+    });
     return pass;
   }
 
@@ -907,7 +1003,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,configureAtmosphere,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,configureAtmosphere,createCameraLensPass,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     configureToon,
     releaseObject(object){releaseOutline(object);},

@@ -111,6 +111,7 @@ func on_collision(other)
 | `draw_circle(x, y, radius)` | Queue a circle for the current frame |
 | `draw_sprite(name, x, y)` | Draw an imported image asset at its native size |
 | `set_atmosphere(elevation, azimuth, turbidity, cloud_density)` | Set the physical sky and cloud parameters; angles are degrees, azimuth 0° points north (+Z), turbidity is 1–10 and cloud density is 0–1 |
+| `set_camera_lens(dof_enabled, focus_distance, aperture, chromatic_aberration)` | Set depth of field and edge-weighted chromatic aberration; focus distance is camera-space depth in world units, aperture is f/1.2–f/22 and chromatic aberration is 0–1 |
 | `len(value)` / `range(...)` | Standard ps helpers supported by the game runtime |
 
 The selected object's **Enable Collider** checkbox is stored in the scene file. Collision detection supports rectangle-rectangle, circle-circle and circle-rectangle pairs. A callback is dispatched once on collision-enter to each participating object's attached script if that script defines `on_collision(other)`.
@@ -452,6 +453,7 @@ The browser-only game runtime includes a small set of time and presentation cont
 func start()
     set_time_scale(1)
     set_god_rays(true, 0.7, 0.97)
+    set_camera_lens(true, 18, 2.8, 0.08)
 
 func update(dt)
     if was_key_pressed("space")
@@ -467,8 +469,11 @@ func update(dt)
 - `set_time_scale(scale)`: sets the scene simulation multiplier, bounded to 0–4. Zero freezes the runtime delta time; values below/above 1 slow down/speed up script `update(dt)`, ECS, physics and runtime-clock effects. Browser audio playback and wall-clock timers are not time-scaled. The value resets to 1 on the next Play session.
 - `draw_trail(target_id, color, width, duration)`: records the world-space position of a Scene Game Object resolved by its id or name. Call it repeatedly from `update(dt)` to form a moving ribbon; a one-off call cannot infer a path. Width is in world units (0.001–1) and lifetime is seconds (0.05–10). The renderer retains up to 64 simultaneous trails, each with up to 48 sampled points; the oldest trail is disposed when that budget is reached.
 - `set_god_rays(enabled, intensity, decay)`: enables screen-space radial light shafts from the projected sun. Intensity is bounded to 0–2 and decay to 0.8–0.995. The third argument is optional for compatibility with existing two-argument scripts. Quality presets control the ray-pass resolution and sample count; the mobile preset disables volumetric fog and rays. If the shader pass is unavailable or fails, PStudio falls back to Bloom when available.
+- `set_camera_lens(dof_enabled, focus_distance, aperture, chromatic_aberration)`: enables depth-of-field (DoF) and/or chromatic aberration. Focus distance is camera-space depth in world units (0.1–100,000); aperture is an f-number from 1.2 to 22 (smaller values produce stronger blur); chromatic aberration is an intensity from 0 to 1. Set `dof_enabled` to false to use chromatic aberration alone. Lens effects are off by default. The mobile quality profile suppresses DoF; balanced/high/ultra profiles scale its render target and blur radius. A memory-safety event suppresses both lens effects while preserving their requested settings. If only the depth prepass fails, DoF is suppressed but chromatic aberration can still run when GPU resources are available.
+  
+The DoF pass uses the existing opaque-scene depth prepass and a 12-tap depth-aware blur at reduced resolution, then composites before OutputPass. Transparent materials, wind-deformed foliage, static foliage batches and sky geometry are excluded from the existing depth prepass, so their blur boundaries are not guaranteed to be accurate. It is a real-time screen-space lens approximation, not a physically based lens simulation.
 
-These are screen-space/art-directed effects, not physically simulated volumetric light transport. The God Rays pass is inserted before the final output/tonemapping pass to preserve the compositing color pipeline. The mobile GPU shader compile and visual-quality gate still requires testing on real target devices.
+These are screen-space/art-directed effects, not physically simulated volumetric light transport. Lens and God Rays passes are inserted before the final output/tonemapping pass to preserve the compositing color pipeline. Real-device WebGL shader compilation, visual quality and frame-time checks are still required.
 
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 

@@ -859,3 +859,17 @@ test('ps script runtime variables, lifecycle and System locals are ECS-owned',()
   assert.ok(html.indexOf('/static/pstudio_ecs.js') < html.indexOf('/static/pstudio_ecs_script.js'));
   assert.ok(html.includes('/static/pstudio_ecs_script.js'));
 });
+
+test('camera lens effects use the existing depth prepass and honor adaptive quality and memory safety', () => {
+  assert.ok(renderer.includes('createCameraLensPass?.(FX,T)'));
+  assert.ok(renderer.includes('cameraLensPass.enabled=false;composer.addPass(cameraLensPass)'));
+  assert.ok(renderer.includes('||cameraLensDofEnabled'));
+  assert.ok(renderer.includes('applyCameraLensQuality(resolveQualityPreset(\'auto\'),adaptiveQualityLevel,false)'));
+  assert.ok(renderer.includes('cameraLensDofEnabled=false'));
+  assert.ok(renderer.includes('if(cameraLensPass)cameraLensPass.enabled=false'));
+  assert.ok(renderer.includes('lensChromaticAllowed=!!(cameraLensChromaticAberration>0&&!memorySafetyApplied&&deviceMemoryGiB()>2)'));
+  assert.ok(renderer.includes('uDepthValid.value=lensDepthReady?1:0'));
+  assert.ok(renderer.includes("mobile:{dof:false,scale:.25,maxBlur:4}"));
+  assert.ok(renderer.includes("ultra:{dof:true,scale:1,maxBlur:14}"));
+  assert.ok(renderer.includes('cameraLensPass?.failed'));
+});

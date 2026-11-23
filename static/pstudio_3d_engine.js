@@ -6,8 +6,9 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,godRaysPass=null;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,godRaysPass=null,cameraLensPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricFogManualOverride=null,volumetricCloudsEnabled=false,temporalAAEnabled=false,godRaysEnabled=false,godRaysRequested=false,godRaysFallbackEnabled=false,godRaysIntensity=0,godRaysDecay=.965;
+  let cameraLensDofRequested=false,cameraLensDofEnabled=false,cameraLensFocusDistance=12,cameraLensAperture=2.8,cameraLensChromaticAberration=0,cameraLensQualityScale=.42,cameraLensMaxBlurPixels=8;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -227,6 +228,12 @@
     high:{fog:true,godRays:true,fogScale:.66,fogSteps:14,rayScale:.62,raySamples:18},
     ultra:{fog:true,godRays:true,fogScale:1,fogSteps:24,rayScale:1,raySamples:32}
   };
+  const CAMERA_LENS_QUALITY={
+    mobile:{dof:false,scale:.25,maxBlur:4},
+    balanced:{dof:true,scale:.42,maxBlur:7},
+    high:{dof:true,scale:.66,maxBlur:11},
+    ultra:{dof:true,scale:1,maxBlur:14}
+  };
   function applyVolumetricQuality(name,level=2){
     volumetricFogPass?.resetFailure?.();
     godRaysPass?.resetFailure?.();
@@ -252,6 +259,27 @@
     }
     return{fog:{enabled:volumetricFogEnabled,scale:volumetricFogPass?.getResolutionScale?.()||0,steps:volumetricFogPass?.uniforms?.uSteps?.value||0},godRays:{enabled:godRaysEnabled,scale:godRaysPass?.getResolutionScale?.()||0,samples:godRaysPass?.uniforms?.uSamples?.value||0}};
   }
+  function applyCameraLensQuality(name,level=2,resetFailure=false){
+    if(resetFailure)cameraLensPass?.resetFailure?.();
+    const profile=CAMERA_LENS_QUALITY[name]||CAMERA_LENS_QUALITY.balanced;
+    const qualityLevel=Math.max(0,Math.min(2,Math.floor(Number(level)||0)));
+    const safe=qualityLevel>0&&!memorySafetyApplied&&deviceMemoryGiB()>2;
+    cameraLensDofEnabled=!!(safe&&profile.dof&&cameraLensDofRequested&&cameraLensPass);
+    const scaleFactor=qualityLevel===1?.68:1;
+    cameraLensQualityScale=profile.scale*scaleFactor;
+    cameraLensMaxBlurPixels=profile.maxBlur*(qualityLevel===1?.78:1);
+    if(cameraLensPass){
+      const canRun=safe&&(cameraLensDofEnabled||cameraLensChromaticAberration>0);
+      cameraLensPass.enabled=!!(canRun&&!cameraLensPass.failed);
+      cameraLensPass.setResolutionScale?.(cameraLensDofEnabled?cameraLensQualityScale:1);
+      cameraLensPass.setMaxBlurPixels?.(cameraLensMaxBlurPixels);
+      cameraLensPass.setDofEnabled?.(cameraLensDofEnabled);
+      cameraLensPass.setFocusDistance?.(cameraLensFocusDistance);
+      cameraLensPass.setAperture?.(cameraLensAperture);
+      cameraLensPass.setChromaticAberration?.(cameraLensChromaticAberration);
+    }
+    return{dof:cameraLensDofEnabled,chromaticAberration:!!(safe&&cameraLensChromaticAberration>0),scale:cameraLensPass?.getResolutionScale?.()||0};
+  }
   function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
@@ -268,7 +296,7 @@
       for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001);if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;
-      applyVolumetricQuality(selected,adaptiveQualityLevel);
+      applyVolumetricQuality(selected,adaptiveQualityLevel);applyCameraLensQuality(selected,adaptiveQualityLevel,true);
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
@@ -284,7 +312,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;applyVolumetricQuality(resolveQualityPreset('auto'),adaptiveQualityLevel);
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001;if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;applyVolumetricQuality(resolveQualityPreset('auto'),adaptiveQualityLevel);applyCameraLensQuality(resolveQualityPreset('auto'),adaptiveQualityLevel,false);
     const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
@@ -344,6 +372,7 @@
       if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
       godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godRaysPass){godRaysPass.enabled=false;composer.addPass(godRaysPass);}
+      cameraLensPass=window.PStudioEnvironmentFX?.createCameraLensPass?.(FX,T)||null;if(cameraLensPass){cameraLensPass.enabled=false;composer.addPass(cameraLensPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
@@ -415,7 +444,7 @@
   }
   function renderWaterDepthPrepass(){
     const fx=window.PStudioEnvironmentFX,stats=fx?.getStats?.();
-    const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled;
+    const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled||cameraLensDofEnabled;
     if(!waterDepthTarget||!waterDepthMaterial||!needsDepth){
       fx?.setSceneDepthTexture?.(null,1,1,camera?.near,camera?.far);return false;
     }
@@ -526,9 +555,9 @@
       const current=renderer?.getPixelRatio?.()||1;
       renderer?.setPixelRatio?.(Math.max(.65,current*.82));
       composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
-      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;godRaysEnabled=false;godRaysFallbackEnabled=false;
+      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;godRaysEnabled=false;godRaysFallbackEnabled=false;cameraLensDofEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
-      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;if(godRaysPass)godRaysPass.enabled=false;
+      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;if(godRaysPass)godRaysPass.enabled=false;if(cameraLensPass)cameraLensPass.enabled=false;
       const cache=window.PStudioResources?.stats?.();
       if(cache){
         window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
@@ -550,7 +579,7 @@
     try{
       const depthPrepassReady=renderWaterDepthPrepass()&&!!waterDepthTarget?.depthTexture;
       if(volumetricCloudsEnabled&&depthPrepassReady)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||cameraLensDofEnabled||cameraLensChromaticAberration>0||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
@@ -594,9 +623,27 @@
             u.uDecay.value=godRaysDecay;
           });
         }
+        if(cameraLensPass){
+          const lensDepthReady=!!(cameraLensDofEnabled&&depthPrepassReady&&!cameraLensPass.failed);
+          const lensChromaticAllowed=!!(cameraLensChromaticAberration>0&&!memorySafetyApplied&&deviceMemoryGiB()>2);
+          cameraLensPass.enabled=!!((lensDepthReady||lensChromaticAllowed)&&!cameraLensPass.failed);
+          const u=cameraLensPass.uniforms;
+          if(u){
+            if(u.tDepth)u.tDepth.value=lensDepthReady?waterDepthTarget?.depthTexture||null:null;
+            if(u.uDepthValid)u.uDepthValid.value=lensDepthReady?1:0;
+            if(u.uDofEnabled)u.uDofEnabled.value=lensDepthReady?1:0;
+            if(u.uFocusDistance)u.uFocusDistance.value=cameraLensFocusDistance;
+            if(u.uAperture)u.uAperture.value=cameraLensAperture;
+            if(u.uNear)u.uNear.value=camera.near;
+            if(u.uFar)u.uFar.value=camera.far;
+            if(u.uChromaticAberration)u.uChromaticAberration.value=lensChromaticAllowed?cameraLensChromaticAberration:0;
+            cameraLensPass.setResolutionScale?.(lensDepthReady?cameraLensQualityScale:1);
+          }
+        }
         try{
           composer.render();
           if(volumetricFogPass?.failed){volumetricFogEnabled=false;volumetricFogPass.enabled=false;}
+          if(cameraLensPass?.failed){cameraLensDofEnabled=false;cameraLensPass.enabled=false;}
         }catch(postError){
           if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
           godRaysEnabled=false;godRaysPass.enabled=false;
@@ -4183,6 +4230,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
     for(const trail of trailEffects.values())disposeTrailEffect(trail);trailEffects.clear();
     cameraShakeState=null;godRaysEnabled=false;godRaysRequested=false;godRaysFallbackEnabled=false;godRaysIntensity=0;godRaysDecay=.965;volumetricFogManualOverride=null;
+    cameraLensDofRequested=false;cameraLensDofEnabled=false;cameraLensFocusDistance=12;cameraLensAperture=2.8;cameraLensChromaticAberration=0;if(cameraLensPass){cameraLensPass.enabled=false;cameraLensPass.resetFailure?.();}
     particleClock=0;
     selectionSignature='';
     if(renderer)drawFrame();
@@ -4256,6 +4304,17 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     frameObject,
     adjustZoom:adjustCameraZoom,
     cameraShake:triggerCameraShake,
+    setCameraLens:(dofEnabled,focusDistance=12,aperture=2.8,chromaticAberration=0)=>{
+      cameraLensDofRequested=!!dofEnabled;
+      cameraLensFocusDistance=Math.max(.1,Math.min(100000,Number.isFinite(Number(focusDistance))?Number(focusDistance):12));
+      cameraLensAperture=Math.max(1.2,Math.min(22,Number.isFinite(Number(aperture))?Number(aperture):2.8));
+      cameraLensChromaticAberration=Math.max(0,Math.min(1,Number.isFinite(Number(chromaticAberration))?Number(chromaticAberration):0));
+      if((cameraLensDofRequested||cameraLensChromaticAberration>0)&&!renderer&&window.THREE)ensureRenderer();
+      applyCameraLensQuality(resolveQualityPreset(qualityPreset),adaptiveQualityEnabled?adaptiveQualityLevel:2,true);
+      if(renderer&&scene&&camera)drawFrame();
+      const profile=CAMERA_LENS_QUALITY[resolveQualityPreset(qualityPreset)]||CAMERA_LENS_QUALITY.balanced;
+      return{enabled:!!cameraLensPass?.enabled,dofRequested:cameraLensDofRequested,dofEnabled:cameraLensDofEnabled,dofQualitySupported:!!profile.dof,chromaticAberration:cameraLensChromaticAberration,focusDistance:cameraLensFocusDistance,aperture:cameraLensAperture,available:!!cameraLensPass,failed:!!cameraLensPass?.failed,lastError:cameraLensPass?.lastError||null,resolutionScale:cameraLensPass?.getResolutionScale?.()||0};
+    },
     setGodRays:(enabled,intensity=1,decay=.965)=>{
       const requested=!!enabled;
       godRaysRequested=requested;
@@ -4301,6 +4360,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
       cameraShake:{active:!!cameraShakeState},
+      cameraLens:{available:!!cameraLensPass,enabled:!!cameraLensPass?.enabled,dofRequested:cameraLensDofRequested,dofEnabled:cameraLensDofEnabled,chromaticAberration:cameraLensChromaticAberration,focusDistance:cameraLensFocusDistance,aperture:cameraLensAperture,resolutionScale:cameraLensPass?.getResolutionScale?.()||0,maxBlurPixels:cameraLensMaxBlurPixels,samples:cameraLensPass?.getStats?.().samples||12,failed:!!cameraLensPass?.failed,lastError:cameraLensPass?.lastError||null},
       godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,requested:godRaysRequested,available:!!godRaysPass,failed:!!godRaysPass?.failed,lastError:godRaysPass?.lastError||null,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity,decay:godRaysDecay,resolutionScale:godRaysPass?.getResolutionScale?.()||0,samples:godRaysPass?.uniforms?.uSamples?.value||0},
       models:modelInstances.size,
       modelPreparationPending,
