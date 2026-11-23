@@ -850,7 +850,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const unloadDistance=Math.max(loadDistance,Math.min(200000,Number(o.unloadDistance)||loadDistance*1.2));
     const assets=Array.isArray(o.assets)?[...new Set(o.assets.map(value=>String(value||'').trim()).filter(Boolean))]:[];
     const old=worldChunks.get(key);
-    const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some((value,index)=>value!==assets[index]));
+    const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some(value=>!assets.includes(value)));
     // Keep the registry record stable so in-flight promises retain the same object.
     // Asset-set changes invalidate the old generation before the new configuration is assigned.
     if(old&&assetsChanged&&(old.active||old.loading))endWorldChunkLoad(old,new Set(assets));
