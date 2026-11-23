@@ -854,7 +854,7 @@ test('ps script runtime variables, lifecycle and System locals are ECS-owned',()
   assert.ok(engine.includes('getSystemStateByEntity'));
   assert.ok(engine.includes('setSystemStateByEntity'));
   for(const field of ['states','initialized','started','landSequences','ecsStates']){
-    assert.doesNotMatch(engine,new RegExp('runtime\\\\.'+field+'\\\\b'));
+    assert.equal(engine.includes('runtime.'+field),false,'legacy runtime state remains: '+field);
   }
   assert.ok(html.indexOf('/static/pstudio_ecs.js') < html.indexOf('/static/pstudio_ecs_script.js'));
   assert.ok(html.includes('/static/pstudio_ecs_script.js'));
