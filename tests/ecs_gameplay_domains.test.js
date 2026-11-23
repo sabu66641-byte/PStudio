@@ -45,7 +45,7 @@ function createRuntime(objects) {
   return { ecs, gameplay, bridge: window.PStudioECSGameplay, physics, bodies, positions, movements, controllerConfigs, window };
 }
 
-test('Inventory and Equipment are runtime-only ECS Components with legacy API parity', () => {
+test('Inventory and Equipment are persistent ECS Components with legacy API parity', () => {
   const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
   const { ecs, gameplay } = createRuntime(objects);
   const entity = ecs.getEntityForSceneObject('player');
@@ -72,8 +72,9 @@ test('Inventory and Equipment are runtime-only ECS Components with legacy API pa
   assert.equal(snapshot.find(item => item.item === 'sword').equipped, true);
   assert.ok(ecs.hasComponent(entity, 'Inventory'));
   assert.ok(ecs.hasComponent(entity, 'Equipment'));
-  assert.equal(ecs.getComponentDefinition('Inventory').persistent, false);
+  assert.equal(ecs.getComponentDefinition('Inventory').persistent, true);
   assert.equal(ecs.getComponentDefinition('Equipment').internal, true);
+  assert.equal(ecs.getComponentDefinition('Equipment').persistent, true);
 });
 
 test('Combat cooldowns and combo state are ECS data and cooldown expiry is scheduled', () => {
@@ -206,7 +207,7 @@ test('Health, Inventory, Equipment and CombatState persist in versioned ECS scen
   assert.equal(gameplay.persistECS(objects), true);
   assert.equal(objects[0].ecsComponentsVersion, 1);
   const savedTypes = objects[0].ecsComponents.map(entry => entry.type).sort();
-  assert.deepEqual(savedTypes, ['CombatState', 'Equipment', 'Health', 'Inventory']);
+  assert.deepEqual(Array.from(savedTypes), ['CombatState', 'Equipment', 'Health', 'Inventory']);
   assert.equal(ecs.clearSceneObjects(), true);
   assert.equal(ecs.query(['SceneObjectRef']).length, 0);
   assert.equal(ecs.query(['ItemDefinition']).length, 2);

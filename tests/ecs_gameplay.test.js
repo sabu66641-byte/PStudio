@@ -19,14 +19,14 @@ function loadModules({ withECS = true } = {}) {
   return { ecs: window.PStudioECS, gameplay: window.PStudioGameplay, bridge: window.PStudioECSGameplay, window };
 }
 
-test('Health is registered as an internal, runtime-only typed ECS Component', () => {
+test('Health is registered as an internal, persistent typed ECS Component', () => {
   const { ecs, bridge } = loadModules();
   assert.ok(bridge);
   assert.equal(bridge.initialize([]), true);
   const definition = ecs.getComponentDefinition('Health');
   assert.equal(definition.source, 'pstudio_ecs_gameplay');
   assert.equal(definition.internal, true);
-  assert.equal(definition.persistent, false);
+  assert.equal(definition.persistent, true);
   assert.deepEqual(Object.keys(definition.schema).sort(), ['configured', 'hp', 'max']);
 });
 

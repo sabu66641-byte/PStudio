@@ -714,7 +714,10 @@ test('ECS Inspector persists versioned Component payloads through the ECS serial
   assert.ok(core.includes('const SCENE_COMPONENTS_VERSION = 1'));
   assert.ok(core.includes('function serializeEntityComponents'));
   assert.ok(core.includes('function readSavedComponentEntries'));
-  assert.ok(inspector.includes('api.serializeEntityComponents(entityId, [...CORE_COMPONENTS])'));
+  assert.ok(inspector.includes('api.serializeEntityComponents(entityId, [...CORE_COMPONENTS], object)'));
+  assert.ok(inspector.includes('if (!serialized)'));
+  assert.ok(inspector.includes('newer ECS Component schema'));
+
   assert.ok(inspector.includes('object.ecsComponentsVersion = serialized.version'));
   assert.ok(inspector.includes('object.ecsComponents = serialized.components'));
   assert.doesNotThrow(() => new Function(core));
@@ -745,10 +748,13 @@ test('gameplay state uses versioned Scene Object ECS persistence and leaves Ques
   const wrapper = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
   const input = fs.readFileSync(path.join(root, 'static/pstudio_ecs_input.js'), 'utf8');
   const core = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
-  for (const type of ['Health', 'Inventory', 'Equipment', 'CombatState', 'AIController']) {
-    assert.ok(gameplay.includes("label: '" + type) || gameplay.includes("label: '" + type.replace(/([A-Z])/g, ' $1').trim()));
-    assert.ok(gameplay.includes('persistent: true'));
-  }
+  for (const fragment of [
+    "label: 'Health', persistent: true",
+    "label: 'Inventory', persistent: true",
+    "label: 'Equipment', persistent: true",
+    "label: 'Combat State', persistent: true",
+    "label: 'AI Controller', persistent: true"
+  ]) assert.ok(gameplay.includes(fragment), fragment);
   assert.ok(gameplay.includes("ecs.serializeEntityComponents("));
   assert.ok(!gameplay.includes('clearStandaloneEntities();'));
   assert.ok(wrapper.includes('return bridge.persist(sceneObjects||[],legacy)'));
