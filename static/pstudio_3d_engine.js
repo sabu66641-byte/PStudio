@@ -797,18 +797,23 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const [key,mesh] of [...meshCache])if(owners.has(String(mesh.userData.ownerId))){disposeMesh(mesh);meshCache.delete(key);}
     for(const [key,instance] of [...modelInstances])if(owners.has(String(instance.ownerId)))removeModelInstance(key);
   }
+  function releaseStaleChunkAssets(chunk,requestedAssets){
+    // If a newer generation is already active/loading, retain names it currently uses;
+    // release only resources that belonged exclusively to the obsolete request.
+    const retained=(chunk.active||chunk.loading)?new Set(chunk.assets||[]):new Set();
+    const stale=(requestedAssets||[]).filter(name=>!retained.has(name));
+    if(stale.length)releaseChunkAssetCache(chunk,stale);
+  }
   function beginWorldChunkLoad(chunk){
     if(chunk.loading||chunk.active)return;
     const token=++chunk.generation;
     const requestedAssets=chunk.assets.slice();
     chunk.loading=true;
     chunk.error=null;
-    Promise.all(requestedAssets.map(name=>requestModelAsset(name))).then(async()=>{
-      // A stale request must never release the current generation's assets. endWorldChunkLoad
-      // already released the exact old asset set when the generation was invalidated.
-      if(token!==chunk.generation)return;
+    Promise.all(requestedAssets.map(name=>requestModelAsset(name)).then(async()=>{
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
       if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:requestedAssets.slice()});
-      if(token!==chunk.generation)return;
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
       chunk.loading=false;
       chunk.active=true;
       chunk.lastLoadedAt=Date.now();
@@ -817,7 +822,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         window.PStudioEvents?.emit('world.chunk.resumed',{id:chunk.id});
       }catch(_){}
     }).catch(error=>{
-      if(token!==chunk.generation)return;
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
       chunk.loading=false;
       chunk.active=false;
       chunk.error=String(error?.message||error);
