@@ -220,7 +220,8 @@
     balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true},
     ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}
-  };\n  const VOLUMETRIC_QUALITY={
+  };
+  const VOLUMETRIC_QUALITY={
     mobile:{fog:false,godRays:false,fogScale:.25,fogSteps:4,rayScale:.25,raySamples:4},
     balanced:{fog:true,godRays:true,fogScale:.42,fogSteps:8,rayScale:.38,raySamples:8},
     high:{fog:true,godRays:true,fogScale:.66,fogSteps:14,rayScale:.62,raySamples:18},
