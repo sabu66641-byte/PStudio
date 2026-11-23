@@ -451,7 +451,7 @@ The browser-only game runtime includes a small set of time and presentation cont
 ```ps
 func start()
     set_time_scale(1)
-    set_god_rays(true, 0.7)
+    set_god_rays(true, 0.7, 0.97)
 
 func update(dt)
     if was_key_pressed("space")
@@ -466,7 +466,7 @@ func update(dt)
 - `camera_shake(intensity, duration)`: triggers a decaying 3D camera impulse. Intensity is bounded to 0–2; duration is seconds, bounded to 0–8. Its envelope uses wall-clock time, so it is not frozen by `set_time_scale(0)`.
 - `set_time_scale(scale)`: sets the scene simulation multiplier, bounded to 0–4. Zero freezes the runtime delta time; values below/above 1 slow down/speed up script `update(dt)`, ECS, physics and runtime-clock effects. Browser audio playback and wall-clock timers are not time-scaled. The value resets to 1 on the next Play session.
 - `draw_trail(target_id, color, width, duration)`: records the world-space position of a Scene Game Object resolved by its id or name. Call it repeatedly from `update(dt)` to form a moving ribbon; a one-off call cannot infer a path. Width is in world units (0.001–1) and lifetime is seconds (0.05–10). The renderer retains up to 64 simultaneous trails, each with up to 48 sampled points; the oldest trail is disposed when that budget is reached.
-- `set_god_rays(enabled, intensity)`: enables a screen-space radial light-shaft pass that samples bright regions (20 taps per pixel); intensity is bounded to 0–2. If the shader pass is unavailable or fails to render, PStudio disables it and falls back to the existing Bloom pass when available. If neither pass is available, the call reports the effect as disabled.
+- `set_god_rays(enabled, intensity, decay)`: enables screen-space radial light shafts from the projected sun. Intensity is bounded to 0–2 and decay to 0.8–0.995. The third argument is optional for compatibility with existing two-argument scripts. Quality presets control the ray-pass resolution and sample count; the mobile preset disables volumetric fog and rays. If the shader pass is unavailable or fails, PStudio falls back to Bloom when available.
 
 These are screen-space/art-directed effects, not physically simulated volumetric light transport. The God Rays pass is inserted before the final output/tonemapping pass to preserve the compositing color pipeline. The mobile GPU shader compile and visual-quality gate still requires testing on real target devices.
 

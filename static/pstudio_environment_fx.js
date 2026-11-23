@@ -693,38 +693,163 @@
     return pass;
   }
 
+  function createScaledFullscreenPass(Three,shader,compositeFragment,initialScale=1,failOpen=false){
+    if(!Three?.ShaderMaterial||!Three?.WebGLRenderTarget||!Three?.Scene||!Three?.OrthographicCamera||!Three?.PlaneGeometry||!Three?.Mesh)return null;
+    const geometry=new Three.PlaneGeometry(2,2);
+    const camera=new Three.OrthographicCamera(-1,1,1,-1,0,1);
+    const processScene=new Three.Scene();
+    const processMaterial=new Three.ShaderMaterial({
+      uniforms:shader.uniforms,
+      vertexShader:shader.vertexShader,
+      fragmentShader:shader.fragmentShader,
+      depthTest:false,depthWrite:false,transparent:false,toneMapped:false
+    });
+    const processMesh=new Three.Mesh(geometry,processMaterial);
+    processScene.add(processMesh);
+    const target=new Three.WebGLRenderTarget(1,1,{
+      format:Three.RGBAFormat,
+      minFilter:Three.LinearFilter,
+      magFilter:Three.LinearFilter,
+      depthBuffer:false,
+      stencilBuffer:false
+    });
+    target.texture.generateMipmaps=false;
+    const compositeScene=new Three.Scene();
+    const fallbackScene=failOpen?new Three.Scene():null;
+    const fallbackMaterial=failOpen?new Three.ShaderMaterial({
+      uniforms:{tDiffuse:{value:null}},
+      vertexShader:shader.vertexShader,
+      fragmentShader:'uniform sampler2D tDiffuse;varying vec2 vUv;void main(){gl_FragColor=texture2D(tDiffuse,vUv);}',
+      depthTest:false,depthWrite:false,transparent:false,toneMapped:false
+    }):null;
+    if(fallbackScene)fallbackScene.add(new Three.Mesh(geometry,fallbackMaterial));
+    const compositeMaterial=new Three.ShaderMaterial({
+      uniforms:{
+        tDiffuse:{value:null},
+        tEffect:{value:target.texture},
+        uIntensity:{value:1}
+      },
+      vertexShader:shader.vertexShader,
+      fragmentShader:compositeFragment,
+      depthTest:false,depthWrite:false,transparent:false,toneMapped:false
+    });
+    compositeScene.add(new Three.Mesh(geometry,compositeMaterial));
+    let resolutionScale=Math.max(.2,Math.min(1,Number(initialScale)||1));
+    let lastWidth=1,lastHeight=1;
+    const pass={
+      enabled:false,
+      needsSwap:true,
+      clear:false,
+      renderToScreen:false,
+      uniforms:shader.uniforms,
+      failed:false,
+      lastError:null,
+      resetFailure(){this.failed=false;this.lastError=null;},
+      setResolutionScale(value){
+        const next=Math.max(.2,Math.min(1,Number(value)||1));
+        if(Math.abs(next-resolutionScale)<.001)return resolutionScale;
+        resolutionScale=next;
+        this.setSize(lastWidth,lastHeight);
+        return resolutionScale;
+      },
+      getResolutionScale(){return resolutionScale;},
+      getTargetSize(){return{width:target.width,height:target.height};},
+      setSize(width,height){
+        lastWidth=Math.max(1,Math.floor(Number(width)||1));
+        lastHeight=Math.max(1,Math.floor(Number(height)||1));
+        const scaledWidth=Math.max(1,Math.round(lastWidth*resolutionScale));
+        const scaledHeight=Math.max(1,Math.round(lastHeight*resolutionScale));
+        if(target.width!==scaledWidth||target.height!==scaledHeight)target.setSize(scaledWidth,scaledHeight);
+      },
+      render(renderer,writeBuffer,readBuffer){
+        if(!readBuffer?.texture)return;
+        const uniforms=this.uniforms;
+        if(uniforms.tDiffuse)uniforms.tDiffuse.value=readBuffer.texture;
+        if(uniforms.tDepth&&!uniforms.tDepth.value)uniforms.tDepth.value=readBuffer.depthTexture||null;
+        const previousAutoClear=renderer.autoClear;
+        try{
+          renderer.autoClear=true;
+          renderer.setRenderTarget(target);
+          renderer.render(processScene,camera);
+          compositeMaterial.uniforms.tDiffuse.value=readBuffer.texture;
+          compositeMaterial.uniforms.tEffect.value=target.texture;
+          compositeMaterial.uniforms.uIntensity.value=Number(uniforms.uIntensity?.value)||0;
+          renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
+          renderer.render(compositeScene,camera);
+        }catch(error){
+          this.failed=true;
+          this.lastError=String(error?.message||error);
+          if(!failOpen)throw error;
+          this.enabled=false;
+          try{
+            fallbackMaterial.uniforms.tDiffuse.value=readBuffer.texture;
+            renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
+            renderer.render(fallbackScene,camera);
+            console.warn('[PStudio] Volumetric fog failed; the original scene frame was preserved and fog was disabled.',error);
+          }catch(fallbackError){
+            console.error('[PStudio] Volumetric fog fallback could not composite the source frame.',fallbackError);
+            throw fallbackError;
+          }
+        }finally{
+          renderer.autoClear=previousAutoClear;
+        }
+      },
+      dispose(){
+        target.dispose?.();
+        geometry.dispose?.();
+        processMaterial.dispose?.();
+        compositeMaterial.dispose?.();
+        fallbackMaterial?.dispose?.();
+      }
+    };
+    pass.setSize(1,1);
+    return pass;
+  }
+
   function createGodRaysPass(FX,Three) {
     if(!FX?.ShaderPass||!Three?.Vector2)return null;
     const shader={
       uniforms:{
         tDiffuse:{value:null},
-        uLightPosition:{value:new Three.Vector2(0.5,0.78)},
+        uLightPosition:{value:new Three.Vector2(.5,.78)},
         uIntensity:{value:0},
-        uDensity:{value:0.92},
-        uDecay:{value:0.965},
-        uWeight:{value:0.82},
-        uThreshold:{value:0.58}
+        uDensity:{value:.92},
+        uDecay:{value:.965},
+        uWeight:{value:.82},
+        uThreshold:{value:.58},
+        uSamples:{value:16}
       },
-      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
       fragmentShader:[
         'uniform sampler2D tDiffuse;uniform vec2 uLightPosition;',
-        'uniform float uIntensity;uniform float uDensity;uniform float uDecay;uniform float uWeight;uniform float uThreshold;',
+        'uniform float uDensity;uniform float uDecay;uniform float uWeight;uniform float uThreshold;uniform float uSamples;',
         'varying vec2 vUv;',
         'void main(){',
-        'vec4 source=texture2D(tDiffuse,vUv);',
-        'vec2 delta=(vUv-uLightPosition)*(uDensity/20.0);',
+        'vec2 delta=(vUv-uLightPosition)*(uDensity/max(1.0,uSamples));',
         'vec2 coord=vUv;float illuminationDecay=1.0;vec3 shafts=vec3(0.0);',
-        'for(int i=0;i<20;i++){coord-=delta;vec3 sampleColor=texture2D(tDiffuse,clamp(coord,vec2(0.001),vec2(0.999))).rgb;',
-        'float luminance=dot(sampleColor,vec3(0.2126,0.7152,0.0722));',
-        'float bright=smoothstep(uThreshold,uThreshold+0.38,luminance);',
+        'for(int i=0;i<32;i++){if(float(i)>=uSamples)break;coord-=delta;',
+        'vec3 sampleColor=texture2D(tDiffuse,clamp(coord,vec2(.001),vec2(.999))).rgb;',
+        'float luminance=dot(sampleColor,vec3(.2126,.7152,.0722));',
+        'float bright=smoothstep(uThreshold,uThreshold+.38,luminance);',
         'shafts+=sampleColor*bright*illuminationDecay;illuminationDecay*=uDecay;}',
-        'vec3 result=source.rgb+shafts*(uWeight/20.0)*uIntensity;',
-        'gl_FragColor=vec4(result,source.a);',
+        'gl_FragColor=vec4(shafts*(uWeight/max(1.0,uSamples)),1.0);',
         '}'
       ].join('\n')
     };
-    const pass=new FX.ShaderPass(shader);
-    pass.enabled=false;
+    const composite=[
+      'uniform sampler2D tDiffuse;uniform sampler2D tEffect;uniform float uIntensity;',
+      'varying vec2 vUv;',
+      'void main(){vec4 source=texture2D(tDiffuse,vUv);vec3 rays=texture2D(tEffect,vUv).rgb;',
+      'gl_FragColor=vec4(source.rgb+rays*uIntensity,source.a);}'
+    ].join('\n');
+    const pass=createScaledFullscreenPass(Three,shader,composite,.5,false);
+    if(!pass)return null;
+    pass.setSamples=value=>{shader.uniforms.uSamples.value=Math.max(4,Math.min(32,Math.round(Number(value)||16)));return shader.uniforms.uSamples.value;};
+    pass.getStats=()=>({
+      resolutionScale:pass.getResolutionScale(),
+      samples:shader.uniforms.uSamples.value,
+      decay:shader.uniforms.uDecay.value
+    });
     return pass;
   }
 
@@ -732,17 +857,20 @@
     if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
     const shader={
       uniforms:{
-        tDiffuse:{value:null},tDepth:{value:null},uInverseProjection:{value:new Three.Matrix4()},
-        uCameraWorld:{value:new Three.Matrix4()},uFogColor:{value:new Three.Color('#b9d8d9')},
+        tDiffuse:{value:null},tDepth:{value:null},
+        uInverseProjection:{value:new Three.Matrix4()},
+        uCameraWorld:{value:new Three.Matrix4()},
+        uFogColor:{value:new Three.Color('#b9d8d9')},
         uFogDensity:{value:.012},uHeightFalloff:{value:.018},uBaseHeight:{value:0},
-        uTime:{value:0},uSunDirection:{value:new Three.Vector3(-.35,.82,-.44).normalize()}
+        uTime:{value:0},uSunDirection:{value:new Three.Vector3(-.35,.82,-.44).normalize()},
+        uSteps:{value:10}
       },
-      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
       fragmentShader:[
         'uniform sampler2D tDiffuse;uniform sampler2D tDepth;',
         'uniform mat4 uInverseProjection;uniform mat4 uCameraWorld;',
         'uniform vec3 uFogColor;uniform vec3 uSunDirection;',
-        'uniform float uFogDensity;uniform float uHeightFalloff;uniform float uBaseHeight;uniform float uTime;',
+        'uniform float uFogDensity;uniform float uHeightFalloff;uniform float uBaseHeight;uniform float uTime;uniform float uSteps;',
         'varying vec2 vUv;',
         'float noise3(vec3 p){return .5+.5*sin(p.x*.73+sin(p.y*.51+p.z*.91)*1.7+uTime*.025);}',
         'void main(){',
@@ -751,17 +879,30 @@
         'vec4 q=uInverseProjection*vec4(vUv*2.0-1.0,z*2.0-1.0,1.0);vec3 vp=q.xyz/max(1e-6,q.w);',
         'vec3 origin=uCameraWorld[3].xyz;vec3 endp=(uCameraWorld*vec4(vp,1.0)).xyz;',
         'vec3 ray=endp-origin;float len=length(ray);vec3 dir=ray/max(len,1e-5);',
-        'float optical=0.0;vec3 scatter=vec3(0.0);const int STEPS=12;float ds=len/float(STEPS);',
-        'for(int i=0;i<STEPS;i++){float f=(float(i)+.5)/float(STEPS);vec3 p=origin+dir*(len*f);',
-        'float h=max(0.0,p.y-uBaseHeight);float density=uFogDensity*exp(-h*uHeightFalloff);density*=mix(.76,1.12,noise3(p*.07));',
-        'float seg=density*ds;float trans=exp(-optical);float phase=.72+.28*pow(max(dot(-dir,normalize(uSunDirection)),0.0),3.0);',
+        'float optical=0.0;vec3 scatter=vec3(0.0);const int MAX_STEPS=24;float count=clamp(uSteps,4.0,24.0);float ds=len/count;',
+        'for(int i=0;i<MAX_STEPS;i++){if(float(i)>=count)break;float f=(float(i)+.5)/count;vec3 p=origin+dir*(len*f);',
+        'float h=max(0.0,p.y-uBaseHeight);float density=uFogDensity*exp(-h*uHeightFalloff);',
+        'density*=mix(.84,1.08,noise3(p*.07));',
+        'float seg=density*ds;float trans=exp(-optical);',
+        'float cosTheta=max(dot(-dir,normalize(uSunDirection)),0.0);',
+        'float phase=.58+.42*pow(cosTheta,8.0);',
         'scatter+=uFogColor*trans*(1.0-exp(-seg))*phase;optical+=seg;}',
-        'float trans=exp(-optical);gl_FragColor=vec4(col.rgb*trans+scatter,col.a);}'
+        'float trans=exp(-optical);gl_FragColor=vec4(col.rgb*trans+scatter,col.a);}',
       ].join('\n')
     };
-    const pass=new FX.ShaderPass(shader);pass.enabled=false;
-    const render=pass.render.bind(pass);
-    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){const depth=this.uniforms?.tDepth;if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||null;render(renderer,writeBuffer,readBuffer,delta,mask);};
+    const composite=[
+      'uniform sampler2D tDiffuse;uniform sampler2D tEffect;',
+      'varying vec2 vUv;',
+      'void main(){gl_FragColor=texture2D(tEffect,vUv);}'
+    ].join('\n');
+    const pass=createScaledFullscreenPass(Three,shader,composite,.5,true);
+    if(!pass)return null;
+    pass.setStepCount=value=>{shader.uniforms.uSteps.value=Math.max(4,Math.min(24,Math.round(Number(value)||10)));return shader.uniforms.uSteps.value;};
+    pass.getStats=()=>({
+      resolutionScale:pass.getResolutionScale(),
+      steps:shader.uniforms.uSteps.value,
+      heightFalloff:shader.uniforms.uHeightFalloff.value
+    });
     return pass;
   }
 

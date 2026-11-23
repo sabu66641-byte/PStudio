@@ -79,6 +79,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching.
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_atmosphere.js`: Rayleigh/Mie atmospheric sky sampling, sun direction and equirectangular environment generation.
+- `static/pstudio_environment_fx.js`: water, foliage, volumetric cloud/fog rendering and screen-space god rays. Fog and god-ray passes use independent downscaled render targets and full-resolution composites; quality profiles bound step/sample counts and resolution scale.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.

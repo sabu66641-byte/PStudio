@@ -15,15 +15,15 @@ const architecture = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'),
 
 test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   for (const [name, arity] of [
-    ['camera_shake', 2], ['set_time_scale', 1],
-    ['draw_trail', 4], ['set_god_rays', 2]
+    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4]
   ]) assert.match(app, new RegExp('"' + name + '": ' + arity));
+  assert.match(app, /"set_god_rays": \(2, 3\)/);
   assert.match(app, /game_functions = GAME_FUNCTIONS if allow_game else \{\}/);
   assert.match(app, /known_calls = \(set\(BUILTIN_FUNCTIONS\) - \{"input"\}\) \| set\(functions\) \| set\(game_functions\)/);
   assert.match(runtime, /case 'camera_shake': if\(a\.length===2\)/);
   assert.match(runtime, /case 'set_time_scale': if\(a\.length===1\)/);
   assert.match(runtime, /case 'draw_trail': if\(a\.length===4\)/);
-  assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\)/);
+  assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\|\|a\.length===3\)/);
 });
 
 test('time scale is initialized per Play session and scales browser simulation delta', () => {
@@ -55,31 +55,47 @@ test('trail ribbons are bounded, updated from world-space samples, and disposed'
   assert.match(renderer, /trailEffects\.clear\(\)/);
 });
 
-test('God Rays shader pass is created with fixed sampling and linear intermediate output', () => {
+test('God Rays shader pass is downscaled independently and exposes configurable radial sampling', () => {
   class Vector2 { constructor(x, y) { this.x = x; this.y = y; } }
-  class ShaderPass {
-    constructor(shader) { this.uniforms = shader.uniforms; this.shader = shader; this.enabled = true; }
+  class Scene { constructor() { this.children = []; } add(item) { this.children.push(item); } }
+  class OrthographicCamera {}
+  class PlaneGeometry { dispose() {} }
+  class ShaderMaterial { constructor(options) { Object.assign(this, options); } dispose() {} }
+  class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; } }
+  class WebGLRenderTarget {
+    constructor(width, height) { this.width = width; this.height = height; this.texture = {}; }
+    setSize(width, height) { this.width = width; this.height = height; }
+    dispose() {}
   }
-  const window = { THREE: { Vector2 } };
-  vm.runInNewContext(fxSource, { window, console, Math, Set, Map });
-  const pass = window.PStudioEnvironmentFX.createGodRaysPass({ ShaderPass }, { Vector2 });
+  class ShaderPass {}
+  const Three = {
+    Vector2, Scene, OrthographicCamera, PlaneGeometry, ShaderMaterial, Mesh, WebGLRenderTarget,
+    RGBAFormat: 1, LinearFilter: 2
+  };
+  const window = { THREE: Three };
+  vm.runInNewContext(fxSource, { window, console, Math, Set, Map, Number, Object });
+  const pass = window.PStudioEnvironmentFX.createGodRaysPass({ ShaderPass }, Three);
   assert.ok(pass);
   assert.equal(pass.enabled, false);
   assert.ok(pass.uniforms.uIntensity);
   assert.ok(pass.uniforms.uLightPosition);
-  assert.match(pass.shader.fragmentShader, /for\(int i=0;i<20;i\+\+\)/);
-  assert.ok(pass.shader.fragmentShader.includes('void main()'));
-  assert.equal(pass.shader.fragmentShader.includes('tonemapping_fragment'), false);
+  assert.ok(pass.uniforms.uDecay);
+  assert.equal(pass.uniforms.uSamples.value, 16);
+  assert.equal(pass.getResolutionScale(), 0.5);
+  assert.ok(fxSource.includes('for(int i=0;i<32;i++)'));
+  assert.ok(fxSource.includes('illuminationDecay*=uDecay'));
   assert.equal(typeof window.PStudioEnvironmentFX.createGodRaysPass, 'function');
+  pass.dispose();
 });
 
 test('God Rays uses the active light, precedes OutputPass, and safely falls back to Bloom', () => {
   assert.match(renderer, /createGodRaysPass\?\.\(FX,T\)/);
   assert.ok(renderer.indexOf('createGodRaysPass?.(FX,T)') < renderer.indexOf('new FX.OutputPass()'));
-  assert.match(renderer, /const sunDirection=keyLight\?\.position/);
-  assert.match(renderer, /godRaysFallbackEnabled=!!bloomPass/);
+  assert.match(renderer, /window\.PStudioAtmosphere\?\.sunDirection\?\.\(atmosphereSettings\)/);
+  assert.match(renderer, /const sunWorld=camera\.position\.clone\(\)\.addScaledVector\(sunDirection/);
+  assert.match(renderer, /godRaysFallbackEnabled=!!\(raysAllowed&&godRaysRequested&&!godRaysPass&&bloomPass\)/);
   assert.match(renderer, /God Rays shader is unsupported; switching to bloom fallback/);
-  assert.match(renderer, /setGodRays:\(enabled,intensity=1\)/);
+  assert.match(renderer, /setGodRays:\(enabled,intensity=1,decay=\.965\)/);
 });
 
 test('the Scene API help and technical docs describe all four cinematic calls', () => {
@@ -88,7 +104,7 @@ test('the Scene API help and technical docs describe all four cinematic calls', 
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261122-step4-cinematic1/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261122-step4-cinematic1/);
-  assert.match(html, /pstudio_environment_fx\.js\?v=20261122-step4-cinematic1/);
+  assert.match(html, /pstudio_engine\.js\?v=20261123-volumetrics-phase2/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-volumetrics-phase2/);
+  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-volumetrics-phase2/);
 });
