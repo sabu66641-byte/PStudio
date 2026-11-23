@@ -615,11 +615,13 @@
     }
     window.PStudioECSRendering?.buildCommands?.(commands,sceneObjects||[],1/60);
     const activeCommands=new Map([...commands].filter(([id])=>id==='__scene__'||window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
-    const drawCommands=new Map([...activeCommands].filter(([id])=>id!=='__scene__'&&window.PStudioECSRendering?.isVisible?.(id)!==false));
+    const allDrawCommands=new Map([...activeCommands].filter(([id])=>id!=='__scene__'));
+    const drawCommands=new Map([...allDrawCommands].filter(([id])=>window.PStudioECSRendering?.isVisible?.(id)!==false));
     const draws=[...drawCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const allDraws=draws;
-    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx','trail','camera_shake','camera_fx'].includes(d.type))||Number(renderState?.cameras)>0;
+    const all3DDraws=[...allDrawCommands.values()].flat();
+    const has3D=all3DDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx','trail','camera_shake','camera_fx'].includes(d.type))||Number(renderState?.activeCameras)>0;
     const use3D=renderMode==='3d'||(renderMode==='auto'&&(!!runtime?.requires3D||has3D));
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
