@@ -251,7 +251,7 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -342,7 +342,7 @@ test('water detail materials remain transparent, depth-write disabled and time a
 });
 test('trunk, branch and leaves receive separate world-phased wind response strengths',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
-  for(const token of ["role === 'trunk' ? 0.12","role === 'branch' ? 0.42","role === 'leaf' ? 0.88",'worldPhase=dot(pstudioWindWorld.xz','leafFlutter=sin','pstudio-foliage-wind-hq-v3'])assert.ok(fx.includes(token),token);
+  for(const token of ["role === 'trunk' ? 0.12","role === 'branch' ? 0.42","role === 'leaf' ? 0.88",'worldPhase=dot(pstudioWindWorld.xz','leafFlutter=sin','pstudio-foliage-wind-hq-v4-'])assert.ok(fx.includes(token),token);
 });
 test('GLB water surface uses four wave bands and separate micro-normal frequencies',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
@@ -757,5 +757,102 @@ test('high and ultra quality presets activate GTAO automatically and adaptive qu
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
   for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+});
+
+
+test('foliage materials add directional backlight transmission without changing wind deformation',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['foliageTranslucencyMaterials','uPStudioFoliageTranslucency','pStudioOppositeSides','pStudioForwardLobe','directionalLights[pStudioLightIndex].color','vPStudioFoliageViewNormal','pstudio-foliage-wind-hq-v4-'])assert.ok(fx.includes(token),token);
+  assert.ok(fx.includes("shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>'"));
+  assert.ok(fx.includes("shader.vertexShader=addAfter(shader.vertexShader,'#include <defaultnormal_vertex>'"));
+});
+
+test('foliage translucency runtime injection clamps artist controls and preserves the prior material hook',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  class Vector2{constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}normalize(){const n=Math.hypot(this.x,this.y)||1;this.x/=n;this.y/=n;return this;}}
+  class Color{constructor(value){this.value=value;}set(value){this.value=value;return this;}}
+  const sandbox={window:{THREE:{Vector2,Color,DoubleSide:2}},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  let oldCompileCalled=false;
+  const material={isMeshStandardMaterial:true,userData:{},roughness:.8,onBeforeCompile(){oldCompileCalled=true;},customProgramCacheKey(){return 'source-key';},alphaMap:{},alphaTest:0};
+  const object={name:'Oak_Leaf_Cluster',userData:{pstudioWindPart:'leaf',pstudioFoliageTranslucency:1.7,pstudioFoliageThickness:2,pstudioFoliageScatteringPower:20},geometry:{boundingBox:{min:{y:0},max:{y:4}},computeBoundingBox(){}}};
+  api.configureFoliage(material,object);
+  const record=material.userData.pstudioFoliageHQ;
+  assert.equal(record.translucency,1);
+  assert.equal(record.thickness,1.5);
+  assert.equal(record.scatteringPower,12);
+  assert.equal(material.side,2);
+  assert.ok(material.alphaTest>=.28);
+  const shader={uniforms:{},vertexShader:'#include <common>\n#include <defaultnormal_vertex>\n#include <begin_vertex>',fragmentShader:'#include <common>\n#include <opaque_fragment>'};
+  material.onBeforeCompile(shader,{});
+  assert.equal(oldCompileCalled,true);
+  for(const token of ['uPStudioFoliageTranslucency','uPStudioFoliageThickness','uPStudioFoliageScatteringPower','uPStudioFoliageTranslucencyColor'])assert.ok(shader.uniforms[token],token);
+  for(const token of ['vPStudioFoliageViewNormal','transformedNormal','NUM_DIR_LIGHTS','pStudioOppositeSides','pStudioForwardLobe','gl_FragColor.rgb+=pStudioFoliageScatter'])assert.ok(shader.fragmentShader.includes(token)||shader.vertexShader.includes(token),token);
+  assert.ok(material.customProgramCacheKey().includes('pstudio-foliage-wind-hq-v4-'));
+  assert.equal(api.getStats().foliageTranslucencyMaterials,1);
+  api.update(4.25);
+  assert.equal(material.userData.pstudioFoliageHQ.time.value,4.25);
+});
+
+test('contact shadow pass ray-marches scene depth with bounded quality levels and atmosphere-aligned light',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const sandbox={window:{},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  class Vector3{constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}}
+  class Matrix4{}
+  class DepthTexture{}
+  class ShaderPass{constructor(shader){this.uniforms=shader.uniforms;this.shader=shader;this.render=()=>{};this.userData={};}}
+  const pass=api.createContactShadowPass({ShaderPass},{DepthTexture,Matrix4,Vector3});
+  assert.ok(pass);
+  const quality=pass.setQuality('ultra',2);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:18});
+  assert.equal(pass.uniforms.uSteps.value,18);
+  assert.ok(pass.shader.fragmentShader.includes('pStudioContactViewPosition'));
+  assert.ok(pass.shader.fragmentShader.includes('uProjection*vec4(rayPoint,1.0)'));
+  assert.ok(pass.shader.fragmentShader.includes('texture2D(tDepth,sampleUv)'));
+  assert.ok(pass.shader.fragmentShader.includes('uDepthBias'));
+  api.configureAtmosphere({lightDirection:[0.2,0.8,0.4]});
+  const d=pass.uniforms.uLightDirectionWorld.value;
+  assert.ok(Math.abs(d.y-0.8728715609)<1e-8);
+  assert.equal(api.getStats().contactShadowPasses,1);
+});
+
+test('contact shadow depth binding keeps an explicit prepass texture and falls back to composer depth',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const sandbox={window:{},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  class Vector3{constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}normalize(){return this;}}
+  class Matrix4{}
+  class DepthTexture{}
+  class ShaderPass{constructor(shader){this.uniforms=shader.uniforms;this.shader=shader;this.render=()=>{};this.userData={};}}
+  const pass=api.createContactShadowPass({ShaderPass},{DepthTexture,Matrix4,Vector3});
+  const explicit={name:'prepass-depth'},fallback={name:'composer-depth'};
+  pass.uniforms.tDepth.value=explicit;
+  pass.render({}, {}, {depthTexture:fallback}, 0, false);
+  assert.equal(pass.uniforms.tDepth.value,explicit);
+  pass.uniforms.tDepth.value=null;
+  pass.render({}, {}, {depthTexture:fallback}, 0, false);
+  assert.equal(pass.uniforms.tDepth.value,fallback);
+});
+
+test('contact shadows are profile/adaptive controlled, use the depth prepass, and expose a bounded public API',()=>{
+  for(const token of [
+    "contactShadows:false","contactShadows:true","createContactShadowPass?.(FX,T)",
+    'composer.addPass(contactShadowPass)','contactShadowPass.setQuality?.(selected,adaptiveQualityLevel)',
+    'contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied',
+    '||contactShadowsEnabled','||contactShadowsEnabled;',
+    'Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled',
+    'setContactShadows:(enabled,options={})','u.uMaxDistance.value=Math.max(.1,Math.min(2.5,options.maxDistance))',
+    'contactShadows:{enabled:contactShadowsEnabled,available:!!contactShadowPass'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.indexOf('composer.addPass(contactShadowPass)')>renderer.indexOf('composer.addPass(volumetricFogPass)'));
+  assert.ok(renderer.indexOf('composer.addPass(contactShadowPass)')<renderer.indexOf('composer.addPass(bloomPass)'));
+  assert.ok(renderer.includes('contactShadowPass.enabled=contactShadowsEnabled&&!waterDepthPrepassFailed&&!!waterDepthTarget?.depthTexture'));
 });
 

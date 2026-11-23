@@ -431,6 +431,8 @@ Repeated simple primitives are automatically grouped into `THREE.InstancedMesh` 
 
 The rendering core now blends regular baked spherical-harmonic probe volumes with bounded trilinear interpolation (sparse/legacy probe sets retain inverse-distance weighting), adds a procedural height/slope/noise-driven PBR layer to generated terrain, enables GTAO automatically on high/ultra profiles when the optional pass is available, and caps shadow-map dimensions against both `MAX_TEXTURE_SIZE` and device-memory class. These are image-quality and stability improvements; the SH solution remains a baked diffuse approximation rather than dynamic ray-traced GI.
 
+Foliage materials now add a restrained, view/light-side-aware backlight transmission term to Three.js r160 standard/physical shaders. The effect follows existing directional lights and supports GLTF/userData controls (`pstudioFoliageTranslucency`, `pstudioFoliageThickness`, `pstudioFoliageScatteringPower`, `pstudioFoliageTranslucencyColor`). High/ultra profiles also enable a depth-aware short-range screen-space contact-shadow pass; mobile/balanced profiles leave it off by default. Use `PStudio3D.setContactShadows(true, { intensity, maxDistance, thickness })` to override the preset, or pass `null` as the first argument to return to automatic profile behavior. This is a screen-space approximation and cannot shade off-screen occluders.
+
 These features improve image-based indirect lighting, contact shading, reflections and draw-call efficiency. They do **not** yet constitute a full dynamic GI solution such as real-time multi-bounce voxel/ray-traced illumination.
 
 ## Custom GLSL Shader Editor
