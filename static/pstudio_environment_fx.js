@@ -810,7 +810,7 @@
   }
 
   function createCameraLensPass(FX,Three) {
-    if(!FX?.ShaderPass||!Three?.Vector2)return null;
+    if(!Three?.Vector2)return null;
     const chromatic={value:0};
     const shader={
       label:'Camera lens',
