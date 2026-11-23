@@ -111,7 +111,7 @@
       fragmentShader:[
         'uniform vec3 uSunDirection;uniform float uTurbidity;uniform float uSunIntensity;',
         'varying vec3 vPStudioSkyDirection;',
-        'float pStudioAirMass(float cosineZenith){float zenith=acos(clamp(cosineZenith,-.999,1.0));float degrees=degrees(zenith);return 1.0/max(.035,cos(zenith)+.15*pow(max(.1,93.885-degrees),-1.253));}',
+        'float pStudioAirMass(float cosineZenith){float zenith=acos(clamp(cosineZenith,-.999,1.0));float zenithDegrees=degrees(zenith);return 1.0/max(.035,cos(zenith)+.15*pow(max(.1,93.885-zenithDegrees),-1.253));}',
         'void main(){',
         'vec3 ray=normalize(vPStudioSkyDirection);vec3 sun=normalize(uSunDirection);',
         'float mu=clamp(dot(ray,sun),-1.0,1.0);float mass=pStudioAirMass(ray.y);',
