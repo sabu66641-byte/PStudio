@@ -514,7 +514,7 @@
     };
     pass.configureAtmosphere=(settings={})=>{
       const uniforms=pass.uniforms;
-      const direction=settings.sunDirection;
+      const direction=settings.lightDirection||settings.sunDirection;
       if(Array.isArray(direction)&&direction.length>=3&&direction.slice(0,3).every(Number.isFinite)){
         uniforms.uSunDirection.value.set(direction[0],direction[1],direction[2]).normalize();
       }
