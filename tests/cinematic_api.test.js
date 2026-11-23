@@ -15,7 +15,7 @@ const architecture = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'),
 
 test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   for (const [name, arity] of [
-    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4], ['set_camera_lens', 4]
+    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4], ['set_camera_lens', 4], ['set_color_grading', 6]
   ]) assert.match(app, new RegExp('"' + name + '": ' + arity));
   assert.match(app, /"set_god_rays": \(2, 3\)/);
   assert.match(app, /game_functions = GAME_FUNCTIONS if allow_game else \{\}/);
@@ -26,6 +26,9 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\|\|a\.length===3\)/);
   assert.match(runtime, /case 'set_camera_lens': if\(a\.length===4\)/);
   assert.match(runtime, /setCameraLens\?\.\(dofEnabled,focusDistance,aperture,chromaticAberration\)/);
+  assert.match(runtime, /case 'set_color_grading': if\(a\.length===6\)/);
+  assert.match(runtime, /setColorGrading\?\.\(exposure,contrast,saturation,temperature,vignette,filmGrain\)/);
+  assert.match(renderer, /setColorGrading:\(exposure=0,contrast=1,saturation=1,temperature=0,vignette=0,filmGrain=0\)/);
   assert.match(renderer, /setCameraLens:\(dofEnabled,focusDistance=12,aperture=2\.8,chromaticAberration=0\)/);
 });
 
@@ -101,15 +104,15 @@ test('God Rays uses the active light, precedes OutputPass, and safely falls back
   assert.match(renderer, /setGodRays:\(enabled,intensity=1,decay=\.965\)/);
 });
 
-test('the Scene API help and technical docs describe all five cinematic calls', () => {
-  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays', 'set_camera_lens']) {
+test('the Scene API help and technical docs describe all six cinematic calls', () => {
+  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays', 'set_camera_lens', 'set_color_grading']) {
     assert.ok(html.includes(name), name + ' in Inspector API help');
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261123-camera-lens-phase3/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-camera-lens-phase3/);
-  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-camera-lens-phase3/);
+  assert.match(html, /pstudio_engine\.js\?v=20261123-color-grading-phase4/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-color-grading-phase4/);
+  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-color-grading-phase4/);
 });
 
 test('camera lens pass uses depth-aware low-resolution DoF and fail-open compositing', () => {
@@ -155,5 +158,65 @@ test('camera lens pass uses depth-aware low-resolution DoF and fail-open composi
   assert.equal(pass.enabled, false);
   assert.equal(renderCalls, 2, 'original source image is composited after the processing error');
   assert.equal(renderer.autoClear, false, 'renderer clear state is restored');
+  pass.dispose();
+});
+
+test('color grading pass is neutral by default, bounds controls and fails open on shader errors', () => {
+  class Scene { constructor() { this.children = []; } add(item) { this.children.push(item); } }
+  class OrthographicCamera {}
+  class PlaneGeometry { dispose() {} }
+  class ShaderMaterial { constructor(options) { Object.assign(this, options); } dispose() {} }
+  class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; } }
+  class ShaderPass {
+    constructor(shader) {
+      this.uniforms = shader.uniforms;
+      this.material = { dispose() {} };
+      this.enabled = false;
+      this.renderToScreen = false;
+      this.failNextRender = false;
+    }
+    render() {
+      if (this.failNextRender) { this.failNextRender = false; throw new Error('color grade shader failed'); }
+    }
+  }
+  const Three = { Scene, OrthographicCamera, PlaneGeometry, ShaderMaterial, Mesh };
+  const window = { THREE: Three };
+  vm.runInNewContext(fxSource, { window, console, Math, Set, Map, Number, Object });
+  const pass = window.PStudioEnvironmentFX.createColorGradingPass({ ShaderPass }, Three);
+  assert.ok(pass);
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.isIdentity(), true);
+  assert.equal(pass.setSettings({ exposure: 9, contrast: -2, saturation: 3, temperature: -4, vignette: 2, filmGrain: 5 }).exposure, 3);
+  assert.deepEqual(
+    ['exposure', 'contrast', 'saturation', 'temperature', 'vignette', 'filmGrain'].map(key => pass.getStats()[key]),
+    [3, 0, 2, -1, 1, 1]
+  );
+  pass.setSettings({ exposure: 0, contrast: 1, saturation: 1, temperature: 0, vignette: 0, filmGrain: 0 });
+  assert.equal(pass.isIdentity(), true);
+  pass.setSettings({ exposure: 0.5, contrast: 1.1, saturation: 1.2, temperature: 0.2, vignette: 0.35, filmGrain: 0.08 });
+  assert.equal(pass.isIdentity(), false);
+  pass.setSize(1920, 1080);
+  assert.equal(pass.getStats().aspect, 1920 / 1080);
+  pass.setTime(3.5);
+  assert.equal(pass.getStats().time, 3.5);
+  for (const token of ['exp2(uExposure)', 'uContrast', 'uSaturation', 'uTemperature', 'uVignette', 'uFilmGrain', 'pStudioGrainHash']) {
+    assert.ok(fxSource.includes(token), token);
+  }
+  pass.enabled = true;
+  pass.failNextRender = true;
+  let copies = 0;
+  const renderer = {
+    autoClear: false,
+    setRenderTarget() {},
+    render() { copies++; }
+  };
+  pass.render(renderer, {}, { texture: {} });
+  assert.equal(pass.failed, true);
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.lastError, 'color grade shader failed');
+  assert.equal(copies, 1, 'the source frame is copied when grading fails');
+  assert.equal(renderer.autoClear, false, 'renderer autoClear is restored');
+  pass.resetFailure();
+  assert.equal(pass.failed, false);
   pass.dispose();
 });

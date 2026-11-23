@@ -65,7 +65,7 @@ test('volumetric clouds receive the physical sun direction and normalized cloud 
     'uniforms.uSunDirection.value.set',
     'uniforms.uCloudDensity.value=Math.max(0,Math.min(1,density))',
     'skyColor=source.rgb+vec3(.23,.20,.13)*sunGlow',
-    'configureAtmosphere,createCameraLensPass,createGodRaysPass'
+    'configureAtmosphere,createCameraLensPass,createColorGradingPass,createGodRaysPass'
   ]) assert.ok(environmentFx.includes(token), token);
   assert.ok(renderer.includes('configureAtmosphere?.({'));
   assert.ok(renderer.includes('cloudDensity:next.cloudDensity'));

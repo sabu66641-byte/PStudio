@@ -6,9 +6,10 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,godRaysPass=null,cameraLensPass=null;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,godRaysPass=null,cameraLensPass=null,colorGradingPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricFogManualOverride=null,volumetricCloudsEnabled=false,temporalAAEnabled=false,godRaysEnabled=false,godRaysRequested=false,godRaysFallbackEnabled=false,godRaysIntensity=0,godRaysDecay=.965;
   let cameraLensDofRequested=false,cameraLensDofEnabled=false,cameraLensFocusDistance=12,cameraLensAperture=2.8,cameraLensChromaticAberration=0,cameraLensQualityScale=.42,cameraLensMaxBlurPixels=8;
+  let colorGradingEnabled=false,colorGradingSettings={exposure:0,contrast:1,saturation:1,temperature:0,vignette:0,filmGrain:0};
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -280,6 +281,17 @@
     }
     return{dof:cameraLensDofEnabled,chromaticAberration:!!(safe&&cameraLensChromaticAberration>0),scale:cameraLensPass?.getResolutionScale?.()||0};
   }
+  function applyColorGradingState(resetFailure=false){
+    if(resetFailure)colorGradingPass?.resetFailure?.();
+    if(colorGradingPass){
+      colorGradingPass.setSettings?.(colorGradingSettings);
+      colorGradingPass.setTime?.(particleClock);
+      const requested=!colorGradingPass.isIdentity?.();
+      colorGradingEnabled=!!(requested&&!memorySafetyApplied&&!colorGradingPass.failed);
+      colorGradingPass.enabled=colorGradingEnabled;
+    }else colorGradingEnabled=false;
+    return{enabled:colorGradingEnabled,requested:!(colorGradingPass?.isIdentity?.()??(colorGradingSettings.exposure===0&&colorGradingSettings.contrast===1&&colorGradingSettings.saturation===1&&colorGradingSettings.temperature===0&&colorGradingSettings.vignette===0&&colorGradingSettings.filmGrain===0)),available:!!colorGradingPass,failed:!!colorGradingPass?.failed};
+  }
   function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
@@ -296,7 +308,7 @@
       for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass&&atmosphereSettings.cloudDensity>0.001);if(volumetricCloudPass)volumetricCloudPass.enabled=volumetricCloudsEnabled;
-      applyVolumetricQuality(selected,adaptiveQualityLevel);applyCameraLensQuality(selected,adaptiveQualityLevel,true);
+      applyVolumetricQuality(selected,adaptiveQualityLevel);applyCameraLensQuality(selected,adaptiveQualityLevel,true);applyColorGradingState(true);
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
@@ -373,6 +385,7 @@
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
       godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godRaysPass){godRaysPass.enabled=false;composer.addPass(godRaysPass);}
       cameraLensPass=window.PStudioEnvironmentFX?.createCameraLensPass?.(FX,T)||null;if(cameraLensPass){cameraLensPass.enabled=false;composer.addPass(cameraLensPass);}
+      colorGradingPass=window.PStudioEnvironmentFX?.createColorGradingPass?.(FX,T)||null;if(colorGradingPass){colorGradingPass.enabled=false;composer.addPass(colorGradingPass);colorGradingPass.setSettings?.(colorGradingSettings);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
@@ -555,9 +568,9 @@
       const current=renderer?.getPixelRatio?.()||1;
       renderer?.setPixelRatio?.(Math.max(.65,current*.82));
       composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
-      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;godRaysEnabled=false;godRaysFallbackEnabled=false;cameraLensDofEnabled=false;
+      qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;godRaysEnabled=false;godRaysFallbackEnabled=false;cameraLensDofEnabled=false;colorGradingEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
-      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;if(godRaysPass)godRaysPass.enabled=false;if(cameraLensPass)cameraLensPass.enabled=false;
+      if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;if(godRaysPass)godRaysPass.enabled=false;if(cameraLensPass)cameraLensPass.enabled=false;if(colorGradingPass)colorGradingPass.enabled=false;
       const cache=window.PStudioResources?.stats?.();
       if(cache){
         window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
@@ -579,7 +592,7 @@
     try{
       const depthPrepassReady=renderWaterDepthPrepass()&&!!waterDepthTarget?.depthTexture;
       if(volumetricCloudsEnabled&&depthPrepassReady)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||cameraLensDofEnabled||cameraLensChromaticAberration>0||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||godRaysEnabled||godRaysFallbackEnabled||cameraLensDofEnabled||cameraLensChromaticAberration>0||colorGradingEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled||godRaysFallbackEnabled;bloomPass.strength=godRaysFallbackEnabled?Math.max(bloomStrength,0.14+0.18*godRaysIntensity):bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
@@ -640,10 +653,15 @@
             cameraLensPass.setResolutionScale?.(lensDepthReady?cameraLensQualityScale:1);
           }
         }
+        if(colorGradingPass){
+          colorGradingPass.enabled=!!(colorGradingEnabled&&!colorGradingPass.failed);
+          if(colorGradingPass.enabled)colorGradingPass.setTime?.(particleClock);
+        }
         try{
           composer.render();
           if(volumetricFogPass?.failed){volumetricFogEnabled=false;volumetricFogPass.enabled=false;}
           if(cameraLensPass?.failed){cameraLensDofEnabled=false;cameraLensPass.enabled=false;}
+          if(colorGradingPass?.failed){colorGradingEnabled=false;colorGradingPass.enabled=false;}
         }catch(postError){
           if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
           godRaysEnabled=false;godRaysPass.enabled=false;
@@ -4231,6 +4249,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const trail of trailEffects.values())disposeTrailEffect(trail);trailEffects.clear();
     cameraShakeState=null;godRaysEnabled=false;godRaysRequested=false;godRaysFallbackEnabled=false;godRaysIntensity=0;godRaysDecay=.965;volumetricFogManualOverride=null;
     cameraLensDofRequested=false;cameraLensDofEnabled=false;cameraLensFocusDistance=12;cameraLensAperture=2.8;cameraLensChromaticAberration=0;if(cameraLensPass){cameraLensPass.enabled=false;cameraLensPass.resetFailure?.();}
+    colorGradingSettings={exposure:0,contrast:1,saturation:1,temperature:0,vignette:0,filmGrain:0};colorGradingEnabled=false;if(colorGradingPass){colorGradingPass.enabled=false;colorGradingPass.setSettings?.(colorGradingSettings);colorGradingPass.resetFailure?.();}
     particleClock=0;
     selectionSignature='';
     if(renderer)drawFrame();
@@ -4304,6 +4323,22 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     frameObject,
     adjustZoom:adjustCameraZoom,
     cameraShake:triggerCameraShake,
+    setColorGrading:(exposure=0,contrast=1,saturation=1,temperature=0,vignette=0,filmGrain=0)=>{
+      const clamp=(value,min,max,fallback)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):fallback));
+      colorGradingSettings={
+        exposure:clamp(exposure,-3,3,0),
+        contrast:clamp(contrast,0,2,1),
+        saturation:clamp(saturation,0,2,1),
+        temperature:clamp(temperature,-1,1,0),
+        vignette:clamp(vignette,0,1,0),
+        filmGrain:clamp(filmGrain,0,1,0)
+      };
+      const requested=!(colorGradingSettings.exposure===0&&colorGradingSettings.contrast===1&&colorGradingSettings.saturation===1&&colorGradingSettings.temperature===0&&colorGradingSettings.vignette===0&&colorGradingSettings.filmGrain===0);
+      if(requested&&!renderer&&window.THREE)ensureRenderer();
+      applyColorGradingState(true);
+      if(renderer&&scene&&camera)drawFrame();
+      return{...applyColorGradingState(false),settings:{...colorGradingSettings}};
+    },
     setCameraLens:(dofEnabled,focusDistance=12,aperture=2.8,chromaticAberration=0)=>{
       cameraLensDofRequested=!!dofEnabled;
       cameraLensFocusDistance=Math.max(.1,Math.min(100000,Number.isFinite(Number(focusDistance))?Number(focusDistance):12));
@@ -4361,6 +4396,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
       cameraShake:{active:!!cameraShakeState},
       cameraLens:{available:!!cameraLensPass,enabled:!!cameraLensPass?.enabled,dofRequested:cameraLensDofRequested,dofEnabled:cameraLensDofEnabled,chromaticAberration:cameraLensChromaticAberration,focusDistance:cameraLensFocusDistance,aperture:cameraLensAperture,resolutionScale:cameraLensPass?.getResolutionScale?.()||0,maxBlurPixels:cameraLensMaxBlurPixels,samples:cameraLensPass?.getStats?.().samples||12,failed:!!cameraLensPass?.failed,lastError:cameraLensPass?.lastError||null},
+      colorGrading:{available:!!colorGradingPass,enabled:colorGradingEnabled,failed:!!colorGradingPass?.failed,lastError:colorGradingPass?.lastError||null,...colorGradingPass?.getStats?.()},
       godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,requested:godRaysRequested,available:!!godRaysPass,failed:!!godRaysPass?.failed,lastError:godRaysPass?.lastError||null,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity,decay:godRaysDecay,resolutionScale:godRaysPass?.getResolutionScale?.()||0,samples:godRaysPass?.uniforms?.uSamples?.value||0},
       models:modelInstances.size,
       modelPreparationPending,

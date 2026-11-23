@@ -873,3 +873,14 @@ test('camera lens effects use the existing depth prepass and honor adaptive qual
   assert.ok(renderer.includes("ultra:{dof:true,scale:1,maxBlur:14}"));
   assert.ok(renderer.includes('cameraLensPass?.failed'));
 });
+
+test('color grading is registered after the camera lens, before OutputPass, and memory-gated', () => {
+  assert.match(renderer, /createColorGradingPass\?\.\(FX,T\)/);
+  assert.ok(renderer.indexOf('createCameraLensPass?.(FX,T)') < renderer.indexOf('createColorGradingPass?.(FX,T)'));
+  assert.ok(renderer.indexOf('createColorGradingPass?.(FX,T)') < renderer.indexOf('new FX.OutputPass()'));
+  assert.ok(renderer.includes('colorGradingEnabled=!!(requested&&!memorySafetyApplied&&!colorGradingPass.failed)'));
+  assert.ok(renderer.includes('colorGradingEnabled=false'));
+  assert.ok(renderer.includes('if(colorGradingPass)colorGradingPass.enabled=false'));
+  assert.ok(renderer.includes('if(colorGradingPass?.failed)'));
+  assert.ok(renderer.includes('||colorGradingEnabled'));
+});

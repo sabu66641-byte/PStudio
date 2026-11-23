@@ -446,6 +446,18 @@ function callBuiltin(c, name, a) {
         c.draw.push({type:'camera_fx'});
         return result;
       } break;
+      case 'set_color_grading': if(a.length===6){
+        if(runtime)runtime.requires3D=true;
+        const exposure=Math.max(-3,Math.min(3,finite(a[0])));
+        const contrast=Math.max(0,Math.min(2,finite(a[1])));
+        const saturation=Math.max(0,Math.min(2,finite(a[2])));
+        const temperature=Math.max(-1,Math.min(1,finite(a[3])));
+        const vignette=Math.max(0,Math.min(1,finite(a[4])));
+        const filmGrain=Math.max(0,Math.min(1,finite(a[5])));
+        const result=window.PStudio3D?.setColorGrading?.(exposure,contrast,saturation,temperature,vignette,filmGrain)??null;
+        c.draw.push({type:'camera_fx'});
+        return result;
+      } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
