@@ -16,10 +16,12 @@ test('renderer re-registration preserves the live chunk object and cancels chang
   const source = extractFunction(renderer, 'function registerWorldChunk', 'function assignObjectToChunk');
   const worldChunks = new Map();
   const invalidated = [];
+  const preservedAssets = [];
   const register = new Function('worldChunks', 'endWorldChunkLoad', source + '; return registerWorldChunk;')(
     worldChunks,
     chunk => {
       invalidated.push(chunk.id);
+      preservedAssets.push(Array.from(arguments[1] || []));
       chunk.generation++;
       chunk.loading = false;
       chunk.active = false;
@@ -38,12 +40,13 @@ test('renderer re-registration preserves the live chunk object and cancels chang
   assert.equal(same.x, undefined, 'the public registration result does not leak mutable coordinates');
   assert.equal(first.id, 'district-a');
 
-  register('district-a', { x: 3, assets: ['b.glb'], loadDistance: 130 });
+  register('district-a', { x: 3, assets: ['b.glb', 'c.glb'], loadDistance: 130 });
   assert.deepEqual(invalidated, ['district-a']);
+  assert.deepEqual(preservedAssets, [['b.glb']], 'asset names shared by the replacement config stay resident');
   assert.equal(record.loading, false);
   assert.equal(record.active, false);
   assert.equal(record.generation, 5);
-  assert.deepEqual(Array.from(record.assets), ['b.glb']);
+  assert.deepEqual(Array.from(record.assets), ['b.glb', 'c.glb']);
 });
 
 test('stale asynchronous chunk completions never release assets belonging to a newer generation', async () => {
