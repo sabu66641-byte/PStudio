@@ -3269,7 +3269,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       const moonLength=Math.hypot(...moonVector)||1;
       const moonY=Math.max(-1,Math.min(1,moonVector[1]/moonLength));
       const moonPhi=Math.atan2(moonVector[2],moonVector[0]);
-      const moonX=((moonPhi/(Math.PI*2)+1)%1)*width;
+      const moonX=((moonPhi/(Math.PI*2)+0.5+1)%1)*width;
       const moonCanvasY=Math.acos(moonY)/Math.PI*height;
       if(moonIntensity>0){
         const halo=context.createRadialGradient(moonX,moonCanvasY,1,moonX,moonCanvasY,30);
