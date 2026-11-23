@@ -23,6 +23,9 @@ test('mobile auto quality applies an adaptive starting scale rather than full de
   assert.ok(renderer.includes("profile.pixelRatio*initialAdaptiveScale"));
   assert.ok(renderer.includes("scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel]"));
 });
+test('scene toolbar exposes all five rendering quality presets and connects them to the renderer',()=>{
+  for(const token of ['id="pstudio-quality-preset"','value="auto" selected','value="mobile"','value="balanced"','value="high"','value="ultra"','setPStudioQualityPreset(this.value)','function setPStudioQualityPreset(value)','api.setQualityPreset(preset)'])assert.ok(html.includes(token),token);
+});
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));
