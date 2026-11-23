@@ -110,7 +110,7 @@ test('large editor workspace grid and selected environment are sent to the 3D re
 
 test('runtime scene environment does not force a 2D-only game into the 3D renderer', () => {
   assert.match(engine, /commands\.set\('__scene__',\[\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}\]\)/);
-  assert.match(engine, /const drawCommands=new Map\(\[\.\.\.activeCommands\]\.filter\(\(\[id\]\)=>id!=='__scene__'\)\)/);
+  assert.match(engine, /const drawCommands=new Map\\(\\[\\.\\.\\.activeCommands\\]\\.filter\\(\\(\\[id\\]\\)=>id!=='__scene__'&&window\\.PStudioECSRendering\\?\\.isVisible\\?\\.\\(id\\)!==false\\)\\)/);
   assert.match(engine, /const allDraws=draws/);
   assert.match(engine, /drawScene\(drawCommands\)/);
   assert.match(engine, /window\.PStudio3D\.render\(commands\)/);
