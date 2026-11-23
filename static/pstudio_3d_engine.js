@@ -3227,7 +3227,15 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       'vec3 pStudioWarmHorizon=vec3(1.0,0.34,0.19);',
       'retColor=mix(retColor,max(retColor,pStudioWarmHorizon),pStudioHorizonBand*pStudioTwilight*0.28);',
       'retColor+=vec3(1.0,0.48,0.24)*pStudioSolarHalo*pStudioTwilight*0.16;',
-      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;'
+      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;',
+      'float pStudioNightAmount=1.0-smoothstep(-0.52,-0.18,vSunDirection.y);',
+      'vec2 pStudioStarCoord=vec2(atan(direction.z,direction.x),asin(clamp(direction.y,-1.0,1.0)))*vec2(145.0,92.0);',
+      'vec2 pStudioStarCell=floor(pStudioStarCoord);',
+      'float pStudioStarSeed=fract(sin(dot(pStudioStarCell,vec2(127.1,311.7)))*43758.5453);',
+      'float pStudioStarDistance=length(fract(pStudioStarCoord)-vec2(0.5));',
+      'float pStudioStarDisc=(1.0-smoothstep(0.018,0.085,pStudioStarDistance))*step(0.993,pStudioStarSeed);',
+      'float pStudioStarVisibility=pStudioNightAmount*smoothstep(-0.03,0.16,direction.y);',
+      'retColor+=vec3(0.62,0.75,1.0)*pStudioStarDisc*(0.55+0.45*pStudioStarSeed)*pStudioStarVisibility*0.72;'
     ].join('\n');
     material.fragmentShader=source.replace(marker,enhancement+'\n'+marker);
     material.needsUpdate=true;
