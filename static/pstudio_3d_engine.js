@@ -3210,7 +3210,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.needsUpdate=true;
     return texture;
   }
-  function enhancePhysicalSkyShader(sky){
+  function enhancePhysicalSkyShader(sky,Three){
     const material=sky?.material;
     if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
     const marker='gl_FragColor = vec4( retColor, 1.0 );';
@@ -3220,8 +3220,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
       return false;
     }
-    const moonDirectionUniform=material.uniforms.pStudioMoonDirection||(material.uniforms.pStudioMoonDirection={value:new window.THREE.Vector3(0,1,0)});
-    const moonIntensityUniform=material.uniforms.pStudioMoonIntensity||(material.uniforms.pStudioMoonIntensity={value:0});
+    if(!material.uniforms.pStudioMoonDirection)material.uniforms.pStudioMoonDirection={value:new Three.Vector3(0,1,0)};
+    if(!material.uniforms.pStudioMoonIntensity)material.uniforms.pStudioMoonIntensity={value:0};
     const enhancement=[
       'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
       'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
@@ -3279,6 +3279,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       // Sky.js uses a 450,000-unit atmosphere scale in its sun-fade calculation.
       // A unit vector keeps the direction but breaks the physical elevation response.
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
+      if(uniforms.pStudioMoonDirection?.value){
+        const moonDirection=new T.Vector3(
+          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
+          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
+          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
+        );
+        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
+        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
+      }
+      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
       if(uniforms.pStudioMoonDirection?.value){
         const moonDirection=new T.Vector3(
           Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
