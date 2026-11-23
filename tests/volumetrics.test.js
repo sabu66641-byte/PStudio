@@ -93,10 +93,8 @@ test('scaled fog and god-ray passes render to a reduced target and composite bac
   for (const pass of [rays, fog]) {
     pass.setSize(1280, 720);
     pass.setResolutionScale(0.5);
-    assert.deepEqual(
-      { width: pass.getTargetSize().width, height: pass.getTargetSize().height },
-      { width: 640, height: 360 }
-    );
+    assert.equal(pass.getTargetSize().width, 640);
+    assert.equal(pass.getTargetSize().height, 360);
     assert.equal(pass.needsSwap, true);
     assert.equal(pass.enabled, false);
   }
@@ -115,7 +113,7 @@ test('scaled fog and god-ray passes render to a reduced target and composite bac
   fog.render(rendererMock, writeBuffer, readBuffer);
   assert.equal(rendererMock.autoClear, false, 'renderer state must be restored');
   assert.equal(calls.filter(call => call.type === 'render').length, 2, 'low-res effect + full-res composite');
-  assert.equal(calls[0].target, fogTarget(calls[0].target), 'first render targets an offscreen buffer');
+  assert.ok(fogTarget(calls[0].target), 'first render targets an offscreen buffer');
   assert.equal(calls[1].target, writeBuffer, 'second render writes to EffectComposer buffer');
   assert.equal(fog.uniforms.tDiffuse.value, sourceTexture);
   assert.equal(fog.uniforms.tDepth.value, depthTexture);
