@@ -868,7 +868,7 @@
         'float blurMix=smoothstep(0.25,3.0,coc);',
         'gl_FragColor=vec4(mix(center.rgb,blurred,blurMix),center.a);',
         '}'
-      ].join('\\n')
+      ].join('\n')
     };
     const composite=[
       'uniform sampler2D tDiffuse;uniform sampler2D tEffect;',
@@ -883,7 +883,7 @@
       'float blue=texture2D(tEffect,blueUv).b;',
       'gl_FragColor=vec4(red,center.g,blue,center.a);',
       '}'
-    ].join('\\n');
+    ].join('\n');
     const pass=createScaledFullscreenPass(Three,shader,composite,.5,true);
     if(!pass)return null;
     pass.setDofEnabled=value=>{shader.uniforms.uDofEnabled.value=value?1:0;return !!value;};
