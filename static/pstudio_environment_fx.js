@@ -693,7 +693,7 @@
     return pass;
   }
 
-  function createScaledFullscreenPass(Three,shader,compositeFragment,initialScale=1){
+  function createScaledFullscreenPass(Three,shader,compositeFragment,initialScale=1,failOpen=false){
     if(!Three?.ShaderMaterial||!Three?.WebGLRenderTarget||!Three?.Scene||!Three?.OrthographicCamera||!Three?.PlaneGeometry||!Three?.Mesh)return null;
     const geometry=new Three.PlaneGeometry(2,2);
     const camera=new Three.OrthographicCamera(-1,1,1,-1,0,1);
@@ -715,6 +715,14 @@
     });
     target.texture.generateMipmaps=false;
     const compositeScene=new Three.Scene();
+    const fallbackScene=failOpen?new Three.Scene():null;
+    const fallbackMaterial=failOpen?new Three.ShaderMaterial({
+      uniforms:{tDiffuse:{value:null}},
+      vertexShader:shader.vertexShader,
+      fragmentShader:'uniform sampler2D tDiffuse;varying vec2 vUv;void main(){gl_FragColor=texture2D(tDiffuse,vUv);}',
+      depthTest:false,depthWrite:false,transparent:false,toneMapped:false
+    }):null;
+    if(fallbackScene)fallbackScene.add(new Three.Mesh(geometry,fallbackMaterial));
     const compositeMaterial=new Three.ShaderMaterial({
       uniforms:{
         tDiffuse:{value:null},
@@ -734,6 +742,9 @@
       clear:false,
       renderToScreen:false,
       uniforms:shader.uniforms,
+      failed:false,
+      lastError:null,
+      resetFailure(){this.failed=false;this.lastError=null;},
       setResolutionScale(value){
         const next=Math.max(.2,Math.min(1,Number(value)||1));
         if(Math.abs(next-resolutionScale)<.001)return resolutionScale;
@@ -765,6 +776,20 @@
           compositeMaterial.uniforms.uIntensity.value=Number(uniforms.uIntensity?.value)||0;
           renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
           renderer.render(compositeScene,camera);
+        }catch(error){
+          this.failed=true;
+          this.lastError=String(error?.message||error);
+          if(!failOpen)throw error;
+          this.enabled=false;
+          try{
+            fallbackMaterial.uniforms.tDiffuse.value=readBuffer.texture;
+            renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
+            renderer.render(fallbackScene,camera);
+            console.warn('[PStudio] Volumetric fog failed; the original scene frame was preserved and fog was disabled.',error);
+          }catch(fallbackError){
+            console.error('[PStudio] Volumetric fog fallback could not composite the source frame.',fallbackError);
+            throw fallbackError;
+          }
         }finally{
           renderer.autoClear=previousAutoClear;
         }
@@ -774,6 +799,7 @@
         geometry.dispose?.();
         processMaterial.dispose?.();
         compositeMaterial.dispose?.();
+        fallbackMaterial?.dispose?.();
       }
     };
     pass.setSize(1,1);
@@ -816,7 +842,7 @@
       'void main(){vec4 source=texture2D(tDiffuse,vUv);vec3 rays=texture2D(tEffect,vUv).rgb;',
       'gl_FragColor=vec4(source.rgb+rays*uIntensity,source.a);}'
     ].join('\n');
-    const pass=createScaledFullscreenPass(Three,shader,composite,.5);
+    const pass=createScaledFullscreenPass(Three,shader,composite,.5,false);
     if(!pass)return null;
     pass.setSamples=value=>{shader.uniforms.uSamples.value=Math.max(4,Math.min(32,Math.round(Number(value)||16)));return shader.uniforms.uSamples.value;};
     pass.getStats=()=>({
@@ -869,7 +895,7 @@
       'varying vec2 vUv;',
       'void main(){gl_FragColor=texture2D(tEffect,vUv);}'
     ].join('\n');
-    const pass=createScaledFullscreenPass(Three,shader,composite,.5);
+    const pass=createScaledFullscreenPass(Three,shader,composite,.5,true);
     if(!pass)return null;
     pass.setStepCount=value=>{shader.uniforms.uSteps.value=Math.max(4,Math.min(24,Math.round(Number(value)||10)));return shader.uniforms.uSteps.value;};
     pass.getStats=()=>({
