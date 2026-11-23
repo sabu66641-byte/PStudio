@@ -37,7 +37,9 @@
     ecs.registerComponent(type, {
       source: SOURCE, label: options.label || type,
       description: options.description || '', category: options.category || 'Gameplay',
-      internal: true, persistent: false, additionalProperties: false,
+      internal: options.internal !== false,
+      persistent: options.persistent === true,
+      additionalProperties: false,
       schema,
       ...(typeof options.create === 'function' ? { create: options.create } : {})
     });
@@ -49,19 +51,19 @@
       max: { type: 'number', min: 1, default: 100 },
       hp: { type: 'number', min: 0, default: 100 },
       configured: { type: 'boolean', default: false }
-    }, { label: 'Health' });
+    }, { label: 'Health', persistent: true });
     registerType(TYPES.Inventory, {
       items: { type: 'json', default: {} }
-    }, { label: 'Inventory' });
+    }, { label: 'Inventory', persistent: true });
     registerType(TYPES.Equipment, {
       slots: { type: 'json', default: {} }
-    }, { label: 'Equipment' });
+    }, { label: 'Equipment', persistent: true });
     registerType(TYPES.CombatState, {
       cooldowns: { type: 'json', default: {} },
       comboCount: { type: 'integer', min: 0, max: 5, default: 0 },
       comboTime: { type: 'number', min: 0, default: 0 },
       comboWeapon: { type: 'string', default: '' }
-    }, { label: 'Combat State' });
+    }, { label: 'Combat State', persistent: true });
     registerType(TYPES.AIController, {
       targetId: { type: 'string', default: '' },
       sightRange: { type: 'number', min: 0, default: 12 },
@@ -70,7 +72,7 @@
       enabled: { type: 'boolean', default: true },
       state: { type: 'string', default: 'idle' },
       skipLegacyEvaluation: { type: 'boolean', default: false }
-    }, { label: 'AI Controller' });
+    }, { label: 'AI Controller', persistent: true });
     registerType(TYPES.MovementIntent, {
       x: { type: 'number', default: 0 },
       z: { type: 'number', default: 0 },
@@ -559,7 +561,6 @@
 
   function initialize(sceneObjects, legacy = {}) {
     registerComponents();
-    clearStandaloneEntities();
     for (const object of sceneObjects || []) {
       if (!object || object.id === undefined || object.id === null) continue;
       const id = String(object.id);
@@ -573,9 +574,12 @@
         if (controller) controller.state = String(aiState);
       }
     }
-    for (const [questId, state] of legacy.getQuests?.() || []) getQuestState(questId, true, state);
-    const dialogue = legacy.getDialogue?.();
-    const session = getDialogueState(true);
+    for (const [questId, state] of legacy.getQuests?.() || []) {
+      if (!getQuestState(questId)) getQuestState(questId, true, state);
+    }
+    const existingSession = getDialogueState();
+    const dialogue = existingSession ? null : legacy.getDialogue?.();
+    const session = existingSession || getDialogueState(true);
     if (dialogue && session) {
       session.signature = String(dialogue.signature || '');
       session.speaker = String(dialogue.speaker || '');
@@ -590,15 +594,27 @@
   function persist(sceneObjects, legacy = {}) {
     if (!active) return false;
     for (const object of sceneObjects || []) {
-      if (object && object.id !== undefined && object.id !== null) copySceneState(String(object.id), legacy);
+      if (!object || object.id === undefined || object.id === null) continue;
+      const entity = sceneEntity(String(object.id));
+      if (entity === null) continue;
+      if (typeof ecs.serializeEntityComponents === 'function') {
+        const serialized = ecs.serializeEntityComponents(
+          entity, ['Transform', 'SceneObjectRef'], object
+        );
+        if (!serialized) {
+          console.warn('[PStudio ECS Gameplay] skipped writing a future-version Component payload:', object.id);
+          continue;
+        }
+        object.ecsComponentsVersion = serialized.version;
+        object.ecsComponents = serialized.components;
+      } else {
+        // Compatibility with an older ECS core. Current PStudio always uses the
+        // versioned serializer above.
+        copySceneState(String(object.id), legacy);
+      }
     }
-    legacy.setQuests?.(listQuests().map(item => [item.quest, {
-      started: item.started, complete: item.complete, progress: item.progress,
-      target: item.target, rewarded: item.rewarded, ownerId: item.ownerId
-    }]));
-    const dialogue = getDialogueState();
-    if (dialogue) legacy.setDialogue?.(clone(dialogue, {}));
-    clearStandaloneEntities();
+    // QuestProgress and DialogueSession are standalone ECS Entities. They remain
+    // in ECS across Stop/Play; no legacy Map snapshot is created.
     active = false;
     return true;
   }

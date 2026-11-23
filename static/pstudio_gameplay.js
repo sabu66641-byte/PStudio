@@ -148,7 +148,10 @@
     const key=String(item);return state?(hasOwn(state.items,key)?Number(state.items[key])||0:0):inventory(id).get(key)||0;
   }
   function getItemDefinition(item){
-    return window.PStudioECSGameplay?.getItemDefinition?.(String(item))||itemDefinitions.get(String(item))||null;
+    const bridge=window.PStudioECSGameplay;
+    return typeof bridge?.getItemDefinition==='function'
+      ? bridge.getItemDefinition(String(item))
+      : itemDefinitions.get(String(item))||null;
   }
   function defineItem(item,kind,slot,value){
     const id=String(item),definition={kind:String(kind),slot:String(slot||''),value:Math.max(0,number(value))};
@@ -175,7 +178,10 @@
     return inventoryEntries(id).map(([item,count])=>({item,count,definition:getItemDefinition(item),equipped:getEquipment(id).some(e=>e.item===item)}));
   }
   function getQuestDefinition(id){
-    return window.PStudioECSGameplay?.getQuestDefinition?.(String(id))||questDefinitions.get(String(id))||null;
+    const bridge=window.PStudioECSGameplay;
+    return typeof bridge?.getQuestDefinition==='function'
+      ? bridge.getQuestDefinition(String(id))
+      : questDefinitions.get(String(id))||null;
   }
   function questDefine(id,prerequisite,rewardItem,rewardCount){
     const key=String(id),definition={prerequisite:String(prerequisite||''),rewardItem:String(rewardItem||''),rewardCount:Math.max(0,Math.floor(number(rewardCount,0)))};
@@ -214,7 +220,10 @@
     const q=state||quests.get(String(id));return q?q.progress:0;
   }
   function getWeaponDefinition(name){
-    return window.PStudioECSGameplay?.getWeaponDefinition?.(String(name))||weaponDefinitions.get(String(name))||null;
+    const bridge=window.PStudioECSGameplay;
+    return typeof bridge?.getWeaponDefinition==='function'
+      ? bridge.getWeaponDefinition(String(name))
+      : weaponDefinitions.get(String(name))||null;
   }
   function defineWeapon(name,range,arcDegrees,damageMultiplier=1){
     const id=String(name),definition={range:Math.max(0.1,number(range,2)),arc:clamp(number(arcDegrees,100),1,360),multiplier:Math.max(0,number(damageMultiplier,1))};

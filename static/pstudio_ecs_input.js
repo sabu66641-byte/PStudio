@@ -50,7 +50,7 @@
     return Object.freeze(result);
   }
 
-  function registerComponent(type, schema, create, description) {
+  function registerComponent(type, schema, create, description, options = {}) {
     if (ecs.hasComponentType(type)) {
       const definition = ecs.getComponentDefinition(type);
       if (definition?.source !== SOURCE) throw new Error('ECS Component name conflict: ' + type);
@@ -61,8 +61,8 @@
       label: type,
       description,
       category: 'Input',
-      internal: true,
-      persistent: false,
+      internal: options.internal !== false,
+      persistent: options.persistent === true,
       additionalProperties: false,
       schema,
       create
@@ -101,7 +101,7 @@
       forwardKeys: [...DEFAULT_KEYS.forwardKeys],
       backwardKeys: [...DEFAULT_KEYS.backwardKeys],
       jumpKeys: [...DEFAULT_KEYS.jumpKeys]
-    }), 'Per-entity keyboard mapping used to derive ControlIntent.');
+    }), 'Per-entity keyboard mapping used to derive ControlIntent.', { persistent: true, internal: false });
 
     registerComponent(TYPES.ControlIntent, {
       x: { type: 'number', default: 0 },

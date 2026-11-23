@@ -179,13 +179,18 @@
 
   function persistEntityComponents(entityId) {
     const api = ecs();
-    if (!api) return;
+    if (!api) return false;
     const object = sceneObjectForEntity(entityId);
-    if (!object) return;
-    const serialized = api.serializeEntityComponents(entityId, [...CORE_COMPONENTS]);
+    if (!object) return false;
+    const serialized = api.serializeEntityComponents(entityId, [...CORE_COMPONENTS], object);
+    if (!serialized) {
+      notify('This Scene Object uses a newer ECS Component schema. Its saved data was left untouched.');
+      return false;
+    }
     object.ecsComponentsVersion = serialized.version;
     object.ecsComponents = serialized.components;
     if (typeof window.persistProject === 'function') window.persistProject();
+    return true;
   }
 
   function syncSceneEntities() {

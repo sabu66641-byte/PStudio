@@ -801,11 +801,17 @@
     return normalized;
   }
 
-  function serializeEntityComponents(entity, excludeTypes = []) {
+  function serializeEntityComponents(entity, excludeTypes = [], sceneObject = null) {
     const excluded = new Set((Array.isArray(excludeTypes) ? excludeTypes : [excludeTypes])
       .filter(value => value !== undefined && value !== null)
       .map(String));
+    // Preserve forward-version data verbatim. An older runtime must never
+    // downgrade a payload whose schema it cannot understand.
+    const savedEntries = sceneObject ? readSavedComponentEntries(sceneObject) : [];
+    if (sceneObject && savedEntries === null) return null;
+
     const components = [];
+    const includedTypes = new Set();
     for (const entry of getEntityComponents(entity)) {
       if (!entry.persistent || excluded.has(entry.type)) continue;
       try {
@@ -813,8 +819,21 @@
           type: entry.type,
           data: cloneJsonValue(entry.data)
         });
+        includedTypes.add(entry.type);
       } catch (error) {
         console.warn('[PStudio ECS] Component could not be serialized:', entry.type, error);
+      }
+    }
+
+    // Keep records for Component types not registered by this runtime. They may
+    // belong to another project module or a newer plugin and are not safe to drop.
+    for (const entry of savedEntries || []) {
+      if (excluded.has(entry.type) || includedTypes.has(entry.type) || componentDefinitions.has(entry.type)) continue;
+      try {
+        components.push({ type: entry.type, data: cloneJsonValue(entry.data) });
+        includedTypes.add(entry.type);
+      } catch (error) {
+        console.warn('[PStudio ECS] Unknown saved Component could not be preserved:', entry.type, error);
       }
     }
     return { version: SCENE_COMPONENTS_VERSION, components };
@@ -925,6 +944,7 @@
     getComponentDefinitions,
     getEntityComponents,
     serializeEntityComponents,
+    sceneComponentSchemaVersion: SCENE_COMPONENTS_VERSION,
     getEntities,
     registerSystem,
     unregisterSystem,
