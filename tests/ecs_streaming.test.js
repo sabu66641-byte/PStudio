@@ -19,9 +19,9 @@ test('renderer re-registration preserves the live chunk object and cancels chang
   const preservedAssets = [];
   const register = new Function('worldChunks', 'endWorldChunkLoad', source + '; return registerWorldChunk;')(
     worldChunks,
-    chunk => {
+    (chunk, preserve) => {
       invalidated.push(chunk.id);
-      preservedAssets.push(Array.from(arguments[1] || []));
+      preservedAssets.push(Array.from(preserve || []));
       chunk.generation++;
       chunk.loading = false;
       chunk.active = false;
