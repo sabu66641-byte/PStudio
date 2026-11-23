@@ -19,7 +19,8 @@
   let lastProbeCameraPosition=null;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
-  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
+  let worldStreamingInterests=[];
+  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
   let particleClock=0,lastRenderDurationMs=0;
   const waterMaterials=new Set();
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
@@ -797,15 +798,37 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const [key,instance] of [...modelInstances])if(owners.has(String(instance.ownerId)))removeModelInstance(key);
   }
   function beginWorldChunkLoad(chunk){
-    if(chunk.loading||chunk.active)return;const token=++chunk.generation;chunk.loading=true;chunk.error=null;
-    Promise.all(chunk.assets.map(name=>requestModelAsset(name))).then(async()=>{if(token!==chunk.generation){if(!chunk.active&&!chunk.loading)releaseChunkAssetCache(chunk);return;}if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:chunk.assets.slice()});if(token!==chunk.generation){if(!chunk.active&&!chunk.loading)releaseChunkAssetCache(chunk);return;}
-      chunk.loading=false;chunk.active=true;chunk.lastLoadedAt=Date.now();try{window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:chunk.assets.length});window.PStudioEvents?.emit('world.chunk.resumed',{id:chunk.id});}catch(_){}
-    }).catch(error=>{if(token===chunk.generation){chunk.loading=false;chunk.active=false;chunk.error=String(error?.message||error);try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}}});
+    if(chunk.loading||chunk.active)return;
+    const token=++chunk.generation;
+    const requestedAssets=chunk.assets.slice();
+    chunk.loading=true;
+    chunk.error=null;
+    Promise.all(requestedAssets.map(name=>requestModelAsset(name))).then(async()=>{
+      // A stale request must never release the current generation's assets. endWorldChunkLoad
+      // already released the exact old asset set when the generation was invalidated.
+      if(token!==chunk.generation)return;
+      if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:requestedAssets.slice()});
+      if(token!==chunk.generation)return;
+      chunk.loading=false;
+      chunk.active=true;
+      chunk.lastLoadedAt=Date.now();
+      try{
+        window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:requestedAssets.length});
+        window.PStudioEvents?.emit('world.chunk.resumed',{id:chunk.id});
+      }catch(_){}
+    }).catch(error=>{
+      if(token!==chunk.generation)return;
+      chunk.loading=false;
+      chunk.active=false;
+      chunk.error=String(error?.message||error);
+      releaseChunkAssetCache(chunk,requestedAssets);
+      try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}
+    });
   }
-  function releaseChunkAssetCache(chunk){
+  function releaseChunkAssetCache(chunk,assetNames=chunk.assets){
     const protectedAssets=new Set();
     for(const other of worldChunks.values())if(other.id!==chunk.id&&(other.active||other.loading))for(const name of other.assets||[])protectedAssets.add(name);
-    for(const name of chunk.assets||[]){
+    for(const name of assetNames||[]){
       if(protectedAssets.has(name))continue;
       let removed=false;
       try{removed=window.PStudioResources?.remove?.('model-gpu',name,{reason:'chunk-unloaded'})||false;}catch(_){continue;}
@@ -820,18 +843,102 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     window.PStudioResources?.trim?.('gpu');try{window.PStudioEvents?.emit('world.chunk.unloaded',{id:chunk.id});}catch(_){}
   }
   function registerWorldChunk(id,o={}){
-    const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
-    const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0,old=worldChunks.get(key);
-    const chunk={id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:old?.active??(o.active===true),loading:false,generation:old?.generation||0,assets:Array.isArray(o.assets)?[...new Set(o.assets.map(String))]:[],onLoad:typeof o.onLoad==='function'?o.onLoad:old?.onLoad,onUnload:typeof o.onUnload==='function'?o.onUnload:old?.onUnload,error:null,lastLoadedAt:old?.lastLoadedAt||0};
-    worldChunks.set(key,chunk);return{id:key,loadDistance,unloadDistance,active:chunk.active,assetCount:chunk.assets.length};
+    const key=String(id||'').trim();
+    if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
+    const coordinate=v=>Number.isFinite(Number(v))?Number(v):0;
+    const loadDistance=Math.max(1,Math.min(200000,Number(o.loadDistance)||800));
+    const unloadDistance=Math.max(loadDistance,Math.min(200000,Number(o.unloadDistance)||loadDistance*1.2));
+    const assets=Array.isArray(o.assets)?[...new Set(o.assets.map(value=>String(value||'').trim()).filter(Boolean))]:[];
+    const old=worldChunks.get(key);
+    const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some((value,index)=>value!==assets[index]));
+    // Keep the registry record stable so in-flight promises retain the same object.
+    // Asset-set changes invalidate the old generation before the new configuration is assigned.
+    if(old&&assetsChanged&&(old.active||old.loading))endWorldChunkLoad(old);
+    const chunk=old||{id:key,active:false,loading:false,generation:0,error:null,lastLoadedAt:0,onLoad:null,onUnload:null};
+    chunk.x=coordinate(o.x);chunk.y=coordinate(o.y);chunk.z=coordinate(o.z);
+    chunk.loadDistance=loadDistance;chunk.unloadDistance=unloadDistance;
+    chunk.assets=assets;
+    if(typeof o.onLoad==='function')chunk.onLoad=o.onLoad;
+    if(typeof o.onUnload==='function')chunk.onUnload=o.onUnload;
+    if(assetsChanged)chunk.error=null;
+    worldChunks.set(key,chunk);
+    return{id:key,loadDistance,unloadDistance,active:chunk.active,loading:chunk.loading,assetCount:chunk.assets.length,generation:chunk.generation};
   }
-  function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
-  function unregisterWorldChunk(id){const key=String(id),chunk=worldChunks.get(key);if(!chunk)return false;if(chunk.active||chunk.loading)endWorldChunkLoad(chunk);worldChunks.delete(key);for(const [owner,chunkId] of objectChunkAssignments)if(chunkId===key)objectChunkAssignments.delete(owner);return true;}
-  function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
+  function assignObjectToChunk(ownerId,chunkId){
+    const owner=String(ownerId||''),id=String(chunkId||'');
+    if(!owner)throw new TypeError('World chunk owner ID is required.');
+    if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);
+    objectChunkAssignments.set(owner,id);
+    return true;
+  }
+  function unassignObjectFromChunk(ownerId){
+    return objectChunkAssignments.delete(String(ownerId));
+  }
+  function unregisterWorldChunk(id){
+    const key=String(id),chunk=worldChunks.get(key);
+    if(!chunk)return false;
+    if(chunk.active||chunk.loading)endWorldChunkLoad(chunk);
+    worldChunks.delete(key);
+    for(const [owner,chunkId] of objectChunkAssignments)if(chunkId===key)objectChunkAssignments.delete(owner);
+    return true;
+  }
+  function isOwnerChunkActive(ownerId){
+    const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));
+    return !chunk||chunk.active;
+  }
+  function setWorldStreamingInterests(interests){
+    const source=Array.isArray(interests)?interests:[];
+    worldStreamingInterests=source.slice(0,128).filter(value=>value&&[value.x,value.y,value.z].every(axis=>Number.isFinite(Number(axis)))).map(value=>({
+      id:String(value.id||''),
+      x:Number(value.x),y:Number(value.y),z:Number(value.z),
+      loadMultiplier:Math.max(0.1,Math.min(4,Number(value.loadMultiplier)||1)),
+      unloadMultiplier:Math.max(0.1,Math.min(4,Number(value.unloadMultiplier)||1)),
+      priority:Math.max(-1000,Math.min(1000,Math.trunc(Number(value.priority)||0)))
+    }));
+    worldStreamingInterests.sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id));
+    return worldStreamingInterests.length;
+  }
+  function clearWorldStreamingInterests(){worldStreamingInterests=[];return true;}
   function updateWorldChunkStates(){
-    if(!camera)return;for(const chunk of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(chunk.x,chunk.y,chunk.z));if((chunk.active||chunk.loading)&&d>chunk.unloadDistance)endWorldChunkLoad(chunk);else if(!chunk.active&&!chunk.loading&&d<chunk.loadDistance)beginWorldChunkLoad(chunk);}
+    const interests=worldStreamingInterests;
+    if(!interests.length&&!camera)return;
+    const loadCandidates=[];
+    let loadingCount=0;
+    for(const chunk of worldChunks.values()){
+      if(chunk.loading)loadingCount++;
+      let shouldStay=false,bestPriority=-Infinity,bestDistance=Infinity,bestNormalized=Infinity;
+      if(interests.length){
+        for(const interest of interests){
+          const dx=chunk.x-interest.x,dy=chunk.y-interest.y,dz=chunk.z-interest.z;
+          const distance=Math.hypot(dx,dy,dz);
+          const loadRadius=chunk.loadDistance*interest.loadMultiplier;
+          const unloadRadius=chunk.unloadDistance*interest.unloadMultiplier;
+          if(distance<=unloadRadius)shouldStay=true;
+          if(distance<loadRadius){
+            const normalized=distance/Math.max(1,loadRadius);
+            if(interest.priority>bestPriority||(interest.priority===bestPriority&&normalized<bestNormalized)){
+              bestPriority=interest.priority;bestDistance=distance;bestNormalized=normalized;
+            }
+          }
+        }
+      }else{
+        const dx=chunk.x-camera.position.x,dy=chunk.y-camera.position.y,dz=chunk.z-camera.position.z;
+        const distance=Math.hypot(dx,dy,dz);
+        shouldStay=distance<=chunk.unloadDistance;
+        if(distance<chunk.loadDistance){bestPriority=0;bestDistance=distance;bestNormalized=distance/chunk.loadDistance;}
+      }
+      if(chunk.active||chunk.loading){
+        if(!shouldStay)endWorldChunkLoad(chunk);
+      }else if(bestPriority>-Infinity){
+        loadCandidates.push({chunk,priority:bestPriority,distance:bestDistance,normalized:bestNormalized});
+      }
+    }
+    const budget=Math.max(0,Math.min(32,Math.floor(Number(worldRenderConfig.maxConcurrentChunkLoads)||1))-loadingCount);
+    if(budget<=0||!loadCandidates.length)return;
+    loadCandidates.sort((a,b)=>b.priority-a.priority||a.normalized-b.normalized||a.distance-b.distance||a.chunk.id.localeCompare(b.chunk.id));
+    for(let index=0;index<Math.min(budget,loadCandidates.length);index++)beginWorldChunkLoad(loadCandidates[index].chunk);
   }
-  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
+  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.maxConcurrentChunkLoads)))worldRenderConfig.maxConcurrentChunkLoads=Math.max(1,Math.min(32,Math.floor(Number(o.maxConcurrentChunkLoads))));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
   function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
   async function bakeLightProbeVolume(o={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
@@ -4080,12 +4187,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     loadEnvironmentHDR,
     bakeLightProbe,
     clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed)drawFrame();return changed;},
-    bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unassignObjectFromChunk,unregisterWorldChunk,
+    setWorldStreamingInterests,clearWorldStreamingInterests,
     isOwnerChunkActive,
     setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
     setClusteredLighting:enabled=>{clusteredLightingEnabled=!!enabled;updateClusteredLighting(true);return{enabled:clusteredLightingEnabled,available:!!clusteredLightingResources,active:clusteredLightingActive};},
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
-    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
+    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,streamingInterests:worldStreamingInterests.length,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset
