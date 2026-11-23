@@ -220,7 +220,7 @@ test('night panorama uses a detailed moon, Milky Way structure and multiscale st
   assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
   assert.match(renderer,/const galacticCenterY=\.315\+\.115\*Math\.sin\(angle-\.72\)\+\.035\*Math\.sin\(angle\*2\+1\.1\)/);
   assert.match(renderer,/const moonRadius=48/);
-  assert.match(renderer,/Lunar maria and crater rims/);
+  assert.match(renderer,/context\.ellipse\(moon\.x-moonRadius/);
   assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
 });
 
