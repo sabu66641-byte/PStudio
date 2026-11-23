@@ -582,7 +582,7 @@
         '}',
         'float trans=exp(-optical);',
         'vec3 fogged=col.rgb*trans+scatter;',
-        'gl_FragColor=vec4(mix(col.rgb,fogged,1.0),col.a);',
+        'gl_FragColor=vec4(fogged,col.a);',
         '}'
       ].join('\n')
     };
