@@ -199,7 +199,7 @@ test('official Three.js physical sky is primary while procedural panorama remain
   assert.ok(html.includes("window.PStudioSky = null"));
   for(const token of [
     'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000)',
-    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight','pStudioNightAmount','pStudioStarDisc','pStudioMoonAlignment','pStudioMoonIntensity','uniform vec3 pStudioMoonDirection',
+    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight','pStudioNightAmount','pStudioStarDisc','pStudioMoonAlignment','pStudioMoonDisc','pStudioMoonIntensity','uniform vec3 pStudioMoonDirection',
     'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
     'pmremGenerator.fromScene(skyScene,0.04)','physicalSky.visible=!hdrBackgroundVisible'
   ])assert.ok(renderer.includes(token),token);
