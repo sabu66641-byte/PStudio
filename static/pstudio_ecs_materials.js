@@ -144,6 +144,7 @@
     const object = objectFor(ownerId, list);
     const entity = entityFor(ownerId, list);
     if (!object || entity === null || !type) return false;
+    if (persist && !ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
     try {
       if (ecs.hasComponent(entity, type)) ecs.setComponent(entity, type, config);
       else ecs.addComponent(entity, type, config);
@@ -373,6 +374,7 @@
     const list = objects || window.sceneObjects;
     const entity = entityFor(ownerId, list), object = objectFor(ownerId, list);
     if (entity === null || !object || !ecs.hasComponent(entity, TYPES.ShaderMaterial)) return false;
+    if (!ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
     ecs.removeComponent(entity, TYPES.ShaderMaterial);
     return writeSceneObject(entity, object);
   }
@@ -386,6 +388,7 @@
     const entity = entityFor(ownerId, list), object = objectFor(ownerId, list);
     if (entity === null || !object) return false;
     if (!ecs.hasComponent(entity, TYPES.MeshCollider)) return true;
+    if (!ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
     ecs.setComponent(entity, TYPES.MeshCollider, { enabled: false });
     return writeSceneObject(entity, object);
   }
@@ -399,6 +402,7 @@
     const list = objects || window.sceneObjects;
     const object = objectFor(ownerId, list), entity = entityFor(ownerId, list);
     if (!object || entity === null || !object.model) return false;
+    if (!ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef'], object)) return false;
     const next = clamp(scale, 0.001, 1000, 1);
     if (ecs.hasComponent(entity, 'Renderable')) {
       const current = ecs.getComponent(entity, 'Renderable');

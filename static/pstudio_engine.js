@@ -554,6 +554,8 @@
     }
   }
   function buildScenePreview3D() {
+    window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
+    window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects || []);
     const commands = new Map();
     commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
@@ -644,6 +646,7 @@
       if (ecs?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime };
         ecs.syncSceneObjects(sceneObjects || []);
+        window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects || []);
         for(const object of sceneObjects||[])ecs.setSceneObjectActive?.(object.id,window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false);
         ecs.update(dt, ecsContext);
         ecs.updatePhase?.('prePhysics', dt, ecsContext);
