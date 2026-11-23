@@ -742,6 +742,7 @@
         return resolutionScale;
       },
       getResolutionScale(){return resolutionScale;},
+      getTargetSize(){return{width:target.width,height:target.height};},
       setSize(width,height){
         lastWidth=Math.max(1,Math.floor(Number(width)||1));
         lastHeight=Math.max(1,Math.floor(Number(height)||1));
