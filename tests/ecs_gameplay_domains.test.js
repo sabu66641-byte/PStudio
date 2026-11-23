@@ -311,3 +311,83 @@ test('Enemy AI uses ECS Navigation graph nodes to create its MovementIntent', ()
   ecs.updatePhase('postUpdate', 1 / 60, { sceneObjects: objects });
   assert.deepEqual(movements.at(-1), { id: 'enemy', x: 1, z: 0 });
 });
+
+test('Item definitions are ECS entities and legacy inventory/equipment APIs read their Components', () => {
+  const objects = [{ id: 'player', name: 'Player', worldX: 0, worldZ: 0 }];
+  const { ecs, gameplay, bridge } = createRuntime(objects);
+  assert.equal(gameplay.defineItem('potion', 'consumable', 'heal', 30), true);
+  assert.equal(gameplay.defineItem('sword', 'equipment', 'main-hand', 0), true);
+  const potion = bridge.getItemDefinition('potion');
+  const sword = bridge.getItemDefinition('sword');
+  assert.deepEqual(JSON.parse(JSON.stringify(potion)), { kind: 'consumable', slot: 'heal', value: 30 });
+  assert.deepEqual(JSON.parse(JSON.stringify(sword)), { kind: 'equipment', slot: 'main-hand', value: 0 });
+  assert.equal(ecs.query(['ItemDefinition']).length, 2);
+  assert.equal(ecs.getComponentDefinition('ItemDefinition').persistent, false);
+  assert.equal(gameplay.inventoryAdd('player', 'sword', 1), 1);
+  assert.equal(gameplay.equipItem('player', 'sword'), true);
+  gameplay.inventoryAdd('player', 'potion', 1);
+  gameplay.setHP('player', 50);
+  assert.equal(gameplay.useItem('player', 'potion'), true);
+  assert.equal(gameplay.getHP('player'), 80);
+  assert.equal(gameplay.getInventorySnapshot('player').find(item => item.item === 'sword').definition.slot, 'main-hand');
+});
+
+test('Quest definitions are ECS entities; prerequisites and rewards preserve legacy quest APIs', () => {
+  const objects = [{ id: 'hero', name: 'Hero', worldX: 0, worldZ: 0 }];
+  const { ecs, gameplay, bridge } = createRuntime(objects);
+  gameplay.defineItem('gem', 'material', '', 0);
+  assert.equal(gameplay.questDefine('intro', '', 'gem', 2), true);
+  assert.equal(gameplay.questDefine('follow-up', 'intro', '', 0), true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(bridge.getQuestDefinition('follow-up'))),
+    { prerequisite: 'intro', rewardItem: '', rewardCount: 0 }
+  );
+  assert.equal(ecs.query(['QuestDefinition']).length, 2);
+  assert.equal(gameplay.questStart('follow-up'), false);
+  assert.equal(gameplay.questStart('intro'), true);
+  assert.equal(gameplay.questComplete('intro', 'hero'), true);
+  assert.equal(gameplay.inventoryCount('hero', 'gem'), 2);
+  assert.equal(gameplay.questStart('follow-up'), true);
+  assert.equal(gameplay.questIsComplete('intro'), true);
+});
+
+test('Weapon definitions are ECS entities and legacy weaponAttack reads range/arc/damage from ECS', () => {
+  const objects = [
+    { id: 'hero', name: 'Hero', worldX: 0, worldZ: 0, rotationY: 0 },
+    { id: 'target', name: 'Target', worldX: 0, worldZ: 2 }
+  ];
+  const { ecs, gameplay, bridge } = createRuntime(objects);
+  gameplay.setHP('hero', 100);
+  gameplay.setHP('target', 100);
+  assert.equal(gameplay.defineWeapon('heavy-sword', 2.5, 120, 2), true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(bridge.getWeaponDefinition('heavy-sword'))),
+    { range: 2.5, arc: 120, multiplier: 2 }
+  );
+  assert.equal(ecs.query(['WeaponDefinition']).length, 1);
+  assert.equal(gameplay.weaponAttack('hero', 'heavy-sword', 0.5, 10, 1100, objects, {
+    getBody: () => ({})
+  }), 1);
+  assert.equal(gameplay.getHP('target'), 80);
+});
+
+test('Gameplay definition Components remain available across the Stop/Play snapshot boundary', () => {
+  const objects = [{ id: 'hero', name: 'Hero', worldX: 0, worldZ: 0 }];
+  const { gameplay, bridge, ecs } = createRuntime(objects);
+  gameplay.defineItem('elixir', 'consumable', 'heal', 12);
+  gameplay.questDefine('chapter-1', '', 'elixir', 1);
+  gameplay.defineWeapon('bow', 14, 60, 1.2);
+  assert.equal(gameplay.persistECS(objects), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.getItemDefinition('elixir'))), {
+    kind: 'consumable', slot: 'heal', value: 12
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.getQuestDefinition('chapter-1'))), {
+    prerequisite: '', rewardItem: 'elixir', rewardCount: 1
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(bridge.getWeaponDefinition('bow'))), {
+    range: 14, arc: 60, multiplier: 1.2
+  });
+  assert.equal(ecs.query(['ItemDefinition']).length, 1);
+  assert.equal(ecs.query(['QuestDefinition']).length, 1);
+  assert.equal(ecs.query(['WeaponDefinition']).length, 1);
+});

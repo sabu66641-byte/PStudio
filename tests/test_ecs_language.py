@@ -252,5 +252,16 @@ class PsEcsLanguageTests(unittest.TestCase):
 
 
 
+    def test_builtin_gameplay_definition_components_cannot_be_redeclared(self):
+        for name in ("ItemDefinition", "QuestDefinition", "WeaponDefinition"):
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad.ps": "component " + name + chr(10) + "    enabled = true" + chr(10)}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("組み込みComponent", response.get_json()["error"])
+
+
+
 if __name__ == "__main__":
     unittest.main()

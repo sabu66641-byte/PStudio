@@ -720,3 +720,22 @@ test('ECS Inspector persists versioned Component payloads through the ECS serial
   assert.doesNotThrow(() => new Function(core));
   assert.doesNotThrow(() => new Function(inspector));
 });
+
+test('gameplay definitions are ECS-owned standalone Components behind legacy ps APIs', () => {
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_ecs_gameplay.js'), 'utf8');
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const name of ['ItemDefinition', 'QuestDefinition', 'WeaponDefinition']) {
+    assert.ok(bridge.includes(name));
+    assert.ok(app.includes('"' + name + '"'));
+  }
+  for (const method of ['setItemDefinition', 'getItemDefinition', 'setQuestDefinition', 'getQuestDefinition', 'setWeaponDefinition', 'getWeaponDefinition']) {
+    assert.ok(bridge.includes(method));
+  }
+  for (const method of ['defineItem', 'questDefine', 'defineWeapon']) assert.ok(gameplay.includes(method));
+  assert.ok(gameplay.includes('bridge?.setItemDefinition'));
+  assert.ok(gameplay.includes('bridge?.setQuestDefinition'));
+  assert.ok(gameplay.includes('bridge?.setWeaponDefinition'));
+  assert.doesNotThrow(() => new Function(bridge));
+  assert.doesNotThrow(() => new Function(gameplay));
+});

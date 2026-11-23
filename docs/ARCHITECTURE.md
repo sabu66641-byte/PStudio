@@ -267,3 +267,11 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - Only persistent Components are serialized; transient runtime state such as `UIOverlay`, `ModuleState`, `PhysicsState`, `PhysicsTransform` and `AudioCommand` is excluded.
 - Unknown future schema versions are left untouched and skipped by older runtimes rather than being silently downgraded.
 - Scene Object position/rotation/scale remain in the existing project format; the core `Transform` and `SceneObjectRef` bridge Components are excluded from the Component payload to avoid duplicate persistence.
+
+
+## ECS Gameplay Definition Entities
+
+- `ItemDefinition`, `WeaponDefinition` and `QuestDefinition` are standalone ECS definition Entities, separate from per-Scene Object Inventory/Equipment/CombatState/QuestProgress state.
+- Existing `PStudioGameplay.defineItem`, `defineWeapon` and `questDefine` APIs remain supported and write through to the ECS definition Components.
+- Definition ID-to-Entity Maps are lookup caches only; definition records live in ECS.
+- Definitions are runtime project configuration rebuilt by the existing ps definition calls. They are not automatically serialized into Scene Object data; project-authored data assets remain a separate content-authoring concern.
