@@ -76,7 +76,7 @@ test('set_atmosphere is validated and executed only by the browser game API', ()
   assert.match(app, /"set_atmosphere": 4/);
   assert.match(engine, /case 'set_atmosphere': if\(a\.length===4\)/);
   assert.ok(engine.includes('runtime.atmosphere=settings'));
-  assert.ok(engine.includes('type:\'environment\',preset:settings.preset,...settings'));
+  assert.ok(engine.includes("type:'environment',preset:settings.preset,...settings"));
   assert.match(engine, /set_god_rays\|set_atmosphere/);
   assert.ok(html.includes('pstudio_atmosphere.js'));
 });
