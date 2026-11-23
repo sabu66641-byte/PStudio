@@ -92,6 +92,30 @@ class ExampleProjectRegressionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("set_god_rays", response.get_json()["error"])
 
+
+    def test_camera_lens_api_is_available_to_browser_game_scripts(self):
+        self.assertEqual(app.GAME_FUNCTIONS.get("set_camera_lens"), 4)
+        parsed = self.validate_game_scripts({
+            "camera_lens.ps": (
+                "func start()\\n"
+                "    set_camera_lens(true, 18, 2.8, 0.08)\\n"
+            )
+        })
+        self.assertIn("camera_lens.ps", parsed)
+        self.assertEqual(parsed["camera_lens.ps"]["body"][0]["name"], "start")
+
+    def test_camera_lens_api_rejects_wrong_argument_counts(self):
+        for source in [
+            "func start()\\n    set_camera_lens(true, 18, 2.8)\\n",
+            "func start()\\n    set_camera_lens(true, 18, 2.8, 0.08, 1)\\n",
+        ]:
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad_camera_lens.ps": source}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("set_camera_lens", response.get_json()["error"])
+
     def test_game_prepare_rejects_oversized_combined_script_payload(self):
         response = self.client.post(
             "/game/prepare",
