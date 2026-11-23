@@ -192,3 +192,16 @@ test('procedural scene environment releases the unused room PMREM when switching
   assert.match(renderer,/scenePresetTarget=nextTarget/);
   assert.match(renderer,/scene\.environment=scenePresetTarget\.texture/);
 });
+
+
+test('official Three.js physical sky is primary while procedural panorama remains a compatibility fallback',()=>{
+  assert.ok(html.includes("three/addons/objects/Sky.js"));
+  assert.ok(html.includes("window.PStudioSky = null"));
+  for(const token of [
+    'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.set',
+    'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
+    'pmremGenerator.fromScene(skyScene,0.04)','physicalSky.visible=!hdrBackgroundVisible'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
+  assert.ok(renderer.includes('Procedural sky texture unavailable'));
+});

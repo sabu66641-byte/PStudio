@@ -2520,6 +2520,12 @@ try {
   } catch (error) {
     console.warn('[PStudio] Room environment unavailable; regular ambient lighting will be used.', error);
   }
+  try {
+    window.PStudioSky = (await import('three/addons/objects/Sky.js')).Sky;
+  } catch (error) {
+    window.PStudioSky = null;
+    console.warn('[PStudio] Physical sky addon unavailable; the procedural sky fallback will be used.', error);
+  }
   window.dispatchEvent(new Event('pstudio-three-ready'));
 } catch (error) {
   window.PStudio3DError = error;
@@ -2535,9 +2541,9 @@ try {
 <script src="/static/pstudio_physics.js"></script>
 <script src="/static/pstudio_gameplay.js"></script>
 <script src="/static/pstudio_game_ui.js"></script>
-<script src="/static/pstudio_environment_fx.js?v=20261121-6"></script>
+<script src="/static/pstudio_environment_fx.js?v=20261123-env1"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261121-6"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261121-6"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261123-env1"></script>
 <script src="/static/pstudio_engine.js?v=20261121-6"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
