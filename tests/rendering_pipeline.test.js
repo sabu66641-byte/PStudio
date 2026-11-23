@@ -330,7 +330,8 @@ test('world chunk registry preserves in-flight state and invalidates asset chang
   const block=renderer.slice(start,end);
   assert.ok(block.includes('const chunk=old||'));
   assert.ok(block.includes('assetsChanged&&(old.active||old.loading)'));
-  assert.ok(block.includes('endWorldChunkLoad(old)'));
+  assert.ok(block.includes('const retainedAssets=new Set(old.assets.filter(name=>assets.includes(name)))'));
+  assert.ok(block.includes('endWorldChunkLoad(old,retainedAssets)'));
   assert.ok(block.includes('worldChunks.set(key,chunk)'));
   assert.ok(block.includes('loading:chunk.loading'));
   assert.ok(renderer.includes('const requestedAssets=chunk.assets.slice()'));
