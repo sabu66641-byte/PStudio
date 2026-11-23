@@ -133,7 +133,7 @@ test('BVH occlusion state persists between bounded candidate checks',()=>{
 });
 test('inactive script owners retain prior render commands for seamless resume',()=>{
   assert.ok(engine.includes('runtime.contexts.get(o.id)'));
-  assert.ok(engine.includes('runtime.started.has(o.id)'));
+  assert.ok(engine.includes('window.PStudioECSScript?.getLifecycle?.(o.id)'));
   assert.ok(engine.includes('physicsCommands'));
 });
 
@@ -846,4 +846,16 @@ test('runtime and Editor preview use ECS Scene Components for scripts, sprite bo
   assert.ok(materials.includes('function renameRenderableAsset'));
   assert.doesNotThrow(() => new Function(scene));
   assert.doesNotThrow(() => new Function(engine));
+});
+
+test('ps script runtime variables, lifecycle and System locals are ECS-owned',()=>{
+  assert.ok(engine.includes('window.PStudioECSScript?.getVariables?.(object.id)'));
+  assert.ok(engine.includes('window.PStudioECSScript?.getLifecycle?.(o.id)'));
+  assert.ok(engine.includes('getSystemStateByEntity'));
+  assert.ok(engine.includes('setSystemStateByEntity'));
+  for(const field of ['states','initialized','started','landSequences','ecsStates']){
+    assert.doesNotMatch(engine,new RegExp('runtime\\\\.'+field+'\\\\b'));
+  }
+  assert.ok(html.indexOf('/static/pstudio_ecs.js') < html.indexOf('/static/pstudio_ecs_script.js'));
+  assert.ok(html.includes('/static/pstudio_ecs_script.js'));
 });
