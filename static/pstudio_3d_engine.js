@@ -3214,11 +3214,14 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const material=sky?.material;
     if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
     const marker='gl_FragColor = vec4( retColor, 1.0 );';
+    const uniformMarker='uniform vec3 up;';
     const source=String(material.fragmentShader||'');
-    if(!source.includes(marker)){
+    if(!source.includes(marker)||!source.includes(uniformMarker)){
       console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
       return false;
     }
+    const moonDirectionUniform=material.uniforms.pStudioMoonDirection||(material.uniforms.pStudioMoonDirection={value:new window.THREE.Vector3(0,1,0)});
+    const moonIntensityUniform=material.uniforms.pStudioMoonIntensity||(material.uniforms.pStudioMoonIntensity={value:0});
     const enhancement=[
       'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
       'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
@@ -3235,9 +3238,15 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       'float pStudioStarDistance=length(fract(pStudioStarCoord)-vec2(0.5));',
       'float pStudioStarDisc=(1.0-smoothstep(0.018,0.085,pStudioStarDistance))*step(0.993,pStudioStarSeed);',
       'float pStudioStarVisibility=pStudioNightAmount*smoothstep(-0.03,0.16,direction.y);',
-      'retColor+=vec3(0.62,0.75,1.0)*pStudioStarDisc*(0.55+0.45*pStudioStarSeed)*pStudioStarVisibility*0.72;'
+      'retColor+=vec3(0.62,0.75,1.0)*pStudioStarDisc*(0.55+0.45*pStudioStarSeed)*pStudioStarVisibility*0.72;',
+      'float pStudioMoonAlignment=max(dot(direction,normalize(pStudioMoonDirection)),0.0);',
+      'float pStudioMoonDisc=smoothstep(0.99994,0.999985,pStudioMoonAlignment);',
+      'float pStudioMoonHalo=pow(pStudioMoonAlignment,150.0);',
+      'retColor+=vec3(0.58,0.69,0.9)*pStudioMoonDisc*pStudioMoonIntensity*pStudioNightAmount*0.78;',
+      'retColor+=vec3(0.28,0.4,0.66)*pStudioMoonHalo*pStudioMoonIntensity*pStudioNightAmount*0.035;'
     ].join('\n');
-    material.fragmentShader=source.replace(marker,enhancement+'\n'+marker);
+    const shaderWithMoonUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform vec3 pStudioMoonDirection;\nuniform float pStudioMoonIntensity;');
+    material.fragmentShader=shaderWithMoonUniforms.replace(marker,enhancement+'\n'+marker);
     material.needsUpdate=true;
     material.userData.pstudioAtmosphereEnhanced=true;
     return true;
@@ -3248,7 +3257,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       if(!physicalSky){
         physicalSky=new window.PStudioSky();
         physicalSky.name='PStudioPhysicalSky';
-        enhancePhysicalSkyShader(physicalSky);
+        enhancePhysicalSkyShader(physicalSky,T);
         physicalSky.scale.setScalar(450000);
         physicalSky.frustumCulled=false;
         if(physicalSky.material){physicalSky.material.depthWrite=false;physicalSky.material.fog=false;}
@@ -3270,6 +3279,16 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       // Sky.js uses a 450,000-unit atmosphere scale in its sun-fade calculation.
       // A unit vector keeps the direction but breaks the physical elevation response.
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
+      if(uniforms.pStudioMoonDirection?.value){
+        const moonDirection=new T.Vector3(
+          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
+          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
+          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
+        );
+        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
+        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
+      }
+      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
       physicalSky.visible=!(hdrTexture&&hdrShowBackground);
       if(camera)physicalSky.position.copy(camera.position);
       return true;
@@ -3362,8 +3381,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
       Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
     ];
+    const atmosphericLightDirection=[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)];
     window.PStudioEnvironmentFX?.configureAtmosphere?.({
       sunDirection:skySunDirection,
+      lightDirection:atmosphericLightDirection,
       sunColor:profile.atmosphereSunColor||profile.lightColor,
       fogColor:profile.fogColor,
       fogAmbientColor:profile.hemisphereSky||profile.fogColor,
