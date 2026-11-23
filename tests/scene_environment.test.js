@@ -199,12 +199,17 @@ test('official Three.js physical sky is primary while procedural panorama remain
   assert.ok(html.includes("window.PStudioSky = null"));
   for(const token of [
     'new window.PStudioSky()','PStudioPhysicalSky','uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000)',
-    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight','pStudioNightAmount','pStudioStarDisc','pStudioMoonAlignment','pStudioMoonDisc','pStudioMoonIntensity','uniform vec3 pStudioMoonDirection',
+    'enhancePhysicalSkyShader','pStudioHorizonBand','pStudioTwilight',
     'uniforms.turbidity.value','uniforms.rayleigh.value','createPhysicalSkyEnvironmentTarget',
-    'pmremGenerator.fromScene(skyScene,0.04)','physicalSky.visible=!hdrBackgroundVisible'
+    'pmremGenerator.fromScene(skyScene,0.04)','scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)',
+    'physicalSky.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('Procedural sky texture unavailable'));
+  assert.ok(renderer.includes('const width=canvas.width,height=canvas.height,isNight=profile.name===\\'night\\''));
+  assert.ok(renderer.includes('for(let i=0;i<280;i++)'));
+  assert.ok(renderer.includes('moonDirectionX'));
+  assert.ok(renderer.includes('scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)'));
 });
 
 test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
@@ -233,4 +238,22 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.equal(night.sunGlow,0,'night fallback must not draw a solar halo');
   assert.ok(dusk.skyTurbidity>day.skyTurbidity,'dusk needs a richer aerosol scattering profile');
   assert.ok(night.fogDensity<day.fogDensity,'night haze should be subtler than daytime haze');
+});
+
+
+test('night preset uses a dedicated dark procedural panorama and never exposes the daylight physical-sky scattering mesh',()=>{
+  const night=presets.getPreset('night');
+  assert.ok(night.skyTop.toLowerCase()==='#030817');
+  assert.ok(night.skyMid.toLowerCase()==='#0b1930');
+  assert.ok(night.horizon.toLowerCase()==='#1b2a43');
+  assert.match(renderer,/profile\.name!=='night'&&updatePhysicalSkyPreset\(T,profile\)/);
+  assert.match(renderer,/physicalSky\.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible/);
+  assert.match(renderer,/if\(scenePresetUsesPhysicalSky&&physicalSky\?\.visible\)scene\.background=null/);
+});
+
+test('physical-sky PMREM failure activates the procedural background instead of leaving the failed sky mesh visible',()=>{
+  assert.match(renderer,/scenePresetUsesPhysicalSky=!!\(physicalSkyReady&&nextTarget\)/);
+  assert.match(renderer,/if\(!scenePresetUsesPhysicalSky\)\{[\s\S]*?nextTexture=createProceduralSkyTexture\(T,profile\)/);
+  assert.match(renderer,/else if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
+  assert.match(renderer,/else scene\.background=new T\.Color\(profile\.horizon\|\|profile\.skyMid\|\|'#79BCE0'\)/);
 });

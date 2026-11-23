@@ -65,7 +65,7 @@
   const transformedCollisionCache = new Map();
   let environmentTexture = null;
   let environmentSignature = '';
-  let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='';
+  let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='',scenePresetUsesPhysicalSky=false;
   let physicalSky=null;
   const meshCache = new Map();
   const gridCache = new Map();
@@ -3234,26 +3234,68 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
-    const gradient=context.createLinearGradient(0,0,0,canvas.height);
+    const width=canvas.width,height=canvas.height,isNight=profile.name==='night';
+    const gradient=context.createLinearGradient(0,0,0,height);
     gradient.addColorStop(0,profile.skyTop);
     gradient.addColorStop(0.34,profile.skyMid);
     gradient.addColorStop(0.49,profile.horizon);
     gradient.addColorStop(0.58,profile.ground);
     gradient.addColorStop(1,profile.ground);
-    context.fillStyle=gradient;context.fillRect(0,0,canvas.width,canvas.height);
-    const sunX=Math.max(0,Math.min(1,Number(profile.sunX)||0.5))*canvas.width;
-    const sunY=Math.max(0,Math.min(1,Number(profile.sunY)||0.3))*canvas.height;
-    const sunRadius=Math.max(0,Number(profile.sunRadius)||0);
-    const glow=Math.max(0,Math.min(1,Number(profile.sunGlow)||0));
-    if(sunRadius>0&&glow>0){
-      const halo=context.createRadialGradient(sunX,sunY,1,sunX,sunY,sunRadius*5);
-      halo.addColorStop(0,'rgba(255,246,226,'+(0.42*glow)+')');
-      halo.addColorStop(0.25,'rgba(255,222,184,'+(0.16*glow)+')');
-      halo.addColorStop(1,'rgba(255,220,190,0)');
-      context.fillStyle=halo;context.fillRect(sunX-sunRadius*5,sunY-sunRadius*5,sunRadius*10,sunRadius*10);
-      context.beginPath();context.arc(sunX,sunY,sunRadius,0,Math.PI*2);
-      context.fillStyle=profile.name==='night'?'#D7E6FF':'#FFF4D9';context.fill();
+    context.fillStyle=gradient;context.fillRect(0,0,width,height);
+
+    if(isNight){
+      // A deterministic star field keeps the panorama stable between preset switches.
+      let seed=0x51f15e;
+      const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+      for(let i=0;i<280;i++){
+        const x=random()*width,y=8+random()*height*.465;
+        const horizonFade=1-Math.pow(y/(height*.5),2)*.72;
+        const radius=random()<.045?1.25:.38+random()*.62;
+        const alpha=(.24+random()*.58)*horizonFade;
+        const blue=random()>.72;
+        context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
+        context.fillStyle=blue
+          ?'rgba(177,207,255,'+alpha.toFixed(3)+')'
+          :'rgba(231,239,255,'+alpha.toFixed(3)+')';
+        context.fill();
+      }
+
+      const moonIntensity=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
+      const moonVector=[
+        Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):0.38,
+        Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):0.88,
+        Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):0.27
+      ];
+      const moonLength=Math.hypot(...moonVector)||1;
+      const moonY=Math.max(-1,Math.min(1,moonVector[1]/moonLength));
+      const moonPhi=Math.atan2(moonVector[2],moonVector[0]);
+      const moonX=((moonPhi/(Math.PI*2)+1)%1)*width;
+      const moonCanvasY=Math.acos(moonY)/Math.PI*height;
+      if(moonIntensity>0){
+        const halo=context.createRadialGradient(moonX,moonCanvasY,1,moonX,moonCanvasY,30);
+        halo.addColorStop(0,'rgba(195,216,255,'+(0.2*moonIntensity)+')');
+        halo.addColorStop(.22,'rgba(139,174,232,'+(0.09*moonIntensity)+')');
+        halo.addColorStop(1,'rgba(113,151,215,0)');
+        context.fillStyle=halo;context.fillRect(moonX-30,moonCanvasY-30,60,60);
+        context.beginPath();context.arc(moonX,moonCanvasY,2.25,0,Math.PI*2);
+        context.fillStyle='rgba(231,239,255,'+(0.92*moonIntensity)+')';context.fill();
+      }
+    }else{
+      const sunX=Math.max(0,Math.min(1,Number(profile.sunX)||0.5))*width;
+      const sunY=Math.max(0,Math.min(1,Number(profile.sunY)||0.3))*height;
+      const sunRadius=Math.max(0,Number(profile.sunRadius)||0);
+      const glow=Math.max(0,Math.min(1,Number(profile.sunGlow)||0));
+      if(sunRadius>0&&glow>0){
+        const halo=context.createRadialGradient(sunX,sunY,1,sunX,sunY,sunRadius*6);
+        halo.addColorStop(0,'rgba(255,246,226,'+(0.44*glow)+')');
+        halo.addColorStop(.24,'rgba(255,222,184,'+(0.18*glow)+')');
+        halo.addColorStop(1,'rgba(255,220,190,0)');
+        context.fillStyle=halo;context.fillRect(sunX-sunRadius*6,sunY-sunRadius*6,sunRadius*12,sunRadius*12);
+        context.beginPath();context.arc(sunX,sunY,sunRadius,0,Math.PI*2);
+        context.fillStyle='#FFF4D9';context.fill();
+      }
     }
+
     const texture=new T.CanvasTexture(canvas);
     texture.mapping=T.EquirectangularReflectionMapping;
     texture.colorSpace=T.SRGBColorSpace;
@@ -3264,18 +3306,15 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.needsUpdate=true;
     return texture;
   }
-  function enhancePhysicalSkyShader(sky,Three){
+  function enhancePhysicalSkyShader  function enhancePhysicalSkyShader(sky,Three){
     const material=sky?.material;
     if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
     const marker='gl_FragColor = vec4( retColor, 1.0 );';
-    const uniformMarker='uniform vec3 up;';
     const source=String(material.fragmentShader||'');
-    if(!source.includes(marker)||!source.includes(uniformMarker)){
+    if(!source.includes(marker)){
       console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
       return false;
     }
-    if(!material.uniforms.pStudioMoonDirection)material.uniforms.pStudioMoonDirection={value:new Three.Vector3(0,1,0)};
-    if(!material.uniforms.pStudioMoonIntensity)material.uniforms.pStudioMoonIntensity={value:0};
     const enhancement=[
       'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
       'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
@@ -3284,28 +3323,14 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       'vec3 pStudioWarmHorizon=vec3(1.0,0.34,0.19);',
       'retColor=mix(retColor,max(retColor,pStudioWarmHorizon),pStudioHorizonBand*pStudioTwilight*0.28);',
       'retColor+=vec3(1.0,0.48,0.24)*pStudioSolarHalo*pStudioTwilight*0.16;',
-      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;',
-      'float pStudioNightAmount=1.0-smoothstep(-0.52,-0.18,vSunDirection.y);',
-      'vec2 pStudioStarCoord=vec2(atan(direction.z,direction.x),asin(clamp(direction.y,-1.0,1.0)))*vec2(145.0,92.0);',
-      'vec2 pStudioStarCell=floor(pStudioStarCoord);',
-      'float pStudioStarSeed=fract(sin(dot(pStudioStarCell,vec2(127.1,311.7)))*43758.5453);',
-      'float pStudioStarDistance=length(fract(pStudioStarCoord)-vec2(0.5));',
-      'float pStudioStarDisc=(1.0-smoothstep(0.018,0.085,pStudioStarDistance))*step(0.993,pStudioStarSeed);',
-      'float pStudioStarVisibility=pStudioNightAmount*smoothstep(-0.03,0.16,direction.y);',
-      'retColor+=vec3(0.62,0.75,1.0)*pStudioStarDisc*(0.55+0.45*pStudioStarSeed)*pStudioStarVisibility*0.72;',
-      'float pStudioMoonAlignment=max(dot(direction,normalize(pStudioMoonDirection)),0.0);',
-      'float pStudioMoonDisc=smoothstep(0.99994,0.999985,pStudioMoonAlignment);',
-      'float pStudioMoonHalo=pow(pStudioMoonAlignment,150.0);',
-      'retColor+=vec3(0.58,0.69,0.9)*pStudioMoonDisc*pStudioMoonIntensity*pStudioNightAmount*0.78;',
-      'retColor+=vec3(0.28,0.4,0.66)*pStudioMoonHalo*pStudioMoonIntensity*pStudioNightAmount*0.035;'
+      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;'
     ].join('\n');
-    const shaderWithMoonUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform vec3 pStudioMoonDirection;\nuniform float pStudioMoonIntensity;');
-    material.fragmentShader=shaderWithMoonUniforms.replace(marker,enhancement+'\n'+marker);
+    material.fragmentShader=source.replace(marker,enhancement+'\n'+marker);
     material.needsUpdate=true;
     material.userData.pstudioAtmosphereEnhanced=true;
     return true;
   }
-  function updatePhysicalSkyPreset(T,profile){
+  function updatePhysicalSkyPreset  function updatePhysicalSkyPreset(T,profile){
     if(!window.PStudioSky||!scene)return false;
     try{
       if(!physicalSky){
@@ -3319,10 +3344,10 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
       const uniforms=physicalSky.material?.uniforms;
       if(!uniforms?.sunPosition?.value||!uniforms?.turbidity||!uniforms?.rayleigh||!uniforms?.mieCoefficient||!uniforms?.mieDirectionalG)return false;
-      uniforms.turbidity.value=Math.max(0,Math.min(20,Number(profile.skyTurbidity)||2.4));
-      uniforms.rayleigh.value=Math.max(0,Math.min(4,Number(profile.skyRayleigh)||2.0));
-      uniforms.mieCoefficient.value=Math.max(0,Math.min(0.1,Number(profile.skyMieCoefficient)||0.005));
-      uniforms.mieDirectionalG.value=Math.max(0,Math.min(0.99,Number(profile.skyMieDirectionalG)||0.8));
+      uniforms.turbidity.value=Math.max(0,Math.min(20,Number.isFinite(Number(profile.skyTurbidity))?Number(profile.skyTurbidity):2.4));
+      uniforms.rayleigh.value=Math.max(0,Math.min(4,Number.isFinite(Number(profile.skyRayleigh))?Number(profile.skyRayleigh):2.0));
+      uniforms.mieCoefficient.value=Math.max(0,Math.min(0.1,Number.isFinite(Number(profile.skyMieCoefficient))?Number(profile.skyMieCoefficient):0.005));
+      uniforms.mieDirectionalG.value=Math.max(0,Math.min(0.99,Number.isFinite(Number(profile.skyMieDirectionalG))?Number(profile.skyMieDirectionalG):0.8));
       const sunDirection=new T.Vector3(
         Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
         Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
@@ -3330,30 +3355,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       );
       if(sunDirection.lengthSq()<1e-8)sunDirection.set(0,1,0);
       sunDirection.normalize();
-      // Sky.js uses a 450,000-unit atmosphere scale in its sun-fade calculation.
-      // A unit vector keeps the direction but breaks the physical elevation response.
+      // Sky.js needs this scale for its elevation-dependent solar fade.
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
-      if(uniforms.pStudioMoonDirection?.value){
-        const moonDirection=new T.Vector3(
-          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
-          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
-          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
-        );
-        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
-        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
-      }
-      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
-      if(uniforms.pStudioMoonDirection?.value){
-        const moonDirection=new T.Vector3(
-          Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):-Number(profile.lightX||0),
-          Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):-Number(profile.lightY||-1),
-          Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):-Number(profile.lightZ||0)
-        );
-        if(moonDirection.lengthSq()<1e-8)moonDirection.set(0,1,0);
-        uniforms.pStudioMoonDirection.value.copy(moonDirection.normalize());
-      }
-      if(uniforms.pStudioMoonIntensity)uniforms.pStudioMoonIntensity.value=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
-      physicalSky.visible=!(hdrTexture&&hdrShowBackground);
+      physicalSky.visible=true;
       if(camera)physicalSky.position.copy(camera.position);
       return true;
     }catch(error){
@@ -3362,7 +3366,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       return false;
     }
   }
-  function createPhysicalSkyEnvironmentTarget(T){
+  function createPhysicalSkyEnvironmentTarget  function createPhysicalSkyEnvironmentTarget(T){
     if(!physicalSky||!pmremGenerator)return null;
     const probe=physicalSky.clone();
     probe.visible=true;probe.position.set(0,0,0);
@@ -3378,21 +3382,23 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
       lightIntensity:2.35,lightX:-0.35,lightY:-0.89,lightZ:-0.28,
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
-      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0,moonDirectionY:1,moonDirectionZ:0,moonIntensity:0,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0.38,moonDirectionY:0.88,moonDirectionZ:0.27,moonIntensity:0.78,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
     if(changed){
       let nextTexture=null,nextTarget=null;
-      const physicalSkyReady=updatePhysicalSkyPreset(T,profile);
+      // Sky.js models daylight/twilight scattering, not a convincing sun-below-horizon night.
+      const physicalSkyReady=profile.name!=='night'&&updatePhysicalSkyPreset(T,profile);
       if(physicalSkyReady&&pmremGenerator){
         try{nextTarget=createPhysicalSkyEnvironmentTarget(T);}
-        catch(error){console.warn('[PStudio] Physical sky PMREM generation failed; retaining the previous environment and procedural fallback.',error);}
+        catch(error){console.warn('[PStudio] Physical sky PMREM generation failed; switching to the procedural panorama.',error);}
       }
-      if(!physicalSkyReady||!nextTarget){
+      scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget);
+      if(!scenePresetUsesPhysicalSky){
         try{nextTexture=createProceduralSkyTexture(T,profile);}
         catch(error){console.warn('[PStudio] Procedural sky texture unavailable; using a color background while retaining scene lighting.',error);}
-        if(nextTexture&&pmremGenerator&&!nextTarget){
+        if(nextTexture&&pmremGenerator){
           try{nextTarget=pmremGenerator.fromEquirectangular(nextTexture);}
           catch(error){console.warn('[PStudio] Procedural sky PMREM generation failed; using the equirectangular texture directly.',error);}
         }
@@ -3403,11 +3409,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
     if(physicalSky){
-      physicalSky.visible=!hdrBackgroundVisible;
-      if(camera)physicalSky.position.copy(camera.position);
+      physicalSky.visible=scenePresetUsesPhysicalSky&&!hdrBackgroundVisible;
+      if(physicalSky.visible&&camera)physicalSky.position.copy(camera.position);
     }
     if(!hdrBackgroundVisible){
-      if(physicalSky?.visible)scene.background=null;
+      if(scenePresetUsesPhysicalSky&&physicalSky?.visible)scene.background=null;
       else if(scenePresetTexture)scene.background=scenePresetTexture;
       else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0');
     }
