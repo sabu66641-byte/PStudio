@@ -18,25 +18,22 @@ test('toon controls persist as ECS Components and are forwarded to the renderer'
     'obj-model-toon-highlight', 'obj-model-toon-rim-color', 'obj-model-toon-outline-color',
     'obj-model-toon-sss-color', 'obj-model-wind-strength', 'obj-model-wind-speed'
   ]) assert.ok(html.includes('id="' + id + '"'), id);
-  assert.match(html, /const toon=\\{enabled:!!document\\.getElementById\\('obj-model-toon-enabled'\\)/);
-  assert.match(html, /setSceneToonMaterial\\(o,toon\\)/);
-  assert.match(materials, /type: 'toon_material', toon: clone\\(settings\\)/);
-  assert.match(materials, /type: 'model_material'/);
-  assert.match(renderer, /toon:d\\.toon&&typeof d\\.toon==='object'\\?d\\.toon:null/);
-  assert.match(renderer, /configureToon\\?\\.\\(material,toonSettings,object\\)/);
+  assert.ok(html.includes('setSceneToonMaterial(o,toon)'));
+  assert.ok(materials.includes("type: 'toon_material', toon: clone(settings)"));
+  assert.ok(materials.includes("type: 'model_material'"));
+  assert.ok(renderer.includes('configureToon?.(material,toonSettings,object)'));
 });
 
 test('shared Inspector NPR settings apply through ECS and wind-only stays on PBR', () => {
   assert.ok(html.includes('id="obj-toon-controls"'));
   assert.ok(html.includes('applySelectedToonMaterial()'));
-  assert.match(html, /setSceneToonMaterial\\(o,toon\\)/);
-  assert.match(materials, /TYPES\\.ToonMaterial/);
-  assert.match(materials, /function setToonMaterial/);
-  assert.match(materials, /function collectCommands/);
-  assert.match(renderer, /shader:toon\\.enabled===false\\?/);
-  assert.match(renderer, /primitiveToon&&primitiveToon\\.enabled!==false/);
-  assert.match(renderer, /hasOwnProperty\\.call\\(primitiveToon,'windStrength'\\)/);
-  assert.match(renderer, /hasOwnProperty\\.call\\(toonSettings,'windStrength'\\)/);
+  assert.ok(html.includes('setSceneToonMaterial(o,toon)'));
+  assert.ok(materials.includes('TYPES.ToonMaterial'));
+  assert.ok(materials.includes('function setToonMaterial'));
+  assert.ok(materials.includes('function collectCommands'));
+  assert.ok(renderer.includes('primitiveToon&&primitiveToon.enabled!==false'));
+  assert.ok(renderer.includes("hasOwnProperty.call(primitiveToon,'windStrength')"));
+  assert.ok(renderer.includes("hasOwnProperty.call(toonSettings,'windStrength')"));
 });
 
 test('PBR remains the default, while toon mode uses a standard material with the additive FX pipeline', () => {

@@ -8,6 +8,7 @@ const presets = require(path.join(root, 'static', 'pstudio_scene_environment.js'
 const renderer = fs.readFileSync(path.join(root, 'static', 'pstudio_3d_engine.js'), 'utf8');
 const engine = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
+const materials = fs.readFileSync(path.join(root, 'static', 'pstudio_ecs_materials.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 
 test('scene environment module defines four independent environment presets', () => {
@@ -49,12 +50,12 @@ test('new scenes default to day and project persistence includes scene environme
     'obj-model-double-side', 'obj-model-recompute-normals',
     'obj-model-material-emissive', 'obj-model-material-emissive-intensity'
   ]) assert.ok(html.includes('id="' + id + '"'), id);
-  assert.match(html, /doubleSide:!!document\\.getElementById\\('obj-model-double-side'\\)\\?\\.checked/);
-  assert.match(html, /recomputeNormals:!!document\\.getElementById\\('obj-model-recompute-normals'\\)\\?\\.checked/);
-  assert.match(html, /emissiveIntensity:Math\\.max\\(0,Math\\.min\\(8/);
-  assert.match(materials, /doubleSide: override\\.doubleSide/);
-  assert.match(materials, /recomputeNormals: override\\.recomputeNormals/);
-  assert.match(materials, /emissiveIntensity: override\\.emissiveIntensity/);
+  assert.ok(html.includes("doubleSide:!!document.getElementById('obj-model-double-side')?.checked"));
+  assert.ok(html.includes("recomputeNormals:!!document.getElementById('obj-model-recompute-normals')?.checked"));
+  assert.ok(html.includes("emissiveIntensity:Math.max(0,Math.min(8"));
+  assert.ok(materials.includes('doubleSide: override.doubleSide'));
+  assert.ok(materials.includes('recomputeNormals: override.recomputeNormals'));
+  assert.ok(materials.includes('emissiveIntensity: override.emissiveIntensity'));
 });
 test('GLB material overrides restore source defaults and use per-instance geometry clones for normal recalculation', () => {
   for (const token of [
