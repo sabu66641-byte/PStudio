@@ -161,7 +161,7 @@
   }
   function setupContext(object, dt=0) {
     const c = makeContext(object, dt);
-    const ast = astForScript(object.script);
+    const ast = astForScript(sceneScriptFile(object));
     if (!ast) return c;
     for (const node of ast.body || []) if (node.type === 'FunctionDef') c.funcs[node.name] = node;
     return c;
@@ -196,8 +196,34 @@
     finally { fn.params.forEach(p => { if (old[p] === undefined) delete c.env[p]; else c.env[p] = old[p]; }); c.callDepth--; }
     return null;
   }
-  function callBuiltin(c, name, a) {
+  function sceneSpriteConfig(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'SpriteRenderer'))return window.PStudioECS.getComponent(entity,'SpriteRenderer');
+ return {enabled:true,spriteAsset:String(object?.sprite||''),width:Math.max(1,Number(object?.w)||64),height:Math.max(1,Number(object?.h)||64),color:object?.color||'#d1d5db',shape:object?.shape==='circle'?'circle':'rect',layer:0,sortOrder:0};
+}
+function sceneScriptFile(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'ScriptAttachment')){
+  const config=window.PStudioECS.getComponent(entity,'ScriptAttachment');
+  return config.enabled===false?'':String(config.scriptFile||'');
+ }
+ return String(object?.script||'');
+}
+function sceneRenderableAsset(object){
+ return String(window.PStudioECSMaterials?.getRenderableAsset?.(object?.id,sceneObjects)||object?.model||'');
+}
+function sceneCollider2DEnabled(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'Collider2D'))return window.PStudioECS.getComponent(entity,'Collider2D').enabled===true;
+ return object?.collider===true;
+}
+function sceneObjectBounds2D(object){
+ const sprite=sceneSpriteConfig(object);
+ return {...object,w:sprite.width,h:sprite.height,shape:sprite.shape};
+}
+function callBuiltin(c, name, a) {
     const o = c.object;
+    const sprite = sceneSpriteConfig(o);
     const physics = window.PStudioPhysics;
     const physicsPosition = () => physics?.getPosition?.(o.id);
     const readPosition = axis => physicsPosition()?.[['x','y','z'][axis]] ?? (Number(o[['x','y','z'][axis]])||0);
@@ -235,21 +261,21 @@
       case 'stop_sound': if(a.length===1)return window.PStudioECSAudio?window.PStudioECSAudio.stop(o.id,String(a[0])):stopOwnerSound(o.id,String(a[0])); break;
       case 'set_sound_volume': if(a.length===2)return window.PStudioECSAudio?window.PStudioECSAudio.setVolume(o.id,String(a[0]),a[1]):setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
       case 'get_delta_time': if (!a.length) return c.dt; break;
-      case 'get_width': if (!a.length) return Number(o.w)||0; break;
-      case 'get_height': if (!a.length) return Number(o.h)||0; break;
-      case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:o.color||'#d1d5db'}); return null; } break;
+      case 'get_width': if (!a.length) return Number(sprite.width)||0; break;
+      case 'get_height': if (!a.length) return Number(sprite.height)||0; break;
+      case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:sprite.color||'#d1d5db'}); return null; } break;
       case 'draw_hud_text': if(a.length===5){c.draw.push({type:'hud_text',text:String(a[0]),x:finite(a[1]),y:finite(a[2]),size:Math.max(8,Math.min(96,finite(a[3]))),color:String(a[4])});return null;} break;
       case 'draw_hud_bar': if(a.length===7){c.draw.push({type:'hud_bar',value:finite(a[0]),max:Math.max(0.001,finite(a[1])),x:finite(a[2]),y:finite(a[3]),w:Math.max(1,finite(a[4])),h:Math.max(1,finite(a[5])),color:String(a[6])});return null;} break;
       case 'draw_circle': if (a.length===3) { c.draw.push({type:'circle',x:finite(a[0]),y:finite(a[1]),r:Math.max(0,finite(a[2])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_sprite': if (a.length===3) { c.draw.push({type:'sprite',name:String(a[0]),x:finite(a[1]),y:finite(a[2])}); return null; } break;
       case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
-      case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:o.color||'#a1a1aa'}); return null; } break;
+      case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:sprite.color||'#a1a1aa'}); return null; } break;
       case 'draw_box': if (a.length===6) { c.draw.push({type:'box',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),depth:Math.max(0.001,finite(a[5])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
-      case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:o.color||'#64748b'}); return null; } break;
+      case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:sprite.color||'#64748b'}); return null; } break;
       case 'add_triangle_collider': if(a.length===9){c.draw.push({type:'triangle_collider',points:a.map(finite)});return null;} break;
       case 'draw_cylinder': if (a.length===5) { c.draw.push({type:'cylinder',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_cone': if (a.length===5) { c.draw.push({type:'cone',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
-      case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:o.color||'#93c5fd'}); return null; } break;
+      case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:sprite.color||'#93c5fd'}); return null; } break;
       case 'set_background': if (a.length===1) { c.draw.push({type:'environment',background:String(a[0])}); return null; } break;
       case 'set_fog': if (a.length===3) { c.draw.push({type:'environment',fogColor:String(a[0]),fogNear:Math.max(0,finite(a[1])),fogFar:Math.max(0.001,finite(a[2]))}); return null; } break;
       case 'set_light': if (a.length===4) { c.draw.push({type:'environment',lightX:finite(a[0]),lightY:finite(a[1]),lightZ:finite(a[2]),lightIntensity:Math.max(0,finite(a[3]))}); return null; } break;
@@ -465,16 +491,53 @@
     let img=imageCache.get(name);if(!img){img=new Image();img.src=asset.data;img.onload=()=>renderFrame();imageCache.set(name,img);}return img.complete&&img.naturalWidth?img:null;
   }
   function drawScene(commandsByObject) {
-    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
-    for(const o of sceneObjects||[]){const img=o.sprite?imageByName(o.sprite):null;if(img)ctx.drawImage(img,o.x,o.y,o.w,o.h);else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h);}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name||'',o.x,o.y-8);}
-    for(const list of commandsByObject.values())for(const d of list){if(d.type==='rect'){ctx.fillStyle=d.color;ctx.fillRect(d.x,d.y,d.w,d.h)}else if(d.type==='circle'){ctx.fillStyle=d.color;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}else if(d.type==='sprite'){const im=imageByName(d.name);if(im)ctx.drawImage(im,d.x,d.y);}}
-    const selected=(sceneObjects||[]).find(o=>o.id===selectedObjectId);if(selected){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(selected.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+selected.w/2,selected.y+selected.h/2,Math.max(selected.w,selected.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(selected.x-4,selected.y-4,selected.w+8,selected.h+8)}ctx.setLineDash([])}
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle='#28313d';ctx.lineWidth=1;
+    for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+    for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+    for(const object of sceneObjects||[]){
+      const sprite=sceneSpriteConfig(object);
+      if(sprite.enabled!==false){
+        const img=sprite.spriteAsset?imageByName(sprite.spriteAsset):null;
+        if(img)ctx.drawImage(img,object.x,object.y,sprite.width,sprite.height);
+        else{
+          ctx.fillStyle=sprite.color||'#d1d5db';
+          if(sprite.shape==='circle'){
+            ctx.beginPath();ctx.arc(object.x+sprite.width/2,object.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2,0,Math.PI*2);ctx.fill();
+          }else ctx.fillRect(object.x,object.y,sprite.width,sprite.height);
+        }
+      }
+      ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(object.name||'',object.x,object.y-8);
+    }
+    for(const list of commandsByObject.values())for(const draw of list){
+      if(draw.type==='rect'){ctx.fillStyle=draw.color;ctx.fillRect(draw.x,draw.y,draw.w,draw.h);}
+      else if(draw.type==='circle'){ctx.fillStyle=draw.color;ctx.beginPath();ctx.arc(draw.x,draw.y,draw.r,0,Math.PI*2);ctx.fill();}
+      else if(draw.type==='sprite'){const image=imageByName(draw.name);if(image)ctx.drawImage(image,draw.x,draw.y);}
+    }
+    const selected=(sceneObjects||[]).find(object=>object.id===selectedObjectId);
+    if(selected){
+      const sprite=sceneSpriteConfig(selected);
+      ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+      if(sprite.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+sprite.width/2,selected.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2+4,0,Math.PI*2);ctx.stroke();}
+      else ctx.strokeRect(selected.x-4,selected.y-4,sprite.width+8,sprite.height+8);
+      ctx.setLineDash([]);
+    }
   }
   function collides(a,b) {
-    if(a.shape==='circle'&&b.shape==='circle'){const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;const r=(Math.max(a.w,a.h)+Math.max(b.w,b.h))/2;return (ax-bx)**2+(ay-by)**2<=r*r;}
-    if(a.shape==='circle'||b.shape==='circle'){const c=a.shape==='circle'?a:b,r=a.shape==='circle'?b:a;const cx=c.x+c.w/2,cy=c.y+c.h/2,nx=Math.max(r.x,Math.min(cx,r.x+r.w)),ny=Math.max(r.y,Math.min(cy,r.y+r.h));return (cx-nx)**2+(cy-ny)**2<=(Math.max(c.w,c.h)/2)**2;}
-    return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+    const left=sceneObjectBounds2D(a),right=sceneObjectBounds2D(b);
+    if(left.shape==='circle'&&right.shape==='circle'){
+      const ax=left.x+left.w/2,ay=left.y+left.h/2,bx=right.x+right.w/2,by=right.y+right.h/2;
+      const radius=(Math.max(left.w,left.h)+Math.max(right.w,right.h))/2;
+      return (ax-bx)**2+(ay-by)**2<=radius*radius;
+    }
+    if(left.shape==='circle'||right.shape==='circle'){
+      const circle=left.shape==='circle'?left:right,rect=left.shape==='circle'?right:left;
+      const cx=circle.x+circle.w/2,cy=circle.y+circle.h/2;
+      const nx=Math.max(rect.x,Math.min(cx,rect.x+rect.w)),ny=Math.max(rect.y,Math.min(cy,rect.y+rect.h));
+      return (cx-nx)**2+(cy-ny)**2<=(Math.max(circle.w,circle.h)/2)**2;
+    }
+    return left.x<right.x+right.w&&left.x+left.w>right.x&&left.y<right.y+right.h&&left.y+left.h>right.y;
   }
   function dispatchCollision(object, other) {
     const state=runtime.states.get(object.id);if(!state)return;
@@ -482,7 +545,7 @@
     if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
-    const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
+    const objs=(sceneObjects||[]).filter(o=>sceneCollider2DEnabled(o)&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
     const now=new Set();
     for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);window.PStudioECSCollision?.observePair?.('2d',a,b);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
     collisionPairs=now;
@@ -557,29 +620,26 @@
     window.syncEcsSceneMaterials?.();
     const commands = new Map();
     commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
-    for (const o of sceneObjects || []) {
-      const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
-      const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
-      const z = (Number(o.z)||0) / 100;
-      const w = Math.max(0.05,(Number(o.w)||64)/100);
-      const h = Math.max(0.05,(Number(o.h)||64)/100);
-      const color = o.color || '#d1d5db';
-      const draw = o.model
-        ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0,ecsRenderableFallback:true}
-        : o.shape === 'circle'
-          ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
-          : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
-      const objectCommands=[];
-      if(o.toonMaterialSettings)objectCommands.push({type:'toon_material',toon:o.toonMaterialSettings});
-      if(o.postProcessing)objectCommands.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
-      if(o.shaderFragment)objectCommands.push({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
-      if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
-      objectCommands.push(draw);commands.set(o.id,objectCommands);
+    for (const object of sceneObjects || []) {
+      const sprite=sceneSpriteConfig(object);
+      const x=((Number(object.x)||0)+sprite.width/2-480)/100;
+      const y=(270-((Number(object.y)||0)+sprite.height/2))/100;
+      const z=(Number(object.z)||0)/100;
+      const w=Math.max(0.05,sprite.width/100),h=Math.max(0.05,sprite.height/100);
+      const asset=sceneRenderableAsset(object);
+      const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object.id));
+      const renderable=entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'Renderable')
+        ?window.PStudioECS.getComponent(entity,'Renderable'):null;
+      const draw=asset
+        ?{type:'model',name:asset,x,y,z,scale:Math.max(0.001,Number(renderable?.scale)||1),rotationX:(Number(object.rotationX)||0)*Math.PI/180,rotationY:(Number(object.rotationY)||0)*Math.PI/180,rotationZ:(Number(object.rotationZ)||0)*Math.PI/180,dt:0,ecsRenderableFallback:true}
+        :sprite.shape==='circle'
+          ?{type:'sphere',x,y,z,radius:Math.max(w,h)/2,color:sprite.color}
+          :{type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color:sprite.color,rotationX:(Number(object.rotationX)||0)*Math.PI/180,rotationY:(Number(object.rotationY)||0)*Math.PI/180,rotationZ:(Number(object.rotationZ)||0)*Math.PI/180};
+      commands.set(object.id,[draw]);
     }
-    window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || []);
-    window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], 0);
-    window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], 0);
+    window.PStudioECSMaterials?.collectCommands?.(commands,sceneObjects||[]);
+    window.PStudioECSRendering?.collectCommands?.(commands,sceneObjects||[],0);
+    window.PStudioECSVisualFX?.collectCommands?.(commands,sceneObjects||[],0);
     return commands;
   }
   function setViewMode(mode) {
@@ -592,7 +652,7 @@
       if(!window.PStudio3D){setOutput?.('3D renderer is unavailable. Check the Three.js connection.','error');return;}
       try{
         window.PStudio3D.render(buildScenePreview3D());
-        const modelNames=new Set((sceneObjects||[]).map(object=>object.model).filter(Boolean).map(String));
+        const modelNames=new Set((sceneObjects||[]).map(object=>sceneRenderableAsset(object)).filter(Boolean).map(String));
         for(const name of modelNames)window.PStudio3D.retryModelAsset?.(name);
       }catch(err){
         const message='3D view error: '+String(err?.message||err);
@@ -652,7 +712,7 @@
       }
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
-        const script=astForScript(o.script);if(!script)continue;
+        const script=astForScript(sceneScriptFile(o));if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
         if(!runtime.initialized.has(o.id)){
           runtime.initialized.add(o.id);
@@ -667,36 +727,11 @@
         if(c.funcs.update)callFunction(c,'update',[dt]);
         runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
-        if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
-        if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
-        if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
-        if(o.model&&!objectDraws.some(d=>d.type==='model')){
-          const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-          const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt,ecsRenderableFallback:true});
-        }
         commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
 
-      // Scene-only render settings (models and particle emitters) remain active without scripts.
-      for(const o of sceneObjects||[]){
-        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
-        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled&&!o.toonMaterialSettings))continue;
-        const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-        const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-        const z=(Number(o.z)||0)/100;
-        const list=[];
-        if(o.toonMaterialSettings)list.push({type:'toon_material',toon:o.toonMaterialSettings});
-        if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
-        if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt,ecsRenderableFallback:true});
-        if(list.length)commands.set(o.id,list);
-      }
-
+      // Persistent Renderable/Visual FX Components are collected for every Entity below.
       const ecsAfterScripts = window.PStudioECS;
       if (ecsAfterScripts?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime };
@@ -951,14 +986,15 @@
 
   async function startGame() {
     if(runtime?.running)return;
+    window.syncEcsSceneMaterials?.();
     if(projectFiles[activeProjectFile]?.type==='ps' && typeof codeEditor!=='undefined') projectFiles[activeProjectFile].content=codeEditor.value;
     if(typeof persistProject==='function')persistProject();
     const scripts={};for(const [name,file] of Object.entries(projectFiles||{}))if(file.type==='ps')scripts[name]=file.content;
     if(!Object.keys(scripts).length){setOutput?.('No .ps scripts found in this project.','error');return;}
-    const attached=(sceneObjects||[]).filter(o=>o.script);
+    const attached=(sceneObjects||[]).filter(o=>sceneScriptFile(o));
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const hasECS3D=(sceneObjects||[]).some(object=>!!object.model||object.collider===true||object.shaderFragment!==undefined||object.toonMaterialSettings!==undefined||object.modelMaterialOverrides!==undefined||object.postProcessing!==undefined||object.particleEmitter!==undefined||Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].includes(entry?.type)&&entry.data?.enabled!==false));
+      const hasECS3D=(sceneObjects||[]).some(object=>!!sceneRenderableAsset(object)||!!object.model||['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].some(type=>{const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object.id));return entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,type)&&window.PStudioECS.getComponent(entity,type).enabled!==false;}));
       const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
