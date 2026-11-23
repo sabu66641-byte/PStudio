@@ -52,7 +52,7 @@ test('Camera selection is deterministic and targets another Scene Object in worl
 
   const commands = new Map([['__scene__', [{ type: 'environment', preset: 'day' }]]]);
   const result = rendering.buildCommands(commands, objects, 0.02);
-  const camera = commands.get('__scene__')[1];
+  const camera = commands.get('__ecs_camera__')[0];
   assert.equal(result.cameraEntity, main);
   assert.equal(camera.cameraOwnerId, 'camera-main');
   assert.equal(camera.x, (20 + 32 - 480) / 100 + 6);
