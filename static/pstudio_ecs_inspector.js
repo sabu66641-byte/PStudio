@@ -182,17 +182,9 @@
     if (!api) return;
     const object = sceneObjectForEntity(entityId);
     if (!object) return;
-    const saved = [];
-    for (const entry of api.getEntityComponents(entityId)) {
-      if (CORE_COMPONENTS.has(entry.type) || entry.persistent === false) continue;
-      try {
-        const data = JSON.parse(JSON.stringify(entry.data));
-        saved.push({ type: entry.type, data });
-      } catch (error) {
-        console.warn('[PStudio ECS Inspector] component is not JSON serializable:', entry.type, error);
-      }
-    }
-    object.ecsComponents = saved;
+    const serialized = api.serializeEntityComponents(entityId, [...CORE_COMPONENTS]);
+    object.ecsComponentsVersion = serialized.version;
+    object.ecsComponents = serialized.components;
     if (typeof window.persistProject === 'function') window.persistProject();
   }
 

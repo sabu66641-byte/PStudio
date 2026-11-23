@@ -48,7 +48,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Modules | PStudioModules registry | ModuleState mirror Components track registration, activation/deactivation, errors and enabled state; PStudioModules remains authoritative for dependencies, async hooks and rollback | Phase 13 implemented; ECS mirror is runtime-only |
 | Assets/storage | PStudioAssetStore / IndexedDB | ECS stores stable asset IDs, never binary asset payloads | Keep service |
 | Editor/Inspector | templates/index.html | Inspector reads/writes ECS definitions and selected-entity Components | Existing partial integration |
-| Scene/project persistence | editor serializer and project backup | Explicit Component serialization allowlist and versioned migration | Partial |
+| Scene/project persistence | editor serializer and project backup | Versioned `ecsComponentsVersion` envelope, persistent-only Component serialization and v0 array/map migration; future schema versions are preserved and not overwritten | Phase 14 implemented for Component payloads; broader project migrations and legacy API retirement remain pending |
 
 ## Safe implementation sequence
 
@@ -65,7 +65,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 11. **Visual effects configuration** — move environment, fog, water, post-FX, particle-emitter and trail configuration to persistent Components; keep shaders, GPU simulation, particle buffers, trail geometry and post-FX passes inside PStudio3D. One-shot particle bursts remain transient commands. (Phase 11 implemented.)
 12. **HUD/UI state boundary** — move transient active inventory/quest/dialogue overlay intent to a UIOverlay singleton Component; PStudioUI remains the DOM renderer. (Phase 12 implemented.)
 13. **Module lifecycle** — mirror module registration and state transitions into runtime-only ModuleState entities; PStudioModules retains dependency resolution, async activation/deactivation, rollback and service cleanup. (Phase 13 implemented.)
-14. **Persistence and compatibility cleanup** — versioned scene/project serialization, old-project migration tests, deprecation period for legacy APIs, then remove duplicate runtime stores only after parity tests.
+14. **Versioned Component persistence** — store persistent Components behind an explicit scene schema version, migrate unversioned v0 Component arrays/maps, preserve unknown future versions, and test round-trip/invalid data. (Phase 14 implemented.)
+15. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
 
 ## Required gates for every slice
 

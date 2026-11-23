@@ -258,3 +258,12 @@ Worker hydration failures can use the main-thread GLTFLoader fallback when the i
 - The bridge listens to registration, state-change, enabled, disabled and unregistration events; it also rebuilds the mirror from the registry on synchronization.
 - `PStudioModules` remains authoritative for dependency resolution, conflict checks, async activate/deactivate callbacks, rollback and unregister guards. ECS does not run module hooks or own module resources.
 - Module state Components are internal and non-persistent; they are not written into scenes or project backups.
+
+
+## Versioned ECS Scene Component Persistence
+
+- Scene Objects store persistent ECS data as `ecsComponentsVersion` plus an `ecsComponents` list.
+- The current Component payload schema is version 1. Unversioned v0 arrays and type-keyed maps are migrated on load.
+- Only persistent Components are serialized; transient runtime state such as `UIOverlay`, `ModuleState`, `PhysicsState`, `PhysicsTransform` and `AudioCommand` is excluded.
+- Unknown future schema versions are left untouched and skipped by older runtimes rather than being silently downgraded.
+- Scene Object position/rotation/scale remain in the existing project format; the core `Transform` and `SceneObjectRef` bridge Components are excluded from the Component payload to avoid duplicate persistence.

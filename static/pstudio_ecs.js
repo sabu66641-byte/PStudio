@@ -6,6 +6,7 @@
   'use strict';
 
   const COMPONENT_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+  const SCENE_COMPONENTS_VERSION = 1;
   const COMPONENT_FIELD_ID = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
   const SYSTEM_ID = /^[a-z][a-z0-9._-]{1,63}$/;
   const SYSTEM_PHASES = new Set(['update', 'prePhysics', 'postUpdate', 'postPhysics']);
@@ -754,15 +755,80 @@
     return false;
   }
 
-  function restoreSceneObjectComponents(entity, object) {
-    const entries = Array.isArray(object.ecsComponents) ? object.ecsComponents : [];
+  function readSavedComponentEntries(object) {
+    const hasLegacyData = Object.prototype.hasOwnProperty.call(object, 'ecsComponents');
+    const hasVersion = Object.prototype.hasOwnProperty.call(object, 'ecsComponentsVersion');
+    if (!hasLegacyData && !hasVersion) return [];
+
+    const rawVersion = hasVersion ? Number(object.ecsComponentsVersion) : 0;
+    if (!Number.isSafeInteger(rawVersion) || rawVersion < 0) {
+      console.warn('[PStudio ECS] invalid saved Component schema version; skipping restore:', object.id);
+      return null;
+    }
+    if (rawVersion > SCENE_COMPONENTS_VERSION) {
+      console.warn('[PStudio ECS] saved Component schema is newer than this runtime; preserving without restore:', object.id, rawVersion);
+      return null;
+    }
+
+    let entries = object.ecsComponents;
+    if (rawVersion === 0) {
+      // Version 0 was the unversioned format: an array of {type,data}.
+      // Also accept a type-keyed object for early experimental backups.
+      if (Array.isArray(entries)) {
+        entries = entries.slice();
+      } else if (entries && typeof entries === 'object') {
+        entries = Object.entries(entries).map(([type, data]) => ({ type, data }));
+      } else {
+        entries = [];
+      }
+      object.ecsComponents = entries;
+      object.ecsComponentsVersion = SCENE_COMPONENTS_VERSION;
+    } else if (!Array.isArray(entries)) {
+      console.warn('[PStudio ECS] malformed versioned Component list; skipping restore:', object.id);
+      return null;
+    }
+
+    const normalized = [];
+    const seen = new Set();
     for (const entry of entries) {
       const type = typeof entry?.type === 'string' ? entry.type : '';
-      if (!COMPONENT_ID.test(type) || !componentDefinitions.has(type)) continue;
+      if (!COMPONENT_ID.test(type) || seen.has(type)) continue;
+      seen.add(type);
+      const data = entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data)
+        ? entry.data : {};
+      normalized.push({ type, data });
+    }
+    return normalized;
+  }
+
+  function serializeEntityComponents(entity, excludeTypes = []) {
+    const excluded = new Set((Array.isArray(excludeTypes) ? excludeTypes : [excludeTypes])
+      .filter(value => value !== undefined && value !== null)
+      .map(String));
+    const components = [];
+    for (const entry of getEntityComponents(entity)) {
+      if (!entry.persistent || excluded.has(entry.type)) continue;
+      try {
+        components.push({
+          type: entry.type,
+          data: cloneJsonValue(entry.data)
+        });
+      } catch (error) {
+        console.warn('[PStudio ECS] Component could not be serialized:', entry.type, error);
+      }
+    }
+    return { version: SCENE_COMPONENTS_VERSION, components };
+  }
+
+  function restoreSceneObjectComponents(entity, object) {
+    const entries = readSavedComponentEntries(object);
+    if (!entries) return;
+    for (const entry of entries) {
+      const type = entry.type;
+      if (!componentDefinitions.has(type)) continue;
       const definition = componentDefinitions.get(type);
       if (!definition.persistent || componentStores.get(type)?.has(entity)) continue;
-      const data = entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data) ? entry.data : {};
-      try { addComponent(entity, type, data); }
+      try { addComponent(entity, type, entry.data); }
       catch (error) { console.warn('[PStudio ECS] skipped invalid saved component:', type, error); }
     }
   }
@@ -858,6 +924,7 @@
     getComponentDefinition,
     getComponentDefinitions,
     getEntityComponents,
+    serializeEntityComponents,
     getEntities,
     registerSystem,
     unregisterSystem,

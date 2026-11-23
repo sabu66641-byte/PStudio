@@ -301,3 +301,102 @@ test('nullable schema fields retain their flag and accept null defaults and valu
     /must be entity/
   );
 });
+
+test('serializes only persistent non-core Components with a versioned envelope', () => {
+  const ecs = createECS();
+  ecs.registerComponent('SavedSettings', {
+    schema: { quality: { type: 'integer', default: 2 }, enabled: { type: 'boolean', default: true } },
+    additionalProperties: false
+  });
+  ecs.registerComponent('RuntimeCache', {
+    persistent: false,
+    schema: { count: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({
+    SavedSettings: { quality: 4 },
+    RuntimeCache: { count: 9 }
+  });
+  const serialized = ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef']);
+  assert.deepEqual(serialized, {
+    version: 1,
+    components: [{ type: 'SavedSettings', data: { quality: 4, enabled: true } }]
+  });
+  const copy = ecs.serializeEntityComponents(entity);
+  copy.components[0].data.quality = 100;
+  assert.equal(ecs.getComponent(entity, 'SavedSettings').quality, 4);
+});
+
+test('restores legacy unversioned Component arrays and upgrades their scene schema to version 1', () => {
+  const ecs = createECS();
+  ecs.registerComponent('LegacySettings', {
+    schema: { quality: { type: 'integer', default: 2 } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'legacy-array', x: 0, y: 0,
+    ecsComponents: [{ type: 'LegacySettings', data: { quality: 7 } }]
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'LegacySettings').quality, 7);
+  assert.equal(object.ecsComponentsVersion, 1);
+  assert.deepEqual(object.ecsComponents, [{ type: 'LegacySettings', data: { quality: 7 } }]);
+});
+
+test('migrates legacy type-keyed Component maps without losing saved values', () => {
+  const ecs = createECS();
+  ecs.registerComponent('MappedSettings', {
+    schema: { enabled: { type: 'boolean', default: false } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'legacy-map', x: 0, y: 0,
+    ecsComponents: { MappedSettings: { enabled: true } }
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'MappedSettings').enabled, true);
+  assert.equal(object.ecsComponentsVersion, 1);
+  assert.deepEqual(object.ecsComponents, [{ type: 'MappedSettings', data: { enabled: true } }]);
+});
+
+test('does not overwrite or restore Component data from a newer unknown schema version', () => {
+  const ecs = createECS();
+  ecs.registerComponent('FutureSettings', {
+    schema: { value: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const futureData = [{ type: 'FutureSettings', data: { value: 99 } }];
+  const object = {
+    id: 'future-schema', x: 0, y: 0,
+    ecsComponentsVersion: 99,
+    ecsComponents: futureData
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.hasComponent(entity, 'FutureSettings'), false);
+  assert.equal(object.ecsComponentsVersion, 99);
+  assert.deepEqual(object.ecsComponents, futureData);
+});
+
+test('scene Component migration skips duplicate and invalid entries deterministically', () => {
+  const ecs = createECS();
+  ecs.registerComponent('UniqueSettings', {
+    schema: { value: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'duplicate-schema', x: 0, y: 0,
+    ecsComponents: [
+      { type: 'UniqueSettings', data: { value: 5 } },
+      { type: 'UniqueSettings', data: { value: 8 } },
+      { type: 17, data: {} },
+      null
+    ]
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'UniqueSettings').value, 5);
+  assert.equal(object.ecsComponentsVersion, 1);
+});

@@ -707,3 +707,16 @@ test('module lifecycle state is mirrored into transient ECS entities without mov
   assert.doesNotThrow(() => new Function(modules));
   assert.doesNotThrow(() => new Function(bridge));
 });
+
+test('ECS Inspector persists versioned Component payloads through the ECS serializer', () => {
+  const core = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
+  const inspector = fs.readFileSync(path.join(root, 'static/pstudio_ecs_inspector.js'), 'utf8');
+  assert.ok(core.includes('const SCENE_COMPONENTS_VERSION = 1'));
+  assert.ok(core.includes('function serializeEntityComponents'));
+  assert.ok(core.includes('function readSavedComponentEntries'));
+  assert.ok(inspector.includes('api.serializeEntityComponents(entityId, [...CORE_COMPONENTS])'));
+  assert.ok(inspector.includes('object.ecsComponentsVersion = serialized.version'));
+  assert.ok(inspector.includes('object.ecsComponents = serialized.components'));
+  assert.doesNotThrow(() => new Function(core));
+  assert.doesNotThrow(() => new Function(inspector));
+});
