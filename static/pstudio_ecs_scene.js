@@ -108,7 +108,8 @@
     if (
       file.length > 160 ||
       file.startsWith('/') ||
-      file.includes('\\\\') ||\n      /^[A-Za-z]:/.test(file) ||
+      file.includes('\\') ||
+      /^[A-Za-z]:/.test(file) ||
       /[\u0000-\u001f]/.test(file) ||
       segments.some(segment => !segment || segment === '.' || segment === '..') ||
       !file.toLowerCase().endsWith('.ps')

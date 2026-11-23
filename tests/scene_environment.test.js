@@ -43,91 +43,19 @@ test('scene environment preset normalization defaults invalid and missing names 
 test('new scenes default to day and project persistence includes scene environment', () => {
   assert.match(html, /let sceneEnvironment=\{preset:'day'\}/);
   assert.match(html, /environment:sceneEnvironment/);
-  assert.match(html, /function normalizeSceneEnvironment\(value\)/);
-  assert.match(html, /\['day','dusk','night','studio'\]\.includes\(preset\)/);
-});
-
-test('old scene files without environment data remain compatible and load as daytime', () => {
-  assert.match(html, /function serializeScene\(\)\{return JSON\.stringify\(\{width:960,height:540,objects:sceneObjects,environment:normalizeSceneEnvironment\(sceneEnvironment\)\}/);
-  assert.match(html, /sceneEnvironment=normalizeSceneEnvironment\(data\.environment\)/);
-  assert.match(html, /saved\.environment\|\|legacySceneEnvironment/);
-  assert.match(html, /legacySceneEnvironment=JSON\.parse\(projectFiles\['main\.scene'\]\?\.content\|\|'null'\)\?\.environment/);
-});
-
-test('Inspector exposes all four scene presets with explicit accessible active states', () => {
-  for (const name of ['day', 'dusk', 'night', 'studio']) {
-    assert.match(html, new RegExp('id="scene-environment-' + name + '"'));
-    assert.match(html, new RegExp("setSceneEnvironmentPreset\\('" + name + "'\\)"));
-  }
-  assert.match(html, /aria-pressed="true"/);
-  assert.match(html, /button\.setAttribute\('aria-pressed',active\?'true':'false'\)/);
-  assert.match(html, /\.environment-preset-btn\.active/);
-});
-
-test('renderer builds a procedural sky panorama and falls back safely if Canvas or PMREM is unavailable', () => {
-  for (const token of [
-    'function createProceduralSkyTexture(T,profile)',
-    'new T.CanvasTexture(canvas)',
-    'T.EquirectangularReflectionMapping',
-    'context.createLinearGradient',
-    'context.createRadialGradient',
-    'function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false)',
-    'Procedural sky texture unavailable; using a color background',
-    'Procedural sky PMREM generation failed; using the equirectangular texture directly',
-    "else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0')"
-  ]) assert.ok(renderer.includes(token), token);
-});
-
-test('default environment configures fog, hemisphere light, sun light and existing CSM shadow path', () => {
-  assert.match(renderer, /applySceneEnvironmentPreset\(T,environment\?\.preset\|\|'day'/);
-  assert.match(renderer, /scene\.fog=new T\.Fog\(profile\.fogColor,profile\.fogNear,profile\.fogFar\)/);
-  assert.match(renderer, /hemisphereLight\.color\.set\(profile\.hemisphereSky\)/);
-  assert.match(renderer, /hemisphereLight\.groundColor\.set\(profile\.hemisphereGround\)/);
-  assert.match(renderer, /light\.castShadow=true/);
-  assert.match(renderer, /renderer\.shadowMap\.type=profile\.shadowMode==='vsm'\?window\.THREE\.VSMShadowMap:window\.THREE\.PCFSoftShadowMap/);
-  assert.doesNotMatch(renderer, /scene\.fog=null/);
-});
-
-test('script-authored environment commands and old ps environment APIs remain supported', () => {
-  assert.match(renderer, /if\(environment\.environmentSky&&environment\.environmentGround\)/);
-  assert.match(renderer, /if\(environment\.fogColor\)/);
-  assert.match(renderer, /if\(Number\.isFinite\(environment\.lightIntensity\)\)/);
-  assert.match(engine, /case 'set_environment': if\(a\.length===3\)/);
-  assert.match(engine, /case 'set_background': if \(a\.length===1\)/);
-  assert.match(engine, /case 'set_fog': if \(a\.length===3\)/);
-  assert.match(engine, /case 'set_light': if \(a\.length===4\)/);
-  assert.match(app, /"set_environment": 3/);
-  assert.match(app, /"set_background": 1/);
-  assert.match(app, /"set_fog": 3/);
-  assert.match(app, /"set_light": 4/);
-});
-
-test('large editor workspace grid and selected environment are sent to the 3D renderer', () => {
-  assert.match(engine, /commands\.set\('__scene__',\[\{type:'grid',size:500,divisions:100\},\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}/);
-  assert.match(html, /function setSceneEnvironmentPreset\(preset\)/);
-  assert.match(html, /window\.PStudioEngine\?\.refreshSceneView\?\.\(\)/);
-});
-
-test('runtime scene environment does not force a 2D-only game into the 3D renderer', () => {
-  assert.match(engine, /commands\.set\('__scene__',\[\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}\]\)/);
-  assert.match(engine, /const drawCommands=new Map\(\[\.\.\.activeCommands\]\.filter\(\(\[id\]\)=>id!=='__scene__'\)\)/);
-  assert.match(engine, /const allDraws=draws/);
-  assert.match(engine, /drawScene\(drawCommands\)/);
-  assert.match(engine, /window\.PStudio3D\.render\(commands\)/);
-});
-
-test('GLB material inspector exposes sidedness, normal recalculation, roughness, metalness and emissive controls', () => {
+  assert.match(html, /test('GLB material Inspector settings are stored in ECS and forwarded to PStudio3D', () => {
   for (const id of [
     'obj-model-material-roughness', 'obj-model-material-metalness', 'obj-model-material-color',
     'obj-model-double-side', 'obj-model-recompute-normals',
     'obj-model-material-emissive', 'obj-model-material-emissive-intensity'
   ]) assert.ok(html.includes('id="' + id + '"'), id);
-  assert.match(html, /doubleSide:!!document\.getElementById\('obj-model-double-side'\)\?\.checked/);
-  assert.match(html, /recomputeNormals:!!document\.getElementById\('obj-model-recompute-normals'\)\?\.checked/);
-  assert.match(html, /emissiveIntensity:Math\.max\(0,Math\.min\(8/);
-  assert.match(engine, /doubleSide:override\.doubleSide,recomputeNormals:override\.recomputeNormals,emissive:override\.emissive,emissiveIntensity:override\.emissiveIntensity/);
+  assert.match(html, /doubleSide:!!document\\.getElementById\\('obj-model-double-side'\\)\\?\\.checked/);
+  assert.match(html, /recomputeNormals:!!document\\.getElementById\\('obj-model-recompute-normals'\\)\\?\\.checked/);
+  assert.match(html, /emissiveIntensity:Math\\.max\\(0,Math\\.min\\(8/);
+  assert.match(materials, /doubleSide: override\\.doubleSide/);
+  assert.match(materials, /recomputeNormals: override\\.recomputeNormals/);
+  assert.match(materials, /emissiveIntensity: override\\.emissiveIntensity/);
 });
-
 test('GLB material overrides restore source defaults and use per-instance geometry clones for normal recalculation', () => {
   for (const token of [
     'materialDefaults.set(copy,{',

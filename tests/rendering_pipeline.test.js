@@ -811,23 +811,23 @@ test('legacy and ECS render-authoring data both trigger 3D initialization before
   assert.ok(engine.includes('window.syncEcsSceneMaterials?.()'));
 });
 
-test('render authoring Inspector handlers are syntactically valid and no longer write legacy properties', () => {
+test('render authoring Inspector handlers compile and write ECS Components, not legacy fields', () => {
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
   const start = html.indexOf('function selectSceneObject');
   const end = html.indexOf('function serializeScene', start);
   assert.ok(start >= 0 && end > start);
-  const inspectorSource = html.slice(start, end);
-  assert.doesNotThrow(() => new Function(inspectorSource));
-  for (const legacy of [
-    'o.toonMaterialSettings=', 'o.modelMaterialOverrides=', 'o.postProcessing=',
-    'o.particleEmitter=', 'o.shaderFragment=', 'o.modelScale='
-  ]) assert.equal(inspectorSource.includes(legacy), false, legacy);
-  assert.ok(inspectorSource.includes('setSceneToonMaterial'));
-  assert.ok(inspectorSource.includes('setSceneMaterialOverrides'));
-  assert.ok(inspectorSource.includes('setScenePostFX'));
-  assert.ok(inspectorSource.includes('setSceneParticleEmitter'));
-  assert.ok(inspectorSource.includes('setSceneShaderFragment'));
-  assert.ok(inspectorSource.includes('setSceneMeshCollider'));
+  const region = html.slice(start, end);
+  const scriptStart = html.lastIndexOf('<script', start);
+  const openEnd = html.indexOf('>', scriptStart) + 1;
+  const scriptEnd = html.indexOf('</script>', end);
+  assert.ok(scriptStart >= 0 && openEnd > scriptStart && scriptEnd > end);
+  assert.doesNotThrow(() => new Function(html.slice(openEnd, scriptEnd)));
+  for (const legacy of ['o.toonMaterialSettings=', 'o.modelMaterialOverrides=', 'o.postProcessing=', 'o.particleEmitter=', 'o.shaderFragment=', 'o.modelScale=']) {
+    assert.equal(region.includes(legacy), false, legacy);
+  }
+  for (const method of ['setSceneToonMaterial','setSceneMaterialOverrides','setScenePostFX','setSceneParticleEmitter','setSceneShaderFragment','setSceneMeshCollider']) {
+    assert.ok(region.includes(method), method);
+  }
 });
 
 test('runtime and Editor preview use ECS Scene Components for scripts, sprite bounds, color and colliders', () => {
