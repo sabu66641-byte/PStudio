@@ -262,7 +262,7 @@
       }
     };
     material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v4-'+role+'-translucency-'+(translucency>0?'on':'off')+(oldKey?oldKey():'');
-    material.userData.pstudioFoliageHQ={role,strength,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
+    material.userData.pstudioFoliageHQ={time:u.time,role,strength,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
     foliage.add(material);
@@ -651,7 +651,7 @@
     pass.setQuality('high',2);
     pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
       const depth=this.uniforms?.tDepth;
-      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||depth.value;
+      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=depth.value||readBuffer?.depthTexture||null;
       originalRender(renderer,writeBuffer,readBuffer,delta,mask);
     };
     cloudPasses.add(pass);

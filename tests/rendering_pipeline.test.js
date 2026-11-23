@@ -793,7 +793,7 @@ test('foliage translucency runtime injection clamps artist controls and preserve
   assert.ok(material.customProgramCacheKey().includes('pstudio-foliage-wind-hq-v4-'));
   assert.equal(api.getStats().foliageTranslucencyMaterials,1);
   api.update(4.25);
-  assert.equal(material.userData.pstudioFoliageHQ.time.value,undefined);
+  assert.equal(material.userData.pstudioFoliageHQ.time.value,4.25);
 });
 
 test('contact shadow pass ray-marches scene depth with bounded quality levels and atmosphere-aligned light',()=>{
@@ -851,7 +851,8 @@ test('contact shadows are profile/adaptive controlled, use the depth prepass, an
     'setContactShadows:(enabled,options={})','u.uMaxDistance.value=Math.max(.1,Math.min(2.5,options.maxDistance))',
     'contactShadows:{enabled:contactShadowsEnabled,available:!!contactShadowPass'
   ])assert.ok(renderer.includes(token),token);
-  assert.ok(renderer.indexOf('composer.addPass(contactShadowPass)')<renderer.indexOf('composer.addPass(volumetricFogPass)'));
+  assert.ok(renderer.indexOf('composer.addPass(contactShadowPass)')>renderer.indexOf('composer.addPass(volumetricFogPass)'));
+  assert.ok(renderer.indexOf('composer.addPass(contactShadowPass)')<renderer.indexOf('composer.addPass(bloomPass)'));
   assert.ok(renderer.includes('contactShadowPass.enabled=contactShadowsEnabled&&!waterDepthPrepassFailed&&!!waterDepthTarget?.depthTexture'));
 });
 
