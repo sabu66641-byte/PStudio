@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -416,6 +416,7 @@
     setTime(foliage,'pstudioFoliageHQ');
     setTime(caustics,'pstudioCausticsHQ');
     for(const pass of cloudPasses){const uniform=pass?.uniforms?.uTime;if(uniform&&Object.prototype.hasOwnProperty.call(uniform,'value'))uniform.value=t;}
+    for(const pass of fogPasses){const uniform=pass?.uniforms?.uTime;if(uniform&&Object.prototype.hasOwnProperty.call(uniform,'value'))uniform.value=t;}
   }
 
   function createVolumetricCloudPass(FX,Three) {
@@ -538,42 +539,103 @@
       uniforms:{
         tDiffuse:{value:null},tDepth:{value:null},uInverseProjection:{value:new Three.Matrix4()},
         uCameraWorld:{value:new Three.Matrix4()},uFogColor:{value:new Three.Color('#b9d8d9')},
-        uFogDensity:{value:.012},uHeightFalloff:{value:.018},uBaseHeight:{value:0},
-        uTime:{value:0},uSunDirection:{value:new Three.Vector3(-.35,.82,-.44).normalize()}
+        uFogAmbientColor:{value:new Three.Color('#d9eeff')},uSunColor:{value:new Three.Color('#fff1d6')},
+        uSunDirection:{value:new Three.Vector3(-.35,.82,-.44).normalize()},
+        uFogDensity:{value:.0018},uHeightFalloff:{value:.018},uBaseHeight:{value:0},
+        uFogAnisotropy:{value:.42},uFogSteps:{value:16},uTime:{value:0}
       },
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
       fragmentShader:[
         'uniform sampler2D tDiffuse;uniform sampler2D tDepth;',
         'uniform mat4 uInverseProjection;uniform mat4 uCameraWorld;',
-        'uniform vec3 uFogColor;uniform vec3 uSunDirection;',
-        'uniform float uFogDensity;uniform float uHeightFalloff;uniform float uBaseHeight;uniform float uTime;',
+        'uniform vec3 uFogColor;uniform vec3 uFogAmbientColor;uniform vec3 uSunColor;uniform vec3 uSunDirection;',
+        'uniform float uFogDensity;uniform float uHeightFalloff;uniform float uBaseHeight;uniform float uFogAnisotropy;uniform float uFogSteps;uniform float uTime;',
         'varying vec2 vUv;',
         'float noise3(vec3 p){return .5+.5*sin(p.x*.73+sin(p.y*.51+p.z*.91)*1.7+uTime*.025);}',
+        'float henyeyGreenstein(float mu,float g){float g2=g*g;return (1.0-g2)/(12.5663706*pow(max(.001,1.0+g2-2.0*g*mu),1.5));}',
         'void main(){',
         'vec4 col=texture2D(tDiffuse,vUv);float z=texture2D(tDepth,vUv).x;',
-        'if(z>=.99999||uFogDensity<=.00001){gl_FragColor=col;return;}',
+        'if(z>=.99999||uFogDensity<=.000001){gl_FragColor=col;return;}',
         'vec4 q=uInverseProjection*vec4(vUv*2.0-1.0,z*2.0-1.0,1.0);vec3 vp=q.xyz/max(1e-6,q.w);',
         'vec3 origin=uCameraWorld[3].xyz;vec3 endp=(uCameraWorld*vec4(vp,1.0)).xyz;',
         'vec3 ray=endp-origin;float len=length(ray);vec3 dir=ray/max(len,1e-5);',
-        'float optical=0.0;vec3 scatter=vec3(0.0);const int STEPS=12;float ds=len/float(STEPS);',
-        'for(int i=0;i<STEPS;i++){float f=(float(i)+.5)/float(STEPS);vec3 p=origin+dir*(len*f);',
-        'float h=max(0.0,p.y-uBaseHeight);float density=uFogDensity*exp(-h*uHeightFalloff);density*=mix(.76,1.12,noise3(p*.07));',
-        'float seg=density*ds;float trans=exp(-optical);float phase=.72+.28*pow(max(dot(-dir,normalize(uSunDirection)),0.0),3.0);',
-        'scatter+=uFogColor*trans*(1.0-exp(-seg))*phase;optical+=seg;}',
-        'float trans=exp(-optical);gl_FragColor=vec4(col.rgb*trans+scatter,col.a);}'
+        'vec3 sun=normalize(uSunDirection);float cosine=dot(-dir,sun);',
+        'float phase=henyeyGreenstein(cosine,clamp(uFogAnisotropy,0.0,.88));',
+        'float steps=clamp(uFogSteps,6.0,24.0);float ds=len/steps;',
+        'float optical=0.0;vec3 scatter=vec3(0.0);',
+        'for(int i=0;i<24;i++){if(float(i)>=steps)break;',
+        'float f=(float(i)+.5)/steps;vec3 p=origin+dir*(len*f);',
+        'float h=p.y-uBaseHeight;',
+        'float vertical=exp(-max(h,0.0)*uHeightFalloff);',
+        'float groundHaze=1.0+.24*exp(-abs(h)*.022);',
+        'float detail=mix(noise3(p*.035),noise3(p*.11),.32);',
+        'float density=uFogDensity*vertical*groundHaze*mix(.82,1.14,detail);',
+        'float segment=density*ds;float trans=exp(-optical);',
+        'float segmentAlpha=1.0-exp(-segment);',
+        'float sunForward=pow(max(cosine,0.0),5.0);',
+        'vec3 ambient=uFogAmbientColor*.52+uFogColor*.48;',
+        'vec3 direct=uSunColor*(phase*4.0+sunForward*.38);',
+        'vec3 lighting=ambient+direct;',
+        'scatter+=lighting*trans*segmentAlpha;',
+        'optical+=segment;',
+        'if(optical>8.0)break;',
+        '}',
+        'float trans=exp(-optical);',
+        'vec3 fogged=col.rgb*trans+scatter;',
+        'gl_FragColor=vec4(mix(col.rgb,fogged,1.0),col.a);',
+        '}'
       ].join('\n')
     };
-    const pass=new FX.ShaderPass(shader);pass.enabled=false;
+    const pass=new FX.ShaderPass(shader);
+    pass.enabled=false;
+    pass.setQuality=(preset='high',adaptiveLevel=2)=>{
+      const base={mobile:8,balanced:10,high:16,ultra:24}[String(preset)]||16;
+      const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
+      const steps=Math.max(6,Math.min(24,Math.round(base*[.62,.82,1][level])));
+      pass.uniforms.uFogSteps.value=steps;
+      pass.userData=pass.userData||{};
+      pass.userData.pstudioFogQuality={preset,adaptiveLevel:level,steps};
+      return {...pass.userData.pstudioFogQuality};
+    };
     const render=pass.render.bind(pass);
-    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){const depth=this.uniforms?.tDepth;if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||null;render(renderer,writeBuffer,readBuffer,delta,mask);};
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
+      const depth=this.uniforms?.tDepth;
+      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||null;
+      render(renderer,writeBuffer,readBuffer,delta,mask);
+    };
+    pass.setQuality('high',2);
+    fogPasses.add(pass);
     return pass;
   }
 
   window.PStudioEnvironmentFX={
     configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
-    configureAtmosphere(settings={}){for(const pass of cloudPasses)pass?.configureAtmosphere?.(settings);return true;},
+    configureAtmosphere(settings={}){
+      const direction=settings.sunDirection;
+      const applyDirection=uniform=>{
+        if(!uniform?.value?.set||!Array.isArray(direction)||direction.length<3||!direction.slice(0,3).every(Number.isFinite))return;
+        uniform.value.set(direction[0],direction[1],direction[2]).normalize();
+      };
+      const applyColor=(uniform,value)=>{if(value&&uniform?.value?.set)uniform.value.set(value);};
+      for(const pass of cloudPasses){
+        const u=pass?.uniforms;if(!u)continue;
+        applyDirection(u.uSunDirection);applyColor(u.uSunColor,settings.sunColor);applyColor(u.uFogColor,settings.fogColor);
+      }
+      for(const pass of fogPasses){
+        const u=pass?.uniforms;if(!u)continue;
+        applyDirection(u.uSunDirection);
+        applyColor(u.uSunColor,settings.sunColor);
+        applyColor(u.uFogColor,settings.fogColor);
+        applyColor(u.uFogAmbientColor,settings.fogAmbientColor);
+        if(Number.isFinite(Number(settings.fogDensity)))u.uFogDensity.value=Math.max(0,Math.min(.08,Number(settings.fogDensity)));
+        if(Number.isFinite(Number(settings.fogHeightFalloff)))u.uHeightFalloff.value=Math.max(0,Math.min(.2,Number(settings.fogHeightFalloff)));
+        if(Number.isFinite(Number(settings.fogBaseHeight)))u.uBaseHeight.value=Number(settings.fogBaseHeight);
+        if(Number.isFinite(Number(settings.fogAnisotropy)))u.uFogAnisotropy.value=Math.max(0,Math.min(.88,Number(settings.fogAnisotropy)));
+      }
+      return true;
+    },
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
-    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size})
+    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size})
   };
 })();
