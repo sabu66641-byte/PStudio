@@ -116,6 +116,30 @@ class ExampleProjectRegressionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("set_camera_lens", response.get_json()["error"])
 
+
+    def test_color_grading_api_is_available_to_browser_game_scripts(self):
+        self.assertEqual(app.GAME_FUNCTIONS.get("set_color_grading"), 6)
+        parsed = self.validate_game_scripts({
+            "color_grading.ps": (
+                "func start()\n"
+                "    set_color_grading(0.5, 1.1, 1.2, 0.2, 0.35, 0.08)\n"
+            )
+        })
+        self.assertIn("color_grading.ps", parsed)
+        self.assertEqual(parsed["color_grading.ps"]["body"][0]["name"], "start")
+
+    def test_color_grading_api_rejects_wrong_argument_counts(self):
+        for source in [
+            "func start()\n    set_color_grading(0.5, 1.1, 1.2, 0.2, 0.35)\n",
+            "func start()\n    set_color_grading(0.5, 1.1, 1.2, 0.2, 0.35, 0.08, 1)\n",
+        ]:
+            response = self.client.post(
+                "/game/prepare",
+                json={"scripts": {"bad_color_grading.ps": source}},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("set_color_grading", response.get_json()["error"])
+
     def test_game_prepare_rejects_oversized_combined_script_payload(self):
         response = self.client.post(
             "/game/prepare",
