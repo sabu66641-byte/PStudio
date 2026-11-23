@@ -804,30 +804,30 @@ test('render authoring configuration is ECS-owned and Inspector writes Component
 
 test('legacy and ECS render-authoring data both trigger 3D initialization before migration', () => {
   const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
-  assert.ok(engine.includes('!!object.model'));
-  assert.ok(engine.includes('object.shaderFragment!==undefined'));
-  assert.ok(engine.includes('object.toonMaterialSettings!==undefined'));
-  assert.ok(engine.includes('object.modelMaterialOverrides!==undefined'));
-  assert.ok(engine.includes('object.postProcessing!==undefined'));
-  assert.ok(engine.includes('object.particleEmitter!==undefined'));
+  assert.ok(engine.includes('!!sceneRenderableAsset(object)'));
+  assert.ok(engine.includes('!!object.model'), 'legacy model references remain readable during migration');
+  assert.ok(engine.includes("['Camera','Light','Renderable','Animation'"));
   assert.ok(engine.includes("'ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'"));
+  assert.ok(engine.includes('window.syncEcsSceneMaterials?.()'));
 });
 
 test('render authoring Inspector handlers are syntactically valid and no longer write legacy properties', () => {
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
-  const start = html.indexOf('const ecsMaterialsMigratedScenes');
+  const start = html.indexOf('function selectSceneObject');
   const end = html.indexOf('function serializeScene', start);
   assert.ok(start >= 0 && end > start);
   const inspectorSource = html.slice(start, end);
   assert.doesNotThrow(() => new Function(inspectorSource));
   for (const legacy of [
-    'o.toonMaterialSettings=',
-    'o.modelMaterialOverrides=',
-    'o.postProcessing=',
-    'o.particleEmitter=',
-    'o.shaderFragment=',
-    'o.modelScale='
+    'o.toonMaterialSettings=', 'o.modelMaterialOverrides=', 'o.postProcessing=',
+    'o.particleEmitter=', 'o.shaderFragment=', 'o.modelScale='
   ]) assert.equal(inspectorSource.includes(legacy), false, legacy);
+  assert.ok(inspectorSource.includes('setSceneToonMaterial'));
+  assert.ok(inspectorSource.includes('setSceneMaterialOverrides'));
+  assert.ok(inspectorSource.includes('setScenePostFX'));
+  assert.ok(inspectorSource.includes('setSceneParticleEmitter'));
+  assert.ok(inspectorSource.includes('setSceneShaderFragment'));
+  assert.ok(inspectorSource.includes('setSceneMeshCollider'));
 });
 
 test('runtime and Editor preview use ECS Scene Components for scripts, sprite bounds, color and colliders', () => {
@@ -845,7 +845,7 @@ test('runtime and Editor preview use ECS Scene Components for scripts, sprite bo
   assert.ok(html.includes('getSceneSpriteRenderer(object)'));
   assert.ok(html.includes('getSceneScriptFile(object)'));
   assert.ok(html.includes('setSceneScriptFile(object,fileName)'));
-  assert.ok(html.includes('setSceneRenderableAsset(object,assetName)'));
+  assert.ok(html.includes('setSceneRenderableAsset(object,asset)'));
   assert.ok(html.includes('window.PStudioECSScene?.renameScriptFile'));
   assert.ok(html.includes('window.PStudioECSScene?.renameSpriteAsset'));
   assert.ok(materials.includes('function renameRenderableAsset'));

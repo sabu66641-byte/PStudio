@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const fxSource = fs.readFileSync(path.join(root, 'static', 'pstudio_environment_fx.js'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'static', 'pstudio_3d_engine.js'), 'utf8');
-const runtime = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), 'utf8');
+const runtime = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), 'utf8');\nconst materials = fs.readFileSync(path.join(root, 'static', 'pstudio_ecs_materials.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
