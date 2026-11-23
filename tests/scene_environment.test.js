@@ -207,7 +207,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('const width=2048,height=1024;'));
-  assert.ok(renderer.includes('for(let i=0;i<2100;i++)'));
+  assert.ok(renderer.includes('for(let i=0;i<8200;i++)'));
   assert.ok(renderer.includes('const moonRadius=48'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
@@ -215,7 +215,8 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
 });
 
 test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
-  assert.match(renderer,/Milky Way: a broad, low-contrast galactic band/);
+  assert.match(renderer,/A dark, periodic starfield with a structured Milky Way/);
+  assert.match(renderer,/four seeded noise octaves/i);
   assert.match(renderer,/for\(let i=0;i<2100;i\+\+\)/);
   assert.match(renderer,/const galacticCenterY=height\*\(\.43-\.27\*\(x\/width\)\)/);
   assert.match(renderer,/const moonRadius=48/);
@@ -316,7 +317,7 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   const cloudEnd=renderer.indexOf('const glowRadius=',cloudStart);
   assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
   assert.match(renderer,/activeEnvironmentPreset='day'/);
-  assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|'day'\)/);
+  assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
   assert.match(renderer,/volumetricCloudsEnabled=!!\(profile\.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio'\)/);
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
