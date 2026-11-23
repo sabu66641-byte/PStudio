@@ -203,10 +203,14 @@ test('Inventory, Equipment, Combat, Quest and Dialogue state survive Stop/Play s
 
   assert.equal(gameplay.persistECS(objects), true);
   ecs.clearSceneObjects();
-  assert.equal(ecs.stats().entityCount, 0);
+  assert.equal(ecs.query(['SceneObjectRef']).length, 0);
+  assert.equal(ecs.query(['ItemDefinition']).length, 2, 'static gameplay definitions survive the Scene Object Stop/Play boundary');
+  assert.equal(ecs.stats().entityCount, 2);
   ecs.syncSceneObjects(objects);
   assert.equal(gameplay.initializeECS(objects), true);
 
+  assert.equal(bridge.getItemDefinition('herb').value, 5);
+  assert.equal(bridge.getItemDefinition('shield').slot, 'off-hand');
   assert.equal(gameplay.getHP('player'), 64);
   assert.equal(gameplay.inventoryCount('player', 'herb'), 4);
   assert.equal(gameplay.inventoryCount('player', 'shield'), 1);
