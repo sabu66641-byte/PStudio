@@ -28,11 +28,11 @@ test('renderer re-registration preserves the live chunk object and cancels chang
     }
   );
 
-  const first = register('district-a', { x: 1, assets: ['a.glb'], loadDistance: 100 });
+  const first = register('district-a', { x: 1, assets: ['a.glb', 'b.glb'], loadDistance: 100 });
   const record = worldChunks.get('district-a');
   record.loading = true;
   record.generation = 4;
-  const same = register('district-a', { x: 2, assets: ['a.glb'], loadDistance: 120 });
+  const same = register('district-a', { x: 2, assets: ['a.glb', 'b.glb'], loadDistance: 120 });
   assert.equal(worldChunks.get('district-a'), record, 'the registry object identity is stable');
   assert.equal(record.loading, true, 'in-flight load state is not overwritten');
   assert.equal(record.generation, 4);
@@ -52,14 +52,14 @@ test('renderer re-registration preserves the live chunk object and cancels chang
 test('stale asynchronous chunk completions release only obsolete assets and retain shared assets for a newer generation', async () => {
   const renderer = read('static/pstudio_3d_engine.js');
   const source = extractFunction(renderer, 'function releaseStaleChunkAssets', 'function releaseChunkAssetCache');
-  let resolveAsset;
+  const pendingAssets = [];
   const releases = [];
   const events = [];
   const begin = new Function(
     'Promise', 'requestModelAsset', 'releaseChunkAssetCache', 'window', 'Date', source + '; return beginWorldChunkLoad;'
   )(
     Promise,
-    () => new Promise(resolve => { resolveAsset = resolve; }),
+    () => new Promise(resolve => { pendingAssets.push(resolve); }),
     (chunk, assets) => releases.push([chunk.id, Array.from(assets)]),
     { PStudioEvents: { emit: (...args) => events.push(args) } },
     Date
@@ -73,7 +73,7 @@ test('stale asynchronous chunk completions release only obsolete assets and reta
   chunk.generation++;
   chunk.loading = true;
   chunk.assets = ['new.glb', 'shared.glb'];
-  resolveAsset({});
+  for (const resolve of pendingAssets) resolve({});
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
