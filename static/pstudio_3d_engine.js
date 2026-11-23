@@ -3210,12 +3210,37 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     texture.needsUpdate=true;
     return texture;
   }
+  function enhancePhysicalSkyShader(sky){
+    const material=sky?.material;
+    if(!material||material.userData?.pstudioAtmosphereEnhanced)return !!material;
+    const marker='gl_FragColor = vec4( retColor, 1.0 );';
+    const source=String(material.fragmentShader||'');
+    if(!source.includes(marker)){
+      console.warn('[PStudio] Physical sky shader enhancement hook was not found; native Sky.js scattering remains active.');
+      return false;
+    }
+    const enhancement=[
+      'float pStudioHorizonBand=exp(-abs(direction.y)*7.5);',
+      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y));',
+      'float pStudioSunAlignment=max(dot(direction,vSunDirection),0.0);',
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,34.0);',
+      'vec3 pStudioWarmHorizon=vec3(1.0,0.34,0.19);',
+      'retColor=mix(retColor,max(retColor,pStudioWarmHorizon),pStudioHorizonBand*pStudioTwilight*0.28);',
+      'retColor+=vec3(1.0,0.48,0.24)*pStudioSolarHalo*pStudioTwilight*0.16;',
+      'retColor+=vec3(0.42,0.58,0.82)*pow(pStudioSunAlignment,22.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.025;'
+    ].join('\n');
+    material.fragmentShader=source.replace(marker,enhancement+'\n'+marker);
+    material.needsUpdate=true;
+    material.userData.pstudioAtmosphereEnhanced=true;
+    return true;
+  }
   function updatePhysicalSkyPreset(T,profile){
     if(!window.PStudioSky||!scene)return false;
     try{
       if(!physicalSky){
         physicalSky=new window.PStudioSky();
         physicalSky.name='PStudioPhysicalSky';
+        enhancePhysicalSkyShader(physicalSky);
         physicalSky.scale.setScalar(450000);
         physicalSky.frustumCulled=false;
         if(physicalSky.material){physicalSky.material.depthWrite=false;physicalSky.material.fog=false;}
@@ -3223,17 +3248,20 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
       const uniforms=physicalSky.material?.uniforms;
       if(!uniforms?.sunPosition?.value||!uniforms?.turbidity||!uniforms?.rayleigh||!uniforms?.mieCoefficient||!uniforms?.mieDirectionalG)return false;
-      const atmospheric={
-        day:{turbidity:2.4,rayleigh:2.15,mie:.0052,g:.8},
-        dusk:{turbidity:7.2,rayleigh:1.45,mie:.012,g:.84},
-        night:{turbidity:10,rayleigh:.12,mie:.003,g:.8},
-        studio:{turbidity:2.1,rayleigh:1.65,mie:.004,g:.78}
-      }[profile.name]||{turbidity:2.8,rayleigh:2,mie:.005,g:.8};
-      uniforms.turbidity.value=atmospheric.turbidity;
-      uniforms.rayleigh.value=atmospheric.rayleigh;
-      uniforms.mieCoefficient.value=atmospheric.mie;
-      uniforms.mieDirectionalG.value=atmospheric.g;
-      uniforms.sunPosition.value.set(-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)).normalize();
+      uniforms.turbidity.value=Math.max(0,Math.min(20,Number(profile.skyTurbidity)||2.4));
+      uniforms.rayleigh.value=Math.max(0,Math.min(4,Number(profile.skyRayleigh)||2.0));
+      uniforms.mieCoefficient.value=Math.max(0,Math.min(0.1,Number(profile.skyMieCoefficient)||0.005));
+      uniforms.mieDirectionalG.value=Math.max(0,Math.min(0.99,Number(profile.skyMieDirectionalG)||0.8));
+      const sunDirection=new T.Vector3(
+        Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+        Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+        Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+      );
+      if(sunDirection.lengthSq()<1e-8)sunDirection.set(0,1,0);
+      sunDirection.normalize();
+      // Sky.js uses a 450,000-unit atmosphere scale in its sun-fade calculation.
+      // A unit vector keeps the direction but breaks the physical elevation response.
+      uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
       physicalSky.visible=!(hdrTexture&&hdrShowBackground);
       if(camera)physicalSky.position.copy(camera.position);
       return true;
@@ -3259,7 +3287,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
       lightIntensity:2.35,lightX:-0.48,lightY:-0.82,lightZ:-0.31,
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
-      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55
+      environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
@@ -3321,9 +3349,20 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       keyLight.intensity=profile.lightIntensity;
       keyLight.castShadow=true;
     }
+    const skySunDirection=[
+      Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+      Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+      Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+    ];
     window.PStudioEnvironmentFX?.configureAtmosphere?.({
-      sunDirection:[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)],
-      sunColor:profile.lightColor,fogColor:profile.fogColor
+      sunDirection:skySunDirection,
+      sunColor:profile.atmosphereSunColor||profile.lightColor,
+      fogColor:profile.fogColor,
+      fogAmbientColor:profile.hemisphereSky||profile.fogColor,
+      fogDensity:Number.isFinite(Number(profile.fogDensity))?Number(profile.fogDensity):0.0018,
+      fogHeightFalloff:Number.isFinite(Number(profile.fogHeightFalloff))?Number(profile.fogHeightFalloff):0.018,
+      fogBaseHeight:Number.isFinite(Number(profile.fogBaseHeight))?Number(profile.fogBaseHeight):0,
+      fogAnisotropy:Number.isFinite(Number(profile.fogAnisotropy))?Number(profile.fogAnisotropy):0.42
     });
     return profile;
   }
