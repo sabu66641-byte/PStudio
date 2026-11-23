@@ -31,7 +31,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Item/weapon/quest definitions | PStudioGameplay definition Maps | Standalone ItemDefinition/WeaponDefinition/QuestDefinition Entities hold gameplay configuration; legacy defineItem/defineWeapon/questDefine APIs write through to ECS | Phase 15 implemented; definitions are runtime config, distinct from per-entity state |
 | Combat cooldowns/combos | attackTimes / weaponCombos Maps | CombatState Component + cooldown maintenance System | Phase 4 implemented |
 | Enemy AI | aiStates Map + direct helper calls | AIController + MovementIntent Components and postUpdate Systems | Phase 4 implemented |
-| Quest state | global quests/questDefinitions Maps | QuestProgress entities; definitions remain project/gameplay config | Phase 4 implemented |
+| Quest state | PStudioGameplay quests Map + ECS | QuestProgress standalone entities; QuestDefinition is a separate ECS definition Entity; legacy quest APIs write through to ECS | Phase 4 state / Phase 15 definitions implemented |
 | Dialogue | dialogueStates and activeUI globals | DialogueSession Component; PStudioUI still owns DOM presentation | Phase 4 implemented |
 | Navigation | navNodes/blockedNavNodes Maps | Standalone NavigationNode Entities own node IDs, coordinates, links and blocked state; ECS bridge provides nearest-node and A* next-node queries | Phase 5 implemented; graph is runtime-only and preserves its in-memory Play/Stop lifetime |
 | Input | engine keyboard/touch event state | InputSnapshot singleton Component captures immutable per-frame state; PlayerInput mappings derive per-entity ControlIntent in an update System | Phase 6 implemented; device listeners remain in the runtime service |
@@ -65,8 +65,10 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 11. **Visual effects configuration** — move environment, fog, water, post-FX, particle-emitter and trail configuration to persistent Components; keep shaders, GPU simulation, particle buffers, trail geometry and post-FX passes inside PStudio3D. One-shot particle bursts remain transient commands. (Phase 11 implemented.)
 12. **HUD/UI state boundary** — move transient active inventory/quest/dialogue overlay intent to a UIOverlay singleton Component; PStudioUI remains the DOM renderer. (Phase 12 implemented.)
 13. **Module lifecycle** — mirror module registration and state transitions into runtime-only ModuleState entities; PStudioModules retains dependency resolution, async activation/deactivation, rollback and service cleanup. (Phase 13 implemented.)
-15. **Versioned Component persistence** — store persistent Components behind an explicit scene schema version, migrate unversioned v0 Component arrays/maps, preserve unknown future versions, and test round-trip/invalid data. (Phase 14 implemented.)
-16. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
+14. **Versioned Component persistence** — store persistent Components behind an explicit scene schema version, migrate unversioned v0 Component arrays/maps, preserve unknown future versions, and test round-trip/invalid data. (Phase 14 implemented.)
+15. **Gameplay definition entities** — move Item/Quest/Weapon definition records into standalone ECS entities while keeping ps definition APIs compatible. (Phase 15 implemented.)
+16. **Transform and Physics parity** — keep ECS Transform and PhysicsBody/State as runtime state, verify two-way editor synchronization and config changes, and retain Scene Object serialization and the fixed-step solver as service adapters. (Phase 16 implemented; adapters intentionally remain.)
+17. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
 
 ## Required gates for every slice
 
