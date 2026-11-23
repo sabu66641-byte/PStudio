@@ -858,7 +858,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some(value=>!assets.includes(value)));
     // Keep the registry record stable so in-flight promises retain the same object.
     // Asset-set changes invalidate the old generation before the new configuration is assigned.
-    if(old&&assetsChanged&&(old.active||old.loading))endWorldChunkLoad(old,new Set(assets));
+    if(old&&assetsChanged&&(old.active||old.loading)){const retainedAssets=new Set(old.assets.filter(name=>assets.includes(name)));endWorldChunkLoad(old,retainedAssets);}
     const chunk=old||{id:key,active:o.active===true,loading:false,generation:0,error:null,lastLoadedAt:0,onLoad:null,onUnload:null};
     chunk.x=coordinate(o.x);chunk.y=coordinate(o.y);chunk.z=coordinate(o.z);
     chunk.loadDistance=loadDistance;chunk.unloadDistance=unloadDistance;
