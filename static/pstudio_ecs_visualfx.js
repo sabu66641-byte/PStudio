@@ -12,6 +12,7 @@
   }
 
   const SOURCE = 'pstudio_ecs_visualfx';
+  const GLOBAL_COMMAND_OWNER = '__pstudio_ecs_visualfx_global__';
   const TYPES = Object.freeze({
     Environment: 'Environment',
     Fog: 'Fog',
@@ -342,7 +343,7 @@
       }
     }
     if (Object.keys(config).length === 1) return 0;
-    prependGlobalCommand(commands, sources[0].ownerId, config);
+    prependGlobalCommand(commands, GLOBAL_COMMAND_OWNER, config);
     return 1;
   }
 
@@ -352,7 +353,7 @@
       .sort((a, b) => a[0] - b[0]);
     if (!candidates.length) return 0;
     const [entity, entry] = candidates[0];
-    prependGlobalCommand(commands, entry.ownerId, {
+    prependGlobalCommand(commands, GLOBAL_COMMAND_OWNER, {
       type: 'postfx',
       bloom: entry.data.bloom === true,
       ssao: entry.data.ssao === true,
@@ -382,8 +383,7 @@
         width: clamp(data.width, 1, 100000, 100),
         depth: clamp(data.depth, 1, 100000, 100),
         color: data.color || '#4f9fc2',
-        opacity: clamp(data.opacity, 0.05, 1, 0.82),
-        ecsEntity: true
+        opacity: clamp(data.opacity, 0.05, 1, 0.82)
       });
       added++;
     }

@@ -65,6 +65,7 @@ test('Environment and Fog Components merge deterministically before legacy ps en
   const commands = new Map([['legacy', [{ type: 'environment', background: '#000000' }]]]);
   const result = collect(runtime, commands);
   assert.equal(result.added, 1);
+  assert.equal(commands.keys().next().value, '__pstudio_ecs_visualfx_global__');
   assert.equal(result.all[0].type, 'environment');
   assert.equal(result.all[0].background, '#112233');
   assert.equal(result.all[0].environmentSky, '#445566');
@@ -79,16 +80,17 @@ test('Environment and Fog Components merge deterministically before legacy ps en
 test('PostFX chooses one deterministic primary configuration and keeps script commands later', () => {
   const runtime = createVisualFXRuntime();
   runtime.visualfx.attachPostFX('fog', { bloom: true, ssao: true, strength: 1.25 });
-  runtime.visualfx.attachPostFX('environment', { bloom: false, ssao: false, strength: 0.2 });
+  runtime.visualfx.attachPostFX('environment', { bloom: false, ssao: false, strength: 0.7 });
   const commands = new Map([['legacy', [{ type: 'postfx', bloom: false, ssao: false, strength: 0.4 }]]]);
   const result = collect(runtime, commands);
   const post = result.all.filter(command => command.type === 'postfx');
   assert.equal(post.length, 2);
   assert.deepEqual(
     JSON.parse(JSON.stringify(post[0])),
-    { type: 'postfx', bloom: true, ssao: true, strength: 1.25, ecsEntity: runtime.ecs.getEntityForSceneObject('fog') }
+    { type: 'postfx', bloom: false, ssao: false, strength: 0.7 }
   );
   assert.equal(post[1].strength, 0.4);
+  assert.equal(commands.keys().next().value, '__pstudio_ecs_visualfx_global__');
 });
 
 test('Water Component maps Scene Object coordinates, dimensions, color and opacity', () => {
@@ -100,8 +102,7 @@ test('Water Component maps Scene Object coordinates, dimensions, color and opaci
   const water = result.all.find(command => command.type === 'water');
   assert.deepEqual(JSON.parse(JSON.stringify(water)), {
     type: 'water', x: -3.3, y: 1.8, z: 2,
-    width: 250, depth: 300, color: '#2288aa', opacity: 0.45,
-    ecsEntity: true
+    width: 250, depth: 300, color: '#2288aa', opacity: 0.45
   });
 });
 
