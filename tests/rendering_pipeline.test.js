@@ -15,7 +15,7 @@ function loadProbeWeightHelper(probeBlendCount=4){
   const end=renderer.indexOf('function evaluateProbeSH',start);
   assert.ok(start>=0&&end>start,'GI probe interpolation helper must exist');
   const sandbox={worldRenderConfig:{probeBlendCount}};
-  vm.runInNewContext(renderer.slice(start,end)+'\\nthis.getProbeVolumeWeights=getProbeVolumeWeights;',sandbox);
+  vm.runInNewContext(renderer.slice(start,end)+';this.getProbeVolumeWeights=getProbeVolumeWeights;',sandbox);
   return sandbox.getProbeVolumeWeights;
 }
 function makeProbe(id,x,y,z){
