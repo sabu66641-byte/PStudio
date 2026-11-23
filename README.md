@@ -112,7 +112,7 @@ func on_collision(other)
 | `draw_sprite(name, x, y)` | Draw an imported image asset at its native size |
 | `set_atmosphere(elevation, azimuth, turbidity, cloud_density)` | Set the physical sky and cloud parameters; angles are degrees, azimuth 0° points north (+Z), turbidity is 1–10 and cloud density is 0–1 |
 | `set_camera_lens(dof_enabled, focus_distance, aperture, chromatic_aberration)` | Set depth of field and edge-weighted chromatic aberration; focus distance is camera-space depth in world units, aperture is f/1.2–f/22 and chromatic aberration is 0–1 |
-| `set_color_grading(exposure, contrast, saturation, temperature, vignette, film_grain)` | Set post-output exposure/contrast/saturation/temperature, vignette and animated film grain; identity values disable the extra pass |
+| `set_color_grading(exposure, contrast, saturation, temperature, vignette, film_grain)` | Set exposure/contrast/saturation/temperature on the linear scene buffer, plus vignette and animated film grain; identity values disable the extra pass |
 | `len(value)` / `range(...)` | Standard ps helpers supported by the game runtime |
 
 The selected object's **Enable Collider** checkbox is stored in the scene file. Collision detection supports rectangle-rectangle, circle-circle and circle-rectangle pairs. A callback is dispatched once on collision-enter to each participating object's attached script if that script defines `on_collision(other)`.
