@@ -429,6 +429,8 @@ Repeated simple primitives are automatically grouped into `THREE.InstancedMesh` 
 
 `PStudio3D.setQualityPreset("auto" | "mobile" | "balanced" | "high" | "ultra")` switches quality settings. `PStudio3D.getStats()` reports renderer calls, triangles, geometry/texture counts, active instances, GPU particle systems and measured render time. Existing model LOD selection and geometry/material caches remain active.
 
+The rendering core now blends regular baked spherical-harmonic probe volumes with bounded trilinear interpolation (sparse/legacy probe sets retain inverse-distance weighting), adds a procedural height/slope/noise-driven PBR layer to generated terrain, enables GTAO automatically on high/ultra profiles when the optional pass is available, and caps shadow-map dimensions against both `MAX_TEXTURE_SIZE` and device-memory class. These are image-quality and stability improvements; the SH solution remains a baked diffuse approximation rather than dynamic ray-traced GI.
+
 These features improve image-based indirect lighting, contact shading, reflections and draw-call efficiency. They do **not** yet constitute a full dynamic GI solution such as real-time multi-bounce voxel/ray-traced illumination.
 
 ## Custom GLSL Shader Editor

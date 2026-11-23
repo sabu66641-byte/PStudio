@@ -713,3 +713,49 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   assert.ok(fog.shader.fragmentShader.includes('henyeyGreenstein'));
   assert.ok(fog.shader.fragmentShader.includes('groundHaze'));
 });
+
+
+test('procedural terrain meshes receive a layered height/slope PBR shader',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of ['configureTerrain','pstudio-terrain-layered-pbr-v1','pStudioTerrainFbm','pStudioSlope','pStudioRock','pStudioSnow','uPStudioTerrainWetness','terrainMaterials'])assert.ok(fx.includes(token),token);
+  assert.ok(renderer.includes("if(d.type==='terrain')window.PStudioEnvironmentFX?.configureTerrain?.(material,mesh)"));
+});
+
+test('terrain PBR runtime injection sets bounded uniforms and composes with existing material hooks',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const sandbox={window:{THREE:{DoubleSide:2}},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  const material={isMeshStandardMaterial:true,userData:{},roughness:.92,onBeforeCompile:null,customProgramCacheKey(){return 'base';}};
+  const object={position:{y:2},geometry:{boundingBox:null,computeBoundingBox(){this.boundingBox={min:{y:-1},max:{y:9}};}}};
+  api.configureTerrain(material,object,{wetness:.3,snowLine:.72,detailScale:.24,rockThreshold:.4});
+  assert.equal(material.userData.pstudioTerrainHQ.heightMin.value,1);
+  assert.equal(material.userData.pstudioTerrainHQ.heightRange.value,10);
+  assert.equal(material.userData.pstudioTerrainHQ.wetness.value,.3);
+  assert.equal(material.userData.pstudioTerrainHQ.snowLine.value,.72);
+  const shader={uniforms:{},vertexShader:'#include <common>\n#include <begin_vertex>\n#include <defaultnormal_vertex>',fragmentShader:'#include <common>\n#include <color_fragment>\n#include <roughnessmap_fragment>'};
+  material.onBeforeCompile(shader,{});
+  for(const token of ['vPStudioTerrainWorldPosition','vPStudioTerrainWorldNormal','pStudioTerrainFbm','pStudioTerrainNoise','pStudioSnow','uPStudioTerrainWetness'])assert.ok(shader.fragmentShader.includes(token),token);
+  assert.ok(shader.vertexShader.includes('transformedNormal'));
+  assert.equal(material.customProgramCacheKey().includes('pstudio-terrain-layered-pbr-v1-'),true);
+  assert.equal(api.getStats().terrainMaterials,1);
+});
+
+test('baked SH probe grids use trilinear interpolation with a sparse-probe fallback',()=>{
+  for(const token of ['pstudioGrid','layout:\\'x-fastest\\'','const volumeIndex=','weight=wx*wy*wz','trilinear grid','Sparse or legacy probe collections','const near=volume.map'])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('dims:Object.freeze(dims.slice())'));
+  assert.ok(renderer.includes('updateObjectProbeUniforms'));
+});
+
+test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
+  assert.ok(renderer.includes('qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
+  assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
+  assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;'));
+  assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
+});
+
+test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
+  for(const token of ['function resolveShadowMapSize(requested)','gl.getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+});
+
