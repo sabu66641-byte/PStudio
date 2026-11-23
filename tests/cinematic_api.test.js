@@ -15,9 +15,9 @@ const architecture = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'),
 
 test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   for (const [name, arity] of [
-    ['camera_shake', 2], ['set_time_scale', 1],
-    ['draw_trail', 4], ['set_god_rays', '(2, 3)']
+    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4]
   ]) assert.match(app, new RegExp('"' + name + '": ' + arity));
+  assert.match(app, /"set_god_rays": \(2, 3\)/);
   assert.match(app, /game_functions = GAME_FUNCTIONS if allow_game else \{\}/);
   assert.match(app, /known_calls = \(set\(BUILTIN_FUNCTIONS\) - \{"input"\}\) \| set\(functions\) \| set\(game_functions\)/);
   assert.match(runtime, /case 'camera_shake': if\(a\.length===2\)/);
