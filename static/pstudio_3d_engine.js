@@ -1312,11 +1312,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     worldFrustumMatrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     worldFrustum.setFromProjectionMatrix(worldFrustumMatrix);
     updateGPUInstanceFrustumPlanes();
-    for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,objectCameraDistance(mesh));}
+    for(const mesh of meshCache.values()){const active=isOwnerChunkActive(mesh.userData.ownerId)&&isWithinWorldDrawDistance(mesh,max);mesh.visible=active&&mesh.userData.pstudioRenderableVisible!==false&&!mesh.userData.pstudioOccluded;if(active)applyAutoLOD(mesh,objectCameraDistance(mesh));}
     for(const instance of modelInstances.values()){
       const active=isOwnerChunkActive(instance.ownerId)&&isWithinWorldDrawDistance(instance.root,max);
       const isSelected=String(instance.ownerId)===String(selectedOwnerId);
-      instance.root.visible=!instance.preparing&&active&&(isSelected||instance.occlusionEligible===false||!instance.root.userData.pstudioOccluded);
+      instance.root.visible=!instance.preparing&&active&&instance.root.userData.pstudioRenderableVisible!==false&&(isSelected||instance.occlusionEligible===false||!instance.root.userData.pstudioOccluded);
       if(!active)continue;
       updateModelStreamingChunks(instance);
       updateModelLOD(instance);
@@ -3630,13 +3630,14 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     let cameraCommand=null,environment=null,cameraOwnerId=null;
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
-      let ownerMaterial=null;
+      let ownerMaterial=null,renderableCommand=null;
       const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined,toon:d.toon&&typeof d.toon==='object'?d.toon:null}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
-        const key=String(ownerId)+':'+commandIndex;
+        const key=String(ownerId)+':'+(d.componentKey?String(d.componentKey):commandIndex);
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
+        if (d.type==='renderable') { renderableCommand=d; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||!!d.ssao;const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
       if(d.type==='trail'){updateTrailEffect(String(ownerId)+':'+String(d.targetId),d);continue;}
@@ -3761,6 +3762,19 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
             continue;
           }
           instance.ownerId=ownerId;
+          const renderableVisible=renderableCommand?.enabled!==false&&renderableCommand?.visible!==false;
+          const castShadow=renderableCommand?.castShadow!==false;
+          const receiveShadow=renderableCommand?.receiveShadow!==false;
+          const renderFlagsSignature=[renderableVisible,castShadow,receiveShadow].join('|');
+          if(instance.root.userData.pstudioRenderFlagsSignature!==renderFlagsSignature){
+            instance.root.userData.pstudioRenderFlagsSignature=renderFlagsSignature;
+            instance.root.userData.pstudioRenderableVisible=renderableVisible;
+            instance.root.traverse(object=>{
+              if(!object.isMesh)return;
+              object.castShadow=castShadow;
+              object.receiveShadow=receiveShadow;
+            });
+          }
           instance.root.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
           instance.root.rotation.set(Number(d.rotationX)||0,Number(d.rotationY)||0,Number(d.rotationZ)||0);
           instance.root.scale.setScalar(Math.max(0.001,Number(d.scale)||1));
@@ -3886,6 +3900,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           if('metalness' in mesh.material)mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
         }else mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
         mesh.userData.ownerId=ownerId;
+        mesh.userData.pstudioRenderableVisible=renderableCommand?.enabled!==false&&renderableCommand?.visible!==false;
+        mesh.castShadow=renderableCommand?.castShadow!==false&&d.type!=='plane'&&d.type!=='water';
+        mesh.receiveShadow=renderableCommand?.receiveShadow!==false;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
         const baseRotationX=d.type==='plane'?-Math.PI/2:0;
         mesh.rotation.set(baseRotationX+(Number(d.rotationX)||0),Number(d.rotationY)||0,Number(d.rotationZ)||0);
