@@ -228,6 +228,8 @@
     ultra:{fog:true,godRays:true,fogScale:1,fogSteps:24,rayScale:1,raySamples:32}
   };
   function applyVolumetricQuality(name,level=2){
+    volumetricFogPass?.resetFailure?.();
+    godRaysPass?.resetFailure?.();
     const profile=VOLUMETRIC_QUALITY[name]||VOLUMETRIC_QUALITY.balanced;
     const qualityLevel=Math.max(0,Math.min(2,Math.floor(Number(level)||0)));
     const safe=qualityLevel>0&&!memorySafetyApplied&&deviceMemoryGiB()>2;
@@ -560,7 +562,7 @@
           update(uniforms);
         };
         if(volumetricFogPass){
-          volumetricFogPass.enabled=volumetricFogEnabled&&depthPrepassReady;
+          volumetricFogPass.enabled=volumetricFogEnabled&&depthPrepassReady&&!volumetricFogPass.failed;
           if(volumetricFogPass.enabled)syncPostFXUniforms(volumetricFogPass,['uInverseProjection','uCameraWorld','uTime','uFogColor','uSunDirection','tDepth'],u=>{
             u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;
             if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);
@@ -576,7 +578,7 @@
           });
         }
         if(godRaysPass){
-          godRaysPass.enabled=godRaysEnabled;
+          godRaysPass.enabled=godRaysEnabled&&!godRaysPass.failed;
           syncPostFXUniforms(godRaysPass,['uLightPosition','uIntensity','uDecay'],u=>{
             camera.updateMatrixWorld(true);
             const sun=window.PStudioAtmosphere?.sunDirection?.(atmosphereSettings)||[.22,.88,.42];
@@ -594,6 +596,7 @@
         }
         try{
           composer.render();
+          if(volumetricFogPass?.failed){volumetricFogEnabled=false;volumetricFogPass.enabled=false;}
         }catch(postError){
           if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
           godRaysEnabled=false;godRaysPass.enabled=false;
@@ -4298,13 +4301,13 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
       trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
       cameraShake:{active:!!cameraShakeState},
-      godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,requested:godRaysRequested,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity,decay:godRaysDecay,resolutionScale:godRaysPass?.getResolutionScale?.()||0,samples:godRaysPass?.uniforms?.uSamples?.value||0},
+      godRays:{enabled:godRaysEnabled||godRaysFallbackEnabled,requested:godRaysRequested,available:!!godRaysPass,failed:!!godRaysPass?.failed,lastError:godRaysPass?.lastError||null,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity,decay:godRaysDecay,resolutionScale:godRaysPass?.getResolutionScale?.()||0,samples:godRaysPass?.uniforms?.uSamples?.value||0},
       models:modelInstances.size,
       modelPreparationPending,
       stagedTextureUploads,
       parallelShaderCompileSupported,
       frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled,manualOverride:volumetricFogManualOverride,resolutionScale:volumetricFogPass?.getResolutionScale?.()||0,steps:volumetricFogPass?.uniforms?.uSteps?.value||0}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled&&!volumetricFogPass?.failed,failed:!!volumetricFogPass?.failed,lastError:volumetricFogPass?.lastError||null,manualOverride:volumetricFogManualOverride,resolutionScale:volumetricFogPass?.getResolutionScale?.()||0,steps:volumetricFogPass?.uniforms?.uSteps?.value||0}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
