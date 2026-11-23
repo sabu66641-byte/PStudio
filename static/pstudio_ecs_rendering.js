@@ -289,6 +289,16 @@
         if (!assetName) continue;
         const existingIndex = list.findIndex(command => command.type === 'model' && command.name === assetName);
         if (existingIndex >= 0) {
+          const existing = list[existingIndex];
+          if (existing.ecsRenderableFallback === true) {
+            const objectScale = useSceneTransform && Number(object.modelScale) > 0
+              ? Number(object.modelScale) : 1;
+            existing.scale = Math.max(0.001, (Number(data.scale) || 1) * objectScale);
+            existing.rotationX = rotationX;
+            existing.rotationY = rotationY;
+            existing.rotationZ = rotationZ;
+            delete existing.ecsRenderableFallback;
+          }
           if (data.roughness >= 0 || data.metalness >= 0) {
             const material = { type: 'material' };
             if (data.roughness >= 0) material.roughness = data.roughness;

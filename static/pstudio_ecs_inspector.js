@@ -197,6 +197,7 @@
     const api = ecs();
     if (!api || typeof sceneObjects === 'undefined') return;
     api.syncSceneObjects(sceneObjects);
+    window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects);
   }
 
   function selectEntity(entityId) {

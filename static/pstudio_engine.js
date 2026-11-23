@@ -564,7 +564,7 @@
       const h = Math.max(0.05,(Number(o.h)||64)/100);
       const color = o.color || '#d1d5db';
       const draw = o.model
-        ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0}
+        ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0,ecsRenderableFallback:true}
         : o.shape === 'circle'
           ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
           : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
@@ -576,6 +576,9 @@
       if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
       objectCommands.push(draw);commands.set(o.id,objectCommands);
     }
+    window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || []);
+    window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], 0);
+    window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], 0);
     return commands;
   }
   function setViewMode(mode) {
@@ -671,7 +674,7 @@
         if(o.model&&!objectDraws.some(d=>d.type==='model')){
           const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
           const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
+          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt,ecsRenderableFallback:true});
         }
         commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
@@ -689,7 +692,7 @@
         if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
         for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
         if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
+        if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt,ecsRenderableFallback:true});
         if(list.length)commands.set(o.id,list);
       }
 
@@ -702,7 +705,22 @@
       window.PStudioECSStreaming?.sync?.(sceneObjects || []);
       window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], dt);
       window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt);
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));if(owner?.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || []);
+      for(const [ownerId,draws] of commands){
+        const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));
+        const ecs=window.PStudioECS;
+        const entity=ecs?.getEntityForSceneObject?.(String(ownerId));
+        const meshCollider=entity!==null&&entity!==undefined&&ecs?.hasComponent?.(entity,'MeshCollider')
+          ? ecs.getComponent(entity,'MeshCollider') : null;
+        const colliderEnabled=meshCollider ? meshCollider.enabled===true : owner?.collider===true;
+        if(colliderEnabled){
+          const modelDraw=draws.find(d=>d.type==='model');
+          if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){
+            const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);
+            if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});
+          }
+        }
+      }
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
       const ownersById=new Map((sceneObjects||[]).map(item=>[String(item.id),item]));
