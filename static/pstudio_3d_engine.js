@@ -296,7 +296,7 @@
     }else colorGradingEnabled=false;
     return{enabled:colorGradingEnabled,requested:!(colorGradingPass?.isIdentity?.()??(colorGradingSettings.exposure===0&&colorGradingSettings.contrast===1&&colorGradingSettings.saturation===1&&colorGradingSettings.temperature===0&&colorGradingSettings.vignette===0&&colorGradingSettings.filmGrain===0)),available:!!colorGradingPass,failed:!!colorGradingPass?.failed};
   }
-  function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(name==='cinematic')return memory<=2?'mobile':memory<6?'ultra':'cinematic';if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
+  function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(name==='cinematic')return memory<=2?'mobile':memory<=3?'balanced':memory<4?'high':memory<6?'ultra':'cinematic';if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
