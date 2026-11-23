@@ -98,8 +98,9 @@
         'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67;',
         'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43;',
         'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07;',
-        'float wx=uPStudioWaterAmplitude*(.071*.52*cos(wp1)+.137*.27*cos(wp2)+.31*.14*cos(wp3)+.49*.07*cos(wp4));',
-        'float wz=uPStudioWaterAmplitude*(.043*.52*cos(wp1)-.091*.27*cos(wp2)+.22*.14*cos(wp3)-.37*.07*cos(wp4));',
+         'float wp5=position.x*.018+position.z*.026+uPStudioWaterTime*.23;',
+        'float wx=uPStudioWaterAmplitude*(.071*.52*cos(wp1)+.137*.27*cos(wp2)+.31*.14*cos(wp3)+.49*.07*cos(wp4)+.018*.18*cos(wp5));',
+        'float wz=uPStudioWaterAmplitude*(.043*.52*cos(wp1)-.091*.27*cos(wp2)+.22*.14*cos(wp3)-.37*.07*cos(wp4)+.026*.18*cos(wp5));',
         'objectNormal=normalize(vec3(-wx,1.0,-wz));'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <begin_vertex>',[
@@ -138,6 +139,8 @@
         'float variation=.5+.5*sin(vPStudioWaterWorld.x*.043+sin(vPStudioWaterWorld.z*.037)*1.8);',
         'vec3 depthColor=mix(uPStudioWaterShallow,uPStudioWaterDeep,clamp(depth*.88+variation*.12,0.0,1.0));',
         'float ripple=sin(vPStudioWaterWorld.x*1.85+vPStudioWaterWorld.z*1.31+uPStudioWaterTime*2.0)*sin(vPStudioWaterWorld.z*1.63-vPStudioWaterWorld.x*.74-uPStudioWaterTime*1.43);',
+         'float crestFoam=smoothstep(.91,.995,.5+.5*sin(vPStudioWaterWorld.x*.31+vPStudioWaterWorld.z*.27+uPStudioWaterTime*1.22))*.11;',
+         'foamBand=max(foamBand,crestFoam);',
         'if(uPStudioWaterMode<.5){diffuseColor.rgb=mix(diffuseColor.rgb,depthColor,.68);diffuseColor.rgb*=.96+.045*ripple;diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterFoam,clamp(foamBand*.62,0.0,.62));}',
         'else{float flow=.5+.5*sin(vPStudioWaterUV.y*110.0-uPStudioWaterTime*3.5+sin(vPStudioWaterUV.x*24.0)*2.2);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.58,.88,.91),smoothstep(.74,.98,flow)*.45);}'
       ].join('\n'));
