@@ -208,7 +208,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('const width=2048,height=1024;'));
   assert.ok(renderer.includes('for(let i=0;i<2100;i++)'));
-  assert.ok(renderer.includes('const moonRadius=27'));
+  assert.ok(renderer.includes('const moonRadius=48'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
   assert.ok(renderer.includes('uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45))'));
@@ -237,6 +237,7 @@ test('editor grid adapts density and opacity at distance and disposes GridHelper
   assert.match(renderer,/const opacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
   assert.match(renderer,/function disposeGrid\(grid\)/);
   assert.match(renderer,/for\(const material of gridMaterials\(grid\)\)material\?\.dispose\?\.\(\)/);
+  assert.match(renderer,/for\(const grid of gridCache\.values\(\)\)\{gridGroup\.remove\(grid\);disposeGrid\(grid\);\}/);
 });
 
 test('editor orbit cannot rotate below the ground grid while gameplay camera keeps its full pitch range',()=>{

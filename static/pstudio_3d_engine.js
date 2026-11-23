@@ -4184,7 +4184,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     for(const mesh of meshCache.values())disposeMesh(mesh);
     meshCache.clear();
     waterMaterials.clear();
-    for(const grid of gridCache.values()){gridGroup.remove(grid);grid.geometry.dispose();grid.material.dispose();}
+    for(const grid of gridCache.values()){gridGroup.remove(grid);disposeGrid(grid);}
     gridCache.clear();
     disposeGroup(selectionGroup);
     for(const emitter of particleEmitters.values())disposeGpuParticleSystem(emitter.system);particleEmitters.clear();
