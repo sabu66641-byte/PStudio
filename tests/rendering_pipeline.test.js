@@ -382,10 +382,12 @@ test('failed model loading clears pending promises so the same model can be retr
 test('renderer exposes live memory telemetry and activates a safe graphics mode under memory pressure',()=>{
   for(const token of ['function memorySnapshot()','function sampleMemoryPressure()','pstudio-memory-snapshot','heapPressure','modelPressure','memorySafetyApplied','getMemoryStats:memorySnapshot'])assert.ok(renderer.includes(token),token);
 });
-test('low-memory devices disable hardware MSAA and receive conservative quality settings',()=>{
+test('low-memory devices disable hardware MSAA and Auto selects conservative tiers without overriding manual quality',()=>{
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
-  assert.ok(renderer.includes('if(memory<=2)return \'mobile\''));
-  assert.ok(renderer.includes('pixelRatio:0.8'));
+  assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
+  assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
+  assert.ok(renderer.includes('qualityPreset===\'auto\'?(memory<=2?1024:memory<=4?2048:4096):4096'));
+  assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
 
