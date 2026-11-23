@@ -207,7 +207,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('const width=2048,height=1024;'));
-  assert.ok(renderer.includes('for(let i=0;i<2100;i++)'));
+  assert.ok(renderer.includes('for(let i=0;i<8200;i++)'));
   assert.ok(renderer.includes('const moonRadius=48'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
@@ -215,11 +215,12 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
 });
 
 test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
-  assert.match(renderer,/Milky Way: a broad, low-contrast galactic band/);
-  assert.match(renderer,/for\(let i=0;i<2100;i\+\+\)/);
-  assert.match(renderer,/const galacticCenterY=height\*\(\.43-\.27\*\(x\/width\)\)/);
+  assert.match(renderer,/A dark, periodic starfield with a structured Milky Way/);
+  assert.match(renderer,/four seeded noise octaves/i);
+  assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
+  assert.match(renderer,/const galacticCenterY=\.315\+\.115\*Math\.sin\(angle-\.72\)\+\.035\*Math\.sin\(angle\*2\+1\.1\)/);
   assert.match(renderer,/const moonRadius=48/);
-  assert.match(renderer,/Lunar maria and crater rims/);
+  assert.match(renderer,/context\.ellipse\(moon\.x-moonRadius/);
   assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
 });
 
@@ -296,4 +297,30 @@ test('physical-sky PMREM failure activates the procedural panorama as both visib
   assert.match(renderer,/if\(!nextTarget&&nextTexture&&pmremGenerator\)/);
   assert.match(renderer,/if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
   assert.match(renderer,/else scene\.background=new T\.Color\(profile\.horizon\|\|profile\.skyMid\|\|'#79BCE0'\)/);
+});
+
+
+test('night sky uses a periodic multi-octave Milky Way field and a dense fine-star distribution',()=>{
+  assert.match(renderer,/makeNoiseGrid=\(gridWidth,gridHeight\)=>/);
+  assert.match(renderer,/sampleNoise=\(grid,u,v\)=>/);
+  assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
+  assert.match(renderer,/galaxyWidth=1024,galaxyHeight=512/);
+  assert.match(renderer,/const structure=clamp01\(/);
+  assert.match(renderer,/const dust=clamp01\(/);
+  assert.match(renderer,/globalCompositeOperation='screen'/);
+  assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
+  assert.match(renderer,/night:\[\[0,'#01040B'/);
+  assert.match(renderer,/nightStars:name==='night'\?8200:0/);
+});
+
+test('studio preset disables both painted and volumetric cloud layers',()=>{
+  const cloudStart=renderer.indexOf("if(name==='day'||name==='dusk'){");
+  const cloudEnd=renderer.indexOf('const glowRadius=',cloudStart);
+  assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
+  assert.match(renderer,/activeEnvironmentPreset='day'/);
+  assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
+  assert.match(renderer,/volumetricCloudsEnabled=!!\(profile\.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio'\)/);
+  assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
+  assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
+  assert.equal(presets.getPreset('studio').name,'studio');
 });
