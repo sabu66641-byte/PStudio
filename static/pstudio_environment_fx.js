@@ -809,6 +809,121 @@
     return pass;
   }
 
+  function createColorGradingPass(FX,Three) {
+    if(!FX?.ShaderPass||!Three?.ShaderMaterial||!Three?.PlaneGeometry||!Three?.Scene||!Three?.OrthographicCamera||!Three?.Mesh)return null;
+    const shader={
+      uniforms:{
+        tDiffuse:{value:null},
+        uExposure:{value:0},
+        uContrast:{value:1},
+        uSaturation:{value:1},
+        uTemperature:{value:0},
+        uVignette:{value:0},
+        uFilmGrain:{value:0},
+        uTime:{value:0},
+        uAspect:{value:16/9}
+      },
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse;',
+        'uniform float uExposure;uniform float uContrast;uniform float uSaturation;',
+        'uniform float uTemperature;uniform float uVignette;uniform float uFilmGrain;',
+        'uniform float uTime;uniform float uAspect;varying vec2 vUv;',
+        'float pStudioGrainHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uTime*19.19)*43758.5453);}',
+        'void main(){',
+        'vec4 source=texture2D(tDiffuse,vUv);',
+        'vec3 color=max(source.rgb*exp2(uExposure),vec3(0.0));',
+        'color=(color-vec3(.18))*uContrast+vec3(.18);',
+        'float luminance=dot(color,vec3(.2126,.7152,.0722));',
+        'color=mix(vec3(luminance),color,uSaturation);',
+        'float warmth=clamp(uTemperature,-1.0,1.0);',
+        'color.r*=1.0+.12*warmth;color.g*=1.0+.025*warmth;color.b*=1.0-.12*warmth;',
+        'vec2 vignetteUv=(vUv-.5)*vec2(uAspect,1.0);',
+        'float vignette=smoothstep(.18,.82,dot(vignetteUv,vignetteUv)*2.0);',
+        'color*=1.0-uVignette*vignette*.72;',
+        'float grain=pStudioGrainHash(gl_FragCoord.xy)-.5;',
+        'color+=vec3(grain*uFilmGrain*.035);',
+        'gl_FragColor=vec4(max(color,vec3(0.0)),source.a);',
+        '}'
+      ].join('\\n')
+    };
+    const pass=new FX.ShaderPass(shader);
+    const originalRender=pass.render.bind(pass);
+    const geometry=new Three.PlaneGeometry(2,2);
+    const fallbackCamera=new Three.OrthographicCamera(-1,1,1,-1,0,1);
+    const fallbackScene=new Three.Scene();
+    const fallbackMaterial=new Three.ShaderMaterial({
+      uniforms:{tDiffuse:{value:null}},
+      vertexShader:shader.vertexShader,
+      fragmentShader:'uniform sampler2D tDiffuse;varying vec2 vUv;void main(){gl_FragColor=texture2D(tDiffuse,vUv);}',
+      depthTest:false,depthWrite:false,transparent:false,toneMapped:false
+    });
+    fallbackScene.add(new Three.Mesh(geometry,fallbackMaterial));
+    pass.enabled=false;
+    pass.failed=false;
+    pass.lastError=null;
+    pass.resetFailure=function(){this.failed=false;this.lastError=null;};
+    pass.setSettings=function(settings={}){
+      const clamp=(value,min,max,fallback)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):fallback));
+      shader.uniforms.uExposure.value=clamp(settings.exposure,-3,3,0);
+      shader.uniforms.uContrast.value=clamp(settings.contrast,0,2,1);
+      shader.uniforms.uSaturation.value=clamp(settings.saturation,0,2,1);
+      shader.uniforms.uTemperature.value=clamp(settings.temperature,-1,1,0);
+      shader.uniforms.uVignette.value=clamp(settings.vignette,0,1,0);
+      shader.uniforms.uFilmGrain.value=clamp(settings.filmGrain,0,1,0);
+      return this.getStats();
+    };
+    pass.setTime=value=>{shader.uniforms.uTime.value=Math.max(0,Number(value)||0);};
+    pass.setSize=(width,height)=>{
+      const w=Math.max(1,Number(width)||1),h=Math.max(1,Number(height)||1);
+      shader.uniforms.uAspect.value=w/h;
+    };
+    pass.getStats=()=>({
+      exposure:shader.uniforms.uExposure.value,
+      contrast:shader.uniforms.uContrast.value,
+      saturation:shader.uniforms.uSaturation.value,
+      temperature:shader.uniforms.uTemperature.value,
+      vignette:shader.uniforms.uVignette.value,
+      filmGrain:shader.uniforms.uFilmGrain.value,
+      aspect:shader.uniforms.uAspect.value,
+      time:shader.uniforms.uTime.value,
+      failed:!!pass.failed,
+      lastError:pass.lastError
+    });
+    pass.isIdentity=()=>shader.uniforms.uExposure.value===0&&shader.uniforms.uContrast.value===1&&shader.uniforms.uSaturation.value===1&&shader.uniforms.uTemperature.value===0&&shader.uniforms.uVignette.value===0&&shader.uniforms.uFilmGrain.value===0;
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,maskActive){
+      if(!readBuffer?.texture)return;
+      const previousAutoClear=renderer.autoClear;
+      try{
+        originalRender(renderer,writeBuffer,readBuffer,delta,maskActive);
+      }catch(error){
+        this.failed=true;
+        this.lastError=String(error?.message||error);
+        this.enabled=false;
+        try{
+          renderer.autoClear=true;
+          fallbackMaterial.uniforms.tDiffuse.value=readBuffer.texture;
+          renderer.setRenderTarget(this.renderToScreen?null:writeBuffer);
+          renderer.render(fallbackScene,fallbackCamera);
+          console.warn('[PStudio] Color grading failed; the original scene frame was preserved and grading was disabled.',error);
+        }catch(fallbackError){
+          console.error('[PStudio] Color grading fallback could not composite the source frame.',fallbackError);
+          throw fallbackError;
+        }
+      }finally{
+        renderer.autoClear=previousAutoClear;
+      }
+    };
+    pass.dispose=()=>{
+      pass.material?.dispose?.();
+      fallbackMaterial.dispose?.();
+      geometry.dispose?.();
+    };
+    pass.setSettings({});
+    pass.setSize(16,9);
+    return pass;
+  }
+
   function createCameraLensPass(FX,Three) {
     if(!Three?.Vector2)return null;
     const chromatic={value:0};
@@ -1003,7 +1118,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,configureAtmosphere,createCameraLensPass,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,configureAtmosphere,createCameraLensPass,createColorGradingPass,createGodRaysPass,createVolumetricFogPass,createVolumetricCloudPass,
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
     configureToon,
     releaseObject(object){releaseOutline(object);},
