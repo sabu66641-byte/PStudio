@@ -347,3 +347,60 @@ test('streaming bridge and engine lifecycle remain integrated without moving ren
   assert.doesNotThrow(() => new Function(engine));
   assert.doesNotThrow(() => new Function(renderer));
 });
+
+test('WorldPartition and StreamingInterest edits/removals update the bridge before the next ECS System tick', () => {
+  const objects = [
+    { id: 'area', x: 0, y: 0, z: 0 },
+    { id: 'player', x: 0, y: 0, z: 0 }
+  ];
+  const runtime = createStreamingRuntime(objects);
+  const area = runtime.ecs.getEntityForSceneObject('area');
+  const player = runtime.ecs.getEntityForSceneObject('player');
+  runtime.ecs.addComponent(area, 'WorldPartition', {
+    partitionId: 'area-live', memberObjectIds: ['player'],
+    loadDistance: 300, unloadDistance: 450
+  });
+  runtime.ecs.addComponent(player, 'StreamingInterest', { priority: 1 });
+
+  snapshotAndSync(runtime);
+  assert.equal(runtime.calls.register.length, 1);
+  assert.equal(runtime.calls.interests.length, 1);
+
+  // Inspector-style setComponent must be visible to sync() without a System update.
+  runtime.ecs.setComponent(area, 'WorldPartition', {
+    partitionId: 'area-live', memberObjectIds: ['player'],
+    loadDistance: 600, unloadDistance: 800
+  });
+  runtime.ecs.setComponent(player, 'StreamingInterest', { priority: 9 });
+  runtime.streaming.sync(objects);
+  assert.equal(runtime.calls.register.length, 2);
+  assert.equal(runtime.calls.register.at(-1).config.loadDistance, 600);
+  assert.equal(runtime.calls.interests.at(-1)[0].priority, 9);
+
+  // Removing the last component must unregister immediately, even when no other
+  // active ECS component query would cause the snapshot System to run.
+  runtime.ecs.removeComponent(area, 'WorldPartition');
+  runtime.ecs.removeComponent(player, 'StreamingInterest');
+  runtime.streaming.sync(objects);
+  assert.deepEqual(runtime.calls.unregister, ['area-live']);
+  assert.deepEqual(runtime.calls.unassign, ['area', 'player']);
+  assert.equal(runtime.calls.interests.at(-1).length, 0);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.streaming.getStats())),
+    { partitions: 0, assignments: 0, interests: 0 }
+  );
+});
+
+test('destroying a Scene Object entity immediately drops its World Streaming snapshot', () => {
+  const objects = [{ id: 'region', x: 0, y: 0, z: 0 }];
+  const runtime = createStreamingRuntime(objects);
+  const entity = runtime.ecs.getEntityForSceneObject('region');
+  runtime.ecs.addComponent(entity, 'WorldPartition', { partitionId: 'destroyed-region' });
+  snapshotAndSync(runtime);
+  assert.equal(runtime.streaming.getStats().partitions, 1);
+
+  runtime.ecs.clearSceneObjects();
+  runtime.streaming.sync([]);
+  assert.deepEqual(runtime.calls.unregister, ['destroyed-region']);
+  assert.equal(runtime.streaming.getStats().partitions, 0);
+});

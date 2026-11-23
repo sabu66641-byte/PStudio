@@ -160,6 +160,67 @@
     });
   }
 
+  function refreshSnapshot(type, entity) {
+    const cache = snapshots[type];
+    if (!cache || !Number.isSafeInteger(Number(entity))) return;
+    const id = Number(entity);
+    if (
+      !ecs.hasComponent(id, type) ||
+      !ecs.hasComponent(id, 'SceneObjectRef') ||
+      !ecs.hasComponent(id, 'Transform')
+    ) {
+      cache.delete(id);
+      return;
+    }
+    const reference = ecs.getComponent(id, 'SceneObjectRef');
+    const transform = ecs.getComponent(id, 'Transform');
+    cache.set(id, {
+      ownerId: String(reference.sceneObjectId),
+      data: ecs.getComponent(id, type),
+      transform: {
+        x: finite(transform.x, 0),
+        y: finite(transform.y, 0),
+        z: finite(transform.z, 0)
+      }
+    });
+  }
+
+  function refreshAllSnapshots() {
+    for (const type of Object.keys(TYPES)) {
+      const cache = snapshots[type];
+      const activeEntities = new Set(ecs.query([type, 'SceneObjectRef', 'Transform']));
+      for (const entity of cache.keys()) {
+        if (!activeEntities.has(entity)) cache.delete(entity);
+      }
+      for (const entity of activeEntities) refreshSnapshot(type, entity);
+    }
+  }
+
+  function refreshSnapshotFromEvent(event) {
+    const detail = event?.detail || {};
+    const type = detail.type;
+    if (type === 'SceneObjectRef' || type === 'Transform') {
+      for (const componentType of Object.keys(TYPES)) {
+        refreshSnapshot(componentType, detail.entity);
+      }
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(TYPES, type)) {
+      refreshSnapshot(type, detail.entity);
+    }
+  }
+
+  function removeSnapshotFromEvent(event) {
+    const detail = event?.detail || {};
+    if (detail.type === 'SceneObjectRef' || detail.type === 'Transform') {
+      for (const type of Object.keys(TYPES)) snapshots[type].delete(detail.entity);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(TYPES, detail.type)) {
+      snapshots[detail.type].delete(detail.entity);
+    }
+  }
+
   function scenePosition(object, transform) {
     return {
       x: (finite(transform?.x, object?.x) + (finite(object?.w, 64) / 2) - 480) / 100,
@@ -312,6 +373,17 @@
   registerComponents();
   registerSnapshotSystem(TYPES.WorldPartition, 'world.partition.snapshot', 'World Partition Snapshot');
   registerSnapshotSystem(TYPES.StreamingInterest, 'world.streaming-interest.snapshot', 'Streaming Interest Snapshot');
+
+  // Component edits can happen in the Inspector before the next System tick.
+  // Keep the bridge cache authoritative across add/update/remove and Scene Object destruction.
+  ecs.on('component-added', refreshSnapshotFromEvent);
+  ecs.on('component-updated', refreshSnapshotFromEvent);
+  ecs.on('component-removed', removeSnapshotFromEvent);
+  ecs.on('entity-destroyed', event => {
+    const entity = event?.detail?.entity;
+    for (const type of Object.keys(TYPES)) snapshots[type].delete(entity);
+  });
+  refreshAllSnapshots();
 
   window.PStudioECSStreaming = Object.freeze({
     version: '1.0.0',
