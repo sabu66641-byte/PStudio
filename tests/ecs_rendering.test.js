@@ -150,7 +150,8 @@ test('engine and renderer consume ECS rendering commands without taking resource
   for (const token of [
     'window.PStudioECSRendering?.buildCommands?.(commands,sceneObjects||[],1/60)',
     "window.PStudioECSRendering?.isVisible?.(id)!==false",
-    'Number(renderState?.activeCameras)>0'
+    'Number(renderState?.activeCameras)>0',
+    "Array.isArray(object.ecsComponents)&&object.ecsComponents.some(entry=>['Camera','Light','Animation'].includes(entry?.type)&&entry.data?.enabled!==false)"
   ]) assert.ok(engine.includes(token), token);
   for (const token of [
     "d.componentKey?String(d.componentKey):commandIndex",
