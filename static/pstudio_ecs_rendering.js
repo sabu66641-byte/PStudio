@@ -276,10 +276,11 @@
         y: Number(data.positionY) || 0,
         z: Number(data.positionZ) || 0
       };
-      const rotationSource = useSceneTransform ? object : data;
-      const rotationX = (Number(rotationSource.rotationX) || 0) * Math.PI / 180;
-      const rotationY = (Number(rotationSource.rotationY) || 0) * Math.PI / 180;
-      const rotationZ = (Number(rotationSource.rotationZ) || 0) * Math.PI / 180;
+      // Scene Object rotation is the base transform; Renderable rotation is a local offset.
+      // When detached from the Scene Transform, Renderable rotation is the full rotation.
+      const rotationX = ((useSceneTransform ? Number(object.rotationX) || 0 : 0) + (Number(data.rotationX) || 0)) * Math.PI / 180;
+      const rotationY = ((useSceneTransform ? Number(object.rotationY) || 0 : 0) + (Number(data.rotationY) || 0)) * Math.PI / 180;
+      const rotationZ = ((useSceneTransform ? Number(object.rotationZ) || 0 : 0) + (Number(data.rotationZ) || 0)) * Math.PI / 180;
       const list = ensureList(commands, entry.ownerId);
       let drawCommand = null;
 

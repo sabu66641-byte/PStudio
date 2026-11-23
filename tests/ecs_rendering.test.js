@@ -218,3 +218,17 @@ test('Renderable uses Scene Object rotation/model scale and emits material befor
   assert.equal(list[modelIndex].rotationY, 45 * Math.PI / 180);
   assert.equal(list[modelIndex].rotationZ, -30 * Math.PI / 180);
 });
+
+test('Renderable rotation is a local offset added to Scene Object rotation', () => {
+  const { rendering, objects } = createRenderingRuntime();
+  const player = objects.find(object => object.id === 'player');
+  player.rotationY = 30;
+  rendering.attachRenderable('player', {
+    kind: 'model', assetName: 'hero.glb',
+    useSceneTransform: true, rotationY: 60
+  });
+  const commands = new Map();
+  rendering.collectCommands(commands, objects, 1 / 60);
+  const model = commands.get('player').find(item => item.type === 'model');
+  assert.equal(model.rotationY, Math.PI / 2);
+});
