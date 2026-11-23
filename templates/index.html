@@ -1100,7 +1100,7 @@ async function renameProjectFile(oldName){
  const next=validEntryName(entered,ext);
  if(!next||next===oldName)return;if(projectFiles[next]){toast('同じ名前のファイルが既にあります');return;}
  projectFiles[next]=file;delete projectFiles[oldName];
- sceneObjects.forEach(o=>{if(o.script===oldName)o.script=next;});
+ window.PStudioECSScene?.renameScriptFile?.(oldName,next,sceneObjects);
  if(activeProjectFile===oldName)activeProjectFile=next;
  persistProject();renderProjectTree();openProjectFile(next);toast('Renamed: '+next);
 }
@@ -1109,7 +1109,7 @@ async function deleteProjectFile(name){
  if(file.type==='ps'&&Object.values(projectFiles).filter(f=>f.type==='ps').length<=1){toast('最後のScriptファイルは削除できません');return;}
  if(!await showPStudioConfirm("「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。","削除"))return;
  if(activeProjectFile===name&&file.type==='ps'){file.content=codeEditor.value;isDirty=false;document.getElementById('dirty-dot').classList.remove('dirty');}
- delete projectFiles[name];sceneObjects.forEach(o=>{if(o.script===name)o.script='';});
+ delete projectFiles[name];window.PStudioECSScene?.clearScriptFile?.(name,sceneObjects);
  if(activeProjectFile===name){
   const next=Object.keys(projectFiles).find(k=>projectFiles[k].type==='ps')||Object.keys(projectFiles)[0];
   if(next)activeProjectFile=next;
@@ -1137,8 +1137,8 @@ async function renameProjectAsset(oldName){
    window.PStudio3D?.invalidateAsset?.(oldName);window.PStudio3D?.invalidateAsset?.(next);
   }
   asset.name=next;
-  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});imageCache.delete(oldName);}
-  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===oldName)o.model=next;});
+  if(asset.kind==='image'){window.PStudioECSScene?.renameSpriteAsset?.(oldName,next,sceneObjects);imageCache.delete(oldName);}
+  if(asset.kind==='model')window.PStudioECSMaterials?.renameRenderableAsset?.(oldName,next,sceneObjects);
   for(const key of Object.keys(projectFiles)){
    if(projectFiles[key].type==='ps')projectFiles[key].content=replaceQuotedAssetReference(projectFiles[key].content,oldName,next);
   }
@@ -1150,14 +1150,14 @@ async function deleteProjectAsset(name){
  const asset=projectAssets.find(a=>a.name===name);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
- const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>o.model===name).length:0;
+ const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>getSceneRenderableAsset(o)===name).length:0;
  const warning=(refs||sceneRefs)?'\\n\\n'+refs+'個のScriptと'+sceneRefs+'個のScene Objectがこのモデルを参照しています。Scene Object側の参照は削除後に解除されます。':'';
  if(!await showPStudioConfirm("アセット「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。"+((refs||sceneRefs)?"\n\n"+refs+"個のScriptと"+sceneRefs+"個のScene Objectがこのモデルを参照しています。削除後、Scene Object側の参照は解除されます。":""),"削除"))return;
  try{
   if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
   projectAssets=projectAssets.filter(a=>a.name!==name);
-  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});imageCache.delete(name);}
-  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===name)o.model='';});
+  if(asset.kind==='image'){window.PStudioECSScene?.renameSpriteAsset?.(name,'',sceneObjects);imageCache.delete(name);}
+  if(asset.kind==='model')window.PStudioECSMaterials?.renameRenderableAsset?.(name,'',sceneObjects);
   persistProject();renderProjectTree();renderGamePreview();if(asset.kind==='model'&&workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Deleted asset: '+name);
  }catch(error){toast('Delete failed: '+error.message);}
 }
@@ -1435,16 +1435,14 @@ async function importAssets(files){
  else toast('インポートできるアセットはありませんでした');
 }
 function setupAssetDrop(){const zone=document.getElementById('asset-drop');if(!zone)return;zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');importAssets(e.dataTransfer.files)})}
-function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const current=selectedObject()?.sprite||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=selectedObject()?.script||''}}
+function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const selected=selectedObject();const current=getSceneSpriteRenderer(selected)?.spriteAsset||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=getSceneScriptFile(selected)||''}}
 function selectedObject(){return sceneObjects.find(o=>o.id===selectedObjectId)}
 function setToggleState(id,enabled){const badge=document.getElementById(id);if(!badge)return;const active=!!enabled;badge.textContent=active?'ON':'OFF';badge.classList.toggle('is-on',active);badge.dataset.state=active?'on':'off';}
-const ecsMaterialsMigratedScenes = new WeakSet();
 function syncEcsSceneMaterials(){
  if(!Array.isArray(sceneObjects)||!window.PStudioECS)return;
- if(ecsMaterialsMigratedScenes.has(sceneObjects))return;
  window.PStudioECS.syncSceneObjects(sceneObjects);
  window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects);
- ecsMaterialsMigratedScenes.add(sceneObjects);
+ window.PStudioECSScene?.syncSceneObjects?.(sceneObjects);
 }
 function removeSceneComponent(object,type){
  const ecs=window.PStudioECS,entity=ensureEcsSceneObject(object);
@@ -1463,6 +1461,16 @@ function removeSceneComponent(object,type){
   toast(error?.message||'ECS Componentを削除できませんでした。');return false;
  }
 }
+function getSceneScriptFile(object){return object?window.PStudioECSScene?.getScriptFile?.(object.id,sceneObjects)||'':'';}
+function setSceneScriptFile(object,fileName){return !!object&&!!window.PStudioECSScene?.setScriptFile?.(object.id,fileName,sceneObjects);}
+function getSceneSpriteRenderer(object){return object?window.PStudioECSScene?.getSpriteRenderer?.(object.id,sceneObjects)||null:null;}
+function setSceneSpriteRenderer(object,config){return !!object&&!!window.PStudioECSScene?.setSpriteRenderer?.(object.id,config,sceneObjects);}
+function getSceneRenderableAsset(object){return object?window.PStudioECSMaterials?.getRenderableAsset?.(object.id,sceneObjects)||'':'';}
+function setSceneRenderableAsset(object,asset){return !!object&&!!window.PStudioECSMaterials?.setRenderableAsset?.(object.id,asset,sceneObjects);}
+function getSceneCollider2D(object){return !!object&&window.PStudioECSScene?.getCollider2D?.(object.id,sceneObjects)===true;}
+function setSceneCollider2D(object,enabled){return !!object&&!!window.PStudioECSScene?.setCollider2D?.(object.id,!!enabled,sceneObjects);}
+function isSceneObjectManipulationEnabled(object){return !!object&&(window.PStudioECSScene?.isManipulationEnabled?.(object.id,sceneObjects)??(object.manipulationEnabled!==false));}
+function setSceneObjectManipulationEnabled(object,enabled){return !!object&&!!window.PStudioECSScene?.setManipulationEnabled?.(object.id,!!enabled,sceneObjects);}
 function ensureEcsSceneObject(object){
  if(!object||object.id===undefined||object.id===null)return null;
  syncEcsSceneMaterials();
@@ -1517,19 +1525,27 @@ function syncObjectToggleStates(object){
  setToggleState('obj-ssao-state',getScenePostFX(object)?.ssao);
  setToggleState('obj-particle-enabled-state',getSceneParticleEmitter(object)?.enabled);
  const button=document.getElementById('obj-manipulation-toggle');
- if(button){const enabled=!!object&&object.manipulationEnabled!==false;button.disabled=!object;button.textContent='Object manipulation: '+(enabled?'ON':'OFF');button.classList.toggle('is-on',enabled);button.setAttribute('aria-pressed',String(enabled));}
+ if(button){const enabled=!!object&&isSceneObjectManipulationEnabled(object);button.disabled=!object;button.textContent='Object manipulation: '+(enabled?'ON':'OFF');button.classList.toggle('is-on',enabled);button.setAttribute('aria-pressed',String(enabled));}
 }
 function toggleSelectedManipulation(){
  const object=selectedObject();if(!object)return false;
- object.manipulationEnabled=object.manipulationEnabled===false;
- persistProject();syncObjectToggleStates(object);
- toast('Object manipulation: '+(object.manipulationEnabled?'ON':'OFF'));
- return object.manipulationEnabled;
+ const enabled=!isSceneObjectManipulationEnabled(object);
+ if(!setSceneObjectManipulationEnabled(object,enabled))return false;
+ syncObjectToggleStates(object);
+ toast('Object manipulation: '+(enabled?'ON':'OFF'));
+ return enabled;
 }
 async function deleteSelectedObject(){const o=selectedObject();if(!o)return;if(window.PStudioEngine?.isRunning()){toast('Stop the game before deleting an object');return}if(!await showPStudioConfirm("「"+o.name+"」を削除しますか？","これを削除すると、シーン内のオブジェクト設定や関連データが失われます。","削除"))return;sceneObjects=sceneObjects.filter(item=>item.id!==o.id);selectedObjectId=null;selectSceneObject(null);persistProject();renderGamePreview();toast('Object deleted')}
 const DEFAULT_SHADER_FRAGMENT="uniform vec3 uColor;\nvarying vec2 vUv;\nvoid main() {\n    vec3 color = uColor;\n    float bands = step(0.5, fract(vUv.x * 8.0));\n    color *= mix(0.72, 1.0, bands);\n    gl_FragColor = vec4(color, 1.0);\n}";
-function selectSceneObject(id){selectedObjectId=id;syncEcsSceneMaterials();window.PStudio3D?.setSelected?.(id);const o=selectedObject();document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;const shaderSection=document.getElementById('shader-editor-section');if(shaderSection)shaderSection.hidden=!o||!!o.model;const shaderInput=document.getElementById('shader-fragment');if(shaderInput)shaderInput.value=getSceneShaderFragment(o)||DEFAULT_SHADER_FRAGMENT;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-z','z'],['obj-rotation-x','rotationX'],['obj-rotation-y','rotationY'],['obj-rotation-z','rotationZ'],['obj-w','w'],['obj-h','h']])document.getElementById(field).value=o[key]??0;const modelSettings=document.getElementById('obj-model-settings');if(modelSettings){modelSettings.hidden=!o.model;if(o.model){document.getElementById('obj-model-name').value=o.model;document.getElementById('obj-model-scale').value=getSceneRenderableScale(o)||1;const mat=(getSceneMaterialOverrides(o)||[])[0]||{name:'*',roughness:0.7,metalness:0,color:'#d1d5db'};document.getElementById('obj-model-material-name').value=mat.name;document.getElementById('obj-model-material-roughness').value=mat.roughness;document.getElementById('obj-model-material-metalness').value=mat.metalness;document.getElementById('obj-model-material-color').value=mat.color||'#d1d5db';document.getElementById('obj-model-double-side').checked=!!mat.doubleSide;document.getElementById('obj-model-recompute-normals').checked=!!mat.recomputeNormals;document.getElementById('obj-model-material-emissive').value=mat.emissive||'#000000';document.getElementById('obj-model-material-emissive-intensity').value=mat.emissiveIntensity??0;const toon=getSceneToonMaterial(o)||mat.toon||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}}if(!o.model){const toon=getSceneToonMaterial(o)||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}document.getElementById('obj-collider').checked=!!getSceneMeshCollider(o);const fx=getScenePostFX(o)||{};document.getElementById('obj-bloom').checked=!!fx.bloom;document.getElementById('obj-ssao').checked=!!fx.ssao;syncObjectToggleStates(o);document.getElementById('obj-postfx-strength').value=fx.strength??0.45;const pe=getSceneParticleEmitter(o)||{};document.getElementById('obj-particle-enabled').checked=!!pe.enabled;document.getElementById('obj-particle-rate').value=pe.rate??12;document.getElementById('obj-particle-color').value=pe.color||'#ffffff';document.getElementById('obj-particle-speed').value=pe.speed??2;document.getElementById('obj-particle-lifetime').value=pe.lifetime??1;document.getElementById('obj-particle-max').value=pe.maxCount??200;refreshInspectorAssetOptions()}syncObjectToggleStates(o);renderGamePreview()}
-window.PStudioSceneInteraction={select:(id)=>selectSceneObject(id),isManipulationEnabled:(id)=>sceneObjects.find(item=>item.id===id)?.manipulationEnabled!==false,toggleManipulation:(id)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return false;o.manipulationEnabled=o.manipulationEnabled===false;persistProject();syncObjectToggleStates(o);toast('Object manipulation: '+(o.manipulationEnabled?'ON':'OFF'));return o.manipulationEnabled;},move:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=Number(x)||0;o.y=Number(y)||0;o.z=Number(z)||0;persistProject();},moveWorld:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=(Number(x)||0)*100+480-(Number(o.w)||64)/2;o.y=270-(Number(y)||0)*100-(Number(o.h)||64)/2;o.z=(Number(z)||0)*100;persistProject();}};
+function selectSceneObject(id){selectedObjectId=id;syncEcsSceneMaterials();window.PStudio3D?.setSelected?.(id);const o=selectedObject();const renderableAsset=getSceneRenderableAsset(o);const spriteConfig=getSceneSpriteRenderer(o);document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;const shaderSection=document.getElementById('shader-editor-section');if(shaderSection)shaderSection.hidden=!o||!!renderableAsset;const shaderInput=document.getElementById('shader-fragment');if(shaderInput)shaderInput.value=getSceneShaderFragment(o)||DEFAULT_SHADER_FRAGMENT;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-z','z'],['obj-rotation-x','rotationX'],['obj-rotation-y','rotationY'],['obj-rotation-z','rotationZ'],['obj-w','width'],['obj-h','height']])document.getElementById(field).value=(key==='width'||key==='height')?(spriteConfig?.[key]??64):(o[key]??0);const modelSettings=document.getElementById('obj-model-settings');if(modelSettings){modelSettings.hidden=!renderableAsset;if(renderableAsset){document.getElementById('obj-model-name').value=renderableAsset;document.getElementById('obj-model-scale').value=getSceneRenderableScale(o)||1;const mat=(getSceneMaterialOverrides(o)||[])[0]||{name:'*',roughness:0.7,metalness:0,color:'#d1d5db'};document.getElementById('obj-model-material-name').value=mat.name;document.getElementById('obj-model-material-roughness').value=mat.roughness;document.getElementById('obj-model-material-metalness').value=mat.metalness;document.getElementById('obj-model-material-color').value=mat.color||'#d1d5db';document.getElementById('obj-model-double-side').checked=!!mat.doubleSide;document.getElementById('obj-model-recompute-normals').checked=!!mat.recomputeNormals;document.getElementById('obj-model-material-emissive').value=mat.emissive||'#000000';document.getElementById('obj-model-material-emissive-intensity').value=mat.emissiveIntensity??0;const toon=getSceneToonMaterial(o)||mat.toon||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}}if(!o.model){const toon=getSceneToonMaterial(o)||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}document.getElementById('obj-collider').checked=!!getSceneMeshCollider(o);const fx=getScenePostFX(o)||{};document.getElementById('obj-bloom').checked=!!fx.bloom;document.getElementById('obj-ssao').checked=!!fx.ssao;syncObjectToggleStates(o);document.getElementById('obj-postfx-strength').value=fx.strength??0.45;const pe=getSceneParticleEmitter(o)||{};document.getElementById('obj-particle-enabled').checked=!!pe.enabled;document.getElementById('obj-particle-rate').value=pe.rate??12;document.getElementById('obj-particle-color').value=pe.color||'#ffffff';document.getElementById('obj-particle-speed').value=pe.speed??2;document.getElementById('obj-particle-lifetime').value=pe.lifetime??1;document.getElementById('obj-particle-max').value=pe.maxCount??200;refreshInspectorAssetOptions()}syncObjectToggleStates(o);renderGamePreview()}
+window.PStudioSceneInteraction={
+ select:(id)=>selectSceneObject(id),
+ isManipulationEnabled:(id)=>isSceneObjectManipulationEnabled(sceneObjects.find(item=>item.id===id)),
+ toggleManipulation:(id)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return false;const enabled=!isSceneObjectManipulationEnabled(object);if(!setSceneObjectManipulationEnabled(object,enabled))return false;syncObjectToggleStates(object);toast('Object manipulation: '+(enabled?'ON':'OFF'));return enabled;},
+ move:(id,x,y,z)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return;object.x=Number(x)||0;object.y=Number(y)||0;object.z=Number(z)||0;persistProject();},
+ moveWorld:(id,x,y,z)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return;const size=getSceneSpriteRenderer(object)||{width:64,height:64};object.x=(Number(x)||0)*100+480-size.width/2;object.y=270-(Number(y)||0)*100-size.height/2;object.z=(Number(z)||0)*100;persistProject();}
+};
+function applySelectedShaderGraph()};
 function applySelectedShaderGraph(){const mode=document.getElementById('shader-node-mode')?.value||'solid';const source={"solid":"uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}","stripes":"uniform vec3 uColor; varying vec2 vUv; void main(){float s=step(0.5,fract(vUv.x*12.0));gl_FragColor=vec4(uColor*mix(0.55,1.0,s),1.0);}","checker":"uniform vec3 uColor; varying vec2 vUv; void main(){float c=mod(floor(vUv.x*8.0)+floor(vUv.y*8.0),2.0);gl_FragColor=vec4(uColor*mix(0.45,1.0,c),1.0);}","radial":"uniform vec3 uColor; varying vec2 vUv; void main(){float d=length(vUv-vec2(0.5));gl_FragColor=vec4(uColor*mix(1.0,0.25,smoothstep(0.05,0.65,d)),1.0);}","glow":"uniform vec3 uColor; varying vec2 vUv; void main(){float g=1.0-smoothstep(0.0,0.7,length(vUv-vec2(0.5)));gl_FragColor=vec4(uColor*(0.35+g*1.8),1.0);}"};const input=document.getElementById('shader-fragment');if(input)input.value=source[mode]||source.solid;applySelectedShader();}
 function applySelectedToonMaterial(){const o=selectedObject();if(!o)return;const toon={enabled:!!document.getElementById('obj-model-toon-enabled')?.checked,shadowColor:document.getElementById('obj-model-toon-shadow')?.value||'#46516f',midColor:document.getElementById('obj-model-toon-mid')?.value||'#9eafd0',highlightColor:document.getElementById('obj-model-toon-highlight')?.value||'#ffffff',shadowThreshold:Number(document.getElementById('obj-model-toon-shadow-threshold')?.value??0.32),highlightThreshold:Number(document.getElementById('obj-model-toon-highlight-threshold')?.value??0.68),rimColor:document.getElementById('obj-model-toon-rim-color')?.value||'#b8dcff',rimIntensity:Number(document.getElementById('obj-model-toon-rim-intensity')?.value??0.42),rimPower:Number(document.getElementById('obj-model-toon-rim-power')?.value??2.6),outlineColor:document.getElementById('obj-model-toon-outline-color')?.value||'#182235',outlineWidth:Number(document.getElementById('obj-model-toon-outline-width')?.value??0.12),sssColor:document.getElementById('obj-model-toon-sss-color')?.value||'#f0a5a0',sssIntensity:Number(document.getElementById('obj-model-toon-sss-intensity')?.value??0.12),windStrength:Number(document.getElementById('obj-model-wind-strength')?.value??0),windSpeed:Number(document.getElementById('obj-model-wind-speed')?.value??1)};if(!setSceneToonMaterial(o,toon))return;window.setPStudioViewMode?.('3d');toast(toon.enabled?'NPR Toon material applied':'GPU wind settings applied');}
 function applySelectedModelMaterial(){const o=selectedObject();if(!o?.model)return;const name=document.getElementById('obj-model-material-name')?.value.trim()||'*';const toon={enabled:!!document.getElementById('obj-model-toon-enabled')?.checked,shadowColor:document.getElementById('obj-model-toon-shadow')?.value||'#46516f',midColor:document.getElementById('obj-model-toon-mid')?.value||'#9eafd0',highlightColor:document.getElementById('obj-model-toon-highlight')?.value||'#ffffff',shadowThreshold:Number(document.getElementById('obj-model-toon-shadow-threshold')?.value??0.32),highlightThreshold:Number(document.getElementById('obj-model-toon-highlight-threshold')?.value??0.68),rimColor:document.getElementById('obj-model-toon-rim-color')?.value||'#b8dcff',rimIntensity:Number(document.getElementById('obj-model-toon-rim-intensity')?.value??0.42),rimPower:Number(document.getElementById('obj-model-toon-rim-power')?.value??2.6),outlineColor:document.getElementById('obj-model-toon-outline-color')?.value||'#182235',outlineWidth:Number(document.getElementById('obj-model-toon-outline-width')?.value??0.12),sssColor:document.getElementById('obj-model-toon-sss-color')?.value||'#f0a5a0',sssIntensity:Number(document.getElementById('obj-model-toon-sss-intensity')?.value??0.12),windStrength:Number(document.getElementById('obj-model-wind-strength')?.value??0),windSpeed:Number(document.getElementById('obj-model-wind-speed')?.value??1)};const prior=(getSceneMaterialOverrides(o)||[]).find(item=>item.name===name);const toonConfigured=toon.enabled||toon.windStrength>0||!!prior?.toon;const entry={name,roughness:Number(document.getElementById('obj-model-material-roughness')?.value)||0,metalness:Number(document.getElementById('obj-model-material-metalness')?.value)||0,color:document.getElementById('obj-model-material-color')?.value||'#ffffff',doubleSide:!!document.getElementById('obj-model-double-side')?.checked,recomputeNormals:!!document.getElementById('obj-model-recompute-normals')?.checked,emissive:document.getElementById('obj-model-material-emissive')?.value||'#000000',emissiveIntensity:Math.max(0,Math.min(8,Number(document.getElementById('obj-model-material-emissive-intensity')?.value)||0)),toon:toonConfigured?toon:null};const overrides=(getSceneMaterialOverrides(o)||[]).filter(x=>x.name!==name);overrides.push(entry);if(!setSceneMaterialOverrides(o,overrides))return;window.setPStudioViewMode?.('3d');toast('GLB material and NPR overrides applied');}
@@ -1538,26 +1554,36 @@ function updateSelectedParticleEmitter(){const o=selectedObject();if(!o)return;i
 function applySelectedShader(){const o=selectedObject();if(!o)return;if(o.model){toast('Custom fragment shaders currently apply only to primitive 3D geometry');return;}const input=document.getElementById('shader-fragment');const source=String(input?.value||'');if(source.length>12000){toast('Shader source must be 12 KB or less');return;}if(!setSceneShaderFragment(o,source.trim()||DEFAULT_SHADER_FRAGMENT))return;if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader applied');}
 function resetSelectedShader(){const o=selectedObject();if(!o)return;removeSceneShaderFragment(o);const input=document.getElementById('shader-fragment');if(input)input.value=DEFAULT_SHADER_FRAGMENT;persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader reset');}
 function updateSelectedObject(key,value){
- const o=selectedObject();if(!o)return;
+ const object=selectedObject();if(!object)return;
  if(key==='modelScale'){
-  const scale=Math.max(0.001,Number(value)||1);
-  if(!setSceneRenderableScale(o,scale))return;
+  if(!setSceneRenderableScale(object,Math.max(0.001,Number(value)||1)))return;
  }else if(key==='collider'){
-  if(!setSceneMeshCollider(o,!!value))return;
-  syncObjectToggleStates(o);
+  if(!setSceneMeshCollider(object,!!value)||!setSceneCollider2D(object,!!value))return;
+  syncObjectToggleStates(object);
+ }else if(key==='script'){
+  if(!setSceneScriptFile(object,value))return;
+ }else if(key==='sprite'||key==='color'||key==='shape'||key==='w'||key==='h'){
+  const current=getSceneSpriteRenderer(object)||{enabled:true,spriteAsset:'',width:64,height:64,color:'#d1d5db',shape:'rect',layer:0,sortOrder:0};
+  const config={...current};
+  if(key==='sprite')config.spriteAsset=String(value||'');
+  else if(key==='color')config.color=String(value||'#d1d5db');
+  else if(key==='shape')config.shape=value==='circle'?'circle':'rect';
+  else if(key==='w')config.width=Math.max(1,Number(value)||64);
+  else if(key==='h')config.height=Math.max(1,Number(value)||64);
+  if(!setSceneSpriteRenderer(object,config))return;
  }else{
-  o[key]=['x','y','z','rotationX','rotationY','rotationZ','w','h'].includes(key)?Number(value):value;
-  if(['w','h'].includes(key)&&o[key]<1)o[key]=1;
+  object[key]=['x','y','z','rotationX','rotationY','rotationZ'].includes(key)?Number(value):value;
+  persistProject();
  }
- persistProject();renderGamePreview();
- if(o.model&&workspaceView==='game')window.setPStudioViewMode?.('3d');
+ renderGamePreview();
+ if(getSceneRenderableAsset(object)&&workspaceView==='game')window.setPStudioViewMode?.('3d');
 }
 function serializeScene(){return JSON.stringify({width:960,height:540,objects:sceneObjects,environment:normalizeSceneEnvironment(sceneEnvironment)},null,2)}
 function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects;sceneEnvironment=normalizeSceneEnvironment(data.environment)}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}syncSceneEnvironmentPresetButtons();selectSceneObject(selectedObjectId)}
 function renderGamePreview(){const canvas=document.getElementById('game-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}for(const o of sceneObjects){const asset=projectAssets.find(a=>a.name===o.sprite&&a.kind==='image');if(asset){let img=imageCache.get(asset.name);if(!img){img=new Image();img.onload=()=>renderGamePreview();img.src=asset.data;imageCache.set(asset.name,img)}if(img.complete&&img.naturalWidth)ctx.drawImage(img,o.x,o.y,o.w,o.h)}else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h)}if(o.id===selectedObjectId){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(o.x-4,o.y-4,o.w+8,o.h+8)}ctx.setLineDash([])}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name,o.x,o.y-10)}document.getElementById('game-status').textContent=`${sceneObjects.length} objects · 960 × 540 · Local preview`}
 const imageCache=new Map();
 
-function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false,ecsComponents:[]});selectedObjectId=id;selectSceneObject(id);persistProject()}
+function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false,manipulationEnabled:true,ecsComponents:[]});selectedObjectId=id;selectSceneObject(id);persistProject()}
 function addModelToScene(assetName){
  const asset=projectAssets.find(a=>a.name===assetName&&(a.kind==='model'||/\.(?:glb|gltf)$/i.test(a.name)));
  if(!asset){toast('アセットが見つかりません。再インポートしてください');return;}
@@ -1575,7 +1601,7 @@ function addModelToScene(assetName){
 }
 function frameSelectedModel(){
  const object=(sceneObjects||[]).find(item=>String(item.id)===String(selectedObjectId));
- if(!object?.model){toast('3Dモデルを選択してください');return;}
+ if(!getSceneRenderableAsset(object)){toast('3Dモデルを選択してください');return;}
  window.PStudioEngine?.setViewMode?.('3d');
  const result=window.PStudio3D?.frameObject?.(object.id);
  if(result?.pending){toast('モデルの準備ができ次第、選択モデルへカメラを合わせます');return;}
