@@ -54,8 +54,8 @@ class ExampleProjectRegressionTests(unittest.TestCase):
         self.assertEqual(app.GAME_FUNCTIONS.get("set_atmosphere"), 4)
         script = {
             "atmosphere.ps": (
-                "func start()\\n"
-                "    set_atmosphere(45, 135, 2.4, 0.35)\\n"
+                "func start()\n"
+                "    set_atmosphere(45, 135, 2.4, 0.35)\n"
             )
         }
         parsed = self.validate_game_scripts(script)
@@ -65,7 +65,7 @@ class ExampleProjectRegressionTests(unittest.TestCase):
     def test_atmosphere_api_rejects_wrong_argument_count(self):
         response = self.client.post(
             "/game/prepare",
-            json={"scripts": {"bad_atmosphere.ps": "func start()\\n    set_atmosphere(45, 135, 2.4)\\n"}},
+            json={"scripts": {"bad_atmosphere.ps": "func start()\n    set_atmosphere(45, 135, 2.4)\n"}},
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("set_atmosphere", response.get_json()["error"])
