@@ -798,8 +798,40 @@
     if(typeof renderGamePreview==='function')renderGamePreview();
     return true;
   }
+  function updatePStudioQualityControl(){
+    const select=document.getElementById('render-quality-select');
+    const activeOutput=document.getElementById('render-quality-active');
+    const state=window.PStudio3D?.getQualityPreset?.();
+    if(!select||!activeOutput||!state)return;
+    if(select.value!==state.requested)select.value=state.requested;
+    const activeOption=[...select.options].find(option=>option.value===state.active);
+    const activeLabel=activeOption?.textContent?.trim()||String(state.active).toUpperCase();
+    const safetyLabels={ja:'· 保護中',en:'· SAFE',zh:'· 保护中',es:'· PROTEGIDO',fr:'· PROTÉGÉ'};
+    const safetyLabel=safetyLabels[String(document.documentElement.lang||'en').split('-')[0]]||'· SAFE';
+    activeOutput.textContent=state.safetyLimited
+      ? activeLabel+' '+safetyLabel
+      : state.requested==='auto'?'→ '+activeLabel:activeLabel;
+    activeOutput.title=state.safetyLimited
+      ? 'Runtime memory protection is temporarily reducing expensive effects.'
+      : state.requested==='auto'
+        ? 'Automatically selected tier; adaptive quality monitors frame time.'
+        : 'Manual quality preset. Hardware texture limits and emergency memory protection remain active.';
+    activeOutput.dataset.requested=state.requested;
+    activeOutput.dataset.active=state.active;
+    activeOutput.dataset.safetyLimited=state.safetyLimited?'true':'false';
+  }
+  window.updatePStudioQualityControl=updatePStudioQualityControl;
+  window.setPStudioQualityPreset=function(name){
+    const allowed=['auto','mobile','balanced','high','ultra'];
+    const requested=allowed.includes(String(name))?String(name):'auto';
+    const result=window.PStudio3D?.setQualityPreset?.(requested);
+    updatePStudioQualityControl();
+    return result||{preset:requested,available:false};
+  };
+  window.addEventListener('pstudio-quality-state-changed',updatePStudioQualityControl);
   window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,refreshSceneView,version:'3.1.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
   updateViewModeButtons();
+  updatePStudioQualityControl();
 })();
