@@ -66,6 +66,7 @@
   let environmentTexture = null;
   let environmentSignature = '';
   let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='',scenePresetUsesPhysicalSky=false;
+  let activeEnvironmentPreset='day';
   let physicalSky=null;
   const meshCache = new Map();
   const gridCache = new Map();
@@ -254,7 +255,7 @@
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
       for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize);light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
-      volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
+      volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
       volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
@@ -272,7 +273,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effects&&!!base.contactShadows):contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effects&&!!base.contactShadows):contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
     const mapSize=resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel]),lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
@@ -3291,7 +3292,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const palettes={
       day:[[0,'#174879'],[.12,'#246BA8'],[.3,'#4C95C9'],[.43,'#82B8D8'],[.485,'#C4DDE6'],[.51,'#DCE5E2'],[.55,'#879998'],[.68,'#4B595A'],[1,'#313B3D']],
       dusk:[[0,'#151B43'],[.14,'#332653'],[.29,'#71345F'],[.39,'#B74E5A'],[.465,'#ED7957'],[.495,'#FFB46D'],[.525,'#D27C65'],[.6,'#584052'],[1,'#1A2032']],
-      night:[[0,'#020611'],[.16,'#050D20'],[.32,'#09162B'],[.43,'#142641'],[.49,'#1A2D45'],[.515,'#1C2A3D'],[.57,'#0B1423'],[1,'#02050B']],
+      night:[[0,'#01040B'],[.16,'#030918'],[.32,'#071326'],[.43,'#101C30'],[.49,'#142137'],[.515,'#142033'],[.57,'#090F1C'],[1,'#010309']],
       studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
     };
     const gradient=context.createLinearGradient(0,0,0,height);
@@ -3308,64 +3309,112 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     };
 
     if(name==='night'){
-      // Milky Way: a broad, low-contrast galactic band with darker dust lanes.
+      // A dark, periodic starfield with a structured Milky Way rather than a smooth painted stripe.
+      // Four seeded noise octaves create clouds, filaments and dark molecular dust lanes.
+      const makeNoiseGrid=(gridWidth,gridHeight)=>{
+        const values=new Float32Array(gridWidth*gridHeight);
+        for(let i=0;i<values.length;i++)values[i]=random();
+        return{width:gridWidth,height:gridHeight,values};
+      };
+      const noiseGrids=[makeNoiseGrid(48,24),makeNoiseGrid(96,48),makeNoiseGrid(192,96),makeNoiseGrid(384,192)];
+      const sampleNoise=(grid,u,v)=>{
+        const gx=u*grid.width,gy=Math.max(0,Math.min(grid.height-1,v*(grid.height-1)));
+        const x0=Math.floor(gx)%grid.width,x1=(x0+1)%grid.width;
+        const y0=Math.floor(gy),y1=Math.min(grid.height-1,y0+1);
+        const fx=gx-Math.floor(gx),fy=gy-y0;
+        const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+        const a=grid.values[y0*grid.width+x0],b=grid.values[y0*grid.width+x1];
+        const c=grid.values[y1*grid.width+x0],d=grid.values[y1*grid.width+x1];
+        return(a+(b-a)*sx)+((c+(d-c)*sx)-(a+(b-a)*sx))*sy;
+      };
+      const clamp01=value=>Math.max(0,Math.min(1,value));
+
+      // Render the nebula at half resolution, then upscale before the texture mipmaps are built.
+      const galaxyCanvas=document.createElement('canvas');
+      const galaxyWidth=1024,galaxyHeight=512;
+      galaxyCanvas.width=galaxyWidth;galaxyCanvas.height=galaxyHeight;
+      const galaxyContext=galaxyCanvas.getContext('2d');
+      if(galaxyContext){
+        const image=galaxyContext.createImageData(galaxyWidth,galaxyHeight),pixels=image.data;
+        for(let y=0;y<galaxyHeight;y++){
+          const v=y/(galaxyHeight-1);
+          for(let x=0;x<galaxyWidth;x++){
+            const u=x/galaxyWidth,angle=u*Math.PI*2;
+            const broad=sampleNoise(noiseGrids[0],u,v);
+            const medium=sampleNoise(noiseGrids[1],u,v);
+            const fine=sampleNoise(noiseGrids[2],u,v);
+            const micro=sampleNoise(noiseGrids[3],u,v);
+            // A curved, seam-safe galactic plane with turbulent edge displacement.
+            let center=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
+            center+=(broad-.5)*.045+(medium-.5)*.018;
+            const bandWidth=.032+.025*broad;
+            const distance=Math.abs(v-center);
+            const core=Math.exp(-Math.pow(distance/bandWidth,2)*1.55);
+            const haze=Math.exp(-Math.pow(distance/(bandWidth*3.15),2));
+            const structure=clamp01((medium*.48+fine*.34+micro*.18-.27)*1.65);
+            const knots=clamp01((fine*.62+micro*.38-.49)*2.15);
+            const dust=clamp01((fine*.54+micro*.46-.61)*2.25)*core;
+            const filaments=core*(.10+structure*.75+knots*.22);
+            const outerHaze=haze*(.025+broad*.055);
+            const intensity=clamp01((filaments+outerHaze)*(1-dust*.68)*1.34);
+            const warm=clamp01(.48+.36*Math.sin(angle*1.4+.4)+.28*(medium-.5));
+            const cold=1-warm;
+            const offset=(y*galaxyWidth+x)*4;
+            pixels[offset]=Math.round(intensity*(20+105*warm+24*knots));
+            pixels[offset+1]=Math.round(intensity*(34+64*warm+26*structure));
+            pixels[offset+2]=Math.round(intensity*(66+69*cold+29*structure));
+            pixels[offset+3]=255;
+          }
+        }
+        galaxyContext.putImageData(image,0,0);
+        context.save();
+        context.globalCompositeOperation='screen';
+        context.globalAlpha=.96;
+        context.imageSmoothingEnabled=true;
+        context.drawImage(galaxyCanvas,0,0,width,height);
+        context.restore();
+      }
+
+      // Very faint wide-angle airglow keeps the black sky from becoming a flat void.
+      const airglow=context.createRadialGradient(width*.72,height*.29,8,width*.72,height*.29,height*.55);
+      airglow.addColorStop(0,'rgba(51,65,104,0.105)');
+      airglow.addColorStop(.42,'rgba(27,39,73,0.055)');
+      airglow.addColorStop(1,'rgba(2,5,15,0)');
       context.save();
       context.globalCompositeOperation='screen';
-      context.lineCap='round';
-      context.lineJoin='round';
-      context.beginPath();
-      context.moveTo(-120,height*.43);
-      context.bezierCurveTo(width*.28,height*.39,width*.48,height*.24,width+100,height*.12);
-      context.lineWidth=height*.22;
-      context.strokeStyle='rgba(91,119,190,0.12)';
-      context.shadowColor='rgba(105,133,215,0.28)';
-      context.shadowBlur=95;
-      context.stroke();
-      context.beginPath();
-      context.moveTo(-80,height*.40);
-      context.bezierCurveTo(width*.24,height*.36,width*.55,height*.20,width+60,height*.17);
-      context.lineWidth=height*.075;
-      context.strokeStyle='rgba(151,168,220,0.095)';
-      context.shadowColor='rgba(141,161,225,0.22)';
-      context.shadowBlur=54;
-      context.stroke();
+      context.fillStyle=airglow;
+      context.fillRect(0,0,width,height);
       context.restore();
 
-      context.save();
-      context.globalCompositeOperation='multiply';
-      context.lineCap='round';
-      context.beginPath();
-      context.moveTo(width*.18,height*.69);
-      context.bezierCurveTo(width*.38,height*.62,width*.55,height*.35,width*.82,height*.27);
-      context.lineWidth=height*.052;
-      context.strokeStyle='rgba(2,8,24,0.22)';
-      context.stroke();
-      context.restore();
-
-      // Dense, deterministic stars with a wide dynamic range and restrained color variation.
-      for(let i=0;i<2100;i++){
-        const x=random()*width,y=10+random()*height*.485;
-        const galacticCenterY=height*(.43-.27*(x/width));
-        const band=Math.exp(-Math.pow((y-galacticCenterY)/(height*.12),2));
+      // Fine stars dominate; only a tiny fraction are bright enough to bloom or sparkle.
+      // Density and brightness rise gently inside the galactic band.
+      for(let i=0;i<8200;i++){
+        const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
+        const angle=u*Math.PI*2;
+        const galacticCenterY=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
+        const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
         const roll=random();
-        const radius=roll>.996?3.2+random()*1.6:roll>.90?1.35+random()*.95:.42+random()*.66;
-        const alpha=Math.min(.98,(.16+random()*.54+band*.28)*(radius>1.8?1.12:1));
+        const radius=roll>.998?2.4+random()*1.15:roll>.972?1.0+random()*.65:.24+Math.pow(random(),2)*.78;
+        const alpha=Math.min(.94,(.095+random()*.43+band*.15)*(radius>1.7?1.18:1));
         const tint=random();
-        const color=tint>.88?'196,211,255':tint>.68?'204,222,255':tint<.08?'255,224,190':'238,244,255';
-        if(radius>1.7){
-          const halo=context.createRadialGradient(x,y,0,x,y,radius*7);
-          halo.addColorStop(0,'rgba('+color+','+(alpha*.24).toFixed(3)+')');
+        const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
+        if(radius>1.45){
+          const halo=context.createRadialGradient(x,y,0,x,y,radius*5.2);
+          halo.addColorStop(0,'rgba('+color+','+(alpha*.22).toFixed(3)+')');
           halo.addColorStop(1,'rgba('+color+',0)');
-          context.fillStyle=halo;context.fillRect(x-radius*7,y-radius*7,radius*14,radius*14);
+          context.fillStyle=halo;
+          context.fillRect(x-radius*5.2,y-radius*5.2,radius*10.4,radius*10.4);
         }
         context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fill();
-        if(radius>3.8&&random()>.45){
-          context.strokeStyle='rgba('+color+','+(alpha*.34).toFixed(3)+')';
-          context.lineWidth=.7;
-          context.beginPath();context.moveTo(x-radius*2.4,y);context.lineTo(x+radius*2.4,y);
-          context.moveTo(x,y-radius*2.4);context.lineTo(x,y+radius*2.4);context.stroke();
+        if(radius>2.8&&random()>.72){
+          context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
+          context.lineWidth=.65;
+          context.beginPath();
+          context.moveTo(x-radius*2.1,y);context.lineTo(x+radius*2.1,y);
+          context.moveTo(x,y-radius*2.1);context.lineTo(x,y+radius*2.1);
+          context.stroke();
         }
       }
 
@@ -3392,8 +3441,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         const lunar=context.createRadialGradient(moon.x-moonRadius*.38,moon.y-moonRadius*.43,moonRadius*.08,moon.x,moon.y,moonRadius*1.3);
         lunar.addColorStop(0,'#F1F3F7');lunar.addColorStop(.48,'#DCE2EC');lunar.addColorStop(.82,'#B9C5D5');lunar.addColorStop(1,'#8494AA');
         context.fillStyle=lunar;context.fillRect(moon.x-moonRadius,moon.y-moonRadius,moonRadius*2,moonRadius*2);
-
-        // Lunar maria and crater rims give the disc visible structure instead of a white dot.
         context.fillStyle='rgba(73,88,111,0.19)';
         context.beginPath();context.ellipse(moon.x-moonRadius*.22,moon.y-moonRadius*.10,moonRadius*.34,moonRadius*.22,-.45,0,Math.PI*2);context.fill();
         context.beginPath();context.ellipse(moon.x+moonRadius*.25,moon.y+moonRadius*.31,moonRadius*.23,moonRadius*.14,.35,0,Math.PI*2);context.fill();
@@ -3428,6 +3475,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
 
+      if(name==='day'||name==='dusk'){
       // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
       context.save();
       context.globalCompositeOperation='screen';
@@ -3461,6 +3509,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         context.stroke();
       }
       context.restore();
+      }
 
       const glowRadius=sunRadius*(dusk?22:15);
       const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
@@ -3571,6 +3620,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       hemisphereSky:'#D9EEFF',hemisphereGround:'#68725C',hemisphereIntensity:0.95,
       environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0.38,moonDirectionY:0.88,moonDirectionZ:0.27,moonIntensity:0.78,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,skyExposure:0.45,twilightStrength:0,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
+    activeEnvironmentPreset=String(profile.name||'day');
+    const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
+    const cloudTierActive=qualityPreset!=='auto'||adaptiveQualityLevel>=1;
+    volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
+    if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
     const signature=String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
     if(changed){
@@ -4291,7 +4345,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested};
     },
     setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
-    setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass;if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(40,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
+    setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(40,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
