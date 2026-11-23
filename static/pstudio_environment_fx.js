@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -380,6 +380,81 @@
     return material;
   }
 
+
+  function configureTerrain(material,object,options={}) {
+    if(!material||material.userData?.pstudioTerrainHQ)return material;
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    object?.geometry?.computeBoundingBox?.();
+    const bounds=object?.geometry?.boundingBox;
+    const localMin=Number.isFinite(bounds?.min?.y)?bounds.min.y:0;
+    const localMax=Number.isFinite(bounds?.max?.y)?bounds.max.y:1;
+    const worldBase=(Number(object?.position?.y)||0)+localMin;
+    const heightRange=Math.max(.001,localMax-localMin);
+    const read=(name,fallback,min,max)=>{
+      const value=Number(options[name]??material.userData?.['pstudioTerrain'+name[0].toUpperCase()+name.slice(1)]);
+      return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
+    };
+    const u={
+      heightMin:{value:worldBase},heightRange:{value:heightRange},
+      detailScale:{value:read('detailScale',.16,.005,2)},
+      snowLine:{value:read('snowLine',1.08,0,1.5)},
+      wetness:{value:read('wetness',.035,0,.8)},
+      rockThreshold:{value:read('rockThreshold',.38,.08,.92)}
+    };
+    const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
+    material.onBeforeCompile=function(shader,renderer){
+      if(old)old.call(this,shader,renderer);
+      Object.assign(shader.uniforms,{
+        uPStudioTerrainHeightMin:u.heightMin,uPStudioTerrainHeightRange:u.heightRange,
+        uPStudioTerrainDetailScale:u.detailScale,uPStudioTerrainSnowLine:u.snowLine,
+        uPStudioTerrainWetness:u.wetness,uPStudioTerrainRockThreshold:u.rockThreshold
+      });
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
+        'varying vec3 vPStudioTerrainWorldPosition;','varying vec3 vPStudioTerrainWorldNormal;'
+      ].join('\n'));
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
+        'vec4 pStudioTerrainWorld=modelMatrix*vec4(transformed,1.0);',
+        '#ifdef USE_INSTANCING',
+        'pStudioTerrainWorld=modelMatrix*instanceMatrix*vec4(transformed,1.0);',
+        '#endif','vPStudioTerrainWorldPosition=pStudioTerrainWorld.xyz;'
+      ].join('\n'));
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <defaultnormal_vertex>',
+        'vPStudioTerrainWorldNormal=normalize(transpose(mat3(viewMatrix))*transformedNormal);');
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
+        'uniform float uPStudioTerrainHeightMin;','uniform float uPStudioTerrainHeightRange;',
+        'uniform float uPStudioTerrainDetailScale;','uniform float uPStudioTerrainSnowLine;',
+        'uniform float uPStudioTerrainWetness;','uniform float uPStudioTerrainRockThreshold;',
+        'varying vec3 vPStudioTerrainWorldPosition;','varying vec3 vPStudioTerrainWorldNormal;',
+        'float pStudioTerrainHash(vec3 p){p=fract(p*.3183099+vec3(.1,.13,.17));p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}',
+        'float pStudioTerrainNoise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);float a=pStudioTerrainHash(i);float b=pStudioTerrainHash(i+vec3(1,0,0));float c=pStudioTerrainHash(i+vec3(0,1,0));float d=pStudioTerrainHash(i+vec3(1,1,0));float e=pStudioTerrainHash(i+vec3(0,0,1));float f1=pStudioTerrainHash(i+vec3(1,0,1));float g=pStudioTerrainHash(i+vec3(0,1,1));float h=pStudioTerrainHash(i+vec3(1,1,1));return mix(mix(mix(a,b,f.x),mix(c,d,f.x),f.y),mix(mix(e,f1,f.x),mix(g,h,f.x),f.y),f.z);}',
+        'float pStudioTerrainFbm(vec3 p){float n=0.0,a=.55;for(int i=0;i<3;i++){n+=pStudioTerrainNoise(p)*a;p=p*2.03+vec3(7.1,3.7,5.3);a*=.5;}return n/.9625;}'
+      ].join('\n'));
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>',[
+        'float pStudioElevation=clamp((vPStudioTerrainWorldPosition.y-uPStudioTerrainHeightMin)/uPStudioTerrainHeightRange,0.0,1.0);',
+        'float pStudioSlope=1.0-clamp(abs(normalize(vPStudioTerrainWorldNormal).y),0.0,1.0);',
+        'float pStudioNoiseValue=pStudioTerrainFbm(vPStudioTerrainWorldPosition*uPStudioTerrainDetailScale);',
+        'float pStudioRock=smoothstep(uPStudioTerrainRockThreshold,uPStudioTerrainRockThreshold+.28,pStudioSlope+(pStudioNoiseValue-.5)*.16);',
+        'float pStudioGrass=(1.0-pStudioRock)*(1.0-smoothstep(.46,.9,pStudioElevation))*(.72+.28*pStudioNoiseValue);',
+        'float pStudioSoil=(1.0-pStudioRock)*(1.0-smoothstep(.12,.78,pStudioElevation))*(.16+.28*pStudioNoiseValue);',
+        'float pStudioSnow=smoothstep(uPStudioTerrainSnowLine,uPStudioTerrainSnowLine+.12,pStudioElevation)*(1.0-smoothstep(.12,.62,pStudioSlope));',
+        'vec3 pStudioTerrainBase=diffuseColor.rgb;',
+        'vec3 pStudioTerrainLayer=mix(pStudioTerrainBase,pStudioTerrainBase*vec3(.78,1.055,.76),pStudioGrass*.42);',
+        'pStudioTerrainLayer=mix(pStudioTerrainLayer,pStudioTerrainBase*vec3(1.08,.88,.70),pStudioSoil*.34);',
+        'pStudioTerrainLayer=mix(pStudioTerrainLayer,pStudioTerrainBase*vec3(.72,.76,.81),pStudioRock*.48);',
+        'pStudioTerrainLayer=mix(pStudioTerrainLayer,mix(vec3(.78,.84,.91),vec3(.98,.99,1.0),pStudioNoiseValue),pStudioSnow);',
+        'pStudioTerrainLayer*=1.0-uPStudioTerrainWetness*(.06+.08*pStudioNoiseValue);',
+        'diffuseColor.rgb=mix(pStudioTerrainBase,pStudioTerrainLayer,.82);'
+      ].join('\n'));
+      shader.fragmentShader=addAfter(shader.fragmentShader,'#include <roughnessmap_fragment>',
+        'roughnessFactor=clamp(roughnessFactor+pStudioRock*.12-uPStudioTerrainWetness*(.05+.12*pStudioNoiseValue),.12,1.0);');
+    };
+    material.customProgramCacheKey=()=>'pstudio-terrain-layered-pbr-v1-'+(oldKey?oldKey():'');
+    material.userData.pstudioTerrainHQ=u;
+    if(T()?.DoubleSide!==undefined)material.side=T().DoubleSide;
+    terrainMaterials.add(material);
+    return material;
+  }
+
   function configureObject(object) {
     if(!object?.isMesh||!object.material)return;
     const name=String(object.name||'');
@@ -609,7 +684,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureTerrain,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
     configureAtmosphere(settings={}){
       const direction=settings.lightDirection||settings.sunDirection;
       const applyDirection=uniform=>{
@@ -635,7 +710,7 @@
       return true;
     },
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
-    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);},
-    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size})
+    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);terrainMaterials.delete(material);},
+    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,terrainMaterials:terrainMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size})
   };
 })();

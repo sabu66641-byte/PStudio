@@ -217,19 +217,34 @@
     ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}
   };
   function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
+
+  function resolveShadowMapSize(requested){
+    let maxTextureSize=4096;
+    try{
+      const gl=renderer?.getContext?.();
+      const queried=Number(gl?.getParameter?.(gl.MAX_TEXTURE_SIZE));
+      if(Number.isFinite(queried)&&queried>0)maxTextureSize=queried;
+    }catch(_){}
+    const memory=deviceMemoryGiB();
+    const memoryCap=memory<=2?1024:memory<=4?2048:4096;
+    const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
+    const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
+    return Math.min(requestedSize,hardwareCap);
+  }
+
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
-    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
+    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
       const initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'&&deviceMemoryGiB()>2?[0.68,0.84,1][adaptiveQualityLevel]:1;
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio*initialAdaptiveScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
       renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      for(const light of lights)if(light?.shadow){const size=csm?Math.min(4096,profile.shadowSize):profile.shadowSize;light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
+      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize);light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
       volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
@@ -248,8 +263,8 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
-    const mapSize=[1024,1536,2048][adaptiveQualityLevel],lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
+    const mapSize=resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel]),lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
   }
@@ -772,7 +787,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         if(energy<=minBounceEnergy)break;
       }
       for(const item of sourceProbes)if(!directProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
-      bakedLightProbe=null;bakedLightProbeVolume=finalProbes;bakedGIBounces=completedBounces;
+      bakedLightProbe=null;finalProbes.pstudioGrid=Object.freeze({min:Object.freeze({x:Number(min.x),y:Number(min.y),z:Number(min.z)}),max:Object.freeze({x:Number(max.x),y:Number(max.y),z:Number(max.z)}),dims:Object.freeze(dims.slice()),layout:'x-fastest'});bakedLightProbeVolume=finalProbes;bakedGIBounces=completedBounces;
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
       updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
@@ -2548,9 +2563,35 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
   }
   function updateObjectProbeUniforms(object,material){
-    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;const center=new window.THREE.Vector3();object.getWorldPosition(center);
-    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;for(const e of near){e.w=1/Math.max(0.25,e.d);sum+=e.w;}
-    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const e of near){const coeff=e.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,e.w/Math.max(1e-8,sum)*e.item.baseIntensity);}}
+    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;
+    const center=new window.THREE.Vector3();object.getWorldPosition(center);
+    const grid=volume.pstudioGrid;
+    if(grid?.layout==='x-fastest'&&Array.isArray(grid.dims)&&grid.dims.length===3&&grid.min&&grid.max){
+      const dims=grid.dims.map(Number),valid=dims.every(v=>Number.isInteger(v)&&v>=2&&v<=4);
+      const boundsValid=['x','y','z'].every(axis=>Number.isFinite(Number(grid.min[axis]))&&Number.isFinite(Number(grid.max[axis]))&&Number(grid.max[axis])>Number(grid.min[axis]));
+      if(valid&&boundsValid&&volume.length>=dims[0]*dims[1]*dims[2]){
+        const axis=(value,min,max,count)=>{const n=Math.max(0,Math.min(1,(value-min)/(max-min)))*(count-1);const lo=Math.floor(n);return{lo,hi:Math.min(count-1,lo+1),t:n-lo};};
+        const x=axis(center.x,Number(grid.min.x),Number(grid.max.x),dims[0]);
+        const y=axis(center.y,Number(grid.min.y),Number(grid.max.y),dims[1]);
+        const z=axis(center.z,Number(grid.min.z),Number(grid.max.z),dims[2]);
+        const volumeIndex=(ix,iy,iz)=>(iz*dims[1]+iy)*dims[0]+ix;
+        for(let i=0;i<9;i++){
+          const out=uniforms[i];out.set(0,0,0);
+          for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+            const ix=dx?x.hi:x.lo,iy=dy?y.hi:y.lo,iz=dz?z.hi:z.lo;
+            const wx=dx?x.t:1-x.t,wy=dy?y.t:1-y.t,wz=dz?z.t:1-z.t;
+            const weight=wx*wy*wz,item=volume[volumeIndex(ix,iy,iz)];
+            const coeff=item?.light?.sh?.coefficients?.[i];
+            if(coeff&&weight>0)out.addScaledVector(coeff,weight*(Number(item.baseIntensity)||0));
+          }
+        }
+        return;
+      }
+    }
+    // Sparse or legacy probe collections retain the inverse-distance fallback.
+    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;
+    for(const entry of near){entry.w=1/Math.max(0.25,entry.d);sum+=entry.w;}
+    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const entry of near){const coeff=entry.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,entry.w/Math.max(1e-8,sum)*entry.item.baseIntensity);}}
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
@@ -3855,7 +3896,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
-          mesh=new T.Mesh(geometry,material);setupLightingMaterial(material);bindObjectProbeLighting(mesh);setupClusteredLightingMaterial(material);scheduleAutoLOD(mesh,geometry);
+          mesh=new T.Mesh(geometry,material);if(d.type==='terrain')window.PStudioEnvironmentFX?.configureTerrain?.(material,mesh);setupLightingMaterial(material);bindObjectProbeLighting(mesh);setupClusteredLightingMaterial(material);scheduleAutoLOD(mesh,geometry);
           mesh.castShadow=d.type!=='plane'&&d.type!=='water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;

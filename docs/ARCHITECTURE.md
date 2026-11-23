@@ -92,6 +92,10 @@ Keep these boundaries explicit. Avoid silently duplicating ownership of transfor
 
 ### Rendering
 
+- Regular baked SH probe volumes are stored in x-fastest grid order and sampled with trilinear interpolation; sparse/legacy probe sets use the bounded inverse-distance fallback. This remains baked diffuse GI, not dynamic ray tracing.
+- Generated terrain meshes use a dedicated height/slope/noise PBR shader layer. It is attached only to the procedural terrain material path; imported GLTF material preservation and existing water/foliage shader hooks remain separate.
+- High/ultra quality profiles enable GTAO when the addon is available. Shadow-map allocation is capped by the active WebGL `MAX_TEXTURE_SIZE` and device-memory class, including during adaptive quality changes.
+
 - Preserve source GLTF materials and their textures unless an explicit material override or supported lighting feature requires a controlled change.
 - Preserve animation clips, skinning, hierarchy, morph data and model transforms. Generic automatic instancing only combines opaque, static, same-geometry/same-material nodes; animated ancestry, skinning, morph targets, transparent/transmissive materials, water/wind roles, custom shadow materials and baked per-object probe lighting are excluded.
 - Generic repeated static nodes are grouped by geometry, material, stream chunk, render order, layer mask and shadow flags. Their transforms are stored relative to the owning model/stream chunk; their instance buffers use static usage. Explicit foliage/tree batches retain dynamic transforms and their existing update path.
