@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
@@ -9,6 +10,18 @@ const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf
 const physics = fs.readFileSync(path.join(root, 'static/pstudio_physics.js'), 'utf8');
 const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+function loadProbeWeightHelper(probeBlendCount=4){
+  const start=renderer.indexOf('function getProbeVolumeWeights(');
+  const end=renderer.indexOf('\\n  function evaluateProbeSH',start);
+  assert.ok(start>=0&&end>start,'GI probe interpolation helper must exist');
+  const sandbox={worldRenderConfig:{probeBlendCount}};
+  vm.runInNewContext(renderer.slice(start,end)+'\\nthis.getProbeVolumeWeights=getProbeVolumeWeights;',sandbox);
+  return sandbox.getProbeVolumeWeights;
+}
+function makeProbe(id,x,y,z){
+  return{id,position:{x,y,z,distanceToSquared(point){const dx=this.x-point.x,dy=this.y-point.y,dz=this.z-point.z;return dx*dx+dy*dy+dz*dz;}},light:{sh:{coefficients:[]}}};
+}
+
 
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
@@ -106,6 +119,39 @@ test('structured SH probe volumes use trilinear interpolation and preserve inver
   assert.match(renderer,/const samples=getProbeVolumeWeights\(center,volume\)/);
   assert.match(renderer,/Old\/unstructured probe arrays retain the inverse-distance compatibility path/);
   assert.match(renderer,/probeInterpolation:!bakedLightProbeVolume\?\.length\?'none':bakedLightProbeVolume\.grid\?'trilinear-grid-sh':'inverse-distance-fallback'/);
+});
+test('trilinear SH probe weights are normalized, spatially correct and clamped to grid bounds',()=>{
+  const getWeights=loadProbeWeightHelper();
+  const volume=[];
+  for(let z=0;z<2;z++)for(let y=0;y<2;y++)for(let x=0;x<2;x++)volume.push(makeProbe(volume.length,x,y,z));
+  volume.grid={min:{x:0,y:0,z:0},max:{x:1,y:1,z:1},dimensions:[2,2,2],order:'x-fastest'};
+  const weights=getWeights({x:0.25,y:0.5,z:0.75},volume);
+  assert.equal(weights.length,8);
+  assert.ok(Math.abs(weights.reduce((sum,sample)=>sum+sample.weight,0)-1)<1e-10);
+  const expected=new Map([
+    [0,.75*.5*.25],[1,.25*.5*.25],[2,.75*.5*.25],[3,.25*.5*.25],
+    [4,.75*.5*.75],[5,.25*.5*.75],[6,.75*.5*.75],[7,.25*.5*.75]
+  ]);
+  for(const sample of weights)assert.ok(Math.abs(sample.weight-expected.get(sample.item.id))<1e-10);
+  const corner=getWeights({x:1,y:0,z:1},volume);
+  assert.equal(corner.length,1);
+  assert.equal(corner[0].item.id,5);
+  assert.equal(corner[0].weight,1);
+  const outside=getWeights({x:4,y:-3,z:0.5},volume);
+  assert.equal(outside.length,2);
+  assert.ok(outside.every(sample=>sample.item.id===1||sample.item.id===5));
+  assert.ok(outside.every(sample=>Math.abs(sample.weight-0.5)<1e-10));
+});
+test('legacy SH probe arrays retain configurable inverse-distance blending and exact-probe behavior',()=>{
+  const getWeights=loadProbeWeightHelper(2);
+  const volume=[makeProbe(0,0,0,0),makeProbe(1,1,0,0),makeProbe(2,0,1,0),makeProbe(3,0,0,1)];
+  const blended=getWeights({x:0.25,y:0.25,z:0.25},volume);
+  assert.equal(blended.length,2);
+  assert.ok(Math.abs(blended.reduce((sum,sample)=>sum+sample.weight,0)-1)<1e-10);
+  const exact=getWeights({x:1,y:0,z:0},volume);
+  assert.equal(exact.length,1);
+  assert.equal(exact[0].item.id,1);
+  assert.equal(exact[0].weight,1);
 });
 test('three-cascade shadows load the version-aligned CSM addon with fallback',()=>{
   assert.ok(html.includes('three/addons/csm/CSM.js'));
