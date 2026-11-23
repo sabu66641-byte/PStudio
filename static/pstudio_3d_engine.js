@@ -810,7 +810,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const requestedAssets=chunk.assets.slice();
     chunk.loading=true;
     chunk.error=null;
-    Promise.all(requestedAssets.map(name=>requestModelAsset(name)).then(async()=>{
+    Promise.all(requestedAssets.map(name=>requestModelAsset(name))).then(async()=>{
       if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
       if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:requestedAssets.slice()});
       if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
