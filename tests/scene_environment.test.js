@@ -209,6 +209,7 @@ test('official Three.js physical sky is primary while procedural panorama remain
   assert.ok(renderer.includes('const width=canvas.width,height=canvas.height,isNight=profile.name===\'night\''));
   assert.ok(renderer.includes('for(let i=0;i<280;i++)'));
   assert.ok(renderer.includes('moonDirectionX'));
+  assert.ok(renderer.includes('const moonX=((moonPhi/(Math.PI*2)+0.5+1)%1)*width;'),'the panorama moon must use Three.js equirectangular longitude mapping');
   assert.ok(renderer.includes('scenePresetUsesPhysicalSky=!!(physicalSkyReady&&nextTarget)'));
 });
 
