@@ -335,7 +335,9 @@ test('world chunk registry preserves in-flight state and invalidates asset chang
   assert.ok(block.includes('worldChunks.set(key,chunk)'));
   assert.ok(block.includes('loading:chunk.loading'));
   assert.ok(renderer.includes('const requestedAssets=chunk.assets.slice()'));
-  assert.ok(renderer.includes('if(token!==chunk.generation)return;'));
+  assert.ok(renderer.includes('if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}'));
+  assert.ok(renderer.includes('const retained=(chunk.active||chunk.loading)?new Set(chunk.assets||[]):new Set()'));
+  assert.ok(renderer.includes('const stale=(requestedAssets||[]).filter(name=>!retained.has(name))'));
   assert.ok(renderer.includes('releaseChunkAssetCache(chunk,requestedAssets)'));
 });
 test('world chunk streaming supports multiple interest positions and bounded prioritized loading',()=>{
