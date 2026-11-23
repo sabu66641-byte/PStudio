@@ -6,8 +6,8 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null;
-  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,temporalAAEnabled=false;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false;
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset='auto';
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
@@ -211,10 +211,10 @@
     return{zoom,displayPercent:Math.round((1/zoom)*100)};
   }
   const QUALITY_PROFILES={
-    mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
-    balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false},
-    high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true},
-    ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true}
+    mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
+    balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
+    high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
+    ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
   };
   function resolveQualityPreset(name){const memory=deviceMemoryGiB();if(memory<=2)return 'mobile';if(name!=='auto'){if(memory<=3&&name==='ultra')return 'balanced';if(memory<=2.5&&name==='high')return 'balanced';return QUALITY_PROFILES[name]?name:'balanced';}if(Number(window.navigator?.maxTouchPoints||0)>0)return memory<=4?'mobile':'balanced';return Number(window.innerWidth||0)<760?'balanced':'high';}
 
@@ -238,7 +238,7 @@
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
-    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
+    const baseProfile=QUALITY_PROFILES[selected],profile=deviceMemoryGiB()<=2?{...baseProfile,pixelRatio:0.8,shadowSize:768,ao:false,ssr:false,clouds:false,atmosphere:false}:baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
       const initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'&&deviceMemoryGiB()>2?[0.68,0.84,1][adaptiveQualityLevel]:1;
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio*initialAdaptiveScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
@@ -248,6 +248,7 @@
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass);if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
       volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
+      if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
@@ -263,7 +264,7 @@
     adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
     const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass;volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effects&&!!base.contactShadows):contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
     const mapSize=resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel]),lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
@@ -319,6 +320,7 @@
       if(FX.GTAOPass){gtaoPass=new FX.GTAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));if(FX.GTAOPass.OUTPUT?.Default!==undefined)gtaoPass.output=FX.GTAOPass.OUTPUT.Default;gtaoPass.enabled=false;composer.addPass(gtaoPass);ssaoPass=gtaoPass;}
       else if(FX.SSAOPass){ssaoPass=new FX.SSAOPass(scene,camera,Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight));ssaoPass.kernelRadius=8;ssaoPass.minDistance=0.001;ssaoPass.maxDistance=0.12;ssaoPass.enabled=false;composer.addPass(ssaoPass);}
       if(FX.SSRPass){try{ssrPass=new FX.SSRPass({renderer,scene,camera,width:Math.max(1,canvas.clientWidth),height:Math.max(1,canvas.clientHeight),selects:null});ssrPass.enabled=false;ssrPass.thickness=0.018;ssrPass.maxDistance=28;ssrPass.opacity=0.72;ssrPass.blur=true;composer.addPass(ssrPass);}catch(error){ssrPass=null;console.warn('[PStudio] SSR unavailable:',error);}}
+      contactShadowPass=window.PStudioEnvironmentFX?.createContactShadowPass?.(FX,T)||null;if(contactShadowPass){contactShadowPass.enabled=false;composer.addPass(contactShadowPass);}
       if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
@@ -392,7 +394,7 @@
   }
   function renderWaterDepthPrepass(){
     const fx=window.PStudioEnvironmentFX,stats=fx?.getStats?.();
-    const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled;
+    const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled;
     if(!waterDepthTarget||!waterDepthMaterial||!needsDepth){
       fx?.setSceneDepthTexture?.(null,1,1,camera?.near,camera?.far);return false;
     }
@@ -507,6 +509,7 @@
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
       if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
       const cache=window.PStudioResources?.stats?.();
+      contactShadowsEnabled=false;if(contactShadowPass)contactShadowPass.enabled=false;
       if(cache){
         window.PStudioResources.trim?.('cpu',Math.floor(cache.cpuBudgetBytes*.72));
         window.PStudioResources.trim?.('gpu',Math.floor(cache.gpuBudgetBytes*.72));
@@ -525,7 +528,7 @@
     try{
       renderWaterDepthPrepass();
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
-      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(composer&&(bloomEnabled||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){bloomPass.enabled=bloomEnabled;bloomPass.strength=bloomStrength;}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
@@ -543,6 +546,16 @@
             if(scene.fog?.color)u.uFogColor.value.copy(scene.fog.color);u.tDepth.value=waterDepthTarget?.depthTexture||null;
           });
         }
+        if(contactShadowPass){
+          contactShadowPass.enabled=contactShadowsEnabled&&!waterDepthPrepassFailed&&!!waterDepthTarget?.depthTexture;
+          syncPostFXUniforms(contactShadowPass,['uInverseProjection','uProjection','uViewMatrix','uLightDirectionWorld','uIntensity','uMaxDistance','uThickness','uDepthBias','uSteps','tDepth'],u=>{
+            camera.updateMatrixWorld();
+            u.uInverseProjection.value.copy(camera.projectionMatrixInverse);
+            u.uProjection.value.copy(camera.projectionMatrix);
+            u.uViewMatrix.value.copy(camera.matrixWorldInverse);
+            u.tDepth.value=waterDepthTarget?.depthTexture||null;
+          });
+        }
         if(volumetricCloudPass){
           volumetricCloudPass.enabled=volumetricCloudsEnabled;
           syncPostFXUniforms(volumetricCloudPass,['uInverseProjection','uCameraWorld','uTime','tDepth'],u=>{
@@ -552,7 +565,7 @@
         composer.render();
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
-        if(ssrPass)ssrPass.enabled=false;
+        if(ssrPass)ssrPass.enabled=false;if(contactShadowPass)contactShadowPass.enabled=false;
         renderer.render(scene,camera);
       }
     }finally{
@@ -4067,12 +4080,28 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&qualityPreset==='auto';adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=resolveQualityPreset(qualityPreset)==='ultra'?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
+    setContactShadows:(enabled,options={})=>{
+      contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;
+      const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];
+      contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);
+      if(contactShadowPass){
+        const u=contactShadowPass.uniforms||{};
+        if(Number.isFinite(options.intensity)&&u.uIntensity)u.uIntensity.value=Math.max(0,Math.min(.85,options.intensity));
+        if(Number.isFinite(options.maxDistance)&&u.uMaxDistance)u.uMaxDistance.value=Math.max(.1,Math.min(2.5,options.maxDistance));
+        if(Number.isFinite(options.thickness)&&u.uThickness)u.uThickness.value=Math.max(.01,Math.min(.3,options.thickness));
+        contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);
+        contactShadowPass.enabled=contactShadowsEnabled;
+      }
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested};
+    },
     setVolumetricFog:(enabled,options={})=>{volumetricFogEnabled=!!enabled;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
     setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass;if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(40,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass};},
     getQualityPreset:()=>({requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel}),
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
       calls:renderer.info?.render?.calls||0,
+      contactShadows:{enabled:contactShadowsEnabled,available:!!contactShadowPass,steps:contactShadowPass?.uniforms?.uSteps?.value||0},
       triangles:renderer.info?.render?.triangles||0,
       points:renderer.info?.render?.points||0,
       geometries:renderer.info?.memory?.geometries||0,

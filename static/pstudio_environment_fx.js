@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), foliageTranslucencyMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set(), contactShadowPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -179,7 +179,21 @@
     const authored=Number(object?.userData?.pstudioWindWeight);
     const fallback=role === 'trunk' ? 0.12 : role === 'branch' ? 0.42 : role === 'leaf' ? 0.88 : 0.34;
     const strength=Number.isFinite(authored)?Math.max(0,Math.min(1,authored)):fallback;
-    const u={time:{value:0},strength:{value:strength},height:{value:height},base:{value:base},direction:{value:new (T().Vector2)(.83,.56).normalize()}};
+    const standardSurface=!!(material.isMeshStandardMaterial||material.isMeshPhysicalMaterial);
+    const authoredTranslucency=Number(object?.userData?.pstudioFoliageTranslucency??material.userData?.pstudioFoliageTranslucency);
+    const defaultTranslucency=role==='leaf'?.48:role==='branch'?.075:role==='trunk'?.015:.24;
+    const translucency=standardSurface?(Number.isFinite(authoredTranslucency)?Math.max(0,Math.min(1,authoredTranslucency)):defaultTranslucency):0;
+    const authoredThickness=Number(object?.userData?.pstudioFoliageThickness??material.userData?.pstudioFoliageThickness);
+    const thickness=Number.isFinite(authoredThickness)?Math.max(.05,Math.min(1.5,authoredThickness)):(role==='leaf'?.52:role==='branch'?.22:.14);
+    const authoredPower=Number(object?.userData?.pstudioFoliageScatteringPower??material.userData?.pstudioFoliageScatteringPower);
+    const scatteringPower=Number.isFinite(authoredPower)?Math.max(1,Math.min(12,authoredPower)):3.2;
+    const tint=object?.userData?.pstudioFoliageTranslucencyColor??material.userData?.pstudioFoliageTranslucencyColor??'#d9edaa';
+    const u={
+      time:{value:0},strength:{value:strength},height:{value:height},base:{value:base},
+      direction:{value:new (T().Vector2)(.83,.56).normalize()},
+      translucency:{value:translucency},thickness:{value:thickness},scatteringPower:{value:scatteringPower},
+      translucencyColor:{value:new (T().Color)(tint)}
+    };
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -193,8 +207,11 @@
         'uniform float uPStudioWindStrength;',
         'uniform float uPStudioFoliageHeight;',
         'uniform float uPStudioFoliageBaseY;',
-        'uniform vec2 uPStudioWindDirection;'
+        'uniform vec2 uPStudioWindDirection;',
+        ...(translucency>0?['varying vec3 vPStudioFoliageViewNormal;']:[ ])
       ].join('\n'));
+      shader.vertexShader=addAfter(shader.vertexShader,'#include <defaultnormal_vertex>',
+        translucency>0?'vPStudioFoliageViewNormal=normalize(transformedNormal);':'');
       shader.vertexShader=addAfter(shader.vertexShader,'#include <begin_vertex>',[
         'vec4 pstudioWindWorld=modelMatrix*vec4(transformed,1.0);',
         '#ifdef USE_INSTANCING',
@@ -211,12 +228,45 @@
         'transformed.z+=sway*uPStudioWindDirection.y;',
         'transformed.y+=leafFlutter*.006*foliageBend*uPStudioWindStrength;'
       ].join('\n'));
+      if(translucency>0){
+        Object.assign(shader.uniforms,{
+          uPStudioFoliageTranslucency:u.translucency,
+          uPStudioFoliageThickness:u.thickness,
+          uPStudioFoliageScatteringPower:u.scatteringPower,
+          uPStudioFoliageTranslucencyColor:u.translucencyColor
+        });
+        shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
+          'uniform float uPStudioFoliageTranslucency;',
+          'uniform float uPStudioFoliageThickness;',
+          'uniform float uPStudioFoliageScatteringPower;',
+          'uniform vec3 uPStudioFoliageTranslucencyColor;',
+          'varying vec3 vPStudioFoliageViewNormal;'
+        ].join('\n'));
+        shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
+          '#if NUM_DIR_LIGHTS > 0',
+          'vec3 pStudioFoliageN=normalize(vPStudioFoliageViewNormal);',
+          'vec3 pStudioFoliageV=normalize(vViewPosition);',
+          'vec3 pStudioFoliageScatter=vec3(0.0);',
+          'for(int pStudioLightIndex=0;pStudioLightIndex<NUM_DIR_LIGHTS;pStudioLightIndex++){',
+          'vec3 pStudioFoliageL=normalize(directionalLights[pStudioLightIndex].direction);',
+          'float pStudioNL=dot(pStudioFoliageN,pStudioFoliageL);',
+          'float pStudioNV=dot(pStudioFoliageN,pStudioFoliageV);',
+          'float pStudioOppositeSides=max(0.0,-pStudioNL)*max(0.0,pStudioNV)+max(0.0,pStudioNL)*max(0.0,-pStudioNV);',
+          'float pStudioForwardLobe=pow(max(0.0,dot(-pStudioFoliageL,pStudioFoliageV)),uPStudioFoliageScatteringPower);',
+          'float pStudioTransmission=pStudioOppositeSides*(.34+.66*pStudioForwardLobe);',
+          'pStudioFoliageScatter+=directionalLights[pStudioLightIndex].color*diffuseColor.rgb*uPStudioFoliageTranslucencyColor*pStudioTransmission;',
+          '}',
+          'gl_FragColor.rgb+=pStudioFoliageScatter*uPStudioFoliageTranslucency*uPStudioFoliageThickness;',
+          '#endif'
+        ].join('\n'));
+      }
     };
-    material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v3-'+role+(oldKey?oldKey():'');
-    material.userData.pstudioFoliageHQ={role,strength,height,base,wind:'world-phased-multi-frequency'};
+    material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v4-'+role+'-translucency-'+(translucency>0?'on':'off')+(oldKey?oldKey():'');
+    material.userData.pstudioFoliageHQ={role,strength,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
     foliage.add(material);
+    if(translucency>0)foliageTranslucencyMaterials.add(material);
     return material;
   }
 
@@ -608,6 +658,86 @@
     return pass;
   }
 
+
+  function createContactShadowPass(FX,Three) {
+    if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
+    const shader={
+      uniforms:{
+        tDiffuse:{value:null},tDepth:{value:null},
+        uInverseProjection:{value:new Three.Matrix4()},
+        uProjection:{value:new Three.Matrix4()},
+        uViewMatrix:{value:new Three.Matrix4()},
+        uLightDirectionWorld:{value:new Three.Vector3(.35,.82,.44).normalize()},
+        uIntensity:{value:.42},uMaxDistance:{value:.82},uThickness:{value:.075},
+        uDepthBias:{value:.018},uSteps:{value:12},uFadeStart:{value:28},uFadeEnd:{value:105}
+      },
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse;uniform sampler2D tDepth;',
+        'uniform mat4 uInverseProjection;uniform mat4 uProjection;uniform mat4 uViewMatrix;',
+        'uniform vec3 uLightDirectionWorld;',
+        'uniform float uIntensity;uniform float uMaxDistance;uniform float uThickness;uniform float uDepthBias;uniform float uSteps;uniform float uFadeStart;uniform float uFadeEnd;',
+        'varying vec2 vUv;',
+        'vec3 pStudioContactViewPosition(vec2 uv,float depth){vec4 h=uInverseProjection*vec4(uv*2.0-1.0,depth*2.0-1.0,1.0);return h.xyz/max(abs(h.w),1e-6);}',
+        'void main(){',
+        'vec4 source=texture2D(tDiffuse,vUv);',
+        'float depth=texture2D(tDepth,vUv).x;',
+        'if(depth>=.99999||uIntensity<=.001||uMaxDistance<=.001){gl_FragColor=source;return;}',
+        'vec3 origin=pStudioContactViewPosition(vUv,depth);',
+        'float viewDistance=max(0.0,-origin.z);',
+        'float distanceFade=1.0-smoothstep(uFadeStart,uFadeEnd,viewDistance);',
+        'if(distanceFade<=.001){gl_FragColor=source;return;}',
+        'vec3 lightDirection=normalize(mat3(uViewMatrix)*normalize(uLightDirectionWorld));',
+        'float steps=clamp(uSteps,4.0,24.0);',
+        'float stepLength=uMaxDistance/steps;',
+        'float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
+        'float occlusion=0.0;',
+        'for(int i=0;i<24;i++){',
+        'if(float(i)>=steps)break;',
+        'float travel=.045+(float(i)+jitter)*stepLength;',
+        'vec3 rayPoint=origin+lightDirection*travel;',
+        'if(rayPoint.z>=-.02)break;',
+        'vec4 projected=uProjection*vec4(rayPoint,1.0);',
+        'if(projected.w<=.0001)break;',
+        'vec2 sampleUv=projected.xy/projected.w*.5+.5;',
+        'if(any(lessThan(sampleUv,vec2(.002)))||any(greaterThan(sampleUv,vec2(.998))))break;',
+        'float hitDepth=texture2D(tDepth,sampleUv).x;',
+        'if(hitDepth>=.99999)continue;',
+        'vec3 hitPoint=pStudioContactViewPosition(sampleUv,hitDepth);',
+        'float separation=hitPoint.z-rayPoint.z;',
+        'float nearIntersection=1.0-smoothstep(uThickness*.35,uThickness,abs(separation));',
+        'float foreground=step(uDepthBias,separation)*(1.0-smoothstep(uDepthBias,uDepthBias+uThickness*2.0,separation));',
+        'float candidate=max(nearIntersection,foreground*.72);',
+        'occlusion=max(occlusion,candidate);',
+        'if(occlusion>.94)break;',
+        '}',
+        'float shadow=clamp(occlusion*uIntensity*distanceFade,0.0,.78);',
+        'gl_FragColor=vec4(source.rgb*(1.0-shadow),source.a);',
+        '}'
+      ].join('\n')
+    };
+    const pass=new FX.ShaderPass(shader);
+    pass.enabled=false;
+    pass.setQuality=(preset='high',adaptiveLevel=2)=>{
+      const base={mobile:5,balanced:7,high:12,ultra:18}[String(preset)]||12;
+      const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
+      const steps=Math.max(4,Math.min(24,Math.round(base*[.6,.82,1][level])));
+      pass.uniforms.uSteps.value=steps;
+      pass.userData=pass.userData||{};
+      pass.userData.pstudioContactShadowQuality={preset,adaptiveLevel:level,steps};
+      return {...pass.userData.pstudioContactShadowQuality};
+    };
+    const render=pass.render.bind(pass);
+    pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
+      const depth=this.uniforms?.tDepth;
+      if(depth&& !depth.value)depth.value=readBuffer?.depthTexture||null;
+      render(renderer,writeBuffer,readBuffer,delta,mask);
+    };
+    pass.setQuality('high',2);
+    contactShadowPasses.add(pass);
+    return pass;
+  }
+
   function createVolumetricFogPass(FX,Three) {
     if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
     const shader={
@@ -675,7 +805,7 @@
     const render=pass.render.bind(pass);
     pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
       const depth=this.uniforms?.tDepth;
-      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=readBuffer?.depthTexture||null;
+      if(depth&&Object.prototype.hasOwnProperty.call(depth,'value'))depth.value=depth.value||readBuffer?.depthTexture||null;
       render(renderer,writeBuffer,readBuffer,delta,mask);
     };
     pass.setQuality('high',2);
@@ -684,7 +814,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureTerrain,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureTerrain,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createContactShadowPass,createVolumetricFogPass,createVolumetricCloudPass,
     configureAtmosphere(settings={}){
       const direction=settings.lightDirection||settings.sunDirection;
       const applyDirection=uniform=>{
@@ -696,6 +826,7 @@
         const u=pass?.uniforms;if(!u)continue;
         applyDirection(u.uSunDirection);applyColor(u.uSunColor,settings.sunColor);applyColor(u.uFogColor,settings.fogColor);
       }
+      for(const pass of contactShadowPasses){const u=pass?.uniforms;if(u)applyDirection(u.uLightDirectionWorld);}
       for(const pass of fogPasses){
         const u=pass?.uniforms;if(!u)continue;
         applyDirection(u.uSunDirection);
@@ -710,7 +841,7 @@
       return true;
     },
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
-    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);terrainMaterials.delete(material);},
-    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,terrainMaterials:terrainMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size})
+    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);foliageTranslucencyMaterials.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);terrainMaterials.delete(material);},
+    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,foliageTranslucencyMaterials:foliageTranslucencyMaterials.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,terrainMaterials:terrainMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size,contactShadowPasses:contactShadowPasses.size})
   };
 })();
