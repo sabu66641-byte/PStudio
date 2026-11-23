@@ -870,7 +870,7 @@ GAME_FUNCTIONS = {
     "draw_plane": 5, "draw_cylinder": 5, "draw_cone": 5, "draw_capsule": 5,
     "add_triangle_collider": 9,
     "draw_grid": 2, "set_camera": 6, "set_camera_follow": 7,
-    "camera_shake": 2, "set_time_scale": 1, "draw_trail": 4, "set_god_rays": 2,
+    "camera_shake": 2, "set_time_scale": 1, "draw_trail": 4, "set_god_rays": 2, "set_atmosphere": 4,
     "set_background": 1, "set_fog": 3, "set_light": 4, "set_material": 2,
     "set_point_light": 6, "set_spot_light": 9, "set_environment": 3, "set_shader": 1,
     "set_toon_material": 14,
