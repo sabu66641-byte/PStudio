@@ -15,7 +15,7 @@ const architecture = fs.readFileSync(path.join(root, 'docs', 'ARCHITECTURE.md'),
 
 test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   for (const [name, arity] of [
-    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4]
+    ['camera_shake', 2], ['set_time_scale', 1], ['draw_trail', 4], ['set_camera_lens', 4]
   ]) assert.match(app, new RegExp('"' + name + '": ' + arity));
   assert.match(app, /"set_god_rays": \(2, 3\)/);
   assert.match(app, /game_functions = GAME_FUNCTIONS if allow_game else \{\}/);
@@ -24,6 +24,9 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   assert.match(runtime, /case 'set_time_scale': if\(a\.length===1\)/);
   assert.match(runtime, /case 'draw_trail': if\(a\.length===4\)/);
   assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\|\|a\.length===3\)/);
+  assert.match(runtime, /case 'set_camera_lens': if\(a\.length===4\)/);
+  assert.match(runtime, /setCameraLens\?\.\(dofEnabled,focusDistance,aperture,chromaticAberration\)/);
+  assert.match(renderer, /setCameraLens:\(dofEnabled,focusDistance=12,aperture=2\.8,chromaticAberration=0\)/);
 });
 
 test('time scale is initialized per Play session and scales browser simulation delta', () => {
@@ -98,13 +101,59 @@ test('God Rays uses the active light, precedes OutputPass, and safely falls back
   assert.match(renderer, /setGodRays:\(enabled,intensity=1,decay=\.965\)/);
 });
 
-test('the Scene API help and technical docs describe all four cinematic calls', () => {
-  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays']) {
+test('the Scene API help and technical docs describe all five cinematic calls', () => {
+  for (const name of ['camera_shake', 'set_time_scale', 'draw_trail', 'set_god_rays', 'set_camera_lens']) {
     assert.ok(html.includes(name), name + ' in Inspector API help');
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261123-volumetrics-phase2/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-volumetrics-phase2/);
-  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-volumetrics-phase2/);
+  assert.match(html, /pstudio_engine\.js\?v=20261123-camera-lens-phase3/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261123-camera-lens-phase3/);
+  assert.match(html, /pstudio_environment_fx\.js\?v=20261123-camera-lens-phase3/);
+});
+
+test('camera lens pass uses depth-aware low-resolution DoF and fail-open compositing', () => {
+  class Vector2 { constructor(x, y) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
+  class Scene { constructor() { this.children = []; } add(item) { this.children.push(item); } }
+  class OrthographicCamera {}
+  class PlaneGeometry { dispose() {} }
+  class ShaderMaterial { constructor(options) { Object.assign(this, options); } dispose() {} }
+  class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; } }
+  class WebGLRenderTarget {
+    constructor(width, height) { this.width = width; this.height = height; this.texture = {}; }
+    setSize(width, height) { this.width = width; this.height = height; }
+    dispose() {}
+  }
+  const Three = { Vector2, Scene, OrthographicCamera, PlaneGeometry, ShaderMaterial, Mesh, WebGLRenderTarget, RGBAFormat: 1, LinearFilter: 2 };
+  const window = { THREE: Three };
+  vm.runInNewContext(fxSource, { window, console, Math, Set, Map, Number, Object });
+  const pass = window.PStudioEnvironmentFX.createCameraLensPass({}, Three);
+  assert.ok(pass);
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.getResolutionScale(), 0.5);
+  pass.setSize(200, 100);
+  assert.deepEqual({ ...pass.getTargetSize() }, { width: 100, height: 50 });
+  assert.equal(pass.setFocusDistance(33), 33);
+  assert.equal(pass.setAperture(1), 1.2);
+  assert.equal(pass.setChromaticAberration(4), 1);
+  assert.equal(pass.setMaxBlurPixels(30), 18);
+  assert.equal(pass.getStats().samples, 12);
+  assert.ok(fxSource.includes('pStudioLinearDepth'));
+  assert.ok(fxSource.includes('depthWeight=exp(-abs(sampleDepth-centerDepth)/tolerance)'));
+  assert.ok(fxSource.includes('for(int i=0;i<12;i++)'));
+  assert.ok(fxSource.includes('uChromaticAberration*0.012*radius2'));
+
+  pass.enabled = true;
+  let renderCalls = 0;
+  const renderer = {
+    autoClear: false,
+    setRenderTarget() {},
+    render() { renderCalls++; if (renderCalls === 1) throw new Error('lens shader failed'); }
+  };
+  pass.render(renderer, {}, { texture: {} });
+  assert.equal(pass.failed, true);
+  assert.equal(pass.enabled, false);
+  assert.equal(renderCalls, 2, 'original source image is composited after the processing error');
+  assert.equal(renderer.autoClear, false, 'renderer clear state is restored');
+  pass.dispose();
 });
