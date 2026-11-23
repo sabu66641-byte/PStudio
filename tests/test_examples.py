@@ -97,8 +97,8 @@ class ExampleProjectRegressionTests(unittest.TestCase):
         self.assertEqual(app.GAME_FUNCTIONS.get("set_camera_lens"), 4)
         parsed = self.validate_game_scripts({
             "camera_lens.ps": (
-                "func start()\\n"
-                "    set_camera_lens(true, 18, 2.8, 0.08)\\n"
+                "func start()\n"
+                "    set_camera_lens(true, 18, 2.8, 0.08)\n"
             )
         })
         self.assertIn("camera_lens.ps", parsed)
@@ -106,8 +106,8 @@ class ExampleProjectRegressionTests(unittest.TestCase):
 
     def test_camera_lens_api_rejects_wrong_argument_counts(self):
         for source in [
-            "func start()\\n    set_camera_lens(true, 18, 2.8)\\n",
-            "func start()\\n    set_camera_lens(true, 18, 2.8, 0.08, 1)\\n",
+            "func start()\n    set_camera_lens(true, 18, 2.8)\n",
+            "func start()\n    set_camera_lens(true, 18, 2.8, 0.08, 1)\n",
         ]:
             response = self.client.post(
                 "/game/prepare",
