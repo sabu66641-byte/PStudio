@@ -739,3 +739,5 @@ test('gameplay definitions are ECS-owned standalone Components behind legacy ps 
   assert.doesNotThrow(() => new Function(bridge));
   assert.doesNotThrow(() => new Function(gameplay));
 });
+
+test('ps runtime variables and lifecycle are ECS-owned rather than runtime Maps/Sets',()=>{const e=fs.readFileSync(path.join(root,'static/pstudio_engine.js'),'utf8'),h=fs.readFileSync(path.join(root,'templates/index.html'),'utf8'),a=fs.readFileSync(path.join(root,'app.py'),'utf8'),b=fs.readFileSync(path.join(root,'static/pstudio_ecs_script.js'),'utf8');assert.match(h,/pstudio_ecs_script\\.js/);assert.match(a,/"ScriptState"/);assert.match(a,/"ScriptLifecycle"/);for(const m of ['getVariables','setVariables','getSystemState','setSystemState','getLifecycle','setLifecycle'])assert.ok(b.includes(m));assert.match(e,/PStudioECSScript/);for(const f of ['states','initialized','started','landSequences','ecsStates'])assert.doesNotMatch(e,new RegExp('runtime\\\\.'+f));});

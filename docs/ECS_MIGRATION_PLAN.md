@@ -68,7 +68,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 14. **Versioned Component persistence** — store persistent Components behind an explicit scene schema version, migrate unversioned v0 Component arrays/maps, preserve unknown future versions, and test round-trip/invalid data. (Phase 14 implemented.)
 15. **Gameplay definition entities** — move Item/Quest/Weapon definition records into standalone ECS entities while keeping ps definition APIs compatible. (Phase 15 implemented.)
 16. **Transform and Physics parity** — keep ECS Transform and PhysicsBody/State as runtime state, verify two-way editor synchronization and config changes, and retain Scene Object serialization and the fixed-step solver as service adapters. (Phase 16 implemented; adapters intentionally remain.)
-17. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
+17. **ps Script Runtime State** — move per-Scene Object ps variables, initialization/start lifecycle, per-System local state and landing sequence into runtime-only ScriptState/ScriptLifecycle Components. Keep interpreter execution and per-frame draw-command caches in the runtime service. (Phase 17 implemented.)
+18. **Compatibility cleanup** — parity-test legacy Scene Object/ps paths, establish a deprecation period, and remove duplicate runtime stores only after old projects remain compatible. (Pending.)
 
 ## Required gates for every slice
 

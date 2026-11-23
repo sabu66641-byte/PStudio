@@ -154,7 +154,7 @@
   function makeContext(object, dt) {
     return {
       object, dt, draw: [], steps: 0, callDepth: 0,
-      env: runtime.states.get(object.id) || Object.create(null),
+      env: window.PStudioECSScript?.getVariables?.(object.id) || runtime.fallbackStates?.get(object.id) || Object.create(null),
       funcs: Object.create(null),
       output: []
     };
@@ -477,9 +477,9 @@
     return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
   }
   function dispatchCollision(object, other) {
-    const state=runtime.states.get(object.id);if(!state)return;
+    const state=window.PStudioECSScript?.getVariables?.(object.id) || runtime.fallbackStates?.get(object.id);if(!state)return;
     const c=setupContext(object,0);c.steps=0;
-    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
+    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);if(!window.PStudioECSScript?.setVariables?.(object.id,c.env))runtime.fallbackStates?.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
     const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
@@ -650,18 +650,20 @@
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
         const script=astForScript(o.script);if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
-        if(!runtime.initialized.has(o.id)){
-          runtime.initialized.add(o.id);
+        const scriptLifecycle=window.PStudioECSScript?.getLifecycle?.(o.id);
+        if(!scriptLifecycle?.initialized && !runtime.fallbackInitialized?.has(o.id)){
+          if(!window.PStudioECSScript?.setLifecycle?.(o.id,{initialized:true}))runtime.fallbackInitialized?.add(o.id);
           const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');
           if(topLevel.length)execBlock(c,topLevel,c.env);
         }
-        if(!runtime.started.has(o.id)){
-          runtime.started.add(o.id);
+        const currentLifecycle=window.PStudioECSScript?.getLifecycle?.(o.id);
+        if(!currentLifecycle?.started && !runtime.fallbackStarted?.has(o.id)){
+          if(!window.PStudioECSScript?.setLifecycle?.(o.id,{started:true}))runtime.fallbackStarted?.add(o.id);
           if(c.funcs.start)callFunction(c,'start',[]);
         }
         c.dt=dt;
         if(c.funcs.update)callFunction(c,'update',[dt]);
-        runtime.states.set(o.id,c.env);
+        if(!window.PStudioECSScript?.setVariables?.(o.id,c.env))runtime.fallbackStates?.set(o.id,c.env);
         const objectDraws=c.draw.slice();
         if(o.toonMaterialSettings)objectDraws.unshift({type:'toon_material',toon:o.toonMaterialSettings});
         if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
@@ -733,7 +735,7 @@
 
         if(transform.landed){
           runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
-          runtime.landSequences.set(id,runtime.nextLandSequence);
+          const entity=window.PStudioECS?.getEntityForSceneObject?.(id);if(entity!=null)window.PStudioECSScript?.setLifecycleByEntity?.(entity,{landSequence:runtime.nextLandSequence});
         }
 
         for(const draw of draws){
@@ -767,7 +769,7 @@
             draw.grounded=transform.grounded;
             draw.speed=transform.horizontalSpeed;
             draw.velocityY=transform.velocityY;
-            draw.landSequence=runtime.landSequences.get(id)||0;
+            draw.landSequence=window.PStudioECSScript?.getLifecycle?.(id)?.landSequence||0;
           }
         }
       }
@@ -820,7 +822,7 @@
       try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
     }
     runtime.ecsComponentTypes=[];
-    runtime.ecsStates?.clear?.();
+    runtime.fallbackStates?.clear?.();runtime.fallbackInitialized?.clear?.();runtime.fallbackStarted?.clear?.();
   }
   function registerEcsRuntime(asts){
     const ecs=window.PStudioECS;
@@ -852,7 +854,6 @@
     }
     runtime.ecsComponentTypes=[];
     runtime.ecsSystemIds=[];
-    runtime.ecsStates=new Map();
     try{
       for(const [name,definition] of definitions){
         const create=()=>Object.fromEntries(Object.entries(definition.defaults).map(([key,value])=>[key,cloneEcsDefault(value)]));
@@ -903,9 +904,7 @@
             api.forEach(componentNames,(entity,...values)=>{
               const sceneRef=api.hasComponent(entity,'SceneObjectRef')?api.getComponent(entity,'SceneObjectRef'):null;
               const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
-              const stateKey=systemId+':'+entity;
-              const c=makeContext(object,dt);
-              c.env=runtime.ecsStates.get(stateKey)||Object.create(null);
+              const c=makeContext(object,dt);c.env=window.PStudioECSScript?.getSystemState?.(entity,systemId)||Object.create(null);
               c.env.entity=entity;c.env.dt=dt;
               componentNames.forEach((component,index)=>{c.env[ecsBindingName(component)]=values[index];});
               c.funcs=Object.create(null);
@@ -913,7 +912,7 @@
               c.steps=0;
               try{execBlock(c,node.body||[],c.env);}
               catch(signal){if(!(signal&&signal.kind===RETURN))throw signal;}
-              runtime.ecsStates.set(stateKey,c.env);
+              window.PStudioECSScript?.setSystemState?.(entity,systemId,c.env);
               if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
             });
           }
@@ -950,8 +949,9 @@
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[],ecsStates:new Map()};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
-      for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
+      runtime={running:true,asts:data.scripts,fallbackStates:new Map(),fallbackInitialized:new Set(),fallbackStarted:new Set(),contexts:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};
+      window.PStudioECSScript?.sync?.(sceneObjects || []);
+      collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
       window.PStudioECSInspector?.refresh?.();
