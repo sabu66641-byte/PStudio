@@ -77,7 +77,7 @@ test('Light uses existing point/spot draw commands and a stable component identi
   const commands = new Map([['lamp', [{ type: 'cube', x: 0, y: 0, z: 0, size: 1 }]]]);
   rendering.buildCommands(commands, objects);
   const list = commands.get('lamp');
-  const light = list[1];
+  const light = list[0];
   assert.equal(list[0].type, 'light');
   assert.equal(light.kind, 'spot');
   assert.equal(light.componentKey, 'ecs-light');
@@ -128,7 +128,7 @@ test('Renderable visibility and Animation playback intent are projected without 
   ecs.setComponent(entity, 'Animation', { playing: false });
   const stopped = new Map();
   rendering.buildCommands(stopped, objects);
-  assert.equal(stopped.get('hero')[0].stop, true);
+  assert.equal(stopped.get('hero')[1].stop, true);
 });
 
 test('stale Scene Object entities are ignored and absent Renderable Components remain visible', () => {
