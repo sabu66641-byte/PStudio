@@ -44,7 +44,9 @@ test('scene environment preset normalization defaults invalid and missing names 
 test('new scenes default to day and project persistence includes scene environment', () => {
   assert.match(html, /let sceneEnvironment=\{preset:'day'\}/);
   assert.match(html, /environment:sceneEnvironment/);
-  assert.match(html, /test('GLB material Inspector settings are stored in ECS and forwarded to PStudio3D', () => {
+});
+
+test('GLB material Inspector settings are stored in ECS and forwarded to PStudio3D', () => {
   for (const id of [
     'obj-model-material-roughness', 'obj-model-material-metalness', 'obj-model-material-color',
     'obj-model-double-side', 'obj-model-recompute-normals',
@@ -57,6 +59,7 @@ test('new scenes default to day and project persistence includes scene environme
   assert.ok(materials.includes('recomputeNormals: override.recomputeNormals'));
   assert.ok(materials.includes('emissiveIntensity: override.emissiveIntensity'));
 });
+
 test('GLB material overrides restore source defaults and use per-instance geometry clones for normal recalculation', () => {
   for (const token of [
     'materialDefaults.set(copy,{',
