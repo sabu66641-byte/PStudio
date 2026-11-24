@@ -21,7 +21,13 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js"'));
   assert.ok(html.includes('"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js"'));
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
-  assert.ok(html.includes('WebGLNodesHandler.js'));
+  assert.ok(html.includes("import('three/webgpu')"));
+  assert.ok(html.includes("import('three/tsl')"));
+  assert.ok(html.includes('PStudioWebGPURenderer'));
+  assert.ok(html.includes('PStudioTSL'));
+  assert.ok(renderer.includes('webgpuModuleAvailable'));
+  assert.ok(renderer.includes('tslModuleAvailable'));
+  assert.ok(renderer.includes("tslNodesEnabled:false"));
 });
 
 test('auto quality keeps device-aware scaling while Ultra uses the shared 2x render helper',()=>{
