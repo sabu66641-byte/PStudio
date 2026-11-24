@@ -56,6 +56,7 @@ test('constrained touch Maximum protects the frame budget by disabling full-scre
   assert.ok(renderer.includes("volumetricFogEnabled=!!(premiumEffectsEnabled&&profile.atmosphere&&volumetricFogPass)"));
   assert.ok(renderer.includes("contactShadowsEnabled=!!contactShadowPass&&premiumEffectsEnabled"));
   assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.72,.9,1.05][level]:Infinity"));
+  assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.8,1.0,1.2][level]:Infinity"));
   assert.ok(renderer.includes("adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)"));
   assert.ok(renderer.includes("mobilePostFxBudget:adaptiveTouchPostFxBudget"));
   assert.ok(renderer.includes("setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget"));
