@@ -910,6 +910,7 @@ test('all visible select controls use the shared dark in-app picker instead of n
   assert.match(selectUI,/menu\.role='listbox'/);
   assert.match(selectUI,/new Event\('change',\{bubbles:true\}\)/);
   assert.match(selectUI,/new MutationObserver/);
+  assert.ok(selectUI.includes('if(select.isConnected)continue;'));
   assert.match(selectUI,/window\.PStudioSelects=\{initialized:true/);
   assert.ok(selectUI.includes("select.classList.add('pstudio-native-select')"));
   assert.ok(selectCSS.includes('background:#1b222c'));
