@@ -88,6 +88,30 @@ test('water uses a physical transmission material and animated vertex displaceme
   assert.ok(renderer.includes('pstudioWaterHQ') || renderer.includes('pstudioWaveA'));
 });
 
+test('Mirror Water adds an isolated planar reflection path with bounded adaptive targets',()=>{
+  for(const token of [
+    'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
+    'pstudio-planar-mirror-water-v1','uMirrorReflectivity','uMirrorWaveStrength',
+    'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
+    'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(engine.includes("case 'draw_mirror_water'"));
+  assert.ok(engine.includes("type:'mirror_water'"));
+  assert.ok(app.includes('"draw_mirror_water": (5, 7)'));
+  assert.ok(html.includes('addMirrorWaterToScene()'));
+  assert.ok(html.includes('id="obj-mirror-water-settings"'));
+  assert.ok(html.includes("updateSelectedObject('mirrorReflectivity',this.value)"));
+  assert.ok(html.includes("updateSelectedObject('waveStrength',this.value)"));
+});
+test('Mirror Water remains additive and does not replace legacy PBR draw_water',()=>{
+  assert.ok(engine.includes("case 'draw_water': if(a.length===7)"));
+  assert.ok(engine.includes("case 'draw_mirror_water': if(a.length>=5&&a.length<=7)"));
+  assert.ok(renderer.includes("if(d.type==='water')"));
+  assert.ok(renderer.includes("d.type==='mirror_water'"));
+  assert.ok(renderer.includes('configureWaterMaterial(material)'));
+  assert.ok(renderer.includes('configureMirrorWaterMaterial('));
+});
+
 test('GPU particle trajectories are evaluated by shader attributes', () => {
   for (const token of ['aOrigin', 'aVelocity', 'aBirth', 'aLife', 'uGravity', 'gl_PointSize']) {
     assert.ok(renderer.includes(token), token);
