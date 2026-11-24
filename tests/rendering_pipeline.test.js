@@ -129,20 +129,22 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   const start=renderer.indexOf('function configureMirrorWaterMaterial');
   const end=renderer.indexOf('function createMirrorWaterState',start);
   const shader=renderer.slice(start,end);
-  assert.match(shader,/uMirrorTextureMatrix;\\nvarying/);
-  assert.doesNotMatch(shader,/uMirrorTextureMatrix;\\\\nvarying/);
-  assert.match(shader,/pstudio-planar-mirror-water-v2/);
-  assert.match(shader,/uMirrorReflectivity:\\{value:1\\.0\\}/);
-  assert.match(shader,/pStudioMirrorAmount = clamp\\(uMirrorReflectivity \\* \\(0\\.985 \\+ 0\\.015 \\* pStudioMirrorFresnel\\)/);
-  assert.match(renderer,/reflectivity:1\\.0/);
-  assert.match(renderer,/roughness:0\\.012,metalness:0,clearcoat:1,clearcoatRoughness:0\\.008/);
-  assert.match(renderer,/if\\(d\\.type!==\x27water\x27&&d\\.type!==\x27mirror_water\x27\\)/);
-  assert.match(engine,/reflectivity:a\\.length>=6\\?Math\\.max\\(0,Math\\.min\\(1,finite\\(a\\[5\\]\\)\\)\\):1\\.0/);
-  assert.match(html,/obj-mirror-reflectivity[^>]+value=\x221\x22/);
+  assert.ok(shader.includes("uMirrorTextureMatrix;\\nvarying"),"GLSL declarations use a real newline escape");
+  assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
+  assert.ok(shader.includes("pstudio-planar-mirror-water-v2"));
+  assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
+  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.985 + 0.015 * pStudioMirrorFresnel)"));
+  assert.ok(renderer.includes("reflectivity:1.0"));
+  assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
+  assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
+  assert.ok(engine.includes("reflectivity:a.length>=6?Math.max(0,Math.min(1,finite(a[5]))):1.0"));
+  assert.ok(html.includes('id="obj-mirror-reflectivity" type="range" min="0" max="1" step="0.01" value="1"'));
 });
 
 test('day sky palette removes the green-gray lower hemisphere and softens the blown white horizon',()=>{
-  const dayPalette=renderer.match(/day:\\[\\[(?:.|\\n)*?\\]\\],\\n      dusk:/)?.[0]||'';
+  const start=renderer.indexOf("day:[[");
+  const end=renderer.indexOf("dusk:[[",start);
+  const dayPalette=renderer.slice(start,end);
   assert.ok(dayPalette.includes('#1A4F86')&&dayPalette.includes('#4798D0'),'day sky is slightly bluer');
   assert.ok(dayPalette.includes('#B5D0DB')&&dayPalette.includes('#405969'),'horizon and lower hemisphere use blue-gray tones');
   assert.doesNotMatch(dayPalette,/#879998|#4B595A|#313B3D/i);
