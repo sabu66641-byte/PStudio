@@ -270,7 +270,7 @@
       if(Number.isFinite(queried)&&queried>0)maxTextureSize=queried;
     }catch(_){}
     const memory=deviceMemoryGiB();
-    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(adaptiveUltraTouchMode?2048:4096);
+    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096);
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
     return Math.min(requestedSize,hardwareCap);
@@ -286,10 +286,12 @@
     adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveQualityEnabled=qualityPreset==='auto'||adaptiveUltraTouchMode;
-    adaptiveQualityLevel=adaptiveUltraTouchMode?0:2;
+    // Start Ultra at the highest hardware-safe tier. Performance adaptation may reduce
+    // resolution, shadow size and samples later, but never disables premium effects by default.
+    adaptiveQualityLevel=2;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
-    const effectsEnabled=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
+    const effectsEnabled=!memorySafetyApplied;
     qualityAOEnabled=effectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;
     ssrEnabled=effectsEnabled&&profile.ssr&&!!ssrPass;
     contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effectsEnabled&&!!profile.contactShadows):contactShadowsRequested);
@@ -303,7 +305,7 @@
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      const requestedShadow=adaptiveUltraTouchMode?[1024,1536,2048][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      const requestedShadow=adaptiveUltraTouchMode?[2048,3072,4096][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
       for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(effectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
@@ -311,7 +313,7 @@
       volumetricFogEnabled=!!(effectsEnabled&&profile.atmosphere&&volumetricFogPass);
       if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
-      if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
+      if(gtaoPass?.updateGtaoMaterial){const level=adaptiveQualityEnabled?adaptiveQualityLevel:2;const aoSamples=selected==='ultra'?[16,24,32][level]:[8,12,16][level];const pdSamples=selected==='ultra'?[16,24,32][level]:[12,18,24][level];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:pdSamples,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile,adaptive:adaptiveUltraTouchMode});}catch(_){}
@@ -340,7 +342,7 @@
     const scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel];
     const safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;
+    const effects=!memorySafetyApplied;
     qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
     volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;
@@ -348,7 +350,9 @@
     if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
-    const shadowSizes=adaptiveUltraTouchMode?[1024,1536,2048]:qualityPreset==='ultra'?[1024,2048,4096]:[1024,1536,2048];
+    if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[16,24,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[16,24,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:pdSamples,radius:selected==='ultra'?9:8});}
+    if(taaPass&&!temporalAAEnabled){taaPass.sampleLevel=adaptiveQualityLevel;taaPass.accumulateIndex=-1;}
+    const shadowSizes=adaptiveUltraTouchMode?[2048,3072,4096]:qualityPreset==='ultra'?[1024,2048,4096]:[1024,1536,2048];
     const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
@@ -3800,7 +3804,7 @@ void main(){
       const dusk=name==='dusk';
       const sunRadius=Math.max(6,Number(profile.sunRadius)||10);
       const glowStrength=Math.max(0,Math.min(1,Number(profile.sunGlow)||.45));
-      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.44:height*.30));
+      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.36:height*.25));
       horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.27)':'rgba(255,238,196,0.22)');
       horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.13)':'rgba(159,210,245,0.10)');
       horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
@@ -3848,11 +3852,11 @@ void main(){
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?22:15);
+      const glowRadius=sunRadius*(dusk?13:10);
       const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,240,203,'+(0.56*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,178,121,'+(0.34*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.13*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+      halo.addColorStop(0,dusk?'rgba(255,230,190,'+(0.44*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.28*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.1*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
       halo.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
@@ -3958,7 +3962,7 @@ void main(){
     configureMoonSky(T,profile);
     configureSunSky(T,profile);
     const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
-    const cloudTierActive=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
+    const cloudTierActive=!memorySafetyApplied;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
     const signature=String(profile.name||'day');

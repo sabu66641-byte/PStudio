@@ -518,6 +518,8 @@
   function setViewMode(mode) {
     if (!['auto','2d','3d'].includes(mode)) return;
     renderMode = mode; updateViewModeButtons();
+    const stage=document.querySelector('.game-stage');
+    stage?.classList.toggle('is-3d-viewport',mode==='3d');
     if (runtime?.running) { renderFrame(); return; }
     const c2=$('game-canvas'), c3=$('game-3d-canvas');
     if (mode === '3d') {
