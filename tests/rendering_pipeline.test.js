@@ -751,8 +751,8 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.equal(pass.uniforms.uCloudLightSteps.value,3);
   assert.equal(pass.setQuality('ultra',1).steps,54);
   assert.equal(pass.setQuality('ultra',0).steps,45);
-  assert.equal(pass.setQuality('maximum',2).steps,44);
-  assert.equal(pass.setQuality('high',2).steps,30);
+  assert.equal(pass.setQuality('maximum',2).steps,52);
+  assert.equal(pass.setQuality('high',2).steps,34);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
   assert.equal(pass.uniforms.uSunColor.value.value,'#ffd0a0');
@@ -1077,10 +1077,10 @@ test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production W
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r187-tsl-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-daylight-hq-r1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3'));
-  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-daylight-hq-r1'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
@@ -1132,7 +1132,7 @@ test('Ultra preserves 2x output while avoiding oversized shadow maps and excessi
 
 test('High, Maximum and Ultra have progressively stronger independent ray-march and AO budgets',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
-  assert.match(fx,/high:30,maximum:44,ultra:64/);
+  assert.match(fx,/high:34,maximum:52,ultra:64/);
   assert.match(fx,/high:16,maximum:26,ultra:32/);
   assert.match(renderer,/high:\{pixelRatio:2,shadowSize:3072/);
   assert.match(renderer,/maximum:\{pixelRatio:2\.1,shadowSize:4096/);

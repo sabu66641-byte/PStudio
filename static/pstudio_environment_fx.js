@@ -578,7 +578,8 @@
         'vec3 q=worldPosition*uCloudScale+vec3(uCloudWind.x*uTime*.0008,0.0,uCloudWind.y*uTime*.0008);',
         'vec3 warp=vec3(pNoise(q*.52+vec3(17.0,3.0,9.0)),pNoise(q*.52+vec3(4.0,19.0,2.0)),pNoise(q*.52+vec3(9.0,7.0,21.0)))-.5;',
         'float body=pFbm(q+warp*.52);float detail=pNoise(q*4.15+vec3(12.0,5.0,7.0));',
-        'float erosion=(1.0-detail)*uCloudDetail*.16;',
+        'float fineDetail=pNoise(q*8.25+vec3(27.0,11.0,19.0));',
+        'float erosion=(1.0-detail)*uCloudDetail*.12+(1.0-fineDetail)*uCloudDetail*.035;',
         'float threshold=mix(.68,.34,clamp(uCloudCoverage,0.0,1.0));',
         'float billow=smoothstep(threshold-.18,threshold+.13,body-erosion+(.5-height)*.045);',
         'return billow*vertical*uCloudDensity*1.25;',
@@ -613,8 +614,9 @@
         'float forwardScatter=clamp(phase*2.2,0.0,1.65);',
         'vec3 ambient=mix(uFogColor*vec3(.48,.58,.72),vec3(.74,.81,.9),clamp(ray.y*.5+.45,0.0,1.0));',
         'vec3 direct=uSunColor*(.38+forwardScatter*1.25)*lightTransmittance;',
-        'float silverLining=pow(clamp(1.0-lightTransmittance,0.0,1.0),.42)*.18;',
-        'vec3 cloudLight=ambient*(.58+.22*pow(1.0-pow(1.0-pow(1.0-density,2.0),2.0),2.0))+direct*pow(powder,.72)+uSunColor*silverLining;',
+        'float silverLining=pow(clamp(1.0-lightTransmittance,0.0,1.0),.38)*.22;',
+        'float cloudMultipleScatter=(1.0-lightTransmittance)*(.12+.10*pow(powder,.6));',
+        'vec3 cloudLight=ambient*(.58+.22*pow(1.0-pow(1.0-pow(1.0-density,2.0),2.0),2.0)+cloudMultipleScatter)+direct*pow(powder,.72)+uSunColor*silverLining;',
         'scattering+=cloudLight*(alpha*transmittance);transmittance*=1.0-alpha;',
         '}',
         'vec3 result=source.rgb*transmittance+scattering*uAtmosphereStrength;',
@@ -626,11 +628,11 @@
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:14,high:30,maximum:44,ultra:64,cinematic:40}[String(preset)]||30;
+      const base={mobile:8,balanced:14,high:34,maximum:52,ultra:64,cinematic:40}[String(preset)]||34;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
       const factor=preset==='ultra'?[.70,.85,1][level]:preset==='maximum'?[.62,.76,1][level]:[.58,.78,1][level];
       const steps=Math.max(8,Math.min(64,Math.round(base*factor)));
-      const lightSteps=preset==='ultra'?3:(preset==='high'||preset==='maximum'||preset==='cinematic'?2:1);
+      const lightSteps=(preset==='ultra'||preset==='maximum')?3:(preset==='high'||preset==='cinematic'?2:1);
       pass.uniforms.uCloudSteps.value=steps;
       pass.uniforms.uCloudLightSteps.value=lightSteps;
       pass.userData=pass.userData||{};
