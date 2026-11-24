@@ -11,7 +11,9 @@
   function readSavedQualityPreset(){
     try{
       const saved=window.localStorage?.getItem('pstudio-render-quality')||'auto';
-      return ['auto','mobile','balanced','high','ultra'].includes(saved)?saved:'auto';
+      // Before Ultra 2x existed, the saved "ultra" value represented today's Maximum tier.
+      const migrated=saved==='ultra'?'maximum':saved;
+      return ['auto','mobile','balanced','high','maximum','ultra'].includes(migrated)?migrated:'auto';
     }catch(_){return 'auto';}
   }
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
@@ -76,7 +78,7 @@
   let physicalSky=null;
   let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
   let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunViewDirection=null,sunIntensity=0,sunAngularRadius=1.2,sunGlareStrength=0,moonGlareStrength=0;
-  let adaptiveUltraTouchMode=false;
+  let adaptiveMaximumTouchMode=false;
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -235,7 +237,8 @@
     mobile:{pixelRatio:1,shadowSize:1024,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
     balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
-    ultra:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
+    maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
+    ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
   };
   function qualityHardwareCapabilities(){
     let maxTextureSize=Number(renderer?.capabilities?.maxTextureSize)||0;
@@ -258,7 +261,7 @@
     // Choose the strongest sensible starting tier, then adapt from real frame timing.
     if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return 'mobile';
     if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return 'balanced';
-    if(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192)return 'ultra';
+    if(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192)return 'maximum';
     return 'high';
   }
 
@@ -270,7 +273,9 @@
       if(Number.isFinite(queried)&&queried>0)maxTextureSize=queried;
     }catch(_){}
     const memory=deviceMemoryGiB();
-    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096);
+    const memoryCap=qualityPreset==='ultra'
+      ?(memory<=2?3072:memory<=4?4096:memory<=8?6144:8192)
+      :qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096);
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
     return Math.min(requestedSize,hardwareCap);
