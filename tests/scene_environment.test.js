@@ -232,7 +232,10 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
   assert.ok(renderer.includes("Math.tan(3.0*Math.PI/180)"));
-  assert.match(renderer,/const moonAura=context\.createRadialGradient/);
+  assert.match(renderer,/const glowLayers=\[/);
+  assert.match(renderer,/radius:height\*\.026,stops:/);
+  assert.match(renderer,/radius:height\*\.074,stops:/);
+  assert.match(renderer,/radius:height\*\.148,stops:/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
 });
