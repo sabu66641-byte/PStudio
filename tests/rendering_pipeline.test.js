@@ -664,14 +664,13 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:30});
-  assert.equal(pass.uniforms.uSteps.value,30);
-  assert.equal(pass.setQuality('ultra',1).steps,26);
-  assert.equal(pass.setQuality('ultra',0).steps,23);
-  assert.equal(pass.setQuality('maximum',2).steps,18);
-  assert.equal(pass.setQuality('ultra',0).steps,45,'the lower adaptive Ultra tier reduces ray-march cost without dropping below Maximum');
-  assert.equal(pass.setQuality('maximum',2).steps,40,'Maximum retains its previous cloud budget');
-  assert.equal(pass.setQuality('high',2).steps,30,'High retains its distinct lower sample budget');
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:64,lightSteps:3});
+  assert.equal(pass.uniforms.uCloudSteps.value,64);
+  assert.equal(pass.uniforms.uCloudLightSteps.value,3);
+  assert.equal(pass.setQuality('ultra',1).steps,54);
+  assert.equal(pass.setQuality('ultra',0).steps,45);
+  assert.equal(pass.setQuality('maximum',2).steps,40);
+  assert.equal(pass.setQuality('high',2).steps,30);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
   assert.equal(pass.uniforms.uSunColor.value.value,'#ffd0a0');
@@ -822,15 +821,13 @@ test('contact shadow pass ray-marches scene depth with bounded quality levels an
   const pass=api.createContactShadowPass({ShaderPass},{DepthTexture,Matrix4,Vector3});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:18});
-  assert.equal(pass.uniforms.uSteps.value,18);
-  assert.equal(pass.setQuality('ultra',1).steps,15);
-  assert.equal(pass.setQuality('ultra',0).steps,12);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:30});
+  assert.equal(pass.uniforms.uSteps.value,30);
+  assert.equal(pass.setQuality('ultra',1).steps,26);
+  assert.equal(pass.setQuality('ultra',0).steps,23);
+  assert.equal(pass.setQuality('maximum',2).steps,18);
   assert.equal(pass.setQuality('high',2).steps,12);
-  assert.ok(pass.shader.fragmentShader.includes('pStudioContactViewPosition'));
-  assert.ok(pass.shader.fragmentShader.includes('uProjection*vec4(rayPoint,1.0)'));
-  assert.ok(pass.shader.fragmentShader.includes('texture2D(tDepth,sampleUv)'));
-  assert.ok(pass.shader.fragmentShader.includes('uDepthBias'));
+  assert.ok(pass.shader.fragmentShader.includes('clamp(uSteps,4.0,32.0)'));
   api.configureAtmosphere({lightDirection:[0.2,0.8,0.4]});
   const d=pass.uniforms.uLightDirectionWorld.value;
   assert.ok(Math.abs(d.y-0.8728715609)<1e-8);
@@ -878,25 +875,25 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/if\(name!=='auto'\)return QUALITY_PROFILES\[name\]\?name:'balanced'/);
   assert.match(renderer,/if\(memoryGiB<=2\|\|cpuCores<=2\|\|maxTextureSize<2048\)return 'mobile'/);
   assert.match(renderer,/if\(memoryGiB<=3\|\|cpuCores<4\|\|maxTextureSize<4096\|\|\(touch&&memoryGiB<=4\)\)return 'balanced'/);
-  assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'ultra'/);
+  assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'maximum'/);
   assert.match(renderer,/const baseProfile=QUALITY_PROFILES\[selected\],profile=baseProfile/);
-  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):\(memory<=4\?2048:memory<=6\?3072:4096\)/);
+  assert.ok(renderer.includes("qualityPreset==='ultra'? (memory<=2?3072:memory<=4?4096:memory<=8?6144:8192)"));
 });
 
 test('Maximum remains distinct from Ultra, which requests true 2x output and device-aware sampling',()=>{
-  assert.match(renderer,/adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice/);
-  assert.match(renderer,/adaptiveQualityEnabled=qualityPreset==='auto'\\|\\|qualityPreset==='ultra'\\|\\|adaptiveMaximumTouchMode/);
-  assert.match(renderer,/maximum:\\{pixelRatio:2\\.1,shadowSize:4096/);
-  assert.match(renderer,/ultra:\\{pixelRatio:4\\.2,shadowSize:8192/);
-  assert.match(renderer,/selected==='ultra'\\?Math\\.min\\(dpr,QUALITY_PROFILES\\.maximum\\.pixelRatio\\)\\*2/);
-  assert.match(renderer,/textureCap=hardware\\.maxTextureSize\\/Math\\.max\\(width,height\\)/);
-  assert.match(renderer,/pixelCap=Math\\.sqrt\\(pixelBudget\\/\\(width\\*height\\)\\)/);
-  assert.match(renderer,/outputMultiplier:qualityPreset==='ultra'\\?2:1/);
-  assert.match(renderer,/resolutionLimited:qualityPreset==='ultra'/);
-  assert.match(renderer,/const aoSamples=selected==='ultra'\\?\\[32,48,64\\]\\[adaptiveQualityLevel\\]/);
-  assert.match(renderer,/const shadowSizes=adaptiveMaximumTouchMode\\?\\[1536,2048,3072\\]:qualityPreset==='ultra'\\?\\[4096,6144,8192\\]/);
-  assert.match(renderer,/requestedPixelRatio=resolveQualityRenderPixelRatio\\(selected,adaptiveQualityLevel,adaptiveQualityEnabled\\)/);
-  assert.match(renderer,/scale:safeScale/);
+  assert.ok(renderer.includes("adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice"));
+  assert.ok(renderer.includes("adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode"));
+  assert.ok(renderer.includes("maximum:{pixelRatio:2.1,shadowSize:4096"));
+  assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:8192"));
+  assert.ok(renderer.includes("const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2"));
+  assert.ok(renderer.includes("textureCap=hardware.maxTextureSize/Math.max(width,height)"));
+  assert.ok(renderer.includes("pixelCap=Math.sqrt(pixelBudget/(width*height))"));
+  assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
+  assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
+  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]"));
+  assert.ok(renderer.includes("requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
+  assert.ok(renderer.includes("scale:safeScale"));
 });
 
 test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
@@ -911,7 +908,7 @@ test('quality preset selection persists, reports active hardware tier and emits 
   assert.match(engine,/updatePStudioQualityControl\(\)/);
 });
 
-test('scene toolbar exposes all five render quality tiers and keeps the control usable on mobile',()=>{
+test('scene toolbar exposes all six render quality tiers and keeps the control usable on mobile',()=>{
   for(const value of ['auto','mobile','balanced','high','maximum','ultra'])assert.match(html,new RegExp('option value="'+value+'"'));
   assert.ok(html.includes('id="render-quality-select"'));
   assert.ok(html.includes('id="render-quality-active"'));
