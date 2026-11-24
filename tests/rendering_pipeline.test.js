@@ -751,8 +751,8 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.equal(pass.uniforms.uCloudLightSteps.value,3);
   assert.equal(pass.setQuality('ultra',1).steps,54);
   assert.equal(pass.setQuality('ultra',0).steps,45);
-  assert.equal(pass.setQuality('maximum',2).steps,44);
-  assert.equal(pass.setQuality('high',2).steps,30);
+  assert.equal(pass.setQuality('maximum',2).steps,52);
+  assert.equal(pass.setQuality('high',2).steps,34);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
   assert.equal(pass.uniforms.uSunColor.value.value,'#ffd0a0');

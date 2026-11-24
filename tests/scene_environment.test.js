@@ -507,7 +507,7 @@ test('moon has a larger angular diameter and higher sphere tessellation',()=>{
 
 test('dusk atmosphere uses layered twilight scattering, a defined solar core and bounded color grain',()=>{
   assert.match(renderer,/pStudioSunAngularRadius/);
-  assert.match(renderer,/pStudioSolarExponent=mix\(260\.0,155\.0/);
+  assert.match(renderer,/pStudioSolarCore=pow\(pStudioSunAlignment,180\.0\)/);
   assert.match(renderer,/pStudioPeachHorizon/);
   assert.match(renderer,/pStudioAtmosphereGrain\*0\.00045/);
   assert.equal(presets.getPreset('dusk').twilightStrength,1);
