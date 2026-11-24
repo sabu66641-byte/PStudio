@@ -7,6 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('game-canvas');
   if (!canvas) return;
+  const SCENE_PREVIEW_GRID_SIZE=500;
   const ctx = canvas.getContext('2d');
   const imageCache = window.imageCache || new Map();
   const keys = new Set();
@@ -494,7 +495,7 @@
   }
   function buildScenePreview3D() {
     const commands = new Map();
-    commands.set('__scene__',[{type:'grid',size:500,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
+    commands.set('__scene__',[{type:'grid',size:SCENE_PREVIEW_GRID_SIZE,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
       const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
       const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
@@ -503,7 +504,7 @@
       const h = Math.max(0.05,(Number(o.h)||64)/100);
       const color = o.color || '#d1d5db';
       const draw = o.mirrorWater
-        ? {type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||100),depth:Math.max(0.5,Number(o.mirrorDepth)||100),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):0.92)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
+        ? {type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||SCENE_PREVIEW_GRID_SIZE),depth:Math.max(0.5,Number(o.mirrorDepth)||SCENE_PREVIEW_GRID_SIZE),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):0.92)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
         : o.model
         ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0}
         : o.shape === 'circle'
