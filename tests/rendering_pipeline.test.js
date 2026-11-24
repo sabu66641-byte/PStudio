@@ -23,7 +23,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
 test('mobile auto quality applies an adaptive starting scale rather than full device pixel ratio',()=>{
   assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
   assert.ok(renderer.includes("profile.pixelRatio*initialAdaptiveScale"));
-  assert.ok(renderer.includes("scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("scale=base.pixelRatio*(selected==='ultra'?[0.66,0.78,0.94][adaptiveQualityLevel]:[0.68,0.84,1][adaptiveQualityLevel])"));
 });
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
@@ -253,7 +253,7 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -987,7 +987,7 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
   vm.runInNewContext(renderer.slice(start,end)+String.fromCharCode(10)+'this.clampEditorOrbitPitch=clampEditorOrbitPitch;',sandbox,{timeout:1000});
   const clamp=sandbox.clampEditorOrbitPitch;
   const baseElevation=Math.atan2(5,Math.hypot(6,8));
-  const maxElevation=Math.PI/2-0.01;
+  const maxElevation=Math.PI/2-0.002;
   const minPitch=baseElevation-maxElevation;
   const maxPitch=baseElevation+maxElevation;
   assert.ok(Math.abs(clamp(-100)-minPitch)<1e-10,'top-down limit');
