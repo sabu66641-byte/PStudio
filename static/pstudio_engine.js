@@ -806,18 +806,27 @@
     if(select.value!==state.requested)select.value=state.requested;
     const activeOption=[...select.options].find(option=>option.value===state.active);
     const activeLabel=activeOption?.textContent?.trim()||String(state.active).toUpperCase();
-    const safetyLabels={ja:'· 保護中',en:'· SAFE',zh:'· 保护中',es:'· PROTEGIDO',fr:'· PROTÉGÉ'};
-    const safetyLabel=safetyLabels[String(document.documentElement.lang||'en').split('-')[0]]||'· SAFE';
+    const language=String(document.documentElement.lang||'en').split('-')[0];
+    const safetyLabels={ja:'· 保護中',en:'· SAFE',zh:'· 保护中',es:'· PROTEGIDO',fr:'· PROTÉGÉ',ko:'· 보호 중'};
+    const adaptiveLabels={ja:'· 自動調整',en:'· ADAPTIVE',zh:'· 自适应',es:'· ADAPTATIVO',fr:'· ADAPTATIF',ko:'· 자동 조정'};
+    const safetyLabel=safetyLabels[language]||'· SAFE';
+    const adaptiveLabel=adaptiveLabels[language]||'· ADAPTIVE';
     activeOutput.textContent=state.safetyLimited
       ? activeLabel+' '+safetyLabel
-      : state.requested==='auto'?'→ '+activeLabel:activeLabel;
+      : state.requested==='ultra'&&state.adaptiveEnabled
+        ? activeLabel+' '+adaptiveLabel
+        : state.requested==='auto'?'→ '+activeLabel:activeLabel;
     activeOutput.title=state.safetyLimited
       ? 'Runtime memory protection is temporarily reducing expensive effects.'
-      : state.requested==='auto'
-        ? 'Automatically selected tier; adaptive quality monitors frame time.'
-        : 'Manual quality preset. Hardware texture limits and emergency memory protection remain active.';
+      : state.requested==='ultra'&&state.adaptiveEnabled
+        ? 'Ultra remains selected. On touch devices, render resolution, shadow size and expensive effects adapt to measured performance to reduce freezes.'
+        : state.requested==='auto'
+          ? 'Automatically selected tier; adaptive quality monitors frame time.'
+          : 'Manual quality preset. Hardware texture limits and emergency memory protection remain active.';
     activeOutput.dataset.requested=state.requested;
     activeOutput.dataset.active=state.active;
+    activeOutput.dataset.adaptive=state.adaptiveEnabled?'true':'false';
+    activeOutput.dataset.adaptiveLevel=String(state.adaptiveLevel);
     activeOutput.dataset.safetyLimited=state.safetyLimited?'true':'false';
   }
   window.updatePStudioQualityControl=updatePStudioQualityControl;
