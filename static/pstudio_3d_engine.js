@@ -3820,9 +3820,10 @@ void main(){
             const structure=clamp01((medium*.48+fine*.34+micro*.18-.27)*1.65);
             const knots=clamp01((fine*.62+micro*.38-.49)*2.15);
             const dust=clamp01((fine*.54+micro*.46-.61)*2.25)*core;
-            const filaments=core*(.10+structure*.75+knots*.22);
-            const outerHaze=haze*(.025+broad*.055);
-            const intensity=clamp01((filaments+outerHaze)*(1-dust*.68)*1.34);
+            const fineFilaments=core*Math.pow(clamp01((micro-.47)*2.7),1.25)*.34;
+            const filaments=core*(.08+structure*.72+knots*.26)+fineFilaments;
+            const outerHaze=haze*(.018+broad*.042);
+            const intensity=clamp01((filaments+outerHaze)*(1-dust*.82)*1.42);
             const warm=clamp01(.48+.36*Math.sin(angle*1.4+.4)+.28*(medium-.5));
             const cold=1-warm;
             const offset=(y*galaxyWidth+x)*4;
@@ -3842,14 +3843,15 @@ void main(){
       }
 
       // Very faint wide-angle airglow keeps the black sky from becoming a flat void.
-      const airglow=context.createRadialGradient(width*.72,height*.29,8,width*.72,height*.29,height*.55);
-      airglow.addColorStop(0,'rgba(51,65,104,0.105)');
-      airglow.addColorStop(.42,'rgba(27,39,73,0.055)');
-      airglow.addColorStop(1,'rgba(2,5,15,0)');
-      context.save();
-      context.globalCompositeOperation='screen';
-      context.fillStyle=airglow;
-      context.fillRect(0,0,width,height);
+      context.save();context.globalCompositeOperation='screen';
+      for(const wrapOffset of [-width,0,width]){
+        const glowX=width*.72+wrapOffset;
+        const airglow=context.createRadialGradient(glowX,height*.29,8,glowX,height*.29,height*.55);
+        airglow.addColorStop(0,'rgba(51,65,104,0.105)');
+        airglow.addColorStop(.42,'rgba(27,39,73,0.055)');
+        airglow.addColorStop(1,'rgba(2,5,15,0)');
+        context.fillStyle=airglow;context.fillRect(0,0,width,height);
+      }
       context.restore();
 
       // A cool lunar aureole is painted into the panorama; the solid moon itself remains
@@ -3861,13 +3863,16 @@ void main(){
       );
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
       if(moonGlow>.001){
-        const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.055+moonGlow*.07));
-        moonAura.addColorStop(0,'rgba(170,199,242,'+(0.15*moonGlow)+')');
-        moonAura.addColorStop(.2,'rgba(117,153,211,'+(0.105*moonGlow)+')');
-        moonAura.addColorStop(.58,'rgba(83,119,181,'+(0.045*moonGlow)+')');
-        moonAura.addColorStop(1,'rgba(42,66,112,0)');
         context.save();context.globalCompositeOperation='screen';
-        context.fillStyle=moonAura;context.fillRect(moonUv.x-width*.08,moonUv.y-height*.1,width*.16,height*.2);
+        for(const wrapOffset of [-width,0,width]){
+          const moonX=moonUv.x+wrapOffset;
+          const moonAura=context.createRadialGradient(moonX,moonUv.y,2,moonX,moonUv.y,height*(.055+moonGlow*.07));
+          moonAura.addColorStop(0,'rgba(170,199,242,'+(0.15*moonGlow)+')');
+          moonAura.addColorStop(.2,'rgba(117,153,211,'+(0.105*moonGlow)+')');
+          moonAura.addColorStop(.58,'rgba(83,119,181,'+(0.045*moonGlow)+')');
+          moonAura.addColorStop(1,'rgba(42,66,112,0)');
+          context.fillStyle=moonAura;context.fillRect(moonX-width*.08,moonUv.y-height*.1,width*.16,height*.2);
+        }
         context.restore();
       }
 
@@ -3884,35 +3889,43 @@ void main(){
         const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
-        if(radius>1.45){
-          const halo=context.createRadialGradient(x,y,0,x,y,radius*5.2);
-          halo.addColorStop(0,'rgba('+color+','+(alpha*.30).toFixed(3)+')');
-          halo.addColorStop(1,'rgba('+color+',0)');
-          context.fillStyle=halo;
-          context.fillRect(x-radius*5.2,y-radius*5.2,radius*10.4,radius*10.4);
-        }
-        context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
-        context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
-        context.fill();
-        if(radius>2.8&&random()>.72){
-          context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
-          context.lineWidth=.65;
-          context.beginPath();
-          context.moveTo(x-radius*2.1,y);context.lineTo(x+radius*2.1,y);
-          context.moveTo(x,y-radius*2.1);context.lineTo(x,y+radius*2.1);
-          context.stroke();
+        const reach=radius>1.45?radius*5.2:radius*2.1;
+        for(const wrapOffset of [-width,0,width]){
+          const starX=x+wrapOffset;
+          if(starX+reach<0||starX-reach>width)continue;
+          if(radius>1.45){
+            const halo=context.createRadialGradient(starX,y,0,starX,y,radius*5.2);
+            halo.addColorStop(0,'rgba('+color+','+(alpha*.30).toFixed(3)+')');
+            halo.addColorStop(1,'rgba('+color+',0)');
+            context.fillStyle=halo;
+            context.fillRect(starX-radius*5.2,y-radius*5.2,radius*10.4,radius*10.4);
+          }
+          context.beginPath();context.arc(starX,y,radius,0,Math.PI*2);
+          context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
+          context.fill();
+          if(radius>2.8&&random()>.72){
+            context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
+            context.lineWidth=.65;
+            context.beginPath();
+            context.moveTo(starX-radius*2.1,y);context.lineTo(starX+radius*2.1,y);
+            context.moveTo(starX,y-radius*2.1);context.lineTo(starX,y+radius*2.1);
+            context.stroke();
+          }
         }
       }
-      // A restrained second layer of very faint pinprick stars adds depth without changing
-      // the established Milky Way palette or the existing main and micro-star distributions.
+      // A fine secondary star layer adds visible depth without relying on blurred nebula patches.
       for(let i=0;i<8000;i++){
         const x=random()*width,y=4+random()*height*.49;
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
         const radius=.1+random()*.25;
         const alpha=(.045+random()*.09)*starBrightness;
-        context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
-        context.fillRect(x,y,radius,radius);
+        for(const wrapOffset of [-width,0,width]){
+          const starX=x+wrapOffset;
+          if(starX+radius<0||starX-radius>width)continue;
+          context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
+          context.fillRect(starX,y,radius,radius);
+        }
       }
 
     }else{
@@ -3954,11 +3967,14 @@ void main(){
         }
         context.restore();
       }else{
-        const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,height*.16);
-        horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
-        horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
-        horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
-        context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+        for(const wrapOffset of [-width,0,width]){
+          const sunX=sun.x+wrapOffset;
+          const horizonGlow=context.createRadialGradient(sunX,sun.y,2,sunX,sun.y,height*.16);
+          horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
+          horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
+          horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
+          context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+        }
       }
 
       if(name==='day'||name==='dusk'){
@@ -3968,48 +3984,60 @@ void main(){
       for(let i=0;i<(dusk?112:92);i++){
         const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
         const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
-        context.save();context.translate(x,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
-        const cloud=context.createRadialGradient(0,0,2,0,0,rx);
-        if(dusk){
-          cloud.addColorStop(0,'rgba(255,178,148,0.16)');
-          cloud.addColorStop(.46,'rgba(225,130,134,0.09)');
-          cloud.addColorStop(1,'rgba(190,117,163,0)');
-        }else{
-          cloud.addColorStop(0,'rgba(246,252,255,0.15)');
-          cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
-          cloud.addColorStop(1,'rgba(210,232,247,0)');
+        const rotation=(random()-.5)*.18;
+        const copies=[x];if(x<rx*1.6)copies.push(x+width);if(x>width-rx*1.6)copies.push(x-width);
+        for(const cloudX of copies){
+          context.save();context.translate(cloudX,y);context.rotate(rotation);context.scale(1,ry/rx);
+          const cloud=context.createRadialGradient(0,0,2,0,0,rx);
+          if(dusk){
+            cloud.addColorStop(0,'rgba(255,178,148,0.19)');
+            cloud.addColorStop(.46,'rgba(225,130,134,0.095)');
+            cloud.addColorStop(1,'rgba(190,117,163,0)');
+          }else{
+            cloud.addColorStop(0,'rgba(246,252,255,0.18)');
+            cloud.addColorStop(.5,'rgba(220,239,250,0.085)');
+            cloud.addColorStop(1,'rgba(210,232,247,0)');
+          }
+          context.fillStyle=cloud;
+          context.beginPath();
+          context.arc(0,0,rx,0,Math.PI*2);
+          context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
+          context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
+          context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
+          context.fill();
+          context.restore();
         }
-        context.fillStyle=cloud;
-        context.beginPath();
-        context.arc(0,0,rx,0,Math.PI*2);
-        context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
-        context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
-        context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
-        context.fill();
-        context.restore();
       }
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:148);i++){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
-        context.beginPath();context.moveTo(x,y);
-        context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
-        context.lineWidth=1+random()*(dusk?7:5);
-        context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
-        context.globalAlpha=.12+random()*.22;
-        context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
-        context.shadowBlur=7+random()*18;
-        context.stroke();
+        const bendA=(random()-.5)*9,bendB=(random()-.5)*15,bendC=(random()-.5)*8;
+        const lineWidth=1+random()*(dusk?7:5),alpha=.12+random()*.22;
+        const copies=[x];if(x<length+8)copies.push(x+width);if(x>width-8)copies.push(x-width);
+        for(const cloudX of copies){
+          context.beginPath();context.moveTo(cloudX,y);
+          context.bezierCurveTo(cloudX+length*.24,y+bendA,cloudX+length*.68,y+bendB,cloudX+length,y+bendC);
+          context.lineWidth=lineWidth;
+          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
+          context.globalAlpha=alpha;
+          context.shadowColor=dusk?'rgba(255,153,123,0.18)':'rgba(235,248,255,0.18)';
+          context.shadowBlur=2+random()*3;
+          context.stroke();
+        }
       }
       context.restore();
       }
 
       const glowRadius=sunRadius*(dusk?2.6:10);
-      const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.18*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.11*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.045*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
-      halo.addColorStop(1,'rgba(255,255,255,0)');
-      context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      for(const wrapOffset of [-width,0,width]){
+        const sunX=sun.x+wrapOffset;
+        const halo=context.createRadialGradient(sunX,sun.y,1,sunX,sun.y,glowRadius);
+        halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.18*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+        halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.11*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+        halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.045*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+        halo.addColorStop(1,'rgba(255,255,255,0)');
+        context.fillStyle=halo;context.fillRect(sunX-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      }
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
     }
 
