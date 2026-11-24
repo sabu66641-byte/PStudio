@@ -94,9 +94,15 @@ test('Mirror Water adds an isolated planar reflection path with bounded adaptive
     'pstudio-planar-mirror-water-v1','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
-    'return Math.max(0.5,Math.min(0.75,scale))',
-    'const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1',
-    'cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars]'
+    'return 1.0',
+    'return 0.86',
+    'renderer.capabilities?.maxTextureSize',
+    'Math.floor(size.x*scale)',
+    'Math.floor(size.y*scale)',
+    'cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars]',
+    'scene.background retains the active day/dusk/night equirectangular panorama',
+    'renderer.render(scene,reflectionCamera)',
+    'const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(engine.includes("case 'draw_mirror_water'"));
   assert.ok(engine.includes("type:'mirror_water'"));
@@ -105,7 +111,12 @@ test('Mirror Water adds an isolated planar reflection path with bounded adaptive
   assert.ok(html.includes('id="scene-object-add-select"'));
   assert.ok(html.includes('value="mirror-water">水鏡（平面）'));
   assert.ok(html.includes('function addSceneObjectFromMenu(kind)'));
-  assert.ok(html.includes('mirrorWidth:100,mirrorDepth:100'));
+  assert.ok(html.includes('mirrorWidth:PSTUDIO_SCENE_GRID_SIZE,mirrorDepth:PSTUDIO_SCENE_GRID_SIZE'));
+  assert.ok(html.includes('const PSTUDIO_SCENE_GRID_SIZE=500'));
+  assert.ok(html.includes('value="500"'));
+  assert.ok(engine.includes('const SCENE_PREVIEW_GRID_SIZE=500'));
+  assert.ok(engine.includes("{type:'grid',size:SCENE_PREVIEW_GRID_SIZE,divisions:100}"));
+  assert.ok(engine.includes('Number(o.mirrorDepth)||SCENE_PREVIEW_GRID_SIZE'));
   assert.ok(html.includes('function toggleSceneEditorExpanded(force)'));
   assert.ok(html.includes('.game-surface.is-expanded'));
   assert.ok(html.includes('mobile-scene-inspector'));
