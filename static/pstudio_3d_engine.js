@@ -3426,7 +3426,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       image.data[i]=tone*.96;image.data[i+1]=tone*.99;image.data[i+2]=Math.min(255,tone+12);image.data[i+3]=255;
     }
     context.putImageData(image,0,0);
-    for(let i=0;i<220;i++){
+    for(let i=0;i<280;i++){
       const x=random()*canvas.width,y=28+random()*(canvas.height-56);
       const radius=4+Math.pow(random(),2)*26;
       const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
@@ -3437,7 +3437,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
     }
     context.save();
-    for(let i=0;i<620;i++){
+    for(let i=0;i<900;i++){
       const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.55+random()*3.2;
       context.fillStyle='rgba(55,67,86,'+(0.025+random()*.055).toFixed(3)+')';
       context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
@@ -3544,7 +3544,7 @@ void main(){
     moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
-    const radius=distance*Math.tan(1.9*Math.PI/180);
+    const radius=distance*Math.tan(2.25*Math.PI/180);
     moonMesh.position.copy(camera.position).addScaledVector(moonDirection,distance);
     moonMesh.scale.setScalar(radius);
     if(!sunViewDirection)sunViewDirection=new window.THREE.Vector3();
@@ -3721,7 +3721,7 @@ void main(){
     const name=String(profile.name||'day');
     const palettes={
       day:[[0,'#174879'],[.12,'#246BA8'],[.3,'#4C95C9'],[.43,'#82B8D8'],[.485,'#C4DDE6'],[.51,'#DCE5E2'],[.55,'#879998'],[.68,'#4B595A'],[1,'#313B3D']],
-      dusk:[[0,'#151B43'],[.14,'#332653'],[.29,'#71345F'],[.39,'#B74E5A'],[.465,'#ED7957'],[.495,'#FFB46D'],[.525,'#D27C65'],[.6,'#584052'],[1,'#1A2032']],
+      dusk:[[0,'#171B42'],[.12,'#262349'],[.25,'#44305A'],[.35,'#76405F'],[.42,'#B95761'],[.462,'#DC7165'],[.485,'#F09A72'],[.498,'#F6B884'],[.51,'#E7A078'],[.535,'#BD756F'],[.58,'#80546B'],[.67,'#483D59'],[1,'#252133']],
       night:[[0,'#01040B'],[.16,'#030918'],[.32,'#071326'],[.43,'#101C30'],[.49,'#142137'],[.515,'#142033'],[.57,'#090F1C'],[1,'#010309']],
       studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
     };
@@ -3838,14 +3838,14 @@ void main(){
       // Fine stars dominate; only a tiny fraction are bright enough to bloom or sparkle.
       // Density and brightness rise gently inside the galactic band.
       const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
-      for(let i=0;i<8200;i++){
+      for(let i=0;i<12000;i++){
         const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
         const angle=u*Math.PI*2;
         const galacticCenterY=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
         const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
         const roll=random();
-        const radius=roll>.997?2.7+random()*1.35:roll>.955?1.05+random()*.72:.26+Math.pow(random(),2)*.82;
-        const alpha=Math.min(.98,(.115+random()*.50+band*.18)*(radius>1.7?1.2:1)*starBrightness);
+        const radius=roll>.996?2.8+random()*1.4:roll>.94?1.05+random()*.8:.27+Math.pow(random(),2)*.86;
+        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
@@ -3868,13 +3868,13 @@ void main(){
         }
       }
       // A restrained second layer of very faint pinprick stars adds depth without changing
-      // the established Milky Way palette or the existing 8,200-star distribution.
-      for(let i=0;i<1500;i++){
+      // the established Milky Way palette or the existing main and micro-star distributions.
+      for(let i=0;i<2600;i++){
         const x=random()*width,y=4+random()*height*.49;
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
         const radius=.1+random()*.25;
-        const alpha=(.035+random()*.075)*starBrightness;
+        const alpha=(.045+random()*.09)*starBrightness;
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fillRect(x,y,radius,radius);
       }
@@ -3888,29 +3888,41 @@ void main(){
       const dusk=name==='dusk';
       const sunRadius=Math.max(6,Number(profile.sunRadius)||10);
       const glowStrength=Math.max(0,Math.min(1,Number(profile.sunGlow)||.45));
-      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.19:height*.16));
-      horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.22)':'rgba(255,238,196,0.22)');
-      horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.10)':'rgba(159,210,245,0.10)');
-      horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
-      context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
       if(dusk){
-        // Layered afterglow follows the horizon rather than creating a giant circular wash.
-        const bandY=Math.max(height*.44,Math.min(height*.56,sun.y));
-        const horizonBand=context.createLinearGradient(0,bandY-height*.12,0,bandY+height*.19);
+        // Keep the sunset physically anchored to the horizon: a narrow afterglow band
+        // plus a horizontally stretched, seam-safe aureole around the solar direction.
+        const bandY=Math.max(height*.475,Math.min(height*.525,sun.y));
+        const horizonBand=context.createLinearGradient(0,bandY-height*.035,0,bandY+height*.075);
         horizonBand.addColorStop(0,'rgba(121,56,103,0)');
-        horizonBand.addColorStop(.22,'rgba(175,71,100,0.035)');
-        horizonBand.addColorStop(.46,'rgba(235,104,89,0.16)');
-        horizonBand.addColorStop(.61,'rgba(255,174,111,0.24)');
-        horizonBand.addColorStop(.78,'rgba(207,91,105,0.10)');
+        horizonBand.addColorStop(.24,'rgba(175,71,100,0.025)');
+        horizonBand.addColorStop(.48,'rgba(224,101,91,0.075)');
+        horizonBand.addColorStop(.62,'rgba(255,177,117,0.11)');
+        horizonBand.addColorStop(.82,'rgba(194,91,105,0.045)');
         horizonBand.addColorStop(1,'rgba(77,45,83,0)');
         context.save();context.globalCompositeOperation='screen';
-        context.fillStyle=horizonBand;context.fillRect(0,bandY-height*.12,width,height*.31);
-        const horizonMask=context.createRadialGradient(sun.x,bandY,4,sun.x,bandY,width*.42);
-        horizonMask.addColorStop(0,'rgba(255,204,145,0.28)');
-        horizonMask.addColorStop(.28,'rgba(255,144,113,0.17)');
-        horizonMask.addColorStop(1,'rgba(255,105,112,0)');
-        context.fillStyle=horizonMask;context.fillRect(0,bandY-height*.15,width,height*.36);
+        context.fillStyle=horizonBand;
+        context.fillRect(0,bandY-height*.035,width,height*.11);
+        const glowRadiusX=width*.17,glowRadiusY=height*.045;
+        for(const wrapOffset of [-width,0,width]){
+          context.save();
+          context.translate(sun.x+wrapOffset,bandY);
+          context.scale(1,glowRadiusY/glowRadiusX);
+          const horizonLight=context.createRadialGradient(0,0,0,0,0,glowRadiusX);
+          horizonLight.addColorStop(0,'rgba(255,207,157,0.22)');
+          horizonLight.addColorStop(.26,'rgba(255,150,117,0.14)');
+          horizonLight.addColorStop(.62,'rgba(225,104,111,0.055)');
+          horizonLight.addColorStop(1,'rgba(121,56,103,0)');
+          context.fillStyle=horizonLight;
+          context.fillRect(-glowRadiusX,-glowRadiusX,glowRadiusX*2,glowRadiusX*2);
+          context.restore();
+        }
         context.restore();
+      }else{
+        const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,height*.16);
+        horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
+        horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
+        horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
+        context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
       }
 
       if(name==='day'||name==='dusk'){
@@ -3955,11 +3967,11 @@ void main(){
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?8:10);
+      const glowRadius=sunRadius*(dusk?2.6:10);
       const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,230,190,'+(0.30*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.21*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.08*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+      halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.18*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.11*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.045*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
       halo.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
@@ -3974,7 +3986,7 @@ void main(){
     texture.anisotropy=Math.min(16,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     texture.userData=texture.userData||{};
-    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?9700:0,nightPrimaryStars:name==='night'?8200:0,proceduralCloudLayers:name==='day'||name==='dusk'};
+    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?14600:0,nightPrimaryStars:name==='night'?12000:0,proceduralCloudLayers:name==='day'||name==='dusk'};
     return texture;
   }
   function enhancePhysicalSkyShader(sky,Three){
