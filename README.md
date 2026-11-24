@@ -107,6 +107,7 @@ func on_collision(other)
 | `is_touched()` | True while a pointer/touch is held on the game canvas |
 | `draw_rect(x, y, w, h)` | Queue a rectangle for the current frame |
 | `draw_circle(x, y, radius)` | Queue a circle for the current frame |
+| `draw_mirror_water(x, y, z, width, depth[, reflectivity[, wave_strength]])` | Add a real-time planar reflection surface (defaults: 0.92 reflectivity, 0.05 wave strength) |
 | `draw_sprite(name, x, y)` | Draw an imported image asset at its native size |
 | `len(value)` / `range(...)` | Standard ps helpers supported by the game runtime |
 
@@ -414,6 +415,10 @@ After the scene, environment and lighting are in place, `PStudio3D.bakeLightProb
 ### Water and reflections
 
 `draw_water(x, y, z, width, depth, color, opacity)` creates a tessellated PBR water surface. Its vertex shader combines short ripples with a slow long-period swell; the fragment shader adds depth-aware Beer–Lambert color absorption, Fresnel-weighted grazing-angle reflection tint, micro-normal motion, shoreline foam from the scene-depth prepass and subtle wave-crest foam. The physical material retains water-like refraction (IOR 1.333), transmission and clearcoat; SSR can add screen-space reflections on high/ultra presets. SSR cannot show off-screen objects and can be incomplete on transparent/refractive surfaces. Refraction still depends on browser transmission-buffer support. The foam is procedural screen-space shading, not a full fluid/foam simulation; volumetric caustics and physically complete underwater light transport are not included.
+
+`draw_mirror_water(x, y, z, width, depth, reflectivity=0.92, wave_strength=0.05)` adds a separate planar-mirror surface; it does not change the existing `draw_water(...)` PBR/refraction path. The renderer mirrors the active scene camera about the water plane and captures the visible scene (including imported models, particles and camera-relative celestial sky meshes) into a dedicated render target. The target is scaled to 0.5–0.75 of the main drawing-buffer resolution according to the active quality/device budget. Touch devices throttle reflection refreshes to every two or three frames. The shader combines the captured reflection with a restrained blue depth tint, Fresnel weighting and animated UV ripples. This is a single-bounce raster reflection, not ray tracing; transparent/custom post-processing content may differ from the main camera, and the 30 FPS outcome must be measured on the target device.
+
+In the Scene toolbar, choose **水鏡** to create a persistent scene object. Its Inspector exposes width, depth, reflectivity and wave strength. The `ps` game-script API accepts five to seven arguments; values outside 0–1 are clamped.
 
 ### Physical sky and volumetric clouds
 
