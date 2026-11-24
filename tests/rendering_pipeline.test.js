@@ -926,8 +926,8 @@ test('sun and moon camera focus smoothly activate subtle celestial bloom rather 
     'moonGlareStrength+=(targetGlow-moonGlareStrength)*0.075',
     'uSolarGlare',
     'uMoonGlare',
-    'solarBloomActive=(qualityPreset===\\'high\\'||qualityPreset===\\'ultra\\')&&sunGlareStrength>0.01',
-    'lunarBloomActive=(qualityPreset===\\'high\\'||qualityPreset===\\'ultra\\')&&moonGlareStrength>0.01',
+    "solarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&sunGlareStrength>0.01",
+    "lunarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&moonGlareStrength>0.01",
     'bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18)'
   ])assert.ok(renderer.includes(token),token);
 });
