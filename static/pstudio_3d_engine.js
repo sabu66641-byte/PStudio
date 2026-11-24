@@ -3804,7 +3804,7 @@ void main(){
       const dusk=name==='dusk';
       const sunRadius=Math.max(6,Number(profile.sunRadius)||10);
       const glowStrength=Math.max(0,Math.min(1,Number(profile.sunGlow)||.45));
-      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.44:height*.30));
+      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.36:height*.25));
       horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.27)':'rgba(255,238,196,0.22)');
       horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.13)':'rgba(159,210,245,0.10)');
       horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
@@ -3852,11 +3852,11 @@ void main(){
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?22:15);
+      const glowRadius=sunRadius*(dusk?13:10);
       const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,240,203,'+(0.56*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,178,121,'+(0.34*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.13*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+      halo.addColorStop(0,dusk?'rgba(255,230,190,'+(0.44*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.28*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.1*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
       halo.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
