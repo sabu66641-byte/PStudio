@@ -914,13 +914,12 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 });
 
 
-test('3D scene viewport expands to the full stage without stretching the game canvas',()=>{
-  assert.match(engine,/stage\?\.classList\.toggle\('is-3d-viewport',mode==='3d'\)/);
-  assert.ok(html.includes('.game-stage.is-3d-viewport{display:block;padding:0;background:#0d1117}'));
-  assert.ok(html.includes('.game-stage.is-3d-viewport #game-3d-canvas{display:block;width:100%;height:100%;max-width:none;max-height:none;aspect-ratio:auto;border:0;box-shadow:none}'));
-  assert.ok(html.includes('.game-stage.is-3d-viewport #game-hud-canvas{width:100%!important;height:100%!important;max-width:none;aspect-ratio:auto}'));
+test('3D viewport retains the centered preview size rather than stretching to the entire stage',()=>{
+  assert.doesNotMatch(engine,/is-3d-viewport/);
+  assert.ok(html.includes('.game-canvas{touch-action:none;user-select:none;-webkit-user-select:none;display:block;max-width:100%;max-height:100%;width:min(100%,800px);aspect-ratio:16/9'));
+  assert.doesNotMatch(html,/\.game-stage\.is-3d-viewport/);
 });
- 
+
 test('all visible select controls use the shared dark in-app picker instead of native platform popups',()=>{
   for(const id of ['render-quality-select','obj-sprite','obj-script','shader-node-mode','font-size','tab-size','input-mode'])assert.ok(html.includes('id="'+id+'"'),id);
   assert.ok(html.includes('/static/pstudio_selects.css?v=20261124-custom-selects1'));
