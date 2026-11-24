@@ -529,6 +529,7 @@
       if(!window.PStudio3D){setOutput?.('3D renderer is unavailable. Check the Three.js connection.','error');return;}
       try{
         window.PStudio3D.render(buildScenePreview3D());
+        window.syncSceneOverlayButtons?.();
         const modelNames=new Set((sceneObjects||[]).map(object=>object.model).filter(Boolean).map(String));
         for(const name of modelNames)window.PStudio3D.retryModelAsset?.(name);
       }catch(err){
