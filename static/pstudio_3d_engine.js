@@ -3451,38 +3451,68 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function createMoonSurfaceTexture(T){
     const canvas=document.createElement('canvas');
     canvas.width=1536;canvas.height=768;
+    const width=canvas.width,height=canvas.height;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for the lunar surface texture.');
     let seed=0x4d4f4f4e;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-    const image=context.createImageData(canvas.width,canvas.height);
-    for(let i=0;i<image.data.length;i+=4){
-      const noise=(random()-.5)*24;
-      const tone=174+noise;
-      image.data[i]=tone*.96;image.data[i+1]=tone*.99;image.data[i+2]=Math.min(255,tone+12);image.data[i+3]=255;
+    const image=context.createImageData(width,height);
+    for(let y=0;y<height;y++){
+      const latitude=Math.sin((y/height)*Math.PI);
+      for(let x=0;x<width;x++){
+        const broad=Math.sin(x*.013+Math.sin(y*.021)*1.7)*Math.cos(y*.017-x*.004);
+        const medium=Math.sin(x*.071+Math.cos(y*.053))*Math.sin(y*.083+x*.027);
+        const noise=(random()-.5)*20;
+        const tone=164+latitude*8+broad*5+medium*3+noise;
+        const i=(y*width+x)*4;
+        image.data[i]=Math.max(0,Math.min(255,tone*.96));
+        image.data[i+1]=Math.max(0,Math.min(255,tone*.99));
+        image.data[i+2]=Math.max(0,Math.min(255,tone+12));
+        image.data[i+3]=255;
+      }
     }
     context.putImageData(image,0,0);
+    // Lunar maria: broad, low-contrast basalt regions with a wrapped longitude seam.
+    for(let i=0;i<30;i++){
+      const x=random()*width,y=48+random()*(height-96),radius=18+random()*70;
+      const copies=[x];if(x<radius)copies.push(x+width);if(x>width-radius)copies.push(x-width);
+      for(const centerX of copies){
+        const maria=context.createRadialGradient(centerX-radius*.18,y-radius*.16,radius*.12,centerX,y,radius);
+        maria.addColorStop(0,'rgba(49,61,80,0.15)');
+        maria.addColorStop(.58,'rgba(62,73,91,0.105)');
+        maria.addColorStop(1,'rgba(69,82,101,0)');
+        context.fillStyle=maria;context.beginPath();context.arc(centerX,y,radius,0,Math.PI*2);context.fill();
+      }
+    }
+    // Crater bowls and raised rims use directional tonal edges instead of flat circular spots.
     for(let i=0;i<520;i++){
-      const x=random()*canvas.width,y=28+random()*(canvas.height-56);
-      const radius=4+Math.pow(random(),2)*26;
-      const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
-      shadow.addColorStop(0,'rgba(57,69,88,0.12)');
-      shadow.addColorStop(.68,'rgba(70,82,101,0.19)');
-      shadow.addColorStop(.9,'rgba(238,243,250,0.18)');
-      shadow.addColorStop(1,'rgba(244,247,252,0.02)');
-      context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+      const x=random()*width,y=24+random()*(height-48),radius=2.5+Math.pow(random(),2)*27;
+      const copies=[x];if(x<radius*1.2)copies.push(x+width);if(x>width-radius*1.2)copies.push(x-width);
+      for(const centerX of copies){
+        const crater=context.createRadialGradient(centerX-radius*.24,y-radius*.25,radius*.06,centerX,y,radius);
+        crater.addColorStop(0,'rgba(39,50,68,0.29)');
+        crater.addColorStop(.56,'rgba(64,75,93,0.22)');
+        crater.addColorStop(.76,'rgba(232,238,247,0.31)');
+        crater.addColorStop(.91,'rgba(123,137,156,0.15)');
+        crater.addColorStop(1,'rgba(244,247,252,0)');
+        context.fillStyle=crater;context.beginPath();context.arc(centerX,y,radius,0,Math.PI*2);context.fill();
+      }
     }
     context.save();
     for(let i=0;i<1800;i++){
-      const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.55+random()*3.2;
-      context.fillStyle='rgba(55,67,86,'+(0.025+random()*.055).toFixed(3)+')';
-      context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+      const x=random()*width,y=18+random()*(height-36),radius=.45+random()*2.7;
+      const copies=[x];if(x<radius)copies.push(x+width);if(x>width-radius)copies.push(x-width);
+      context.fillStyle='rgba(46,58,77,'+(0.025+random()*.065).toFixed(3)+')';
+      for(const centerX of copies){context.beginPath();context.arc(centerX,y,radius,0,Math.PI*2);context.fill();}
     }
     context.restore();
     const texture=new T.CanvasTexture(canvas);
     texture.colorSpace=T.SRGBColorSpace;
     texture.wrapS=T.RepeatWrapping;texture.wrapT=T.ClampToEdgeWrapping;
-    texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.generateMipmaps=true;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     return texture;
   }
@@ -3978,54 +4008,70 @@ void main(){
       }
 
       if(name==='day'||name==='dusk'){
-      // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
-      context.save();
-      context.globalCompositeOperation='screen';
-      for(let i=0;i<(dusk?112:92);i++){
-        const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
-        const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
-        const rotation=(random()-.5)*.18;
-        const copies=[x];if(x<rx*1.6)copies.push(x+width);if(x>width-rx*1.6)copies.push(x-width);
-        for(const cloudX of copies){
-          context.save();context.translate(cloudX,y);context.rotate(rotation);context.scale(1,ry/rx);
-          const cloud=context.createRadialGradient(0,0,2,0,0,rx);
-          if(dusk){
-            cloud.addColorStop(0,'rgba(255,178,148,0.19)');
-            cloud.addColorStop(.46,'rgba(225,130,134,0.095)');
-            cloud.addColorStop(1,'rgba(190,117,163,0)');
-          }else{
-            cloud.addColorStop(0,'rgba(246,252,255,0.18)');
-            cloud.addColorStop(.5,'rgba(220,239,250,0.085)');
-            cloud.addColorStop(1,'rgba(210,232,247,0)');
+        // Native-resolution periodic cloud density keeps cloud edges and small-scale structure crisp.
+        const cloudCanvas=document.createElement('canvas');
+        const cloudWidth=width,cloudHeight=Math.floor(height*.48);
+        cloudCanvas.width=cloudWidth;cloudCanvas.height=cloudHeight;
+        const cloudContext=cloudCanvas.getContext('2d');
+        if(cloudContext){
+          const cloudRandomGrid=(gridWidth,gridHeight)=>{
+            const values=new Float32Array(gridWidth*gridHeight);
+            for(let i=0;i<values.length;i++)values[i]=random();
+            return{width:gridWidth,height:gridHeight,values};
+          };
+          const cloudGrids=[cloudRandomGrid(96,48),cloudRandomGrid(384,192),cloudRandomGrid(768,384)];
+          const sampleCloudNoise=(grid,u,v)=>{
+            const gx=u*grid.width,gy=Math.max(0,Math.min(grid.height-1,v*(grid.height-1)));
+            const xFloor=Math.floor(gx),x0=((xFloor%grid.width)+grid.width)%grid.width,x1=(x0+1)%grid.width;
+            const y0=Math.floor(gy),y1=Math.min(grid.height-1,y0+1);
+            const fx=gx-xFloor,fy=gy-y0,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+            const a=grid.values[y0*grid.width+x0],b=grid.values[y0*grid.width+x1];
+            const c=grid.values[y1*grid.width+x0],d=grid.values[y1*grid.width+x1];
+            const top=a+(b-a)*sx,bottom=c+(d-c)*sx;
+            return top+(bottom-top)*sy;
+          };
+          const smoothCloud=(a,b,value)=>{
+            const t=Math.max(0,Math.min(1,(value-a)/Math.max(.0001,b-a)));
+            return t*t*(3-2*t);
+          };
+          const image=cloudContext.createImageData(cloudWidth,cloudHeight),pixels=image.data;
+          for(let y=0;y<cloudHeight;y++){
+            const v=y/Math.max(1,cloudHeight-1);
+            const vertical=smoothCloud(.015,.16,v)*(1-smoothCloud(.78,.99,v));
+            for(let x=0;x<cloudWidth;x++){
+              const u=x/cloudWidth;
+              const broad=sampleCloudNoise(cloudGrids[0],u,v);
+              const medium=sampleCloudNoise(cloudGrids[1],u,v);
+              const fine=sampleCloudNoise(cloudGrids[2],u,v);
+              const field=broad*.5+medium*.32+fine*.18+(fine-.5)*.07;
+              const billow=smoothCloud(.465,.655,field);
+              const wisps=smoothCloud(.45,.72,fine)*.12;
+              const density=Math.max(0,Math.min(1,billow+wisps));
+              const alpha=density*vertical*(dusk?.34:.29);
+              if(alpha<.004)continue;
+              const illumination=Math.max(0,Math.min(1,.28+medium*.38+fine*.34));
+              const lowHorizon=smoothCloud(.46,.9,v);
+              const index=(y*cloudWidth+x)*4;
+              if(dusk){
+                pixels[index]=Math.round(135+illumination*112+lowHorizon*8);
+                pixels[index+1]=Math.round(68+illumination*112+lowHorizon*28);
+                pixels[index+2]=Math.round(112+illumination*78+lowHorizon*22);
+              }else{
+                pixels[index]=Math.round(138+illumination*105);
+                pixels[index+1]=Math.round(171+illumination*78);
+                pixels[index+2]=Math.round(194+illumination*61);
+              }
+              pixels[index+3]=Math.round(alpha*255);
+            }
           }
-          context.fillStyle=cloud;
-          context.beginPath();
-          context.arc(0,0,rx,0,Math.PI*2);
-          context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
-          context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
-          context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
-          context.fill();
+          cloudContext.putImageData(image,0,0);
+          context.save();
+          context.globalCompositeOperation='screen';
+          context.globalAlpha=1;
+          context.imageSmoothingEnabled=false;
+          context.drawImage(cloudCanvas,0,height*.11,width,height*.48);
           context.restore();
         }
-      }
-      context.lineCap='round';context.lineJoin='round';
-      for(let i=0;i<(dusk?112:148);i++){
-        const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
-        const bendA=(random()-.5)*9,bendB=(random()-.5)*15,bendC=(random()-.5)*8;
-        const lineWidth=1+random()*(dusk?7:5),alpha=.12+random()*.22;
-        const copies=[x];if(x<length+8)copies.push(x+width);if(x>width-8)copies.push(x-width);
-        for(const cloudX of copies){
-          context.beginPath();context.moveTo(cloudX,y);
-          context.bezierCurveTo(cloudX+length*.24,y+bendA,cloudX+length*.68,y+bendB,cloudX+length,y+bendC);
-          context.lineWidth=lineWidth;
-          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
-          context.globalAlpha=alpha;
-          context.shadowColor=dusk?'rgba(255,153,123,0.18)':'rgba(235,248,255,0.18)';
-          context.shadowBlur=2+random()*3;
-          context.stroke();
-        }
-      }
-      context.restore();
       }
 
       const glowRadius=sunRadius*(dusk?2.6:10);
