@@ -890,7 +890,7 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-quality-selector1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-camera-orbit1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-quality-selector1'));
 });
 
