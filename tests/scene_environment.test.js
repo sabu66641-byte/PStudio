@@ -260,6 +260,20 @@ test('lunar surface adds maria, crater relief, a shaped terminator and subtle bl
   assert.doesNotMatch(moonBlock,/WebGLRenderTarget|composer\.addPass|new FX\.ShaderPass/);
 });
 
+test('lunar surface texture precomputes periodic harmonics outside the per-pixel loop',()=>{
+  const start=renderer.indexOf('function createMoonSurfaceTexture(T)');
+  const end=renderer.indexOf('function ensureMoonMesh(T)',start);
+  const moonTexture=renderer.slice(start,end);
+  assert.match(moonTexture,/const longitudeFields=\{/);
+  assert.match(moonTexture,/const latitudeFields=\[\]/);
+  const pixelStart=moonTexture.indexOf('// Precompute spherical harmonics once;');
+  const pixelEnd=moonTexture.indexOf('context.putImageData(image,0,0)',pixelStart);
+  assert.ok(pixelStart>=0&&pixelEnd>pixelStart);
+  const pixelLoop=moonTexture.slice(pixelStart,pixelEnd);
+  assert.doesNotMatch(pixelLoop,/Math\.(?:sin|cos)\(/,'the 524k-pixel texture loop must not perform per-pixel trigonometry');
+  assert.match(pixelLoop,/latitudeCos69MinusLon11/);
+});
+
 test('moonlight adds warm and cool atmospheric scattering, thin lit cirrus and selective star dimming in the existing panorama',()=>{
   assert.match(renderer,/radius:height\*\.026,stops:/);
   assert.match(renderer,/radius:height\*\.074,stops:/);
