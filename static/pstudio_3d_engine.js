@@ -801,7 +801,12 @@
           renderer.clippingPlanes=[state.plane.clone()];
           renderer.setRenderTarget(state.target);
           renderer.clear(true,true,true);
-          renderer.render(scene,reflectionCamera);
+          const skyOffset=reflectedPosition.clone().sub(sourcePosition);
+          const cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars].filter(object=>object?.position);
+          const originalSkyPositions=cameraAnchoredSky.map(object=>object.position.clone());
+          for(const object of cameraAnchoredSky){object.position.add(skyOffset);object.updateMatrixWorld?.(true);}
+          try{renderer.render(scene,reflectionCamera);}
+          finally{for(let index=0;index<cameraAnchoredSky.length;index++){cameraAnchoredSky[index].position.copy(originalSkyPositions[index]);cameraAnchoredSky[index].updateMatrixWorld?.(true);}}
           let reflectionTexture=state.target.texture;
           if(volumetricCloudsEnabled&&volumetricCloudPass?.enabled&&state.cloudTarget){
             const cloudUniforms=volumetricCloudPass.uniforms||{};
