@@ -3010,7 +3010,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         geometry.userData.pstudioBVHScheduled=false;return;
       }
       if(!geometry.boundsTree){
-        try{geometry.computeBoundsTree({maxLeafSize:12});}
+        try{geometry.computeBoundsTree({targetLeafSize:12});}
         catch(error){
           geometry.userData.pstudioBVHFailed=true;
           console.warn('[PStudio] BVH build skipped; this geometry will use standard raycasting.',error);
