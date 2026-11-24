@@ -905,7 +905,7 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
     cameraTarget:[0,0,0],
     Math,Number
   };
-  vm.runInNewContext(renderer.slice(start,end)+'\\nthis.clampEditorOrbitPitch=clampEditorOrbitPitch;',sandbox,{timeout:1000});
+  vm.runInNewContext(renderer.slice(start,end)+String.fromCharCode(10)+'this.clampEditorOrbitPitch=clampEditorOrbitPitch;',sandbox,{timeout:1000});
   const clamp=sandbox.clampEditorOrbitPitch;
   const baseElevation=Math.atan2(5,Math.hypot(6,8));
   const maxElevation=Math.PI/2-0.01;
