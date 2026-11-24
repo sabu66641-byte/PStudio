@@ -927,7 +927,7 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
   assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][adaptiveQualityLevel]"));
-  assert.ok(renderer.includes("const shadowSizes=adaptiveUltraTouchMode?[2048,3072,4096]:adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[3072,4096,8192]"));
+  assert.ok(renderer.includes("const shadowSizes=adaptiveUltraTouchMode?[1024,1536,2048]:adaptiveMaximumTouchMode?[768,1024,1536]:qualityPreset==='ultra'?[3072,4096,8192]"));
   assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
   assert.ok(renderer.includes("const safeScale=applyEffectiveRenderScale()"));
 });
