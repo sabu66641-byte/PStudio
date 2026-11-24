@@ -442,6 +442,22 @@
     const T=window.THREE;
     const deviceGiB=deviceMemoryGiB();
     renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
+    let tslNodesEnabled=false;
+    try{
+      const TSLHandler=window.PStudioWebGLNodesHandler;
+      if(TSLHandler&&typeof renderer.setNodesHandler==='function'){
+        renderer.setNodesHandler(new TSLHandler());
+        tslNodesEnabled=true;
+      }
+    }catch(error){
+      console.warn('[PStudio] TSL node bridge could not be enabled; existing GLSL material paths remain active.',error);
+    }
+    window.PStudioRenderingRuntime=Object.freeze({
+      threeRevision:String(T.REVISION||'unknown'),
+      productionBackend:'webgl2',
+      webgl2:renderer.capabilities?.isWebGL2===true,
+      tslNodesEnabled
+    });
     try{
       const memoryGiB=deviceGiB;
       const gpuBudget=Math.floor(Math.max(192,Math.min(2048,memoryGiB*256))*1024*1024);
@@ -2994,7 +3010,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         geometry.userData.pstudioBVHScheduled=false;return;
       }
       if(!geometry.boundsTree){
-        try{geometry.computeBoundsTree({maxLeafTris:12});}
+        try{geometry.computeBoundsTree({maxLeafSize:12});}
         catch(error){
           geometry.userData.pstudioBVHFailed=true;
           console.warn('[PStudio] BVH build skipped; this geometry will use standard raycasting.',error);
