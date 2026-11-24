@@ -3829,18 +3829,47 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const clamp01=value=>Math.max(0,Math.min(1,value));
     const smooth01=(a,b,x)=>{const t=clamp01((x-a)/(b-a));return t*t*(3-2*t);};
     const image=context.createImageData(canvas.width,canvas.height);
+    const longitudeFields={
+      sin5:new Float32Array(canvas.width),cos5:new Float32Array(canvas.width),
+      sin9:new Float32Array(canvas.width),cos9:new Float32Array(canvas.width),
+      sin13:new Float32Array(canvas.width),cos13:new Float32Array(canvas.width),
+      sin43:new Float32Array(canvas.width),cos43:new Float32Array(canvas.width),
+      sin11:new Float32Array(canvas.width),cos11:new Float32Array(canvas.width)
+    };
+    for(let x=0;x<canvas.width;x++){
+      const longitude=x/canvas.width*Math.PI*2;
+      longitudeFields.sin5[x]=Math.sin(longitude*5);longitudeFields.cos5[x]=Math.cos(longitude*5);
+      longitudeFields.sin9[x]=Math.sin(longitude*9);longitudeFields.cos9[x]=Math.cos(longitude*9);
+      longitudeFields.sin13[x]=Math.sin(longitude*13);longitudeFields.cos13[x]=Math.cos(longitude*13);
+      longitudeFields.sin43[x]=Math.sin(longitude*43);longitudeFields.cos43[x]=Math.cos(longitude*43);
+      longitudeFields.sin11[x]=Math.sin(longitude*11);longitudeFields.cos11[x]=Math.cos(longitude*11);
+    }
+    const latitudeFields=[];
     for(let y=0;y<canvas.height;y++){
-      const v=y/(canvas.height-1),latitude=(v-.5)*Math.PI;
+      const latitude=(y/(canvas.height-1)-.5)*Math.PI;
       const latitudeWarp=Math.sin(latitude*3.0)*.78+Math.sin(latitude*7.0)*.17;
+      const phase57=Math.sin(latitude*57.0),phase69=latitude*69.0;
+      latitudeFields.push({
+        warpSin:Math.sin(latitudeWarp),warpCos:Math.cos(latitudeWarp),
+        lat4Sin:Math.sin(latitude*4.2),lat4Cos:Math.cos(latitude*4.2),
+        lat8Sin:Math.sin(latitude*8.0),lat8Cos:Math.cos(latitude*8.0),
+        phase57Sin:Math.sin(phase57),phase57Cos:Math.cos(phase57),
+        lat69Sin:Math.sin(phase69),lat69Cos:Math.cos(phase69)
+      });
+    }
+    // Precompute spherical harmonics once; the 524k-pixel loop below avoids per-pixel trigonometric calls.
+    for(let y=0;y<canvas.height;y++){
+      const lat=latitudeFields[y];
       for(let x=0;x<canvas.width;x++){
-        const u=x/canvas.width,longitude=u*Math.PI*2;
+        const lon=longitudeFields;
         // Integer longitude harmonics keep the lunar surface seamless at the UV seam.
-        const continental=(Math.sin(longitude*5.0+latitudeWarp)+
-          Math.cos(longitude*9.0-latitude*4.2)*.46+
-          Math.sin(longitude*13.0+latitude*8.0)*.21)/1.67;
+        const continental=((lon.sin5[x]*lat.warpCos+lon.cos5[x]*lat.warpSin)+
+          (lon.cos9[x]*lat.lat4Cos+lon.sin9[x]*lat.lat4Sin)*.46+
+          (lon.sin13[x]*lat.lat8Cos+lon.cos13[x]*lat.lat8Sin)*.21)/1.67;
         const mare=smooth01(-.30,.48,-continental);
-        const medium=Math.sin(longitude*43.0+Math.sin(latitude*57.0))*
-          Math.cos(latitude*69.0-longitude*11.0);
+        const shiftedSin43=lon.sin43[x]*lat.phase57Cos+lon.cos43[x]*lat.phase57Sin;
+        const latitudeCos69MinusLon11=lat.lat69Cos*lon.cos11[x]+lat.lat69Sin*lon.sin11[x];
+        const medium=shiftedSin43*latitudeCos69MinusLon11;
         const micro=random()-.5;
         const tone=clamp01((190-mare*61+continental*8+medium*5+micro*9)/255)*255;
         const i=(y*canvas.width+x)*4;
