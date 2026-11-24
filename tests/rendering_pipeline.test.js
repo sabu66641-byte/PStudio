@@ -253,7 +253,7 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('High, Maximum and Ultra enable the full atmospheric cloud rendering stack',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:false}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -664,11 +664,11 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:64,lightSteps:3});
-  assert.equal(pass.uniforms.uCloudSteps.value,64);
-  assert.equal(pass.uniforms.uCloudLightSteps.value,3);
-  assert.equal(pass.setQuality('ultra',1).steps,54);
-  assert.equal(pass.setQuality('ultra',0).steps,45);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:40,lightSteps:2});
+  assert.equal(pass.uniforms.uCloudSteps.value,40);
+  assert.equal(pass.uniforms.uCloudLightSteps.value,2);
+  assert.equal(pass.setQuality('ultra',1).steps,29);
+  assert.equal(pass.setQuality('ultra',0).steps,22);
   assert.equal(pass.setQuality('maximum',2).steps,40);
   assert.equal(pass.setQuality('high',2).steps,30);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
@@ -706,10 +706,10 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   const fog=api.createVolumetricFogPass({ShaderPass},three);
   assert.ok(fog);
   const quality=fog.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:32});
-  assert.equal(fog.uniforms.uFogSteps.value,32);
-  assert.equal(fog.setQuality('ultra',1).steps,28);
-  assert.equal(fog.setQuality('ultra',0).steps,24);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:24});
+  assert.equal(fog.uniforms.uFogSteps.value,24);
+  assert.equal(fog.setQuality('ultra',1).steps,20);
+  assert.equal(fog.setQuality('ultra',0).steps,16);
   assert.equal(fog.setQuality('maximum',2).steps,24);
   assert.equal(fog.setQuality('high',2).steps,16);
   api.configureAtmosphere({sunDirection:[-0.4,-0.4,-0.4],lightDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
@@ -821,10 +821,10 @@ test('contact shadow pass ray-marches scene depth with bounded quality levels an
   const pass=api.createContactShadowPass({ShaderPass},{DepthTexture,Matrix4,Vector3});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:30});
-  assert.equal(pass.uniforms.uSteps.value,30);
-  assert.equal(pass.setQuality('ultra',1).steps,26);
-  assert.equal(pass.setQuality('ultra',0).steps,23);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:18});
+  assert.equal(pass.uniforms.uSteps.value,18);
+  assert.equal(pass.setQuality('ultra',1).steps,14);
+  assert.equal(pass.setQuality('ultra',0).steps,10);
   assert.equal(pass.setQuality('maximum',2).steps,18);
   assert.equal(pass.setQuality('high',2).steps,12);
   assert.ok(pass.shader.fragmentShader.includes('clamp(uSteps,4.0,32.0)'));
@@ -884,16 +884,19 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice"));
   assert.ok(renderer.includes("adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode"));
   assert.ok(renderer.includes("maximum:{pixelRatio:2.1,shadowSize:4096"));
-  assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:8192"));
+  assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf'"));
   assert.ok(renderer.includes("const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2"));
   assert.ok(renderer.includes("textureCap=hardware.maxTextureSize/Math.max(width,height)"));
   assert.ok(renderer.includes("pixelCap=Math.sqrt(pixelBudget/(width*height))"));
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
   assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
-  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]"));
-  assert.ok(renderer.includes("const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]"));
-  assert.ok(renderer.includes("requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
+  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[12,20,32][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[2048,3072,4096]"));
+  assert.ok(renderer.includes("function applyRenderResolution(selected=resolveQualityPreset(qualityPreset),level=adaptiveQualityLevel)"));
   assert.ok(renderer.includes("scale:safeScale"));
+  assert.ok(renderer.includes("composer?.setPixelRatio?.(effectPixelRatio)"));
+  assert.ok(renderer.includes("const tierScale=selected==='ultra'?[.56,.70,.84]"));
+  assert.ok(renderer.includes('function hasVisibleSSRTargets()'));
 });
 
 test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
@@ -965,9 +968,9 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-ultra2x-v1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra2x-v1'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-ultra2x-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-ultra-adaptive-v2'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra-adaptive-v2'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-ultra-adaptive-v2'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-ultra2x-v1'));
 });
 
