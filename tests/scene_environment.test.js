@@ -408,10 +408,16 @@ test('day preset is upgraded to brighter physically based daylight, finer solar 
   assert.ok(day.sunAngularRadius>=.25&&day.sunAngularRadius<=.3,'solar disk approaches a physically plausible apparent size');
 });
 
+test('day panorama adds a fifth high-frequency cloud octave and fine cirrus without a new full-screen pass',()=>{
+  assert.match(renderer,/makeNoiseGrid\(512,256\)/);
+  assert.match(renderer,/const nano=sampleNoise\(grids\[4\],u,v\)/);
+  assert.match(renderer,/erosion=\(1-fine\)\*detail\*\.04\+\(1-micro\)\*detail\*\.045\+\(1-nano\)\*detail\*\.055/);
+  assert.match(renderer,/for\(let i=0;i<\(dusk\?112:260\);i\+\+\)/);
+});
 test('day panorama adds an adaptive, seamless multi-octave cumulus field without a new full-screen post-process',()=>{
   assert.match(renderer,/function drawDaytimeCloudField\(context,width,height,profile,sun\)/);
   assert.match(renderer,/resolutions=\{mobile:\[768,384\],balanced:\[1024,512\],high:\[1536,768\],maximum:\[1792,896\],ultra:\[2048,1024\]\}/);
-  assert.match(renderer,/makeNoiseGrid\(32,16\),makeNoiseGrid\(64,32\),makeNoiseGrid\(128,64\),makeNoiseGrid\(256,128\)/);
+  assert.match(renderer,/makeNoiseGrid\(32,16\),makeNoiseGrid\(64,32\),makeNoiseGrid\(128,64\),makeNoiseGrid\(256,128\),makeNoiseGrid\(512,256\)/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
   assert.match(renderer,/context\.drawImage\(cloudCanvas,0,0,width,height\)/);
   assert.match(renderer,/if\(name==='day'\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);

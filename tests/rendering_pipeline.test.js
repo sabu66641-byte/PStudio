@@ -91,7 +91,7 @@ test('water uses a physical transmission material and animated vertex displaceme
 test('Mirror Water adds an isolated planar reflection path with bounded adaptive targets',()=>{
   for(const token of [
     'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
-    'pstudio-planar-mirror-water-v1','uMirrorReflectivity','uMirrorWaveStrength',
+    'pstudio-planar-mirror-water-v2','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
     'return 1.0',
@@ -124,6 +124,30 @@ test('Mirror Water adds an isolated planar reflection path with bounded adaptive
   assert.ok(html.includes("updateSelectedObject('mirrorReflectivity',this.value)"));
   assert.ok(html.includes("updateSelectedObject('waveStrength',this.value)"));
 });
+
+test('Mirror Water shader uses valid GLSL line breaks, full reflectivity defaults and a polished mirror surface',()=>{
+  const start=renderer.indexOf('function configureMirrorWaterMaterial');
+  const end=renderer.indexOf('function createMirrorWaterState',start);
+  const shader=renderer.slice(start,end);
+  assert.match(shader,/uMirrorTextureMatrix;\\nvarying/);
+  assert.doesNotMatch(shader,/uMirrorTextureMatrix;\\\\nvarying/);
+  assert.match(shader,/pstudio-planar-mirror-water-v2/);
+  assert.match(shader,/uMirrorReflectivity:\\{value:1\\.0\\}/);
+  assert.match(shader,/pStudioMirrorAmount = clamp\\(uMirrorReflectivity \\* \\(0\\.985 \\+ 0\\.015 \\* pStudioMirrorFresnel\\)/);
+  assert.match(renderer,/reflectivity:1\\.0/);
+  assert.match(renderer,/roughness:0\\.012,metalness:0,clearcoat:1,clearcoatRoughness:0\\.008/);
+  assert.match(renderer,/if\\(d\\.type!==\x27water\x27&&d\\.type!==\x27mirror_water\x27\\)/);
+  assert.match(engine,/reflectivity:a\\.length>=6\\?Math\\.max\\(0,Math\\.min\\(1,finite\\(a\\[5\\]\\)\\)\\):1\\.0/);
+  assert.match(html,/obj-mirror-reflectivity[^>]+value=\x221\x22/);
+});
+
+test('day sky palette removes the green-gray lower hemisphere and softens the blown white horizon',()=>{
+  const dayPalette=renderer.match(/day:\\[\\[(?:.|\\n)*?\\]\\],\\n      dusk:/)?.[0]||'';
+  assert.ok(dayPalette.includes('#1A4F86')&&dayPalette.includes('#4798D0'),'day sky is slightly bluer');
+  assert.ok(dayPalette.includes('#B5D0DB')&&dayPalette.includes('#405969'),'horizon and lower hemisphere use blue-gray tones');
+  assert.doesNotMatch(dayPalette,/#879998|#4B595A|#313B3D/i);
+});
+
 test('Mirror Water remains additive and does not replace legacy PBR draw_water',()=>{
   assert.ok(engine.includes("case 'draw_water': if(a.length===7)"));
   assert.ok(engine.includes("case 'draw_mirror_water': if(a.length>=5&&a.length<=7)"));
@@ -1077,8 +1101,8 @@ test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production W
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-daylight-hq-r1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-daylight-hq-r1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
