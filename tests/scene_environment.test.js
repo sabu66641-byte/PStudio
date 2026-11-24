@@ -417,3 +417,19 @@ test('camera world matrices are synchronized before camera-relative sky and cele
   assert.ok(drawBlock.indexOf('updateMoonSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
   assert.ok(drawBlock.indexOf('updateSunSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
 });
+
+
+test('moon surface is higher resolution, cooler in color and softly integrated with the night sky',()=>{
+  assert.match(renderer,/canvas\.width=2048;canvas\.height=1024/);
+  assert.match(renderer,/const coolLunar=vec3\(lunar\.r\*0\.90,lunar\.g\*0\.97,min\(1\.0,lunar\.b\*1\.10\+0\.035\)\)/);
+  assert.match(renderer,/float coolRim=pow\(1\.0-max\(dot\(normal,viewDirection\),0\.0\),2\.2\)/);
+  assert.match(renderer,/rgba\(190,218,255,/);
+});
+
+test('dusk always has a visible warm solar disc in the procedural panorama',()=>{
+  assert.match(renderer,/if\(dusk\)\{[\s\S]*?const discRadius=6\.5/);
+  assert.match(renderer,/rgba\(255,246,224,0\.98\)/);
+  assert.match(renderer,/sunAngularRadius: 0\.9/);
+  assert.equal(presets.getPreset('dusk').sunIntensity,1.24);
+  assert.ok(presets.getPreset('dusk').sunRadius>0);
+});
