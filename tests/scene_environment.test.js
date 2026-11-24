@@ -231,7 +231,7 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
   assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
-  assert.ok(renderer.includes("Math.tan(2.25*Math.PI/180)"));
+  assert.ok(renderer.includes("Math.tan(3.0*Math.PI/180)"));
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
@@ -295,7 +295,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
   assert.ok(dusk.sunIntensity>1.2,'dusk should retain a bright warm solar photosphere');
   assert.ok(dusk.sunAngularRadius>0.4&&dusk.sunAngularRadius<0.8,'the dusk sun should retain a natural, restrained angular diameter');
-  assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?2.6:10)"));
+  assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?3.2:10)"));
   assert.match(renderer,/const horizonBand=context\.createLinearGradient/,'dusk should include a layered horizon afterglow');
   assert.ok(renderer.includes("const glowRadiusX=width*.17,glowRadiusY=height*.045"));
   assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
