@@ -80,7 +80,7 @@
       const item=document.createElement('button');
       item.type='button';
       item.className='pstudio-select-option';
-      item.role='option';
+      item.setAttribute('role','option');
       item.dataset.index=String(index);
       item.textContent=optionLabel(option)||'—';
       item.disabled=!!option.disabled||!!select.disabled;
@@ -223,6 +223,18 @@
       for(const record of records){
         for(const node of record.addedNodes){
           if(node.nodeType===Node.ELEMENT_NODE)scan(node);
+        }
+        for(const node of record.removedNodes){
+          if(node.nodeType!==Node.ELEMENT_NODE)continue;
+          const removed=[...(node.matches?.('select')?[node]:[]),...(node.querySelectorAll?.('select')||[])];
+          for(const select of removed){
+            const state=select.__pstudioSelectState;
+            if(!state)continue;
+            if(active===state)close(state,false);
+            state.observer?.disconnect?.();
+            state.menu.remove();
+            delete select.__pstudioSelectState;
+          }
         }
       }
     });
