@@ -866,7 +866,7 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/if\(memoryGiB<=3\|\|cpuCores<4\|\|maxTextureSize<4096\|\|\(touch&&memoryGiB<=4\)\)return 'balanced'/);
   assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'ultra'/);
   assert.match(renderer,/const baseProfile=QUALITY_PROFILES\[selected\],profile=baseProfile/);
-  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):4096/);
+  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):\(adaptiveUltraTouchMode\?2048:4096\)/);
 });
 
 test('manual Ultra quality remains selected on phones while internal render cost adapts to sustained frame timing',()=>{
@@ -900,9 +900,21 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 });
 
 
+test('tablet and mobile workspace use a single main column with accessible project and inspector drawers',()=>{
+  for(const token of [
+    'id="project-explorer"','id="workspace-inspector"',
+    'data-workspace-panel="explorer"','data-workspace-panel="inspector"',
+    "toggleWorkspacePanel('explorer')","toggleWorkspacePanel('inspector')",
+    '.ide-shell[data-active-panel="explorer"] .explorer',
+    '.ide-shell[data-active-panel="inspector"] .inspector',
+    '.workspace-panel-backdrop','@media(max-width:1050px)',
+    'grid-template-columns:minmax(0,1fr)','clamp(125px,23dvh,175px)'
+  ])assert.ok(html.includes(token),token);
+});
+ 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-camera-orbit1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-quality-selector1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-ultra1'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra-adaptive1'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
