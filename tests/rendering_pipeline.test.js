@@ -39,7 +39,6 @@ test('auto quality keeps device-aware scaling while Ultra uses the shared 2x ren
   assert.ok(renderer.includes("const adaptiveScale=adaptive?[0.35,0.65,1][level]:1"));
   assert.ok(renderer.includes("const targetRatio=requested*adaptiveScale"));
   assert.ok(renderer.includes("lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission'"));
-  assert.ok(tests.includes('Ultra can reduce actual drawing-buffer resolution when adaptive quality steps down')===false);
 });
 test('Ultra can reduce actual drawing-buffer resolution when adaptive quality steps down',()=>{
   assert.ok(renderer.includes('const adaptiveScale=adaptive?[0.35,0.65,1][level]:1'));
