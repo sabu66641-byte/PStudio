@@ -229,9 +229,10 @@ test('night moon is a real spherical mesh with one-time surface texture creation
 });
 test('night moon sphere has finer surface detail, a larger apparent size and a real lunar aureole',()=>{
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
-  assert.match(renderer,/for\(let i=0;i<220;i\+\+\)/);
-  assert.match(renderer,/for\(let i=0;i<620;i\+\+\)/);
+  assert.match(renderer,/for\\(let i=0;i<280;i\\+\\+\\)/);
+  assert.match(renderer,/for\\(let i=0;i<900;i\\+\\+\\)/);
   assert.match(renderer,/Math\.tan\(1\.9\*Math\.PI\/180\)/);
+  assert.match(renderer,/Math\\.tan\\(2\\.25\\*Math\\.PI\\/180\\)/);
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
@@ -294,9 +295,10 @@ test('day dusk night and studio define physically distinct sun elevations and at
   }
   assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
   assert.ok(dusk.sunIntensity>1.2,'dusk should retain a bright warm solar photosphere');
-  assert.ok(dusk.sunAngularRadius>=2,'the dusk photosphere must be clearly visible against the halo');
-  assert.match(renderer,/const glowRadius=sunRadius\*\(dusk\?8:10\)/,'the sunset disc should remain distinct from its inner halo');
+  assert.ok(dusk.sunAngularRadius>0.4&&dusk.sunAngularRadius<0.8,'the dusk sun should retain a natural, restrained angular diameter');
+  assert.match(renderer,/const glowRadius=sunRadius\\*\\(dusk\\?2\\.6:10\\)/,'the sunset disc should remain distinct from its smaller inner halo');
   assert.match(renderer,/const horizonBand=context\.createLinearGradient/,'dusk should include a layered horizon afterglow');
+  assert.match(renderer,/const glowRadiusX=width\\*\\.17,glowRadiusY=height\\*\\.045/);
   assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
   assert.equal(night.sunIntensity,0);
   assert.equal(day.moonIntensity,0);
@@ -315,7 +317,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(dusk.twilightStrength>.8,'dusk shader needs a deliberate warm horizon treatment');
   assert.ok(night.moonIntensity>1,'night moonlight should be stronger');
   assert.ok(night.lightIntensity>.8&&night.hemisphereIntensity>.3,'night uses stronger but balanced moonlight fill');
-  assert.ok(night.starBrightness>1.2&&night.moonGlow>.6,'night lifts star brightness and lunar aureole');
+  assert.ok(night.starBrightness>1.4&&night.moonGlow>.6,'night lifts star brightness and lunar aureole');
   assert.ok(night.fogDensity<day.fogDensity,'night haze should be subtler than daytime haze');
 });
 
@@ -339,13 +341,16 @@ test('physical-sky PMREM failure activates the procedural panorama as both visib
 });
 
 
-test('night stars use a higher controlled brightness without changing the Milky Way palette',()=>{
-  assert.match(renderer,/const starBrightness=Math\.max\(\.75,Math\.min\(1\.8,Number\(profile\.starBrightness\)\|\|1\)\)/);
-  assert.match(renderer,/\.115\+random\(\)\*\.50\+band\*\.18/);
-  assert.match(renderer,/const alpha=\(\.035\+random\(\)\*\.075\)\*starBrightness/);
-  assert.match(renderer,/nightStars:name==='night'\?9700:0/);
+test('night sky uses a more populated, brighter starfield while preserving the navy-blue palette',()=>{
+  assert.match(renderer,/const starBrightness=Math\\.max\\(\\.75,Math\\.min\\(1\\.8,Number\\(profile\\.starBrightness\\)\\|\\|1\\)\\)/);
+  assert.match(renderer,/for\\(let i=0;i<12000;i\\+\\+\\)/);
+  assert.match(renderer,/for\\(let i=0;i<2600;i\\+\\+\\)/);
+  assert.match(renderer,/\\.12\\+random\\(\\)\\*\\.55\\+band\\*\\.2/);
+  assert.match(renderer,/const alpha=\\(\\.045\\+random\\(\\)\\*\\.09\\)\\*starBrightness/);
+  assert.match(renderer,/nightStars:name==='night'\\?14600:0/);
+  assert.match(renderer,/nightPrimaryStars:name==='night'\\?12000:0/);
 });
- 
+
 test('night sky uses a periodic multi-octave Milky Way field and a dense fine-star distribution',()=>{
   assert.match(renderer,/makeNoiseGrid=\(gridWidth,gridHeight\)=>/);
   assert.match(renderer,/sampleNoise=\(grid,u,v\)=>/);
