@@ -45,6 +45,7 @@
     if(ms<=4)return 450;if(ms<=7)return 900;return 1500;
   }
   const waterMaterials=new Set();
+  let mirrorWaterFrameCounter=0;
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
   let pmremGenerator = null, environmentTarget = null;
@@ -647,6 +648,193 @@
     for(const entry of hidden||[])entry.object.visible=entry.visible;
   }
 
+  function mirrorWaterResolutionScale(){
+    const selected=resolveQualityPreset(qualityPreset),hardware=qualityHardwareCapabilities();
+    let scale=selected==='ultra'?0.75:selected==='maximum'?0.72:selected==='high'?0.66:selected==='balanced'?0.58:0.5;
+    if(memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0))scale=0.5;
+    else if(adaptiveQualityLevel===1)scale=Math.min(scale,0.58);
+    return Math.max(0.5,Math.min(0.75,scale));
+  }
+  function configureMirrorWaterMaterial(material){
+    const T=window.THREE;
+    const uniforms={
+      uMirrorReflection:{value:null},
+      uMirrorTextureMatrix:{value:new T.Matrix4()},
+      uMirrorReflectivity:{value:0.92},
+      uMirrorWaveStrength:{value:0.05},
+      uMirrorTime:{value:0}
+    };
+    material.userData.pstudioMirrorUniforms=uniforms;
+    material.onBeforeCompile=shader=>{
+      Object.assign(shader.uniforms,uniforms);
+      shader.vertexShader='uniform mat4 uMirrorTextureMatrix;\\nvarying vec4 vPStudioMirrorCoord;\\n'+shader.vertexShader;
+      shader.vertexShader=shader.vertexShader.replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);'
+      );
+      shader.fragmentShader='uniform sampler2D uMirrorReflection;\\nuniform float uMirrorReflectivity;\\nuniform float uMirrorWaveStrength;\\nuniform float uMirrorTime;\\nvarying vec4 vPStudioMirrorCoord;\\n'+shader.fragmentShader;
+      shader.fragmentShader=shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        '#include <opaque_fragment>\\n'+
+        'vec2 pStudioMirrorUv = vPStudioMirrorCoord.xy / max(vPStudioMirrorCoord.w, 0.0001);\\n'+
+        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\\n'+
+        'vec2 pStudioMirrorSampleUv = pStudioMirrorUv + pStudioMirrorRipple;\\n'+
+        'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\\n'+
+        'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\\n'+
+        'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\\n'+
+        'float pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.92 + 0.08 * pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside;\\n'+
+        'vec3 pStudioMirrorTinted = mix(pStudioMirrorSample, vec3(0.006, 0.035, 0.055), 0.055);\\n'+
+        'gl_FragColor.rgb = mix(gl_FragColor.rgb, pStudioMirrorTinted, pStudioMirrorAmount);'
+      );
+    };
+    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v1';
+    material.userData.pstudioMirrorUniforms=uniforms;
+    return material;
+  }
+  function createMirrorWaterState(material){
+    const T=window.THREE;
+    const options={format:T.RGBAFormat,type:T.UnsignedByteType,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:true,stencilBuffer:false};
+    const target=new T.WebGLRenderTarget(1,1,options);
+    target.texture.generateMipmaps=false;
+    target.depthTexture=new T.DepthTexture(1,1);
+    target.depthTexture.format=T.DepthFormat;
+    target.depthTexture.type=T.UnsignedIntType;
+    return{
+      target,
+      cloudTarget:null,
+      reflectionCamera:camera?.clone?.()||new T.PerspectiveCamera(),
+      textureMatrix:new T.Matrix4(),
+      biasMatrix:new T.Matrix4().set(
+        0.5,0,0,0.5,
+        0,0.5,0,0.5,
+        0,0,0.5,0.5,
+        0,0,0,1
+      ),
+      plane:new T.Plane(),
+      reflectivity:0.92,
+      waveStrength:0.05,
+      hasRendered:false,
+      material
+    };
+  }
+  function renderMirrorWaterReflections(){
+    if(!renderer||!scene||!camera)return 0;
+    const T=window.THREE,mirrors=[];
+    scene.traverse(object=>{
+      if(object?.isMesh&&object.visible&&object.userData?.pstudioMirrorWater)mirrors.push(object);
+    });
+    if(!mirrors.length)return 0;
+    mirrorWaterFrameCounter++;
+    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1;
+    const forceRefresh=mirrors.some(mesh=>!mesh.userData.pstudioMirrorWater.hasRendered);
+    if(mirrorWaterFrameCounter%updateInterval!==0&&!forceRefresh)return mirrors.length;
+    const size=renderer.getDrawingBufferSize(new T.Vector2());
+    const scale=mirrorWaterResolutionScale();
+    const maxEdge=touch?1280:1792;
+    const width=Math.max(128,Math.min(maxEdge,Math.floor(size.x*scale)));
+    const height=Math.max(128,Math.min(maxEdge,Math.floor(size.y*scale)));
+    const previousTarget=renderer.getRenderTarget();
+    const previousClipping=renderer.clippingPlanes;
+    const previousLocalClipping=renderer.localClippingEnabled;
+    const previousAutoClear=renderer.autoClear;
+    const previousShadowAutoUpdate=renderer.shadowMap?.autoUpdate;
+    const previousXrEnabled=renderer.xr?.enabled;
+    const hidden=[];
+    const hide=object=>{if(object&&object.visible){hidden.push([object,object.visible]);object.visible=false;}};
+    try{
+      scene.traverse(object=>{
+        if(object?.userData?.pstudioMirrorWater||object?.userData?.pstudioWaterSurface)hide(object);
+      });
+      hide(gridGroup);hide(selectionGroup);
+      renderer.autoClear=true;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
+      if(renderer.xr)renderer.xr.enabled=false;
+      renderer.localClippingEnabled=true;
+      let rendered=0;
+      for(const mesh of mirrors){
+        const state=mesh.userData.pstudioMirrorWater;
+        if(!state)continue;
+        try{
+          if(state.target.width!==width||state.target.height!==height)state.target.setSize(width,height);
+          if(volumetricCloudsEnabled&&volumetricCloudPass?.enabled&&typeof volumetricCloudPass.render==='function'){
+            if(!state.cloudTarget)state.cloudTarget=new T.WebGLRenderTarget(width,height,{format:T.RGBAFormat,type:T.UnsignedByteType,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:false,stencilBuffer:false});
+            else if(state.cloudTarget.width!==width||state.cloudTarget.height!==height)state.cloudTarget.setSize(width,height);
+          }
+          mesh.updateWorldMatrix(true,false);
+          const normal=new T.Vector3(0,1,0).transformDirection(mesh.matrixWorld).normalize();
+          const point=mesh.getWorldPosition(new T.Vector3());
+          state.plane.setFromNormalAndCoplanarPoint(normal,point);
+          const sourcePosition=camera.getWorldPosition(new T.Vector3());
+          if(Math.abs(state.plane.distanceToPoint(sourcePosition))<0.015)continue;
+          if(state.plane.distanceToPoint(sourcePosition)<0){
+            state.plane.normal.negate();
+            state.plane.constant=-state.plane.constant;
+          }
+          const sourceDirection=camera.getWorldDirection(new T.Vector3());
+          const sourceUp=camera.up.clone().applyQuaternion(camera.getWorldQuaternion(new T.Quaternion()));
+          const reflectPoint=pointValue=>pointValue.clone().addScaledVector(state.plane.normal,-2*state.plane.distanceToPoint(pointValue));
+          const reflectVector=vector=>vector.clone().addScaledVector(state.plane.normal,-2*state.plane.normal.dot(vector));
+          const reflectedPosition=reflectPoint(sourcePosition);
+          const reflectedTarget=reflectPoint(sourcePosition.clone().add(sourceDirection.multiplyScalar(100)));
+          const reflectedUp=reflectVector(sourceUp).normalize();
+          const reflectionCamera=state.reflectionCamera;
+          reflectionCamera.position.copy(reflectedPosition);
+          reflectionCamera.up.copy(reflectedUp);
+          reflectionCamera.near=camera.near;reflectionCamera.far=camera.far;
+          reflectionCamera.projectionMatrix.copy(camera.projectionMatrix);
+          reflectionCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+          reflectionCamera.layers.mask=camera.layers.mask;
+          reflectionCamera.lookAt(reflectedTarget);
+          reflectionCamera.updateMatrixWorld(true);
+          state.textureMatrix.copy(state.biasMatrix)
+            .multiply(reflectionCamera.projectionMatrix)
+            .multiply(reflectionCamera.matrixWorldInverse)
+            .multiply(mesh.matrixWorld);
+          const uniforms=mesh.material?.userData?.pstudioMirrorUniforms;
+          if(uniforms){
+            uniforms.uMirrorTextureMatrix.value.copy(state.textureMatrix);
+            uniforms.uMirrorReflectivity.value=state.reflectivity;
+            uniforms.uMirrorWaveStrength.value=state.waveStrength;
+            uniforms.uMirrorTime.value=particleClock;
+          }
+          renderer.clippingPlanes=[state.plane.clone()];
+          renderer.setRenderTarget(state.target);
+          renderer.clear(true,true,true);
+          renderer.render(scene,reflectionCamera);
+          let reflectionTexture=state.target.texture;
+          if(volumetricCloudsEnabled&&volumetricCloudPass?.enabled&&state.cloudTarget){
+            const cloudUniforms=volumetricCloudPass.uniforms||{};
+            if(cloudUniforms.uInverseProjection?.value)cloudUniforms.uInverseProjection.value.copy(reflectionCamera.projectionMatrixInverse);
+            if(cloudUniforms.uCameraWorld?.value)cloudUniforms.uCameraWorld.value.copy(reflectionCamera.matrixWorld);
+            if(cloudUniforms.uTime?.value!==undefined)cloudUniforms.uTime.value=particleClock;
+            if(cloudUniforms.tDepth)cloudUniforms.tDepth.value=state.target.depthTexture;
+            const oldRenderToScreen=volumetricCloudPass.renderToScreen;
+            volumetricCloudPass.renderToScreen=false;
+            try{
+              volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false);
+              reflectionTexture=state.cloudTarget.texture;
+            }finally{volumetricCloudPass.renderToScreen=oldRenderToScreen;}
+          }
+          if(uniforms)uniforms.uMirrorReflection.value=reflectionTexture;
+          state.hasRendered=true;
+          rendered++;
+        }catch(error){
+          console.warn('[PStudio] Mirror Water reflection update failed; retaining the last valid reflection.',error);
+        }
+      }
+      return rendered;
+    }finally{
+      for(const [object,visible] of hidden)object.visible=visible;
+      renderer.setRenderTarget(previousTarget);
+      renderer.clippingPlanes=previousClipping;
+      renderer.localClippingEnabled=previousLocalClipping;
+      renderer.autoClear=previousAutoClear;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=previousShadowAutoUpdate;
+      if(renderer.xr)renderer.xr.enabled=previousXrEnabled;
+    }
+  }
+
   let lastMemorySampleAt=0,memorySafetyApplied=false,lastMemoryPressure=0;
   function memorySnapshot(){
     const perfMemory=window.performance?.memory||null;
@@ -943,6 +1131,7 @@
     const hiddenStaticSky=[];
     try{
       renderWaterDepthPrepass();
+      renderMirrorWaterReflections();
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
       const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
@@ -2008,6 +2197,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       case 'capsule': return ['capsule',n(d.radius),Math.max(n(d.radius)*2,n(d.height))].join(':');
       case 'terrain': return ['terrain',n(d.width),n(d.depth),Math.max(2,Number(d.segments)||2),n(d.height)].join(':');
       case 'water': {const preset=resolveQualityPreset(qualityPreset),segments=preset==='ultra'?128:preset==='maximum'?96:preset==='high'?72:48;return ['water',n(d.width),n(d.depth),segments].join(':');}
+      case 'mirror_water': return ['mirror_water',n(d.width),n(d.depth)].join(':');
       default: return null;
     }
   }
@@ -2082,6 +2272,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       case 'sphere': return new T.SphereGeometry(d.radius,24,16);
       case 'plane': return new T.PlaneGeometry(d.width,d.depth);
       case 'water': {const q=resolveQualityPreset(qualityPreset),segments=q==='ultra'?128:q==='maximum'?96:q==='high'?72:48;const g=new T.PlaneGeometry(d.width,d.depth,segments,segments);g.rotateX(-Math.PI/2);return g;}
+      case 'mirror_water': {const g=new T.PlaneGeometry(d.width,d.depth,1,1);g.rotateX(-Math.PI/2);return g;}
       case 'terrain': {
         const g=new T.BufferGeometry(),vertices=[],indices=[],segments=Math.max(2,Math.min(96,Math.floor(d.segments)||2));
         for(let iz=0;iz<=segments;iz++)for(let ix=0;ix<=segments;ix++){const x=(ix/segments-.5)*d.width,z=(iz/segments-.5)*d.depth;const y=d.height*(Math.sin(x*.18)*Math.cos(z*.16)*.5+Math.sin((x+z)*.07)*.15);vertices.push(x,y,z);}
@@ -2111,6 +2302,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeMesh(mesh) {
     if (!mesh) return;
+    mesh.userData?.pstudioMirrorWater?.target?.dispose?.();
+    mesh.userData?.pstudioMirrorWater?.cloudTarget?.dispose?.();
     mesh.userData?.pstudioLightmapTexture?.dispose?.();
     const currentGeometry=mesh.geometry,lightmapped=!!mesh.userData?.pstudioLightmapGeometry;
     if(currentGeometry?.userData){currentGeometry.userData.pstudioBVHDisposed=true;currentGeometry.userData.pstudioBVHToken=(currentGeometry.userData.pstudioBVHToken||0)+1;}
@@ -5230,6 +5423,8 @@ void main(){
             });
             setupLightingMaterial(material);
             material=configureWaterMaterial(material);
+          }else if(d.type==='mirror_water'){
+            material=configureMirrorWaterMaterial(new T.MeshPhysicalMaterial({color:'#0b3d52',roughness:0.045,metalness:0,clearcoat:1,clearcoatRoughness:0.025,ior:1.333,side:T.DoubleSide,depthWrite:true}));
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
           }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
@@ -5237,7 +5432,7 @@ void main(){
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
           mesh=new T.Mesh(geometry,material);if(d.type==='terrain')window.PStudioEnvironmentFX?.configureTerrain?.(material,mesh);setupLightingMaterial(material);bindObjectProbeLighting(mesh);setupClusteredLightingMaterial(material);scheduleAutoLOD(mesh,geometry);
-          mesh.castShadow=d.type!=='plane'&&d.type!=='water';
+          mesh.castShadow=d.type!=='plane'&&d.type!=='water'&&d.type!=='mirror_water';
           mesh.receiveShadow=true;
           mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
           if(d.type==='water'){
@@ -5246,6 +5441,10 @@ void main(){
             const bounds=geometry.boundingBox,waterUniforms=material.userData?.pstudioWaterHQ;
             if(bounds&&waterUniforms?.bounds)waterUniforms.bounds.value.set(bounds.min.x,bounds.min.z,Math.max(.001,bounds.max.x-bounds.min.x),Math.max(.001,bounds.max.z-bounds.min.z));
           }
+          if(d.type==='mirror_water'){
+            mesh.userData.pstudioWaterSurface=true;
+            mesh.userData.pstudioMirrorWater=createMirrorWaterState(material);
+          }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
@@ -5253,7 +5452,11 @@ void main(){
         if(d.type!=='water'){
           if('roughness' in mesh.material)mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);
           if('metalness' in mesh.material)mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
-        }else mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
+        }else if(d.type==='water')mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
+        if(d.type==='mirror_water'){
+          const state=mesh.userData.pstudioMirrorWater;
+          if(state){state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):0.92));state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));}
+        }
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
         const baseRotationX=d.type==='plane'?-Math.PI/2:0;
