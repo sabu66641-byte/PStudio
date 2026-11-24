@@ -154,7 +154,8 @@
     const menu=document.createElement('div');
     menu.id='pstudio-select-menu-'+instanceId;
     menu.className='pstudio-select-menu';
-    menu.role='listbox';
+    menu.setAttribute('role','listbox');
+    menu.setAttribute('aria-labelledby',trigger.id);
     menu.hidden=true;
     menu.setAttribute('aria-label',accessibleLabel(select));
     menu.dataset.placement='auto';
