@@ -869,26 +869,33 @@
     geometry.setAttribute('aIntensity',new T.BufferAttribute(intensities,1));
     geometry.setAttribute('aSpeed',new T.BufferAttribute(speeds,1));
     const material=new T.ShaderMaterial({
-      uniforms:{uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))}},
+      uniforms:{
+        uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))},
+        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0}
+      },
       vertexShader:[
         'attribute float aPhase;','attribute float aIntensity;','attribute float aSpeed;',
-        'uniform float uTime;','uniform float uPointScale;','varying float vTwinkle;','varying float vIntensity;',
+        'uniform float uTime;','uniform float uPointScale;','varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'float pulse=.58+.42*(.5+.5*sin(uTime*aSpeed+aPhase));',
-        'vTwinkle=pulse;vIntensity=aIntensity;',
+        'vTwinkle=pulse;vIntensity=aIntensity;vSkyDirection=normalize(position);',
         'vec4 mvPosition=modelViewMatrix*vec4(position,1.0);',
         'gl_Position=projectionMatrix*mvPosition;',
         'gl_PointSize=(2.0+aIntensity*2.8)*uPointScale;',
         '}'
       ].join('\n'),
       fragmentShader:[
-        'varying float vTwinkle;','varying float vIntensity;',
+        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;',
+        'varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'vec2 p=gl_PointCoord-vec2(.5);float r=length(p);',
         'float core=exp(-r*r*190.0);',
         'float rays=max(exp(-abs(p.x)*72.0)*exp(-abs(p.y)*8.0),exp(-abs(p.y)*72.0)*exp(-abs(p.x)*8.0));',
         'float hexRay=pow(max(0.0,cos(atan(p.y,p.x)*6.0)),24.0)*smoothstep(.48,.02,r);',
-        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity;',
+        'float alignment=dot(normalize(vSkyDirection),normalize(uMoonDirectionWorld));',
+        'float moonHalo=smoothstep(0.89,0.999,alignment);',
+        'float moonDim=1.0-uMoonOcclusion*moonHalo*.58;',
+        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim;',
         'if(alpha<.012)discard;',
         'gl_FragColor=vec4(vec3(.72,.83,1.0)*alpha,alpha);',
         '}'
@@ -911,6 +918,8 @@
     const distance=Math.max(camera.near+2,camera.far*.96);
     nightTwinkleStars.scale.setScalar(distance);
     if(nightTwinkleStars.material?.uniforms?.uTime)nightTwinkleStars.material.uniforms.uTime.value=(window.performance?.now?.()??Date.now())*.001;
+    if(nightTwinkleStars.material?.uniforms?.uMoonDirectionWorld&&moonDirection)nightTwinkleStars.material.uniforms.uMoonDirectionWorld.value.copy(moonDirection);
+    if(nightTwinkleStars.material?.uniforms?.uMoonOcclusion)nightTwinkleStars.material.uniforms.uMoonOcclusion.value=moonMesh?.visible?1:0;
   }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
@@ -3817,33 +3826,97 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(!context)throw new Error('Canvas 2D context is unavailable for the lunar surface texture.');
     let seed=0x4d4f4f4e;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const clamp01=value=>Math.max(0,Math.min(1,value));
+    const smooth01=(a,b,x)=>{const t=clamp01((x-a)/(b-a));return t*t*(3-2*t);};
     const image=context.createImageData(canvas.width,canvas.height);
-    for(let i=0;i<image.data.length;i+=4){
-      const noise=(random()-.5)*14;
-      const tone=188+noise;
-      image.data[i]=tone*.84;image.data[i+1]=tone*.94;image.data[i+2]=Math.min(255,tone+24);image.data[i+3]=255;
+    for(let y=0;y<canvas.height;y++){
+      const v=y/(canvas.height-1),latitude=(v-.5)*Math.PI;
+      const latitudeWarp=Math.sin(latitude*3.0)*.78+Math.sin(latitude*7.0)*.17;
+      for(let x=0;x<canvas.width;x++){
+        const u=x/canvas.width,longitude=u*Math.PI*2;
+        // Integer longitude harmonics keep the lunar surface seamless at the UV seam.
+        const continental=(Math.sin(longitude*5.0+latitudeWarp)+
+          Math.cos(longitude*9.0-latitude*4.2)*.46+
+          Math.sin(longitude*13.0+latitude*8.0)*.21)/1.67;
+        const mare=smooth01(-.30,.48,-continental);
+        const medium=Math.sin(longitude*43.0+Math.sin(latitude*57.0))*
+          Math.cos(latitude*69.0-longitude*11.0);
+        const micro=random()-.5;
+        const tone=clamp01((190-mare*61+continental*8+medium*5+micro*9)/255)*255;
+        const i=(y*canvas.width+x)*4;
+        image.data[i]=tone*.91;
+        image.data[i+1]=tone*.96;
+        image.data[i+2]=Math.min(255,tone*1.035+2);
+        image.data[i+3]=255;
+      }
     }
     context.putImageData(image,0,0);
-    for(let i=0;i<280;i++){
-      const x=random()*canvas.width,y=28+random()*(canvas.height-56);
-      const radius=4+Math.pow(random(),2)*26;
-      const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
-      shadow.addColorStop(0,'rgba(62,82,116,0.075)');
-      shadow.addColorStop(.68,'rgba(78,101,143,0.12)');
-      shadow.addColorStop(.9,'rgba(203,222,255,0.14)');
-      shadow.addColorStop(1,'rgba(224,237,255,0.015)');
-      context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+
+    // Broad basalt maria have soft, irregular boundaries and a darker, less reflective albedo.
+    context.save();context.globalCompositeOperation='multiply';
+    for(let i=0;i<22;i++){
+      const x=random()*canvas.width,y=30+random()*(canvas.height-60);
+      const rx=18+Math.pow(random(),1.4)*78,ry=rx*(.42+random()*.46);
+      const rotation=(random()-.5)*.7;
+      const basin=context.createRadialGradient(x-rx*.12,y-ry*.12,rx*.08,x,y,rx);
+      basin.addColorStop(0,'rgba(42,53,69,0.26)');
+      basin.addColorStop(.52,'rgba(57,69,87,0.22)');
+      basin.addColorStop(.82,'rgba(91,105,128,0.12)');
+      basin.addColorStop(1,'rgba(120,139,166,0)');
+      context.fillStyle=basin;context.beginPath();
+      context.ellipse(x,y,rx,ry,rotation,0,Math.PI*2);context.fill();
     }
+    context.restore();
+
+    // Crater bowls, raised rims and offset shadows give the single texture real relief cues.
+    for(let i=0;i<280;i++){
+      const x=random()*canvas.width,y=24+random()*(canvas.height-48);
+      const radius=2.2+Math.pow(random(),2.1)*27;
+      const stretch=.62+random()*.58,rotation=(random()-.5)*.7;
+      context.save();context.translate(x,y);context.rotate(rotation);context.scale(1,stretch);
+      const shadow=context.createRadialGradient(-radius*.23,-radius*.24,radius*.06,0,0,radius);
+      shadow.addColorStop(0,'rgba(22,31,45,0.28)');
+      shadow.addColorStop(.43,'rgba(48,59,77,0.18)');
+      shadow.addColorStop(.72,'rgba(64,77,97,0.12)');
+      shadow.addColorStop(.86,'rgba(205,218,239,0.22)');
+      shadow.addColorStop(.94,'rgba(230,237,249,0.18)');
+      shadow.addColorStop(1,'rgba(90,108,137,0)');
+      context.fillStyle=shadow;context.beginPath();context.arc(0,0,radius,0,Math.PI*2);context.fill();
+      context.strokeStyle='rgba(224,233,249,'+(0.055+random()*.075).toFixed(3)+')';
+      context.lineWidth=Math.max(.45,radius*.045);
+      context.beginPath();context.arc(-radius*.035,-radius*.025,radius*.82,Math.PI*1.03,Math.PI*1.93);context.stroke();
+      context.fillStyle='rgba(17,25,39,'+(0.06+random()*.08).toFixed(3)+')';
+      context.beginPath();context.ellipse(radius*.08,radius*.12,radius*.23,radius*.16,.25,0,Math.PI*2);context.fill();
+      context.restore();
+    }
+
+    // A few ancient basins carry delicate ejecta rays, kept low-contrast like lunar albedo.
+    context.save();context.globalCompositeOperation='screen';context.lineCap='round';
+    for(let i=0;i<9;i++){
+      const x=random()*canvas.width,y=38+random()*(canvas.height-76),radius=13+random()*15;
+      context.strokeStyle='rgba(211,224,245,'+(0.045+random()*.035).toFixed(3)+')';
+      context.lineWidth=.45+random()*.5;
+      for(let ray=0;ray<7;ray++){
+        const angle=ray*Math.PI*2/7+(random()-.5)*.18,length=radius*(1.8+random()*2.6);
+        context.beginPath();context.moveTo(x+Math.cos(angle)*radius*.35,y+Math.sin(angle)*radius*.35);
+        context.lineTo(x+Math.cos(angle)*length,y+Math.sin(angle)*length);context.stroke();
+      }
+    }
+    context.restore();
+
     context.save();
     for(let i=0;i<900;i++){
-      const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.55+random()*3.2;
-      context.fillStyle='rgba(70,91,132,'+(0.018+random()*.038).toFixed(3)+')';
+      const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.45+random()*2.8;
+      context.fillStyle='rgba(48,65,91,'+(0.025+random()*.055).toFixed(3)+')';
       context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
     }
     context.restore();
     const texture=new T.CanvasTexture(canvas);
     texture.colorSpace=T.SRGBColorSpace;
     texture.wrapS=T.RepeatWrapping;texture.wrapT=T.ClampToEdgeWrapping;
+    texture.generateMipmaps=true;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
     texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     return texture;
@@ -3862,7 +3935,8 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           uMoonTint:{value:new T.Color('#C7DCFF')},
           uLightDirectionWorld:{value:new T.Vector3(0,-1,0)},
           uMoonIntensity:{value:1},
-          uMoonGlare:{value:0}
+          uMoonGlare:{value:0},
+          uEarthshineStrength:{value:1.0}
         },
         vertexShader:`varying vec2 vMoonUv;
 varying vec3 vMoonNormalWorld;
@@ -3879,6 +3953,7 @@ uniform vec3 uMoonTint;
 uniform vec3 uLightDirectionWorld;
 uniform float uMoonIntensity;
 uniform float uMoonGlare;
+uniform float uEarthshineStrength;
 varying vec2 vMoonUv;
 varying vec3 vMoonNormalWorld;
 varying vec3 vMoonWorldPosition;
@@ -3888,20 +3963,30 @@ void main(){
   vec3 viewDirection=normalize(cameraPosition-vMoonWorldPosition);
   float facing=clamp(dot(normal,viewDirection),0.0,1.0);
   float ndl=dot(normal,lightDirection);
-  float illumination=0.18+max(ndl,0.0)*1.12;
-  float terminator=smoothstep(-0.18,0.10,ndl);
+  float direct=clamp(ndl,0.0,1.0);
+  float terminator=smoothstep(-0.16,0.17,ndl);
   vec3 lunar=texture2D(uMoonMap,vMoonUv).rgb;
-  vec3 color=lunar*vec3(0.80,0.92,1.12)*illumination;
-  color*=mix(0.42,1.0,terminator);
-  float blueLimb=pow(1.0-facing,2.4);
-  color+=uMoonTint*(0.045+blueLimb*0.17);
+  // Slightly warm key light keeps the sunlit regolith from reading as a featureless white sphere.
+  vec3 lunarKey=mix(uMoonTint,vec3(1.0,0.925,0.80),0.22);
+  vec3 directColor=lunar*vec3(0.86,0.94,1.02)*lunarKey*(0.13+direct*1.28);
+  // Earthshine is deliberately deep blue and low energy: it lifts the night side without flattening the terminator.
+  vec3 earthshine=vec3(0.012,0.022,0.047)+uMoonTint*0.012;
+  earthshine*=uEarthshineStrength*(0.62+0.38*(1.0-facing));
+  vec3 color=mix(earthshine,directColor,terminator);
+  float terminatorRelief=exp(-pow(ndl/0.115,2.0));
+  color+=vec3(0.12,0.16,0.24)*terminatorRelief*0.045;
+  // Limb darkening and a narrow cool rim preserve the sphere silhouette without a cut-out edge.
+  float limb=pow(1.0-facing,2.7);
+  color*=1.0-limb*0.22;
+  color+=uMoonTint*limb*(0.028+direct*0.055);
+  vec3 champagne=vec3(1.0,0.88,0.69);
+  color+=mix(champagne,uMoonTint,0.28)*uMoonGlare*pow(1.0-facing,1.65)*0.115;
   color*=uMoonIntensity;
-  color+=uMoonTint*uMoonGlare*0.19;
   gl_FragColor=vec4(color,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`,
-        depthTest:true,depthWrite:false,transparent:false,fog:false
+        depthTest:true,depthWrite:true,transparent:false,fog:false
       });
       moonMesh=new T.Mesh(geometry,material);
       moonMesh.name='PStudioMoonSphere';
@@ -4252,8 +4337,16 @@ void main(){
         Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
       );
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
+      const moonV=moonUv.y/height;
       if(moonGlow>.001){
-        // Carry a faint, azimuth-aligned lunar glow down to the horizon air layer.
+        // Three nested scattering lobes: warm near-limb bloom, cool blue halo and a broad atmospheric veil.
+        const glowLayers=[
+          {radius:height*.026,stops:[[0,'rgba(255,239,211,0.19)'],[.32,'rgba(246,230,205,0.14)'],[.68,'rgba(191,213,249,0.065)'],[1,'rgba(120,158,221,0)']]},
+          {radius:height*.074,stops:[[0,'rgba(211,226,255,0.12)'],[.35,'rgba(156,190,243,0.075)'],[.72,'rgba(91,132,205,0.028)'],[1,'rgba(58,87,150,0)']]},
+          {radius:height*.148,stops:[[0,'rgba(107,147,211,0.038)'],[.52,'rgba(68,104,171,0.022)'],[1,'rgba(35,57,111,0)']]}
+        ];
+        context.save();context.globalCompositeOperation='screen';
+        // Preserve the azimuth-aligned lunar airglow that joins the moon to the scene horizon.
         const horizonRadiusX=width*.19,horizonRadiusY=height*.052;
         drawWrappedX(moonUv.x,horizonRadiusX,wrappedX=>{
           context.save();context.translate(wrappedX,height*.505);context.scale(1,horizonRadiusY/horizonRadiusX);
@@ -4261,17 +4354,35 @@ void main(){
           lunarHorizon.addColorStop(0,'rgba(137,174,229,'+(0.052*moonGlow)+')');
           lunarHorizon.addColorStop(.38,'rgba(91,132,197,'+(0.028*moonGlow)+')');
           lunarHorizon.addColorStop(1,'rgba(35,61,108,0)');
-          context.globalCompositeOperation='screen';context.fillStyle=lunarHorizon;
-          context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
+          context.fillStyle=lunarHorizon;context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
           context.restore();
         });
-        const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.065+moonGlow*.075));
-        moonAura.addColorStop(0,'rgba(205,224,255,'+(0.19*moonGlow)+')');
-        moonAura.addColorStop(.2,'rgba(151,190,246,'+(0.12*moonGlow)+')');
-        moonAura.addColorStop(.58,'rgba(100,145,216,'+(0.052*moonGlow)+')');
-        moonAura.addColorStop(1,'rgba(42,66,112,0)');
-        context.save();context.globalCompositeOperation='screen';
-        context.fillStyle=moonAura;context.fillRect(moonUv.x-width*.08,moonUv.y-height*.1,width*.16,height*.2);
+        context.globalAlpha=Math.min(1,moonGlow);
+        for(const layer of glowLayers){
+          drawWrappedX(moonUv.x,layer.radius,wrappedX=>{
+            const gradient=context.createRadialGradient(wrappedX,moonUv.y,1,wrappedX,moonUv.y,layer.radius);
+            for(const [stop,color] of layer.stops)gradient.addColorStop(stop,color);
+            context.fillStyle=gradient;
+            context.fillRect(wrappedX-layer.radius,moonUv.y-layer.radius,layer.radius*2,layer.radius*2);
+          });
+        }
+        // Moonlight catches a few very thin, high cirrus wisps in the same static panorama.
+        context.lineCap='round';context.lineJoin='round';
+        for(let i=0;i<34;i++){
+          const x=moonUv.x+(random()-.5)*width*.105;
+          const y=moonUv.y+(random()-.5)*height*.105;
+          const length=width*(.006+random()*.017);
+          const bend=(random()-.5)*height*.008;
+          const alpha=(.018+random()*.027)*moonGlow;
+          drawWrappedX(x,length+4,wrappedX=>{
+            context.beginPath();context.moveTo(wrappedX,y);
+            context.bezierCurveTo(wrappedX+length*.28,y+bend,wrappedX+length*.66,y-bend*.62,wrappedX+length,y+bend*.22);
+            context.strokeStyle='rgba(183,207,244,'+alpha.toFixed(3)+')';
+            context.lineWidth=.7+random()*1.15;
+            context.shadowColor='rgba(178,204,247,0.12)';context.shadowBlur=5+random()*8;
+            context.stroke();
+          });
+        }
         context.restore();
       }
 
@@ -4285,7 +4396,11 @@ void main(){
         const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
         const roll=random();
         const radius=roll>.996?2.8+random()*1.4:roll>.94?1.05+random()*.8:.27+Math.pow(random(),2)*.86;
-        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness);
+        const moonDxRaw=Math.abs(x-moonUv.x),moonDx=Math.min(moonDxRaw,width-moonDxRaw)*Math.max(.2,Math.cos((moonV-.5)*Math.PI));
+        const moonDy=y-moonUv.y;
+        const moonDistance=Math.sqrt(moonDx*moonDx+moonDy*moonDy);
+        const moonStarFade=1.0-.64*Math.exp(-Math.pow(moonDistance/(height*.062),2)*1.45);
+        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness*moonStarFade);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
@@ -4324,7 +4439,10 @@ void main(){
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
         const radius=.1+random()*.25;
-        const alpha=(.045+random()*.09)*starBrightness;
+        const moonDxRaw=Math.abs(x-moonUv.x),moonDx=Math.min(moonDxRaw,width-moonDxRaw)*Math.max(.2,Math.cos((moonV-.5)*Math.PI));
+        const moonDy=y-moonUv.y;
+        const moonMicroFade=1.0-.62*Math.exp(-(moonDx*moonDx+moonDy*moonDy)/(height*height*.0048));
+        const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fillRect(x,y,radius,radius);
       }

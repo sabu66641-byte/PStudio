@@ -232,11 +232,48 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
   assert.ok(renderer.includes("Math.tan(3.0*Math.PI/180)"));
-  assert.match(renderer,/const moonAura=context\.createRadialGradient/);
+  assert.match(renderer,/const glowLayers=\[/);
+  assert.match(renderer,/radius:height\*\.026,stops:/);
+  assert.match(renderer,/radius:height\*\.074,stops:/);
+  assert.match(renderer,/radius:height\*\.148,stops:/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
 });
  
+test('lunar surface adds maria, crater relief, a shaped terminator and subtle blue earthshine without another GPU texture',()=>{
+  const start=renderer.indexOf('function createMoonSurfaceTexture(T)');
+  const end=renderer.indexOf('function configureMoonSky(T,profile)',start);
+  assert.ok(start>=0&&end>start,'moon surface and material implementation must remain present');
+  const moonBlock=renderer.slice(start,end);
+  assert.match(moonBlock,/canvas\.width=1024;canvas\.height=512/);
+  assert.match(moonBlock,/const mare=smooth01\(/);
+  assert.match(moonBlock,/for\(let i=0;i<22;i\+\+\)/);
+  assert.match(moonBlock,/for\(let i=0;i<280;i\+\+\)/);
+  assert.match(moonBlock,/for\(let i=0;i<900;i\+\+\)/);
+  assert.match(moonBlock,/uniform float uEarthshineStrength/);
+  assert.match(moonBlock,/vec3 earthshine=vec3\(0\.012,0\.022,0\.047\)/);
+  assert.match(moonBlock,/mix\(earthshine,directColor,terminator\)/);
+  assert.match(moonBlock,/float terminatorRelief=/);
+  assert.match(moonBlock,/float limb=pow\(1\.0-facing,2\.7\)/);
+  assert.match(moonBlock,/depthTest:true,depthWrite:true/);
+  assert.equal((moonBlock.match(/new T\.CanvasTexture\(canvas\)/g)||[]).length,1,'moon continues to use one packed surface texture');
+  assert.doesNotMatch(moonBlock,/WebGLRenderTarget|composer\.addPass|new FX\.ShaderPass/);
+});
+
+test('moonlight adds warm and cool atmospheric scattering, thin lit cirrus and selective star dimming in the existing panorama',()=>{
+  assert.match(renderer,/radius:height\*\.026,stops:/);
+  assert.match(renderer,/radius:height\*\.074,stops:/);
+  assert.match(renderer,/radius:height\*\.148,stops:/);
+  assert.match(renderer,/rgba\(255,239,211,0\.19\)/);
+  assert.match(renderer,/for\(let i=0;i<34;i\+\+\)/);
+  assert.match(renderer,/moonStarFade=1\.0-\.64\*/);
+  assert.match(renderer,/moonMicroFade=1\.0-\.62\*/);
+  assert.match(renderer,/uMoonOcclusion\*moonHalo\*\.58/);
+  assert.match(renderer,/uMoonDirectionWorld/);
+  assert.match(renderer,/uMoonOcclusion\)nightTwinkleStars\.material\.uniforms\.uMoonOcclusion\.value=moonMesh\?\.visible\?1:0/);
+  assert.doesNotMatch(renderer,/moonHaloPass|lunarBloomPass/);
+});
+
 test('daylight sun is a one-time spherical photosphere with aligned direction and no stretched panorama disc',()=>{
   assert.match(renderer,/function createSunSurfaceTexture\(T\)/);
   assert.match(renderer,/function ensureSunMesh\(T\)/);
@@ -351,7 +388,7 @@ test('night sky uses a more populated, brighter starfield while preserving the n
   assert.ok(renderer.includes("for(let i=0;i<12000;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<2600;i++)"));
   assert.ok(renderer.includes("(.12+random()*.55+band*.2)"));
-  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness;"));
+  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;"));
   assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
   assert.ok(renderer.includes("nightPrimaryStars:name==='night'?12000:0"));
 });
@@ -463,8 +500,10 @@ test('night moon is explicitly blue-white tinted and harmonizes with the atmosph
   assert.equal(night.moonColor,'#C7DCFF');
   assert.ok(night.moonGlow>1);
   assert.match(renderer,/uMoonTint/);
-  assert.match(renderer,/blueLimb=pow\(1\.0-facing,2\.4\)/);
-  assert.match(renderer,/vec3\(0\.80,0\.92,1\.12\)/);
+  assert.match(renderer,/float limb=pow\(1\.0-facing,2\.7\)/);
+  assert.match(renderer,/uniform float uEarthshineStrength/);
+  assert.match(renderer,/vec3\(0\.86,0\.94,1\.02\)/);
+  assert.match(renderer,/mix\(earthshine,directColor,terminator\)/);
 });
 
 
