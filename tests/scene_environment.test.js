@@ -369,6 +369,22 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
 });
 
+test('night Milky Way adds high-frequency filament structure without a separate full-screen pass',()=>{
+  assert.match(renderer,/makeNoiseGrid\(768,384\)/);
+  assert.match(renderer,/const ultraFine=sampleNoise\(noiseGrids\[4\],u,v\)/);
+  assert.match(renderer,/const fiberRidges=Math\.pow\(/);
+  assert.match(renderer,/const horizonAirglow=context\.createLinearGradient\(0,height\*\.405,0,height\*\.585\)/);
+});
+
+test('bright night stars receive restrained diffraction flares and animated depth-tested twinkle points',()=>{
+  assert.match(renderer,/six-fold diffraction flare/);
+  assert.match(renderer,/function ensureNightTwinkleStars\(T\)/);
+  assert.match(renderer,/function updateNightTwinkleStars\(\)/);
+  assert.match(renderer,/uTime\*aSpeed\+aPhase/);
+  assert.match(renderer,/depthTest:true,depthWrite:false,blending:T\.AdditiveBlending/);
+  assert.match(renderer,/updateNightTwinkleStars\(\)/);
+});
+
 test('studio preset disables both painted and volumetric cloud layers',()=>{
   const cloudStart=renderer.indexOf("if(name==='day'||name==='dusk'){");
   const cloudEnd=renderer.indexOf('const glowRadius=',cloudStart);
