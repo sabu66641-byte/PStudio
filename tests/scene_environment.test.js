@@ -325,7 +325,7 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
   assert.match(renderer,/activeEnvironmentPreset='day'/);
   assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
-  assert.match(renderer,/cloudTierActive=!adaptiveQualityEnabled\\|\\|adaptiveQualityLevel>=1/);
+  assert.match(renderer,/cloudTierActive=!adaptiveQualityEnabled\|\|adaptiveQualityLevel>=1/);
   assert.match(renderer,/volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!\(cloudTier\?\.clouds&&cloudTierActive&&volumetricCloudPass\)/);
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
