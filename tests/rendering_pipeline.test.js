@@ -931,7 +931,7 @@ test('tablet and mobile workspace use a single main column with accessible proje
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
   assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-solar-sphere-cloud1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra-adaptive1'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-custom-select-quality-sync1'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-cloud-atmosphere2'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-solar-cloud-presets1'));
 });
