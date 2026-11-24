@@ -756,7 +756,7 @@ test('terrain PBR runtime injection sets bounded uniforms and composes with exis
 });
 
 test('baked SH probe grids use trilinear interpolation with a sparse-probe fallback',()=>{
-  for(const token of ['pstudioGrid',"layout:'x-fastest'",'const volumeIndex=','(dx?x.t:1-x.t)*(dy?y.t:1-y.t)*(dz?z.t:1-z.t)','const grid=volume.pstudioGrid','Sparse or legacy probe collections','const near=volume.map'])assert.ok(renderer.includes(token),token);
+  for(const token of ['pstudioGrid',"layout:'x-fastest'",'const volumeIndex=','(dx?x.t:1-x.t)*(dy?y.t:1-y.t)*(dz?z.t:1-z.t)','const center=cache.position,grid=volume.pstudioGrid','Sparse or legacy probe collections','const near=volume.map'])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('dims:Object.freeze(dims.slice())'));
   assert.ok(renderer.includes('updateObjectProbeUniforms'));
 });
