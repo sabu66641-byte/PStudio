@@ -311,10 +311,27 @@ test('day and dusk panoramas use a spherical photosphere, richer cloud layers an
   assert.ok(presets.getPreset('dusk').skySunY<presets.getPreset('day').skySunY);
 });
 
+test('scene viewport grid, axes and origin overlays are independently toggleable and excluded from play/reflections',()=>{
+  for(const token of [
+    'let editorOverlayVisibility={grid:true,axes:false,origin:true}',
+    'function readEditorOverlayVisibility()',
+    'function setEditorOverlayVisibility(name,visible)',
+    'function getEditorOverlayVisibility()',
+    'new T.AxesHelper(3.2)',
+    'new T.SphereGeometry(0.075,12,8)',
+    'editorAxesHelper.visible=editorOverlayVisibility.axes',
+    'editorOriginMarker.visible=editorOverlayVisibility.origin',
+    'hide(gridGroup);hide(editorHelperGroup);hide(selectionGroup)'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('gridGroup.visible=editorOverlayVisibility.grid&&!window.PStudioEngine?.isRunning?.()'));
+  assert.ok(renderer.includes('editorHelperGroup.visible=!window.PStudioEngine?.isRunning?.()'));
+  for(const token of ['data-scene-overlay="grid"','data-scene-overlay="axes"','data-scene-overlay="origin"','function toggleSceneOverlay(name)'])assert.ok(html.includes(token),token);
+});
+
 test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
   assert.match(renderer,/function gridDivisionsForDistance\(baseDivisions,distance\)/);
   assert.match(renderer,/function updateEditorGridPresentation\(\)/);
-  assert.match(renderer,/const opacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
+  assert.match(renderer,/const opacity=distance>900\?\.10:distance>520\?\.13:distance>280\?\.16:distance>140\?\.19:\.22/);
   assert.match(renderer,/function disposeGrid\(grid\)/);
   assert.match(renderer,/for\(const material of gridMaterials\(grid\)\)material\?\.dispose\?\.\(\)/);
   assert.match(renderer,/for\(const grid of gridCache\.values\(\)\)\{gridGroup\.remove\(grid\);disposeGrid\(grid\);\}/);

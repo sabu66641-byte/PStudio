@@ -80,6 +80,8 @@
   let selectedOwnerId = null;
   let selectionSignature = '';
   let gridGroup = null;
+  let editorHelperGroup=null,editorAxesHelper=null,editorOriginMarker=null;
+  let editorOverlayVisibility={grid:true,axes:false,origin:true};
   let hemisphereLight = null;
   let keyLight = null;
   const dynamicLights = new Map();
@@ -517,7 +519,11 @@
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
-    primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup);
+    primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();editorHelperGroup=new T.Group();
+    editorOverlayVisibility=readEditorOverlayVisibility();
+    editorAxesHelper=new T.AxesHelper(3.2);editorAxesHelper.renderOrder=2;editorHelperGroup.add(editorAxesHelper);
+    editorOriginMarker=new T.Mesh(new T.SphereGeometry(0.075,12,8),new T.MeshBasicMaterial({color:0xe8edf5,transparent:true,opacity:0.9,depthWrite:false}));editorOriginMarker.renderOrder=3;editorHelperGroup.add(editorOriginMarker);
+    scene.add(primitiveGroup,modelGroup,gridGroup,selectionGroup,editorHelperGroup);applyEditorOverlayVisibility();
     cameraPan=new T.Vector3();
     hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
     if(!csm){keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;scene.add(keyLight,keyLight.target);}
@@ -747,7 +753,7 @@
       scene.traverse(object=>{
         if(object?.userData?.pstudioMirrorWater||object?.userData?.pstudioWaterSurface)hide(object);
       });
-      hide(gridGroup);hide(selectionGroup);
+      hide(gridGroup);hide(editorHelperGroup);hide(selectionGroup);
       renderer.autoClear=true;
       if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
       if(renderer.xr)renderer.xr.enabled=false;
@@ -915,6 +921,28 @@
     try{window.dispatchEvent(new CustomEvent('pstudio-memory-snapshot',{detail:{...snapshot,pressure,memorySafetyApplied}}));}catch(_){}
   }
 
+  function readEditorOverlayVisibility(){
+    const defaults={grid:true,axes:false,origin:true};
+    try{
+      const saved=JSON.parse(window.localStorage?.getItem('pstudio-scene-overlays')||'null');
+      return{grid:saved?.grid!==false,axes:saved?.axes===true,origin:saved?.origin!==false};
+    }catch(_){return defaults;}
+  }
+  function applyEditorOverlayVisibility(){
+    if(gridGroup)gridGroup.visible=editorOverlayVisibility.grid&&!window.PStudioEngine?.isRunning?.();
+    if(editorAxesHelper)editorAxesHelper.visible=editorOverlayVisibility.axes;
+    if(editorOriginMarker)editorOriginMarker.visible=editorOverlayVisibility.origin;
+    if(editorHelperGroup)editorHelperGroup.visible=!window.PStudioEngine?.isRunning?.();
+  }
+  function setEditorOverlayVisibility(name,visible){
+    if(!Object.prototype.hasOwnProperty.call(editorOverlayVisibility,name))return getEditorOverlayVisibility();
+    editorOverlayVisibility[name]=!!visible;
+    try{window.localStorage?.setItem('pstudio-scene-overlays',JSON.stringify(editorOverlayVisibility));}catch(_){}
+    applyEditorOverlayVisibility();
+    if(renderer&&scene&&camera)drawFrame();
+    return getEditorOverlayVisibility();
+  }
+  function getEditorOverlayVisibility(){return{...editorOverlayVisibility};}
   function gridMaterials(grid){
     return Array.isArray(grid?.material)?grid.material:(grid?.material?[grid.material]:[]);
   }
@@ -952,7 +980,7 @@
       }
       const farScale=Math.max(1,Math.min(3,distance/240));
       grid.scale.setScalar(farScale);
-      const opacity=distance>900?.14:distance>520?.19:distance>280?.25:distance>140?.32:.42;
+      const opacity=distance>900?.10:distance>520?.13:distance>280?.16:distance>140?.19:.22;
       for(const material of gridMaterials(grid)){
         material.transparent=true;
         material.opacity=opacity;
@@ -1133,6 +1161,7 @@
     updateSunSkyMesh();
     if(activeEnvironmentPreset==='night')ensureNightTwinkleStars(window.THREE);
     updateNightTwinkleStars();
+    applyEditorOverlayVisibility();
     updateEditorGridPresentation();
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
@@ -5608,6 +5637,8 @@ void main(){
     getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
     getModelStatus,
+    getEditorOverlayVisibility,
+    setEditorOverlayVisibility,
     setSelected: id => {
       selectedOwnerId = id || null;
       if(id!==null&&id!==undefined)cameraFocusOwnerId=String(id);
