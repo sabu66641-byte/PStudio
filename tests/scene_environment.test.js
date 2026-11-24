@@ -311,6 +311,22 @@ test('day and dusk panoramas use a spherical photosphere, richer cloud layers an
   assert.ok(presets.getPreset('dusk').skySunY<presets.getPreset('day').skySunY);
 });
 
+test('scene viewport grid, axes and origin overlays are independently toggleable and excluded from play/reflections',()=>{
+  assert.match(renderer,/let editorOverlayVisibility=\{grid:true,axes:false,origin:true\}/);
+  assert.match(renderer,/function readEditorOverlayVisibility\(\)/);
+  assert.match(renderer,/function setEditorOverlayVisibility\(name,visible\)/);
+  assert.match(renderer,/function getEditorOverlayVisibility\(\)/);
+  assert.match(renderer,/new T\.AxesHelper\(3\.2\)/);
+  assert.match(renderer,/new T\.SphereGeometry\(0\.075,12,8\)/);
+  assert.match(renderer,/gridGroup\.visible=editorOverlayVisibility\.grid&&!window\.PStudioEngine\?\.isRunning\?\. \(\)/);
+  assert.match(renderer,/editorHelperGroup\.visible=!window\.PStudioEngine\?\.isRunning\?\. \(\)/);
+  assert.match(renderer,/hide\(gridGroup\);hide\(editorHelperGroup\);hide\(selectionGroup\)/);
+  assert.match(html,/data-scene-overlay="grid"/);
+  assert.match(html,/data-scene-overlay="axes"/);
+  assert.match(html,/data-scene-overlay="origin"/);
+  assert.match(html,/function toggleSceneOverlay\(name\)/);
+});
+
 test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
   assert.match(renderer,/function gridDivisionsForDistance\(baseDivisions,distance\)/);
   assert.match(renderer,/function updateEditorGridPresentation\(\)/);
