@@ -218,7 +218,7 @@ test('night moon is a real spherical mesh with one-time surface texture creation
   assert.match(renderer,/for\(let i=0;i<12000;i\+\+\)/);
   assert.match(renderer,/function createMoonSurfaceTexture\(T\)/);
   assert.match(renderer,/function ensureMoonMesh\(T\)/);
-  assert.match(renderer,/new T\.SphereGeometry\(1,48,32\)/);
+  assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
   assert.match(renderer,/if\(moonMesh\?\.parent===scene\)return moonMesh/);
   assert.match(renderer,/function configureMoonSky\(T,profile\)/);
   assert.match(renderer,/function updateMoonSkyMesh\(\)/);
