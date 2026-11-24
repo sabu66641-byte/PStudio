@@ -626,11 +626,11 @@
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:14,high:26,ultra:36,cinematic:40}[String(preset)]||26;
+      const base={mobile:8,balanced:14,high:30,ultra:40,cinematic:40}[String(preset)]||30;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
       const factor=[.58,.78,1][level];
       const steps=Math.max(8,Math.min(40,Math.round(base*factor)));
-      const lightSteps=preset==='ultra'||preset==='cinematic'?2:1;
+      const lightSteps=preset==='high'||preset==='ultra'||preset==='cinematic'?2:1;
       pass.uniforms.uCloudSteps.value=steps;
       pass.uniforms.uCloudLightSteps.value=lightSteps;
       pass.userData=pass.userData||{};
@@ -646,6 +646,10 @@
       if(settings.sunColor&&uniforms.uSunColor.value?.set)uniforms.uSunColor.value.set(settings.sunColor);
       if(settings.fogColor&&uniforms.uFogColor.value?.set)uniforms.uFogColor.value.set(settings.fogColor);
       if(Number.isFinite(Number(settings.cloudDensity)))uniforms.uCloudDensity.value=Math.max(0,Math.min(2,Number(settings.cloudDensity)));
+      if(Number.isFinite(Number(settings.cloudCoverage)))uniforms.uCloudCoverage.value=Math.max(0,Math.min(1,Number(settings.cloudCoverage)));
+      if(Number.isFinite(Number(settings.cloudDetail)))uniforms.uCloudDetail.value=Math.max(0,Math.min(1,Number(settings.cloudDetail)));
+      if(Number.isFinite(Number(settings.cloudBase)))uniforms.uCloudBase.value=Math.max(0,Number(settings.cloudBase));
+      if(Number.isFinite(Number(settings.cloudTop)))uniforms.uCloudTop.value=Math.max((Number(uniforms.uCloudBase.value)||0)+1,Number(settings.cloudTop));
       return true;
     };
     pass.setQuality('high',2);
