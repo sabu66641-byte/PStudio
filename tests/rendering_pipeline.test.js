@@ -595,7 +595,7 @@ test('BVH scheduling skips small meshes and permanently falls back after a const
     'elementCount<768',
     'pstudioBVHSkippedSmall',
     'pstudioBVHFailed',
-    'geometry.computeBoundsTree({maxLeafSize:12})',
+    'geometry.computeBoundsTree({targetLeafSize:12})',
     'this geometry will use standard raycasting'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('scheduleGeometryBVH(object.geometry)'));
@@ -970,7 +970,7 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r188-tsl-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r187-tsl-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3'));
