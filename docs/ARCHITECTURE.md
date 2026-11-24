@@ -55,7 +55,7 @@ Do not send a server request every frame. Preserve the division between server-s
 
 - `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching.
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
-- `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, preset-driven solar elevation, moonlight, Rayleigh/Mie physical sky, twilight enhancement and procedural fallback, adaptive height-aware volumetric fog/clouds, depth-aware PBR water, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, GPU particle rendering, instancing and world chunks.
+- `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, preset-driven solar elevation, moonlight, Rayleigh/Mie physical sky, twilight enhancement and procedural fallback, adaptive height-aware volumetric fog/clouds, depth-aware PBR water plus an isolated, downscaled planar Mirror Water reflection pass, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
 - `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
@@ -81,6 +81,7 @@ Do not send a server request every frame. Preserve the division between server-s
 
 - The IDE owns project serialization, selected object state, Inspector fields and calls into the renderer.
 - The game runtime owns ps callback state and emits frame render commands.
+- `draw_mirror_water` is a browser game-script API (5–7 arguments) and remains separate from the legacy `draw_water` command; the IDE's persistent Mirror Water object uses the same renderer command path.
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations.
 - ECS is integrated with scene entities and system iteration but is not yet a full migration of every legacy subsystem.
