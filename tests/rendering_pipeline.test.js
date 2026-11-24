@@ -1081,3 +1081,16 @@ test('dynamic GI probe captures are excluded from main render timings and per-fr
   assert.ok(renderer.includes('calls:lastFrameRenderStats.calls'));
   assert.ok(renderer.includes('triangles:lastFrameRenderStats.triangles'));
 });
+
+test('Dynamic GI probe capture cadence scales with measured render headroom and quality tiers',()=>{
+  assert.ok(renderer.includes('function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh)'));
+  assert.ok(renderer.includes('const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh)'));
+  assert.ok(renderer.includes("qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64"));
+  assert.ok(renderer.includes('nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs'));
+  const helper=renderer.slice(renderer.indexOf('function dynamicProbeCaptureIntervalMs'),renderer.indexOf('function createGpuParticleSystem'));
+  assert.match(helper,/if\(ms<=6\)return 300/);
+  assert.match(helper,/if\(ms<=9\)return 550/);
+  assert.match(helper,/if\(ms<=12\)return 900/);
+  assert.match(helper,/if\(ms<=4\)return 450/);
+  assert.match(helper,/if\(ms<=7\)return 900/);
+});
