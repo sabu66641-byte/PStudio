@@ -234,7 +234,7 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.match(renderer,/Math\.tan\(1\.9\*Math\.PI\/180\)/);
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
-  assert.match(renderer,/moonMesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
+  assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
 });
  
 test('daylight sun is a one-time spherical photosphere with aligned direction and no stretched panorama disc',()=>{
