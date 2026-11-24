@@ -115,8 +115,11 @@
     if(window.PStudioEngine?.isRunning?.())return Math.max(-1.35,Math.min(1.35,pitch));
     const horizontal=Math.hypot(cameraBase[0]-cameraTarget[0],cameraBase[2]-cameraTarget[2]);
     const baseElevation=Math.atan2(cameraBase[1]-cameraTarget[1],Math.max(1e-6,horizontal));
-    const maxDownward=Math.max(-1.35,baseElevation-.065);
-    return Math.max(-1.35,Math.min(maxDownward,pitch));
+    // Allow an almost full vertical orbit while staying just clear of the lookAt pole singularities.
+    const maxElevation=Math.PI/2-0.01;
+    const minPitch=baseElevation-maxElevation;
+    const maxPitch=baseElevation+maxElevation;
+    return Math.max(minPitch,Math.min(maxPitch,pitch));
   }
   function setupControls() {
     if (controlsReady) return;
