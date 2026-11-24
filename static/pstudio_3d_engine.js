@@ -691,7 +691,9 @@
   }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
-    if(physicalSky?.visible)physicalSky.position.copy(camera.position);
+    // Update the camera's world matrix before positioning camera-relative celestial meshes.
+    camera.updateMatrixWorld(true);
+    if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
     updateMoonSkyMesh();
     updateSunSkyMesh();
     updateEditorGridPresentation();
@@ -3746,6 +3748,11 @@ void main(){
       const u=((Math.atan2(z,x)/(Math.PI*2)+0.5)%1+1)%1;
       return{x:u*width,y:Math.acos(ny)/Math.PI*height};
     };
+    const drawWrappedX=(x,margin,draw)=>{
+      draw(x);
+      if(x<margin)draw(x+width);
+      else if(x>width-margin)draw(x-width);
+    };
 
     if(name==='night'){
       // A dark, periodic starfield with a structured Milky Way rather than a smooth painted stripe.
@@ -3927,11 +3934,13 @@ void main(){
         }
         context.restore();
       }else{
-        const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,height*.16);
-        horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
-        horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
-        horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
-        context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+        drawWrappedX(sun.x,width*.18,wrappedX=>{
+          const horizonGlow=context.createRadialGradient(wrappedX,sun.y,2,wrappedX,sun.y,height*.16);
+          horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
+          horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
+          horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
+          context.fillStyle=horizonGlow;context.fillRect(wrappedX-width*.16,sun.y-height*.16,width*.32,height*.32);
+        });
       }
 
       if(name==='day'||name==='dusk'){
@@ -3941,48 +3950,56 @@ void main(){
       for(let i=0;i<(dusk?112:92);i++){
         const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
         const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
-        context.save();context.translate(x,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
-        const cloud=context.createRadialGradient(0,0,2,0,0,rx);
-        if(dusk){
-          cloud.addColorStop(0,'rgba(255,178,148,0.16)');
-          cloud.addColorStop(.46,'rgba(225,130,134,0.09)');
-          cloud.addColorStop(1,'rgba(190,117,163,0)');
-        }else{
-          cloud.addColorStop(0,'rgba(246,252,255,0.15)');
-          cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
-          cloud.addColorStop(1,'rgba(210,232,247,0)');
-        }
-        context.fillStyle=cloud;
-        context.beginPath();
-        context.arc(0,0,rx,0,Math.PI*2);
-        context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
-        context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
-        context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
-        context.fill();
-        context.restore();
+        drawWrappedX(x,rx+2,wrappedX=>{
+          context.save();context.translate(wrappedX,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
+          const cloud=context.createRadialGradient(0,0,2,0,0,rx);
+          if(dusk){
+            cloud.addColorStop(0,'rgba(255,178,148,0.20)');
+            cloud.addColorStop(.46,'rgba(225,130,134,0.105)');
+            cloud.addColorStop(1,'rgba(190,117,163,0)');
+          }else{
+            cloud.addColorStop(0,'rgba(246,252,255,0.15)');
+            cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
+            cloud.addColorStop(1,'rgba(210,232,247,0)');
+          }
+          context.fillStyle=cloud;
+          context.beginPath();
+          context.arc(0,0,rx,0,Math.PI*2);
+          context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
+          context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
+          context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
+          context.fill();
+          context.restore();
+        });
       }
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:148);i++){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
-        context.beginPath();context.moveTo(x,y);
-        context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
-        context.lineWidth=1+random()*(dusk?7:5);
-        context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
-        context.globalAlpha=.12+random()*.22;
-        context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
-        context.shadowBlur=7+random()*18;
-        context.stroke();
+        const yEnd=y+(random()-.5)*8,yControlA=y+(random()-.5)*9,yControlB=y+(random()-.5)*15;
+        const strokeWidth=1+random()*(dusk?7:5),strokeAlpha=.12+random()*.22,shadowBlur=7+random()*18;
+        drawWrappedX(x,length+4,wrappedX=>{
+          context.beginPath();context.moveTo(wrappedX,y);
+          context.bezierCurveTo(wrappedX+length*.24,yControlA,wrappedX+length*.68,yControlB,wrappedX+length,yEnd);
+          context.lineWidth=strokeWidth;
+          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
+          context.globalAlpha=strokeAlpha;
+          context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
+          context.shadowBlur=shadowBlur;
+          context.stroke();
+        });
       }
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?2.6:10);
-      const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.18*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.11*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.045*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
-      halo.addColorStop(1,'rgba(255,255,255,0)');
-      context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      const glowRadius=sunRadius*(dusk?3.2:10);
+      drawWrappedX(sun.x,glowRadius,wrappedX=>{
+        const halo=context.createRadialGradient(wrappedX,sun.y,1,wrappedX,sun.y,glowRadius);
+        halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.22*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+        halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.14*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+        halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.065*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+        halo.addColorStop(1,'rgba(255,255,255,0)');
+        context.fillStyle=halo;context.fillRect(wrappedX-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      });
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
     }
 
@@ -4012,16 +4029,24 @@ void main(){
     }
     material.uniforms.pStudioAtmosphereExposure={value:.45};
     material.uniforms.pStudioTwilightStrength={value:0};
+    material.uniforms.pStudioSunAngularRadius={value:0.52};
     const enhancement=[
       'retColor*=pStudioAtmosphereExposure;',
-      'float pStudioHorizonBand=exp(-abs(direction.y)*10.0);',
-      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y))*pStudioTwilightStrength;',
-      'float pStudioSunAlignment=max(dot(direction,vSunDirection),0.0);',
-      'float pStudioSolarHalo=pow(pStudioSunAlignment,18.0);',
-      'vec3 pStudioWarmHorizon=mix(vec3(0.96,0.22,0.12),vec3(1.0,0.53,0.24),smoothstep(-0.12,0.34,direction.y));',
-      'retColor=mix(retColor,pStudioWarmHorizon,pStudioHorizonBand*pStudioTwilight*0.42);',
-      'retColor+=vec3(1.0,0.34,0.16)*pStudioSolarHalo*pStudioTwilight*0.13;',
-      'retColor+=vec3(0.36,0.53,0.82)*pow(pStudioSunAlignment,24.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.018;'
+      'float pStudioHorizonBand=exp(-abs(direction.y)*12.0);',
+      'float pStudioTwilight=smoothstep(-0.14,0.08,vSunDirection.y)*(1.0-smoothstep(0.10,0.52,vSunDirection.y))*pStudioTwilightStrength;',
+      'float pStudioSunAlignment=max(dot(normalize(direction),normalize(vSunDirection)),0.0);',
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,42.0);',
+      'float pStudioSolarCore=pow(pStudioSunAlignment,180.0);',
+      'float pStudioHorizonWarmth=smoothstep(-0.16,0.025,direction.y)*(1.0-smoothstep(0.025,0.20,direction.y));',
+      'vec3 pStudioWarmHorizon=mix(vec3(0.48,0.20,0.36),vec3(1.0,0.48,0.25),smoothstep(-0.10,0.16,direction.y));',
+      'vec3 pStudioPeachHorizon=mix(vec3(0.72,0.28,0.38),vec3(1.0,0.72,0.43),smoothstep(-0.05,0.14,direction.y));',
+      'retColor=mix(retColor,pStudioWarmHorizon,pStudioHorizonBand*pStudioTwilight*0.34);',
+      'retColor=mix(retColor,pStudioPeachHorizon,pStudioHorizonWarmth*pStudioTwilight*0.16);',
+      'retColor+=vec3(1.0,0.30,0.13)*pStudioSolarHalo*pStudioTwilight*0.095;',
+      'retColor+=vec3(1.0,0.72,0.46)*pStudioSolarCore*pStudioTwilight*0.055;',
+      'retColor+=vec3(0.36,0.53,0.82)*pow(pStudioSunAlignment,30.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.018;',
+      'float pStudioAtmosphereGrain=fract(sin(dot(direction.xy,vec2(127.1,311.7)))*43758.5453)-0.5;',
+      'retColor+=pStudioAtmosphereGrain*0.00045;'
     ].join('\n');
     const shaderWithUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform float pStudioAtmosphereExposure;\nuniform float pStudioTwilightStrength;');
     material.fragmentShader=shaderWithUniforms.replace(marker,enhancement+'\n'+marker);
@@ -4057,6 +4082,7 @@ void main(){
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
       if(uniforms.pStudioAtmosphereExposure)uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45));
       if(uniforms.pStudioTwilightStrength)uniforms.pStudioTwilightStrength.value=Math.max(0,Math.min(1,Number(profile.twilightStrength)||0));
+      if(uniforms.pStudioSunAngularRadius)uniforms.pStudioSunAngularRadius.value=Math.max(0.1,Math.min(4,Number(profile.sunAngularRadius)||0.52));
       physicalSky.visible=true;
       if(camera)physicalSky.position.copy(camera.position);
       return true;
