@@ -2610,12 +2610,15 @@ try {
   try { const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'); window.PStudioDRACOLoader = DRACOLoader; }
   catch (error) { console.warn('[PStudio] Draco decoder unavailable:', error); }
   const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
+  // r187 exposes TSL and WebGPU through dedicated entry points. Keep them isolated
+  // from the production WebGL renderer until the custom material parity port is ready.
   try {
-    const { WebGLNodesHandler } = await import('three/addons/tsl/WebGLNodesHandler.js');
-    window.PStudioWebGLNodesHandler = WebGLNodesHandler;
+    window.PStudioWebGPURenderer = (await import('three/webgpu')).WebGPURenderer;
+    window.PStudioTSL = await import('three/tsl');
   } catch (error) {
-    window.PStudioWebGLNodesHandler = null;
-    console.warn('[PStudio] TSL compatibility bridge unavailable; legacy GLSL materials remain active.', error);
+    window.PStudioWebGPURenderer = null;
+    window.PStudioTSL = null;
+    console.warn('[PStudio] WebGPU/TSL prototype modules unavailable; the WebGL2 renderer remains active.', error);
   }
   window.THREE = THREE;
   window.PStudioGLTFLoader = GLTFLoader;
