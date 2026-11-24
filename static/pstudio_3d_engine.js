@@ -762,7 +762,8 @@
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
       adaptiveLevel:adaptiveQualityLevel,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),
       renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
-      note:'GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percent is GPU render time divided by 16.67 ms, not total GPU utilization.'
+      dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates},
+      note:'FPS is based on renderer redraw intervals. GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percentage is GPU render time divided by 16.67 ms, not total GPU utilization.'
     };
   }
   function formatMetricBytes(bytes){
@@ -789,8 +790,9 @@
       'Geometry: '+stats.geometries+'  |  Textures: '+stats.textures,
       'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
       'Quality: '+stats.quality.toUpperCase()+'  |  Scale: '+Math.round(stats.dynamicResolutionScale*100)+'%  |  DPR: '+(stats.renderPixelRatio===null?'—':stats.renderPixelRatio.toFixed(2)),
+      'Dynamic GI: '+(stats.dynamicGI.enabled?'ON':'OFF')+' / '+stats.dynamicGI.status+' ('+stats.dynamicGI.validProbes+'/'+stats.dynamicGI.totalProbes+')',
       'Timing: '+stats.timingSource+(stats.memorySafety?'  |  MEMORY SAFETY':''),
-      'GPU % is a frame-budget ratio, not device utilization.'
+      'FPS is based on renderer redraw intervals; GPU % is a frame-budget ratio.'
     ];
     if(panel)panel.textContent=rows.join(String.fromCharCode(10));
     try{window.dispatchEvent(new CustomEvent('pstudio-render-stats',{detail:stats}));}catch(_){}
