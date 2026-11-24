@@ -231,7 +231,7 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
   assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
-  assert.ok(renderer.includes("Math.tan(2.25*Math.PI/180)"));
+  assert.ok(renderer.includes("Math.tan(3.0*Math.PI/180)"));
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
@@ -255,6 +255,8 @@ test('day and dusk panoramas use a spherical photosphere, richer cloud layers an
   assert.match(renderer,/const directionUv=\(x,y,z\)=>/);
   assert.match(renderer,/const sun=directionUv\(/);
   assert.match(renderer,/Soft, broken cloud banks and fine cirrus/);
+  assert.match(renderer,/context\.shadowBlur=1\+random\(\)\*3/);
+  assert.match(renderer,/context\.lineWidth=\.7\+random\(\)\*\(dusk\?3\.2:2\.6\)/);
   assert.match(renderer,/pStudioWarmHorizon/);
   assert.ok(presets.getPreset('dusk').skySunY<presets.getPreset('day').skySunY);
 });
@@ -262,7 +264,8 @@ test('day and dusk panoramas use a spherical photosphere, richer cloud layers an
 test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
   assert.match(renderer,/function gridDivisionsForDistance\(baseDivisions,distance\)/);
   assert.match(renderer,/function updateEditorGridPresentation\(\)/);
-  assert.match(renderer,/const opacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
+  assert.match(renderer,/const baseOpacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
+  assert.match(renderer,/activeEnvironmentPreset==='studio'\?baseOpacity:baseOpacity\*\.62/);
   assert.match(renderer,/function disposeGrid\(grid\)/);
   assert.match(renderer,/for\(const material of gridMaterials\(grid\)\)material\?\.dispose\?\.\(\)/);
   assert.match(renderer,/for\(const grid of gridCache\.values\(\)\)\{gridGroup\.remove\(grid\);disposeGrid\(grid\);\}/);
@@ -354,7 +357,9 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/makeNoiseGrid=\(gridWidth,gridHeight\)=>/);
   assert.match(renderer,/sampleNoise=\(grid,u,v\)=>/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
-  assert.match(renderer,/galaxyWidth=1024,galaxyHeight=512/);
+  assert.match(renderer,/galaxyWidth=width,galaxyHeight=height/);
+  assert.match(renderer,/context\.imageSmoothingEnabled=false/);
+  assert.match(renderer,/texture\.flipY=true/);
   assert.match(renderer,/const structure=clamp01\(/);
   assert.match(renderer,/const dust=clamp01\(/);
   assert.match(renderer,/globalCompositeOperation='screen'/);
