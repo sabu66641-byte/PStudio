@@ -207,7 +207,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('const width=2048,height=1024;'));
-  assert.ok(renderer.includes('for(let i=0;i<8200;i++)'));
+  assert.ok(renderer.includes('for(let i=0;i<12000;i++)'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
   assert.ok(renderer.includes('uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45))'));
@@ -215,7 +215,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
 
 test('night moon is a real spherical mesh with one-time surface texture creation and camera-relative placement',()=>{
   assert.match(renderer,/A dark, periodic starfield with a structured Milky Way/);
-  assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
+  assert.match(renderer,/for\(let i=0;i<12000;i\+\+\)/);
   assert.match(renderer,/function createMoonSurfaceTexture\(T\)/);
   assert.match(renderer,/function ensureMoonMesh\(T\)/);
   assert.match(renderer,/new T\.SphereGeometry\(1,48,32\)/);
@@ -346,8 +346,8 @@ test('night sky uses a more populated, brighter starfield while preserving the n
   assert.match(renderer,/for\\(let i=0;i<2600;i\\+\\+\\)/);
   assert.match(renderer,/\\.12\\+random\\(\\)\\*\\.55\\+band\\*\\.2/);
   assert.match(renderer,/const alpha=\\(\\.045\\+random\\(\\)\\*\\.09\\)\\*starBrightness/);
-  assert.match(renderer,/nightStars:name==='night'\\?14600:0/);
-  assert.match(renderer,/nightPrimaryStars:name==='night'\\?12000:0/);
+  assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
+  assert.ok(renderer.includes("nightPrimaryStars:name==='night'?12000:0"));
 });
 
 test('night sky uses a periodic multi-octave Milky Way field and a dense fine-star distribution',()=>{
@@ -358,9 +358,9 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/const structure=clamp01\(/);
   assert.match(renderer,/const dust=clamp01\(/);
   assert.match(renderer,/globalCompositeOperation='screen'/);
-  assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
+  assert.match(renderer,/for\(let i=0;i<12000;i\+\+\)/);
   assert.match(renderer,/night:\[\[0,'#01040B'/);
-  assert.match(renderer,/nightStars:name==='night'\?14600:0/);
+  assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
 });
 
 test('studio preset disables both painted and volumetric cloud layers',()=>{
