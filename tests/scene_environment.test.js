@@ -500,8 +500,10 @@ test('night moon is explicitly blue-white tinted and harmonizes with the atmosph
   assert.equal(night.moonColor,'#C7DCFF');
   assert.ok(night.moonGlow>1);
   assert.match(renderer,/uMoonTint/);
-  assert.match(renderer,/blueLimb=pow\(1\.0-facing,2\.4\)/);
-  assert.match(renderer,/vec3\(0\.80,0\.92,1\.12\)/);
+  assert.match(renderer,/float limb=pow\(1\.0-facing,2\.7\)/);
+  assert.match(renderer,/uniform float uEarthshineStrength/);
+  assert.match(renderer,/vec3\(0\.86,0\.94,1\.02\)/);
+  assert.match(renderer,/mix\(earthshine,directColor,terminator\)/);
 });
 
 
