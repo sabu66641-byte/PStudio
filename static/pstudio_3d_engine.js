@@ -1035,7 +1035,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;dynamicProbeSignature='';
       if(dynamicGIEnabled)dynamicGIStatus='waiting-for-dynamic-lights';
     }else{
-      dynamicProbeCache=[];dynamicProbeDirty=null;dynamicProbeStatus=dynamicGIEnabled?'requires-baked-probes':'disabled';
+      dynamicProbeCache=[];dynamicProbeDirty=null;dynamicGIStatus=dynamicGIEnabled?'requires-baked-probes':'disabled';
     }
   }
   function dynamicLightCacheSignature(){
