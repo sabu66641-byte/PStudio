@@ -503,7 +503,7 @@
       const h = Math.max(0.05,(Number(o.h)||64)/100);
       const color = o.color || '#d1d5db';
       const draw = o.mirrorWater
-        ? {type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||20),depth:Math.max(0.5,Number(o.mirrorDepth)||20),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):0.92)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
+        ? {type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||100),depth:Math.max(0.5,Number(o.mirrorDepth)||100),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):0.92)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
         : o.model
         ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0}
         : o.shape === 'circle'
