@@ -36,7 +36,17 @@ test('auto quality keeps device-aware scaling while Ultra uses the shared 2x ren
   assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
   assert.ok(renderer.includes("applyEffectiveRenderScale()"));
   assert.ok(renderer.includes("selected==='maximum'?[.66,.78,.94][level]"));
+  assert.ok(renderer.includes("const adaptiveScale=adaptive?[0.35,0.65,1][level]:1"));
+  assert.ok(renderer.includes("const targetRatio=requested*adaptiveScale"));
+  assert.ok(renderer.includes("lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission'"));
 });
+test('Ultra can reduce actual drawing-buffer resolution when adaptive quality steps down',()=>{
+  assert.ok(renderer.includes('const adaptiveScale=adaptive?[0.35,0.65,1][level]:1'));
+  assert.ok(renderer.includes('const targetRatio=requested*adaptiveScale'));
+  assert.ok(renderer.includes('frame-interval-fallback'));
+  assert.ok(renderer.includes('Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0)'));
+});
+
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'maximum', 'ultra']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));

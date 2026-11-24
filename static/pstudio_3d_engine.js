@@ -304,14 +304,19 @@
       // Ultra renders at 2x the effective Maximum-tier pixel ratio on both axes.
       // Limit the drawing buffer to the GPU texture edge and a device-aware pixel budget.
       const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2;
+      // Adaptive Ultra must change the actual drawing-buffer resolution, not only
+      // shadow/AO settings. Level 2 preserves the full 2x Maximum target; lower
+      // levels trade resolution for frame time on constrained devices.
+      const adaptiveScale=adaptive?[0.35,0.65,1][level]:1;
+      const targetRatio=requested*adaptiveScale;
       const rect=canvas?.getBoundingClientRect?.()||{};
       const width=Math.max(0,Number(rect.width)||0),height=Math.max(0,Number(rect.height)||0);
-      if(width<=0||height<=0)return requested;
+      if(width<=0||height<=0)return targetRatio;
       const memory=hardware.memoryGiB;
       const pixelBudget=memory<=2?9500000:memory<=4?14000000:memory<=6?20000000:28000000;
       const textureCap=hardware.maxTextureSize/Math.max(width,height);
       const pixelCap=Math.sqrt(pixelBudget/(width*height));
-      return Math.max(.6,Math.min(requested,textureCap,pixelCap));
+      return Math.max(.6,Math.min(targetRatio,textureCap,pixelCap));
     }
     const profile=QUALITY_PROFILES[selected]||QUALITY_PROFILES.balanced;
     const scale=adaptive
@@ -403,8 +408,12 @@
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     updateDynamicResolutionFromGpu(now,hasRecentGpuSample);
-    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
-    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);
+    const fallbackFrameMs=Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0);
+    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission';
+    // GPU timer queries are unavailable on some mobile browsers. In that case,
+    // use observed frame cadence as well as CPU submission time so GPU-bound
+    // Ultra scenes can still step down their real render resolution.
+    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:fallbackFrameMs;
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
     if(adaptiveFrameEMA>19){adaptiveSlowFrames++;adaptiveFastFrames=0;}
     else if(adaptiveFrameEMA<15){adaptiveFastFrames++;adaptiveSlowFrames=0;}
