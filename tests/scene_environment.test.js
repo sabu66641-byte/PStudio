@@ -396,6 +396,29 @@ test('day dusk night and studio define physically distinct sun elevations and at
 });
 
 
+test('day preset is upgraded to brighter physically based daylight, finer solar disk and layered cloud lighting',()=>{
+  const day=presets.getPreset('day');
+  assert.ok(day.lightIntensity>=2.5,'direct sun energy is lifted');
+  assert.ok(day.hemisphereIntensity>=1,'daylight fill is strengthened');
+  assert.ok(day.environmentIntensity>=.9,'PBR environment contribution is strengthened');
+  assert.ok(day.cloudDensity>=1&&day.cloudCoverage>=.55&&day.cloudDetail>=.9,'day cloud field has dense high-detail settings');
+  assert.ok(day.cloudTop>day.cloudBase+100,'day clouds span a substantial vertical volume');
+  assert.ok(day.skyExposure>.5&&day.skyExposure<.6,'physical sky remains calibrated without overexposure');
+  assert.ok(day.skyRayleigh>2.5&&day.skyTurbidity>=2,'daytime scattering is tuned for clear but atmospheric blue');
+  assert.ok(day.sunAngularRadius>=.25&&day.sunAngularRadius<=.3,'solar disk approaches a physically plausible apparent size');
+});
+
+test('day panorama adds an adaptive, seamless multi-octave cumulus field without a new full-screen post-process',()=>{
+  assert.match(renderer,/function drawDaytimeCloudField\(context,width,height,profile,sun\)/);
+  assert.match(renderer,/resolutions=\{mobile:\[768,384\],balanced:\[1024,512\],high:\[1536,768\],maximum:\[1792,896\],ultra:\[2048,1024\]\}/);
+  assert.match(renderer,/makeNoiseGrid\(32,16\),makeNoiseGrid\(64,32\),makeNoiseGrid\(128,64\),makeNoiseGrid\(256,128\)/);
+  assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
+  assert.match(renderer,/context\.drawImage\(cloudCanvas,0,0,width,height\)/);
+  assert.match(renderer,/if\(name==='day'\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);
+  assert.match(renderer,/uniform float pStudioSunAngularRadius/);
+  assert.match(renderer,/pStudioSolarExponent=mix\(260\.0,155\.0/);
+});
+
 test('night preset uses a dedicated dark procedural panorama and never exposes the daylight physical-sky scattering mesh',()=>{
   const night=presets.getPreset('night');
   assert.ok(night.skyTop.toLowerCase()==='#030817');

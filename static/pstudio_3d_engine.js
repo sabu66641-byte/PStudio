@@ -4466,6 +4466,82 @@ void main(){
     if(glareUniform)glareUniform.value=sunGlareStrength;
   }
 
+  function drawDaytimeCloudField(context,width,height,profile,sun){
+    const selected=resolveQualityPreset(qualityPreset);
+    const resolutions={mobile:[768,384],balanced:[1024,512],high:[1536,768],maximum:[1792,896],ultra:[2048,1024]};
+    const dimensions=resolutions[selected]||resolutions.balanced;
+    const cloudCanvas=document.createElement('canvas');
+    cloudCanvas.width=dimensions[0];cloudCanvas.height=dimensions[1];
+    const cloudContext=cloudCanvas.getContext('2d');
+    if(!cloudContext)return false;
+    const fieldWidth=cloudCanvas.width,fieldHeight=cloudCanvas.height;
+    let seed=0x51f15e5d;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const makeNoiseGrid=(gridWidth,gridHeight)=>{
+      const values=new Float32Array(gridWidth*gridHeight);
+      for(let i=0;i<values.length;i++)values[i]=random();
+      return{width:gridWidth,height:gridHeight,values};
+    };
+    const grids=[makeNoiseGrid(32,16),makeNoiseGrid(64,32),makeNoiseGrid(128,64),makeNoiseGrid(256,128)];
+    const sampleNoise=(grid,u,v)=>{
+      const gx=((u%1)+1)%1*grid.width,gy=Math.max(0,Math.min(1,v))*(grid.height-1);
+      const x0=Math.floor(gx)%grid.width,x1=(x0+1)%grid.width;
+      const y0=Math.floor(gy),y1=Math.min(grid.height-1,y0+1);
+      const fx=gx-Math.floor(gx),fy=gy-y0;
+      const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+      const a=grid.values[y0*grid.width+x0],b=grid.values[y0*grid.width+x1];
+      const c=grid.values[y1*grid.width+x0],d=grid.values[y1*grid.width+x1];
+      const top=a+(b-a)*sx,bottom=c+(d-c)*sx;
+      return top+(bottom-top)*sy;
+    };
+    const smooth=(a,b,value)=>{const t=Math.max(0,Math.min(1,(value-a)/Math.max(1e-6,b-a)));return t*t*(3-2*t);};
+    const clamp01=value=>Math.max(0,Math.min(1,value));
+    const coverage=clamp01(Number(profile.cloudCoverage)||.56);
+    const detail=clamp01(Number(profile.cloudDetail)||.94);
+    const threshold=.58-coverage*.13;
+    const sunU=Math.max(0,Math.min(1,(Number(sun?.x)||0)/Math.max(1,width)));
+    const image=cloudContext.createImageData(fieldWidth,fieldHeight),pixels=image.data;
+    for(let y=0;y<fieldHeight;y++){
+      const v=y/Math.max(1,fieldHeight-1);
+      const cloudBand=smooth(.125,.215,v)*(1-smooth(.432,.492,v));
+      if(cloudBand<=.002)continue;
+      for(let x=0;x<fieldWidth;x++){
+        const u=x/fieldWidth;
+        const broad=sampleNoise(grids[0],u,v);
+        const medium=sampleNoise(grids[1],u,v);
+        const fine=sampleNoise(grids[2],u,v);
+        const micro=sampleNoise(grids[3],u,v);
+        const warp=sampleNoise(grids[1],u+.217,v*.94+.071);
+        const field=broad*.48+medium*.29+fine*.16+micro*.07+(warp-.5)*.13;
+        const erosion=(1-fine)*detail*.045+(1-micro)*detail*.035;
+        const density=smooth(threshold-.06,threshold+.135,field-erosion);
+        const cloudShape=Math.pow(density,.84);
+        const alpha=clamp01(cloudShape*cloudBand*.92);
+        if(alpha<.006)continue;
+        const underside=1-smooth(threshold-.02,threshold+.105,field);
+        const upperSurface=smooth(threshold+.025,threshold+.16,field+fine*.055);
+        const wrappedDelta=Math.abs(u-sunU);
+        const solarFacing=.5+.5*Math.cos(Math.min(wrappedDelta,1-wrappedDelta)*Math.PI*2);
+        const upperSky=1-smooth(.19,.445,v);
+        const microLight=(micro-.5)*.055;
+        const light=clamp01(.70+solarFacing*.105+upperSurface*.12+upperSky*.045-Math.min(.42,underside*.22)+microLight);
+        const offset=(y*fieldWidth+x)*4;
+        pixels[offset]=Math.round(142+110*light);
+        pixels[offset+1]=Math.round(164+88*light);
+        pixels[offset+2]=Math.round(185+67*light);
+        pixels[offset+3]=Math.round(Math.min(.94,alpha)*255);
+      }
+    }
+    cloudContext.putImageData(image,0,0);
+    context.save();
+    context.globalCompositeOperation='source-over';
+    context.globalAlpha=.96;
+    context.imageSmoothingEnabled=true;
+    context.imageSmoothingQuality='high';
+    context.drawImage(cloudCanvas,0,0,width,height);
+    context.restore();
+    return true;
+  }
   function createProceduralSkyTexture(T,profile){
     const canvas=document.createElement('canvas');
     const width=2048,height=1024;
@@ -4784,6 +4860,7 @@ void main(){
           context.restore();
         });
       }
+      if(name==='day')drawDaytimeCloudField(context,width,height,profile,sun);
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:148);i++){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
@@ -4847,8 +4924,9 @@ void main(){
       'float pStudioHorizonBand=exp(-abs(direction.y)*12.0);',
       'float pStudioTwilight=smoothstep(-0.14,0.08,vSunDirection.y)*(1.0-smoothstep(0.10,0.52,vSunDirection.y))*pStudioTwilightStrength;',
       'float pStudioSunAlignment=max(dot(normalize(direction),normalize(vSunDirection)),0.0);',
-      'float pStudioSolarHalo=pow(pStudioSunAlignment,42.0);',
-      'float pStudioSolarCore=pow(pStudioSunAlignment,180.0);',
+      'float pStudioSolarExponent=mix(260.0,155.0,clamp((pStudioSunAngularRadius-0.1)/0.5,0.0,1.0));',
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,pStudioSolarExponent*0.24);',
+      'float pStudioSolarCore=pow(pStudioSunAlignment,pStudioSolarExponent);',
       'float pStudioHorizonWarmth=smoothstep(-0.16,0.025,direction.y)*(1.0-smoothstep(0.025,0.20,direction.y));',
       'vec3 pStudioWarmHorizon=mix(vec3(0.48,0.20,0.36),vec3(1.0,0.48,0.25),smoothstep(-0.10,0.16,direction.y));',
       'vec3 pStudioPeachHorizon=mix(vec3(0.72,0.28,0.38),vec3(1.0,0.72,0.43),smoothstep(-0.05,0.14,direction.y));',
@@ -4860,7 +4938,7 @@ void main(){
       'float pStudioAtmosphereGrain=fract(sin(dot(direction.xy,vec2(127.1,311.7)))*43758.5453)-0.5;',
       'retColor+=pStudioAtmosphereGrain*0.00045;'
     ].join('\n');
-    const shaderWithUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform float pStudioAtmosphereExposure;\nuniform float pStudioTwilightStrength;');
+    const shaderWithUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform float pStudioAtmosphereExposure;\nuniform float pStudioTwilightStrength;\nuniform float pStudioSunAngularRadius;');
     material.fragmentShader=shaderWithUniforms.replace(marker,enhancement+'\n'+marker);
     material.needsUpdate=true;
     material.userData.pstudioAtmosphereEnhanced=true;
