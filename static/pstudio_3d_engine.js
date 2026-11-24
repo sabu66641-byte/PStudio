@@ -665,34 +665,34 @@
     const uniforms={
       uMirrorReflection:{value:null},
       uMirrorTextureMatrix:{value:new T.Matrix4()},
-      uMirrorReflectivity:{value:0.92},
+      uMirrorReflectivity:{value:1.0},
       uMirrorWaveStrength:{value:0.05},
       uMirrorTime:{value:0}
     };
     material.userData.pstudioMirrorUniforms=uniforms;
     material.onBeforeCompile=shader=>{
       Object.assign(shader.uniforms,uniforms);
-      shader.vertexShader='uniform mat4 uMirrorTextureMatrix;\\nvarying vec4 vPStudioMirrorCoord;\\n'+shader.vertexShader;
+      shader.vertexShader='uniform mat4 uMirrorTextureMatrix;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace(
         '#include <project_vertex>',
-        '#include <project_vertex>\\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);'
+        '#include <project_vertex>\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);'
       );
-      shader.fragmentShader='uniform sampler2D uMirrorReflection;\\nuniform float uMirrorReflectivity;\\nuniform float uMirrorWaveStrength;\\nuniform float uMirrorTime;\\nvarying vec4 vPStudioMirrorCoord;\\n'+shader.fragmentShader;
+      shader.fragmentShader='uniform sampler2D uMirrorReflection;\nuniform float uMirrorReflectivity;\nuniform float uMirrorWaveStrength;\nuniform float uMirrorTime;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.fragmentShader;
       shader.fragmentShader=shader.fragmentShader.replace(
         '#include <opaque_fragment>',
-        '#include <opaque_fragment>\\n'+
-        'vec2 pStudioMirrorUv = vPStudioMirrorCoord.xy / max(vPStudioMirrorCoord.w, 0.0001);\\n'+
-        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\\n'+
-        'vec2 pStudioMirrorSampleUv = pStudioMirrorUv + pStudioMirrorRipple;\\n'+
-        'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\\n'+
-        'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\\n'+
-        'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\\n'+
-        'float pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.92 + 0.08 * pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside;\\n'+
-        'vec3 pStudioMirrorTinted = mix(pStudioMirrorSample, vec3(0.006, 0.035, 0.055), 0.055);\\n'+
+        '#include <opaque_fragment>\n'+
+        'vec2 pStudioMirrorUv = vPStudioMirrorCoord.xy / max(vPStudioMirrorCoord.w, 0.0001);\n'+
+        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\n'+
+        'vec2 pStudioMirrorSampleUv = pStudioMirrorUv + pStudioMirrorRipple;\n'+
+        'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\n'+
+        'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\n'+
+        'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\n'+
+        'float pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.985 + 0.015 * pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside;\n'+
+        'vec3 pStudioMirrorTinted = pStudioMirrorSample;\n'+
         'gl_FragColor.rgb = mix(gl_FragColor.rgb, pStudioMirrorTinted, pStudioMirrorAmount);'
       );
     };
-    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v1';
+    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v2';
     material.userData.pstudioMirrorUniforms=uniforms;
     return material;
   }
@@ -716,7 +716,7 @@
         0,0,0,1
       ),
       plane:new T.Plane(),
-      reflectivity:0.92,
+      reflectivity:1.0,
       waveStrength:0.05,
       hasRendered:false,
       material
@@ -4482,7 +4482,7 @@ void main(){
       for(let i=0;i<values.length;i++)values[i]=random();
       return{width:gridWidth,height:gridHeight,values};
     };
-    const grids=[makeNoiseGrid(32,16),makeNoiseGrid(64,32),makeNoiseGrid(128,64),makeNoiseGrid(256,128)];
+    const grids=[makeNoiseGrid(32,16),makeNoiseGrid(64,32),makeNoiseGrid(128,64),makeNoiseGrid(256,128),makeNoiseGrid(512,256)];
     const sampleNoise=(grid,u,v)=>{
       const gx=((u%1)+1)%1*grid.width,gy=Math.max(0,Math.min(1,v))*(grid.height-1);
       const x0=Math.floor(gx)%grid.width,x1=(x0+1)%grid.width;
@@ -4511,24 +4511,26 @@ void main(){
         const medium=sampleNoise(grids[1],u,v);
         const fine=sampleNoise(grids[2],u,v);
         const micro=sampleNoise(grids[3],u,v);
+        const nano=sampleNoise(grids[4],u,v);
         const warp=sampleNoise(grids[1],u+.217,v*.94+.071);
-        const field=broad*.48+medium*.29+fine*.16+micro*.07+(warp-.5)*.13;
-        const erosion=(1-fine)*detail*.045+(1-micro)*detail*.035;
-        const density=smooth(threshold-.06,threshold+.135,field-erosion);
-        const cloudShape=Math.pow(density,.84);
+        const field=broad*.34+medium*.27+fine*.20+micro*.12+nano*.07+(warp-.5)*.13;
+        const erosion=(1-fine)*detail*.04+(1-micro)*detail*.045+(1-nano)*detail*.055;
+        const density=smooth(threshold-.045,threshold+.11,field-erosion);
+        const cloudShape=Math.pow(density,.72);
         const alpha=clamp01(cloudShape*cloudBand*.92);
         if(alpha<.006)continue;
         const underside=1-smooth(threshold-.02,threshold+.105,field);
-        const upperSurface=smooth(threshold+.025,threshold+.16,field+fine*.055);
+        const upperSurface=smooth(threshold+.02,threshold+.13,field+nano*.045);
         const wrappedDelta=Math.abs(u-sunU);
         const solarFacing=.5+.5*Math.cos(Math.min(wrappedDelta,1-wrappedDelta)*Math.PI*2);
         const upperSky=1-smooth(.19,.445,v);
-        const microLight=(micro-.5)*.055;
-        const light=clamp01(.70+solarFacing*.105+upperSurface*.12+upperSky*.045-Math.min(.42,underside*.22)+microLight);
+        const microLight=(nano-.5)*.055;
+        const light=clamp01(.64+solarFacing*.12+upperSurface*.17+upperSky*.035-Math.min(.42,underside*.26)+microLight);
+        const warmEdge=solarFacing*upperSurface;
         const offset=(y*fieldWidth+x)*4;
-        pixels[offset]=Math.round(142+110*light);
-        pixels[offset+1]=Math.round(164+88*light);
-        pixels[offset+2]=Math.round(185+67*light);
+        pixels[offset]=Math.round(132+101*light+10*warmEdge);
+        pixels[offset+1]=Math.round(154+86*light+6*warmEdge);
+        pixels[offset+2]=Math.round(181+70*light-3*warmEdge);
         pixels[offset+3]=Math.round(Math.min(.94,alpha)*255);
       }
     }
@@ -4550,7 +4552,7 @@ void main(){
     if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
     const name=String(profile.name||'day');
     const palettes={
-      day:[[0,'#174879'],[.12,'#246BA8'],[.3,'#4C95C9'],[.43,'#82B8D8'],[.485,'#C4DDE6'],[.51,'#DCE5E2'],[.55,'#879998'],[.68,'#4B595A'],[1,'#313B3D']],
+      day:[[0,'#1A4F86'],[.12,'#236FB0'],[.3,'#4798D0'],[.43,'#83BDDC'],[.465,'#A8CFE2'],[.485,'#BDD9E6'],[.505,'#B5D0DB'],[.525,'#A2BECC'],[.55,'#849EAD'],[.68,'#607A8A'],[1,'#405969']],
       dusk:[[0,'#171B42'],[.12,'#262349'],[.25,'#44305A'],[.35,'#76405F'],[.42,'#B95761'],[.462,'#DC7165'],[.485,'#F09A72'],[.498,'#F6B884'],[.51,'#E7A078'],[.535,'#BD756F'],[.58,'#80546B'],[.67,'#483D59'],[1,'#252133']],
       night:[[0,'#01040B'],[.16,'#030918'],[.32,'#071326'],[.43,'#101C30'],[.49,'#142137'],[.515,'#142033'],[.57,'#090F1C'],[1,'#010309']],
       studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
@@ -4824,8 +4826,8 @@ void main(){
       }else{
         drawWrappedX(sun.x,width*.18,wrappedX=>{
           const horizonGlow=context.createRadialGradient(wrappedX,sun.y,2,wrappedX,sun.y,height*.16);
-          horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
-          horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
+          horizonGlow.addColorStop(0,'rgba(255,238,196,0.13)');
+          horizonGlow.addColorStop(.24,'rgba(159,210,245,0.06)');
           horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
           context.fillStyle=horizonGlow;context.fillRect(wrappedX-width*.16,sun.y-height*.16,width*.32,height*.32);
         });
@@ -4835,7 +4837,7 @@ void main(){
       // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
       context.save();
       context.globalCompositeOperation='screen';
-      for(let i=0;i<(dusk?112:92);i++){
+      for(let i=0;i<(dusk?112:30);i++){
         const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
         const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
         drawWrappedX(x,rx+2,wrappedX=>{
@@ -4846,8 +4848,8 @@ void main(){
             cloud.addColorStop(.46,'rgba(225,130,134,0.105)');
             cloud.addColorStop(1,'rgba(190,117,163,0)');
           }else{
-            cloud.addColorStop(0,'rgba(246,252,255,0.15)');
-            cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
+            cloud.addColorStop(0,'rgba(246,252,255,0.095)');
+            cloud.addColorStop(.5,'rgba(220,239,250,0.038)');
             cloud.addColorStop(1,'rgba(210,232,247,0)');
           }
           context.fillStyle=cloud;
@@ -4862,17 +4864,17 @@ void main(){
       }
       if(name==='day')drawDaytimeCloudField(context,width,height,profile,sun);
       context.lineCap='round';context.lineJoin='round';
-      for(let i=0;i<(dusk?112:148);i++){
-        const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
-        const yEnd=y+(random()-.5)*8,yControlA=y+(random()-.5)*9,yControlB=y+(random()-.5)*15;
-        const strokeWidth=1+random()*(dusk?7:5),strokeAlpha=.12+random()*.22,shadowBlur=7+random()*18;
+      for(let i=0;i<(dusk?112:260);i++){
+        const x=random()*width,y=height*(dusk?.12:.095)+random()*height*(dusk?.34:.31),length=60+random()*(dusk?360:250);
+        const yEnd=y+(random()-.5)*(dusk?8:4),yControlA=y+(random()-.5)*(dusk?9:4),yControlB=y+(random()-.5)*(dusk?15:7);
+        const strokeWidth=dusk?1+random()*7:.35+random()*1.15,strokeAlpha=dusk?.12+random()*.22:.055+random()*.11,shadowBlur=dusk?7+random()*18:.45+random()*1.4;
         drawWrappedX(x,length+4,wrappedX=>{
           context.beginPath();context.moveTo(wrappedX,y);
           context.bezierCurveTo(wrappedX+length*.24,yControlA,wrappedX+length*.68,yControlB,wrappedX+length,yEnd);
           context.lineWidth=strokeWidth;
-          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
+          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(239,249,255,0.24)';
           context.globalAlpha=strokeAlpha;
-          context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
+          context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(226,244,255,0.12)';
           context.shadowBlur=shadowBlur;
           context.stroke();
         });
@@ -5540,7 +5542,7 @@ void main(){
             setupLightingMaterial(material);
             material=configureWaterMaterial(material);
           }else if(d.type==='mirror_water'){
-            material=configureMirrorWaterMaterial(new T.MeshPhysicalMaterial({color:'#0b3d52',roughness:0.045,metalness:0,clearcoat:1,clearcoatRoughness:0.025,ior:1.333,side:T.DoubleSide,depthWrite:true}));
+            material=configureMirrorWaterMaterial(new T.MeshPhysicalMaterial({color:'#0b3d52',roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008,ior:1.333,side:T.DoubleSide,depthWrite:true}));
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
           }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
@@ -5565,13 +5567,13 @@ void main(){
         }
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
-        if(d.type!=='water'){
+        if(d.type!=='water'&&d.type!=='mirror_water'){
           if('roughness' in mesh.material)mesh.material.roughness=ownerMaterial?ownerMaterial.roughness:(d.type==='terrain'?0.92:0.72);
           if('metalness' in mesh.material)mesh.material.metalness=ownerMaterial?ownerMaterial.metalness:0.04;
         }else if(d.type==='water')mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
         if(d.type==='mirror_water'){
           const state=mesh.userData.pstudioMirrorWater;
-          if(state){state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):0.92));state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));}
+          if(state){state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));}
         }
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
