@@ -649,11 +649,10 @@
   }
 
   function mirrorWaterResolutionScale(){
-    const selected=resolveQualityPreset(qualityPreset),hardware=qualityHardwareCapabilities();
-    let scale=selected==='ultra'?0.75:selected==='maximum'?0.72:selected==='high'?0.66:selected==='balanced'?0.58:0.5;
-    if(memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0))scale=0.5;
-    else if(adaptiveQualityLevel===1)scale=Math.min(scale,0.58);
-    return Math.max(0.5,Math.min(0.75,scale));
+    const hardware=qualityHardwareCapabilities();
+    // Match the scene's pixel detail unless the device has entered memory-safety mode.
+    if(memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0))return 0.86;
+    return 1.0;
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
@@ -731,7 +730,9 @@
     if(mirrorWaterFrameCounter%updateInterval!==0&&!forceRefresh)return mirrors.length;
     const size=renderer.getDrawingBufferSize(new T.Vector2());
     const scale=mirrorWaterResolutionScale();
-    const maxEdge=touch?1280:1792;
+    // Match the active 3D drawing buffer exactly whenever the GPU supports it.
+    // This keeps sky gradients, cloud filaments, stars and sun/moon discs sharp in reflections.
+    const maxEdge=Math.max(128,Number(renderer.capabilities?.maxTextureSize)||2048);
     const width=Math.max(128,Math.min(maxEdge,Math.floor(size.x*scale)));
     const height=Math.max(128,Math.min(maxEdge,Math.floor(size.y*scale)));
     const previousTarget=renderer.getRenderTarget();
@@ -801,6 +802,9 @@
           renderer.clippingPlanes=[state.plane.clone()];
           renderer.setRenderTarget(state.target);
           renderer.clear(true,true,true);
+          // scene.background retains the active day/dusk/night equirectangular panorama and is
+          // drawn from reflectionCamera. Camera-relative moon, sun and twinkling-star geometry
+          // is translated with that camera so all three environment presets use this same path.
           const skyOffset=reflectedPosition.clone().sub(sourcePosition);
           const cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars].filter(object=>object?.position);
           const originalSkyPositions=cameraAnchoredSky.map(object=>object.position.clone());

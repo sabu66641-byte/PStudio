@@ -103,7 +103,8 @@ test('script-authored environment commands and old ps environment APIs remain su
 });
 
 test('large editor workspace grid and selected environment are sent to the 3D renderer', () => {
-  assert.match(engine, /commands\.set\('__scene__',\[\{type:'grid',size:500,divisions:100\},\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}/);
+  assert.ok(engine.includes('const SCENE_PREVIEW_GRID_SIZE=500'));
+  assert.match(engine, /commands\.set\('__scene__',\[\{type:'grid',size:SCENE_PREVIEW_GRID_SIZE,divisions:100\},\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}/);
   assert.match(html, /function setSceneEnvironmentPreset\(preset\)/);
   assert.match(html, /window\.PStudioEngine\?\.refreshSceneView\?\.\(\)/);
 });
