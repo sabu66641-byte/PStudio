@@ -884,7 +884,7 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice"));
   assert.ok(renderer.includes("adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode"));
   assert.ok(renderer.includes("maximum:{pixelRatio:2.1,shadowSize:4096"));
-  assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:8192"));
+  assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf'"));
   assert.ok(renderer.includes("const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2"));
   assert.ok(renderer.includes("textureCap=hardware.maxTextureSize/Math.max(width,height)"));
   assert.ok(renderer.includes("pixelCap=Math.sqrt(pixelBudget/(width*height))"));
@@ -1007,4 +1007,12 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
     'offset.set(Math.sin(azimuth)*horizontal,Math.sin(elevation)*radius',
     'offset.applyAxisAngle(right,orbitPitch)'
   ])assert.ok(updateBlock.includes(token),token);
+});
+
+
+test('Ultra preserves 2x output while avoiding oversized shadow maps and excessive AO sampling',()=>{
+  assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
+  assert.ok(renderer.includes("const requestedShadow=qualityPreset==='ultra'?[2048,3072,4096][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("qualityPreset==='ultra'?[2048,3072,4096]"));
+  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[12,20,32][level]"));
 });
