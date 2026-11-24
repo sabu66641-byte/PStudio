@@ -908,7 +908,7 @@
     nightTwinkleStars.visible=visible;
     if(!visible)return;
     nightTwinkleStars.position.copy(camera.position);
-    const distance=Math.max(camera.near+2,camera.far*.82);
+    const distance=Math.max(camera.near+2,camera.far*.96);
     nightTwinkleStars.scale.setScalar(distance);
     if(nightTwinkleStars.material?.uniforms?.uTime)nightTwinkleStars.material.uniforms.uTime.value=(window.performance?.now?.()??Date.now())*.001;
   }
