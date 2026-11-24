@@ -3953,6 +3953,7 @@ uniform vec3 uMoonTint;
 uniform vec3 uLightDirectionWorld;
 uniform float uMoonIntensity;
 uniform float uMoonGlare;
+uniform float uEarthshineStrength;
 varying vec2 vMoonUv;
 varying vec3 vMoonNormalWorld;
 varying vec3 vMoonWorldPosition;
@@ -4345,6 +4346,7 @@ void main(){
           {radius:height*.148,stops:[[0,'rgba(107,147,211,0.038)'],[.52,'rgba(68,104,171,0.022)'],[1,'rgba(35,57,111,0)']]}
         ];
         context.save();context.globalCompositeOperation='screen';
+        context.globalAlpha=Math.min(1,moonGlow);
         for(const layer of glowLayers){
           drawWrappedX(moonUv.x,layer.radius,wrappedX=>{
             const gradient=context.createRadialGradient(wrappedX,moonUv.y,1,wrappedX,moonUv.y,layer.radius);
