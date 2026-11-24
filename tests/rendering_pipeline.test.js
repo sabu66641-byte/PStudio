@@ -23,7 +23,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
 test('mobile auto quality applies an adaptive starting scale rather than full device pixel ratio',()=>{
   assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
   assert.ok(renderer.includes("profile.pixelRatio*initialAdaptiveScale"));
-  assert.ok(renderer.includes("scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("scale=base.pixelRatio*(selected==='ultra'?[0.66,0.78,0.94][adaptiveQualityLevel]:[0.68,0.84,1][adaptiveQualityLevel])"));
 });
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
@@ -253,7 +253,7 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.25,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -667,8 +667,8 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:40,lightSteps:2});
   assert.equal(pass.uniforms.uCloudSteps.value,40);
   assert.equal(pass.uniforms.uCloudLightSteps.value,2);
-  assert.equal(pass.setQuality('ultra',1).steps,36,'Ultra adaptive level 1 must stay above High');
-  assert.equal(pass.setQuality('ultra',0).steps,32,'Ultra adaptive level 0 must stay above High');
+  assert.equal(pass.setQuality('ultra',1).steps,30,'adaptive Ultra keeps volumetric clouds close to High while retaining the premium stack');
+  assert.equal(pass.setQuality('ultra',0).steps,25,'the lowest adaptive Ultra tier reduces ray-march work without disabling clouds');
   assert.equal(pass.setQuality('high',2).steps,30,'High retains its distinct lower sample budget');
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
@@ -707,8 +707,8 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   const quality=fog.setQuality('ultra',2);
   assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:24});
   assert.equal(fog.uniforms.uFogSteps.value,24);
-  assert.equal(fog.setQuality('ultra',1).steps,22);
-  assert.equal(fog.setQuality('ultra',0).steps,20);
+  assert.equal(fog.setQuality('ultra',1).steps,20);
+  assert.equal(fog.setQuality('ultra',0).steps,16);
   assert.equal(fog.setQuality('high',2).steps,16);
   api.configureAtmosphere({sunDirection:[-0.4,-0.4,-0.4],lightDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
   assert.ok(Math.abs(fog.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'fog must follow the key light/moon direction when supplied');
@@ -821,8 +821,8 @@ test('contact shadow pass ray-marches scene depth with bounded quality levels an
   const quality=pass.setQuality('ultra',2);
   assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:18});
   assert.equal(pass.uniforms.uSteps.value,18);
-  assert.equal(pass.setQuality('ultra',1).steps,16);
-  assert.equal(pass.setQuality('ultra',0).steps,14);
+  assert.equal(pass.setQuality('ultra',1).steps,15);
+  assert.equal(pass.setQuality('ultra',0).steps,12);
   assert.equal(pass.setQuality('high',2).steps,12);
   assert.ok(pass.shader.fragmentShader.includes('pStudioContactViewPosition'));
   assert.ok(pass.shader.fragmentShader.includes('uProjection*vec4(rayPoint,1.0)'));
@@ -880,17 +880,23 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):\(memory<=4\?2048:memory<=6\?3072:4096\)/);
 });
 
-test('manual Ultra quality remains selected on phones while internal render cost adapts to sustained frame timing',()=>{
+test('manual Ultra keeps the full premium effect stack on phones while adapting render cost to sustained frame timing',()=>{
   assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice/);
   assert.match(renderer,/adaptiveQualityEnabled=qualityPreset==='auto'\|\|adaptiveUltraTouchMode/);
-  assert.match(renderer,/adaptiveQualityLevel=2/);
+  assert.match(renderer,/adaptiveQualityLevel=adaptiveUltraTouchMode\?1:2/);
+  assert.match(renderer,/ultra:\{pixelRatio:2\.1,shadowSize:4096/);
+  assert.match(renderer,/const initialAdaptiveScale=adaptiveQualityEnabled\?\(selected==='ultra'\?\[0\.66,0\.78,0\.94\]\[adaptiveQualityLevel\]/);
+  assert.match(renderer,/if\(adaptiveFrameEMA>19\)/);
   assert.match(renderer,/const effectsEnabled=!memorySafetyApplied/);
   assert.match(renderer,/const effects=!memorySafetyApplied/);
+  assert.match(renderer,/const aoSamples=selected==='ultra'\?\[12,20,32\]\[adaptiveQualityLevel\]/);
+  assert.match(renderer,/light\.shadow\.normalBias=0\.008/);
   assert.match(renderer,/const cloudTierActive=!memorySafetyApplied/);
   assert.match(renderer,/if\(!adaptiveQualityEnabled\|\|!renderer\)return/);
   assert.match(renderer,/const selected=resolveQualityPreset\(qualityPreset\),base=QUALITY_PROFILES\[selected\]/);
-  assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[2048,3072,4096\]/);
-  assert.match(renderer,/adaptiveUltraTouchMode\?\[2048,3072,4096\]:qualityPreset==='ultra'\?\[1024,2048,4096\]:\[1024,1536,2048\]/);
+  assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[1536,2048,3072\]/);
+  assert.match(renderer,/const mapSize=resolveShadowMapSize\(shadowSizes\[adaptiveQualityLevel\]\)/);
+  assert.match(renderer,/const scale=base\.pixelRatio\*\(selected==='ultra'\?\[0\.66,0\.78,0\.94\]\[adaptiveQualityLevel\]/);
   assert.match(renderer,/requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled/);
 });
  
@@ -914,13 +920,24 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 });
 
 
-test('3D scene viewport expands to the full stage without stretching the game canvas',()=>{
-  assert.match(engine,/stage\?\.classList\.toggle\('is-3d-viewport',mode==='3d'\)/);
-  assert.ok(html.includes('.game-stage.is-3d-viewport{display:block;padding:0;background:#0d1117}'));
-  assert.ok(html.includes('.game-stage.is-3d-viewport #game-3d-canvas{display:block;width:100%;height:100%;max-width:none;max-height:none;aspect-ratio:auto;border:0;box-shadow:none}'));
-  assert.ok(html.includes('.game-stage.is-3d-viewport #game-hud-canvas{width:100%!important;height:100%!important;max-width:none;aspect-ratio:auto}'));
+test('sun and moon camera focus smoothly activate subtle celestial bloom rather than a constant white wash',()=>{
+  for(const token of [
+    'sunGlareStrength+=(targetGlare-sunGlareStrength)*0.075',
+    'moonGlareStrength+=(targetGlow-moonGlareStrength)*0.075',
+    'uSolarGlare',
+    'uMoonGlare',
+    "solarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&sunGlareStrength>0.01",
+    "lunarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&moonGlareStrength>0.01",
+    'bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18)'
+  ])assert.ok(renderer.includes(token),token);
 });
  
+test('3D viewport retains the centered preview size rather than stretching to the entire stage',()=>{
+  assert.doesNotMatch(engine,/is-3d-viewport/);
+  assert.ok(html.includes('.game-canvas{touch-action:none;user-select:none;-webkit-user-select:none;display:block;max-width:100%;max-height:100%;width:min(100%,800px);aspect-ratio:16/9'));
+  assert.doesNotMatch(html,/\.game-stage\.is-3d-viewport/);
+});
+
 test('all visible select controls use the shared dark in-app picker instead of native platform popups',()=>{
   for(const id of ['render-quality-select','obj-sprite','obj-script','shader-node-mode','font-size','tab-size','input-mode'])assert.ok(html.includes('id="'+id+'"'),id);
   assert.ok(html.includes('/static/pstudio_selects.css?v=20261124-custom-selects1'));
@@ -950,10 +967,10 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-ultra-adaptive-viewport2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-night-dusk-ultra3'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-viewport-expand2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-ultra-quality2'));
-  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-sunset-polish2'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-night-dusk-ultra3'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-night-dusk-ultra3'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
@@ -970,7 +987,7 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
   vm.runInNewContext(renderer.slice(start,end)+String.fromCharCode(10)+'this.clampEditorOrbitPitch=clampEditorOrbitPitch;',sandbox,{timeout:1000});
   const clamp=sandbox.clampEditorOrbitPitch;
   const baseElevation=Math.atan2(5,Math.hypot(6,8));
-  const maxElevation=Math.PI/2-0.01;
+  const maxElevation=Math.PI/2-0.002;
   const minPitch=baseElevation-maxElevation;
   const maxPitch=baseElevation+maxElevation;
   assert.ok(Math.abs(clamp(-100)-minPitch)<1e-10,'top-down limit');

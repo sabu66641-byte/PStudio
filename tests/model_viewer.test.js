@@ -48,7 +48,7 @@ test('prepared model visibility diagnostics distinguish loading success from act
 });
 
 test('camera zoom is wide-range, pinch-out zooms in, and distant models expand the far clip plane',()=>{
-  assert.match(renderer,/CAMERA_ZOOM_MIN=0\.035,CAMERA_ZOOM_MAX=128/);
+  assert.match(renderer,/CAMERA_ZOOM_MIN=0\.012,CAMERA_ZOOM_MAX=256/);
   assert.match(renderer,/pinchDistance\/Math\.max\(1,distance\)/);
   assert.match(renderer,/adjustZoom:adjustCameraZoom/);
   assert.match(renderer,/requiredFar=Math\.max\(1600,Math\.min\(1000000,desiredDistance\+worldRenderConfig\.maxDrawDistance\+64\)\)/);
@@ -84,7 +84,7 @@ test('selecting a scene object marks it as the camera focus collision exclusion'
 
 test('touch-device auto quality starts with a balanced adaptive render scale',()=>{
   assert.match(renderer,/selected==='mobile'&&isTouchDevice&&deviceMemoryGiB\(\)>2\)adaptiveQualityLevel=1/);
-  assert.match(renderer,/initialAdaptiveScale=adaptiveQualityEnabled\?\[0\.68,0\.84,1\]\[adaptiveQualityLevel\]:1/);
+  assert.match(renderer,/initialAdaptiveScale=adaptiveQualityEnabled\?\(selected==='ultra'\?\[0\.66,0\.78,0\.94\]\[adaptiveQualityLevel\]:\[0\.68,0\.84,1\]\[adaptiveQualityLevel\]\):1/);
 });
 test('large GLB scenes bypass recursive CPU occlusion raycasts while keeping frustum culling',()=>{
   assert.match(renderer,/occlusionEligible:meshes\.length<=256/);
