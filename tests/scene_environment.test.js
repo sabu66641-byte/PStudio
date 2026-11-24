@@ -334,7 +334,7 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/globalCompositeOperation='screen'/);
   assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
   assert.match(renderer,/night:\[\[0,'#01040B'/);
-  assert.match(renderer,/nightStars:name==='night'\?8200:0/);
+  assert.match(renderer,/nightStars:name==='night'\?9700:0/);
 });
 
 test('studio preset disables both painted and volumetric cloud layers',()=>{
