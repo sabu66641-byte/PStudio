@@ -890,6 +890,44 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-quality-selector1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-camera-orbit1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-quality-selector1'));
+});
+
+test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
+  const vm=require('node:vm');
+  const start=renderer.indexOf('function clampEditorOrbitPitch');
+  const end=renderer.indexOf('function setupControls',start);
+  assert.ok(start>=0&&end>start,'camera pitch clamp is present');
+  const sandbox={
+    window:{PStudioEngine:{isRunning:()=>false}},
+    cameraBase:[6,5,8],
+    cameraTarget:[0,0,0],
+    Math,Number
+  };
+  vm.runInNewContext(renderer.slice(start,end)+String.fromCharCode(10)+'this.clampEditorOrbitPitch=clampEditorOrbitPitch;',sandbox,{timeout:1000});
+  const clamp=sandbox.clampEditorOrbitPitch;
+  const baseElevation=Math.atan2(5,Math.hypot(6,8));
+  const maxElevation=Math.PI/2-0.01;
+  const minPitch=baseElevation-maxElevation;
+  const maxPitch=baseElevation+maxElevation;
+  assert.ok(Math.abs(clamp(-100)-minPitch)<1e-10,'top-down limit');
+  assert.ok(Math.abs(clamp(100)-maxPitch)<1e-10,'bottom-up limit');
+  assert.ok(Math.abs((baseElevation-clamp(-100))-maxElevation)<1e-10);
+  assert.ok(Math.abs((baseElevation-clamp(100))+maxElevation)<1e-10);
+  sandbox.window.PStudioEngine.isRunning=()=>true;
+  assert.equal(clamp(-100),-1.35,'game camera lower limit remains unchanged');
+  assert.equal(clamp(100),1.35,'game camera upper limit remains unchanged');
+  const updateStart=renderer.indexOf('function updateCamera(');
+  const updateEnd=renderer.indexOf('function refreshSelectionOutline',updateStart);
+  assert.ok(updateStart>=0&&updateEnd>updateStart,'camera update block is present');
+  const updateBlock=renderer.slice(updateStart,updateEnd);
+  for(const token of [
+    'if(window.PStudioEngine?.isRunning?.())',
+    'const baseElevation=Math.atan2(offset.y',
+    'const azimuth=Math.atan2(offset.x,offset.z)',
+    'const elevation=baseElevation-orbitPitch',
+    'offset.set(Math.sin(azimuth)*horizontal,Math.sin(elevation)*radius',
+    'offset.applyAxisAngle(right,orbitPitch)'
+  ])assert.ok(updateBlock.includes(token),token);
 });

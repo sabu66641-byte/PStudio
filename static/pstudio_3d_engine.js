@@ -115,8 +115,11 @@
     if(window.PStudioEngine?.isRunning?.())return Math.max(-1.35,Math.min(1.35,pitch));
     const horizontal=Math.hypot(cameraBase[0]-cameraTarget[0],cameraBase[2]-cameraTarget[2]);
     const baseElevation=Math.atan2(cameraBase[1]-cameraTarget[1],Math.max(1e-6,horizontal));
-    const maxDownward=Math.max(-1.35,baseElevation-.065);
-    return Math.max(-1.35,Math.min(maxDownward,pitch));
+    // Allow an almost full vertical orbit while staying just clear of the lookAt pole singularities.
+    const maxElevation=Math.PI/2-0.01;
+    const minPitch=baseElevation-maxElevation;
+    const maxPitch=baseElevation+maxElevation;
+    return Math.max(minPitch,Math.min(maxPitch,pitch));
   }
   function setupControls() {
     if (controlsReady) return;
@@ -1445,9 +1448,21 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     orbitPitch=clampEditorOrbitPitch(orbitPitch);
     const target = new T.Vector3(cameraTarget[0], cameraTarget[1], cameraTarget[2]).add(cameraPan || new T.Vector3());
     const offset = new T.Vector3(cameraBase[0], cameraBase[1], cameraBase[2]).sub(target).multiplyScalar(zoom);
-    offset.applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
-    const right = new T.Vector3(1, 0, 0).applyAxisAngle(new T.Vector3(0, 1, 0), orbitYaw);
-    offset.applyAxisAngle(right, orbitPitch);
+    const worldUp=new T.Vector3(0,1,0);
+    offset.applyAxisAngle(worldUp,orbitYaw);
+    if(window.PStudioEngine?.isRunning?.()){
+      // Keep the established gameplay camera rotation path unchanged.
+      const right=new T.Vector3(1,0,0).applyAxisAngle(worldUp,orbitYaw);
+      offset.applyAxisAngle(right,orbitPitch);
+    }else{
+      // Editor orbit uses spherical coordinates so the camera can reach both vertical poles.
+      const baseElevation=Math.atan2(offset.y,Math.max(1e-6,Math.hypot(offset.x,offset.z)));
+      const azimuth=Math.atan2(offset.x,offset.z);
+      const radius=offset.length();
+      const elevation=baseElevation-orbitPitch;
+      const horizontal=radius*Math.cos(elevation);
+      offset.set(Math.sin(azimuth)*horizontal,Math.sin(elevation)*radius,Math.cos(azimuth)*horizontal);
+    }
     const desiredPosition = target.clone().add(offset);
     const desiredDistance=desiredPosition.distanceTo(target);
     const requiredFar=Math.max(1600,Math.min(1000000,desiredDistance+worldRenderConfig.maxDrawDistance+64));
