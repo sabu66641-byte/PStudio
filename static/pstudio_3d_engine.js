@@ -3962,7 +3962,7 @@ void main(){
     configureMoonSky(T,profile);
     configureSunSky(T,profile);
     const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
-    const cloudTierActive=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
+    const cloudTierActive=!memorySafetyApplied;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
     const signature=String(profile.name||'day');
