@@ -84,7 +84,7 @@ test('selecting a scene object marks it as the camera focus collision exclusion'
 
 test('touch-device auto quality starts with a balanced adaptive render scale',()=>{
   assert.match(renderer,/selected==='mobile'&&isTouchDevice&&deviceMemoryGiB\(\)>2\)adaptiveQualityLevel=1/);
-  assert.match(renderer,/initialAdaptiveScale=adaptiveQualityEnabled\?\[0\.68,0\.84,1\]\[adaptiveQualityLevel\]:1/);
+  assert.match(renderer,/initialAdaptiveScale=adaptiveQualityEnabled\?\(selected==='ultra'\?\[0\.66,0\.78,0\.94\]\[adaptiveQualityLevel\]:\[0\.68,0\.84,1\]\[adaptiveQualityLevel\]\):1/);
 });
 test('large GLB scenes bypass recursive CPU occlusion raycasts while keeping frustum culling',()=>{
   assert.match(renderer,/occlusionEligible:meshes\.length<=256/);
