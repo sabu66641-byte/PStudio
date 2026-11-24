@@ -442,3 +442,32 @@ test('night moon is explicitly blue-white tinted and harmonizes with the atmosph
   assert.match(renderer,/blueLimb=pow\(1\.0-facing,2\.4\)/);
   assert.match(renderer,/vec3\(0\.80,0\.92,1\.12\)/);
 });
+
+
+test('SH probe interpolation caches per-object coefficients and invalidates on movement or probe generation changes',()=>{
+  for(const token of [
+    'const objectProbeRadianceCache=new WeakMap()',
+    'probeVolumeGeneration',
+    'probeRadianceCacheHits++',
+    'probeRadianceCacheRecomputes++',
+    'cache.lastPosition.distanceToSquared(cache.position)>0.0004',
+    'cache.generation!==probeVolumeGeneration',
+    'dynamicProbeCache[index]'
+  ])assert.ok(renderer.includes(token),token);
+});
+
+test('opt-in dynamic GI incrementally captures a rasterized one-bounce SH cache and explicitly does not claim ray tracing',()=>{
+  for(const token of [
+    'function serviceDynamicRadianceCache(now)',
+    'function dynamicLightCacheSignature()',
+    'function resetDynamicProbeCache(signature)',
+    'probeCaptureActive=true',
+    'dynamicLights.values()',
+    'DYNAMIC_PROBE_UPDATE_INTERVAL_MS',
+    'setDynamicGI:enabled=>',
+    'raster-captured-one-bounce-dynamic-light-sh-cache',
+    'rayTraced:false',
+    'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(html.includes('id="dynamic-gi-toggle"'));
+});

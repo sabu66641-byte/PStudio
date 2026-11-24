@@ -22,7 +22,8 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
 
 test('auto quality keeps device-aware scaling while Ultra uses the shared 2x render helper',()=>{
   assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
-  assert.ok(renderer.includes("resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
+  assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
+  assert.ok(renderer.includes("applyEffectiveRenderScale()"));
   assert.ok(renderer.includes("selected==='maximum'?[.66,.78,.94][level]"));
 });
 test('quality presets configure render resolution and shadow filtering', () => {
@@ -755,7 +756,7 @@ test('terrain PBR runtime injection sets bounded uniforms and composes with exis
 });
 
 test('baked SH probe grids use trilinear interpolation with a sparse-probe fallback',()=>{
-  for(const token of ['pstudioGrid',"layout:'x-fastest'",'const volumeIndex=','weight=wx*wy*wz','const grid=volume.pstudioGrid','Sparse or legacy probe collections','const near=volume.map'])assert.ok(renderer.includes(token),token);
+  for(const token of ['pstudioGrid',"layout:'x-fastest'",'const volumeIndex=','(dx?x.t:1-x.t)*(dy?y.t:1-y.t)*(dz?z.t:1-z.t)','const center=cache.position,grid=volume.pstudioGrid','Sparse or legacy probe collections','const near=volume.map'])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('dims:Object.freeze(dims.slice())'));
   assert.ok(renderer.includes('updateObjectProbeUniforms'));
 });
@@ -892,8 +893,8 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][adaptiveQualityLevel]"));
   assert.ok(renderer.includes("const shadowSizes=adaptiveUltraTouchMode?[2048,3072,4096]:adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[3072,4096,8192]"));
-  assert.ok(renderer.includes("requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
-  assert.ok(renderer.includes("scale:safeScale"));
+  assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
+  assert.ok(renderer.includes("const safeScale=applyEffectiveRenderScale()"));
 });
 
 test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
@@ -1027,4 +1028,37 @@ test('High, Maximum and Ultra have progressively stronger independent ray-march 
   assert.match(renderer,/ultra:\{pixelRatio:4\.2,shadowSize:8192,shadowMode:'vsm'/);
   assert.match(renderer,/selected==='ultra'\?\[16,28,40\]\[level\]:selected==='maximum'\?\[12,20,32\]\[level\]/);
   assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'/);
+});
+
+
+test('performance telemetry separates frame pacing, CPU submission, GPU timer samples and estimated memory',()=>{
+  for(const token of [
+    'function performanceStatsSnapshot()',
+    'function pushMetricSample(list,value)',
+    'function updatePerformanceMonitor(',
+    'function togglePerformanceMonitor()',
+    'function updateDynamicResolutionFromGpu(',
+    'dynamicResolutionScale',
+    'EXT_disjoint_timer_query_webgl2',
+    'gpuFrameBudgetPercent',
+    'not total GPU utilization',
+    'pstudio-render-stats',
+    'getPerformanceStats:performanceStatsSnapshot',
+    'togglePerformanceMonitor'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(html.includes('id="render-stats-toggle"'));
+  assert.ok(html.includes('id="render-stats-overlay"'));
+  assert.ok(html.includes('id="gi-bake-button"'));
+  assert.ok(html.includes('id="gi-bake-status"'));
+  assert.ok(renderer.includes('RENDER_METRIC_HISTORY=120'));
+});
+
+test('dynamic render resolution only reacts to fresh GPU timer samples and stays inside configured bounds',()=>{
+  assert.match(renderer,/lastGpuTimerTimestamp===dynamicResolutionLastSampleAt/);
+  assert.match(renderer,/dynamicResolutionScale>0\.55/);
+  assert.match(renderer,/dynamicResolutionScale<1/);
+  assert.match(renderer,/targetMs\*1\.06/);
+  assert.match(renderer,/targetMs\*0\.78/);
+  assert.match(renderer,/DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900/);
+  assert.match(renderer,/applyEffectiveRenderScale\(\)/);
 });

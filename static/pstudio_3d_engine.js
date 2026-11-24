@@ -18,6 +18,9 @@
   }
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
+  let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0;
+  const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
+  let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
@@ -25,10 +28,15 @@
   let gpuInstanceFrustumCullingEnabled=true;
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
+  let probeVolumeGeneration=0,probeRadianceCacheHits=0,probeRadianceCacheMisses=0,probeRadianceCacheRecomputes=0;
+  const objectProbeRadianceCache=new WeakMap();
+  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
+  const RENDER_METRIC_HISTORY=120;
+  const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const waterMaterials=new Set();
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
@@ -305,9 +313,21 @@
     return Math.min(dpr,profile.pixelRatio*scale);
   }
 
+  function effectiveRenderPixelRatio(selected=resolveQualityPreset(qualityPreset),level=adaptiveQualityLevel,adaptive=adaptiveQualityEnabled){
+    const base=resolveQualityRenderPixelRatio(selected,level,adaptive);
+    const memorySafe=memorySafetyApplied?Math.min(base,0.8):base;
+    return Math.max(0.45,memorySafe*dynamicResolutionScale);
+  }
+  function applyEffectiveRenderScale(){
+    if(!renderer)return 0;
+    const ratio=effectiveRenderPixelRatio();
+    renderer.setPixelRatio(ratio);composer?.setPixelRatio?.(renderer.getPixelRatio());
+    return ratio;
+  }
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
+    dynamicResolutionScale=1;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;dynamicResolutionLastChange=0;dynamicResolutionLastSampleAt=0;
     adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
@@ -331,7 +351,7 @@
     if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=adaptiveQualityEnabled?(adaptiveQualityLevel>=2?2:adaptiveQualityLevel===1?1:0):(['maximum','ultra'].includes(selected)?2:selected==='high'?1:0);
     if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
-      renderer.setPixelRatio(resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled));composer?.setPixelRatio?.(renderer.getPixelRatio());
+      applyEffectiveRenderScale();
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
@@ -353,10 +373,29 @@
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
   function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
+  function updateDynamicResolutionFromGpu(now,hasRecentGpuSample){
+    if(!adaptiveQualityEnabled||!renderer||!hasRecentGpuSample||lastGpuTimerTimestamp===dynamicResolutionLastSampleAt)return false;
+    dynamicResolutionLastSampleAt=lastGpuTimerTimestamp;
+    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    const targetMs=(touch||adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?20:16.67;
+    if(lastGpuRenderDurationMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
+    else if(lastGpuRenderDurationMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
+    else{dynamicResolutionSlowSamples=Math.max(0,dynamicResolutionSlowSamples-1);dynamicResolutionFastSamples=0;}
+    if(now-dynamicResolutionLastChange<900)return false;
+    let next=dynamicResolutionScale;
+    if(dynamicResolutionSlowSamples>=8&&dynamicResolutionScale>0.55)next=Math.max(0.55,dynamicResolutionScale-0.05);
+    else if(dynamicResolutionFastSamples>=45&&dynamicResolutionScale<1)next=Math.min(1,dynamicResolutionScale+0.025);
+    if(Math.abs(next-dynamicResolutionScale)<0.001)return false;
+    dynamicResolutionScale=next;dynamicResolutionLastChange=now;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;
+    applyEffectiveRenderScale();lastSize={width:0,height:0};resize();
+    try{window.PStudioEvents?.emit('render.dynamic-resolution.changed',{scale:Number(dynamicResolutionScale.toFixed(3)),gpuTimeMs:Number(lastGpuRenderDurationMs.toFixed(2)),targetMs});}catch(_){}
+    return true;
+  }
   function applyAdaptiveQuality(){
     if(!adaptiveQualityEnabled||!renderer)return;
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    updateDynamicResolutionFromGpu(now,hasRecentGpuSample);
     adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
     const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
@@ -370,9 +409,7 @@
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
-    const requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled);
-    const safeScale=memorySafetyApplied?Math.min(requestedPixelRatio,0.8):requestedPixelRatio;
-    renderer.setPixelRatio(safeScale);composer?.setPixelRatio?.(renderer.getPixelRatio());
+    const safeScale=applyEffectiveRenderScale();
     const effects=!memorySafetyApplied;
     qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
@@ -475,7 +512,7 @@
       // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
       // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
       if(qualityPreset==='ultra'){
-        const safeRatio=resolveQualityRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
+        const safeRatio=effectiveRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
         if(Math.abs(safeRatio-renderer.getPixelRatio())>.001){
           renderer.setPixelRatio(safeRatio);
           composer?.setPixelRatio?.(safeRatio);
@@ -499,7 +536,7 @@
         const entry=gpuTimerQueries[i],available=gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT_AVAILABLE);
         if(available){
           const nanoseconds=Number(gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT));
-          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;}
+          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;pushMetricSample(gpuRenderSamples,lastGpuRenderDurationMs);}
           gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);
         }else if(now-entry.submittedAt>2000){gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);}
       }
@@ -634,9 +671,8 @@
       memorySafetyApplied=true;
       try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:true}}));}catch(_){}
       // Drop only expensive screen-space effects and render scale; never dispose retained scene assets.
-      const current=renderer?.getPixelRatio?.()||1;
-      renderer?.setPixelRatio?.(Math.max(.65,current*.82));
-      composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
+      dynamicResolutionScale=Math.max(.55,dynamicResolutionScale*.82);
+      applyEffectiveRenderScale();
       qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
       if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
@@ -691,8 +727,92 @@
       }
     }
   }
+  function pushMetricSample(list,value){
+    const sample=Number(value);
+    if(!Number.isFinite(sample)||sample<0)return;
+    list.push(sample);if(list.length>RENDER_METRIC_HISTORY)list.shift();
+  }
+  function metricMean(list){return list.length?list.reduce((sum,value)=>sum+value,0)/list.length:null;}
+  function metricPercentile(list,p){
+    if(!list.length)return null;const sorted=list.slice().sort((a,b)=>a-b);
+    return sorted[Math.max(0,Math.min(sorted.length-1,Math.ceil((p/100)*sorted.length)-1))];
+  }
+  function performanceStatsSnapshot(){
+    const memory=memorySnapshot(),render=renderer?.info?.render||{};
+    const now=window.performance?.now?.()??Date.now();
+    const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    const meanInterval=metricMean(frameIntervalSamples);
+    return{
+      fps:meanInterval&&meanInterval>0?Number((1000/meanInterval).toFixed(1)):null,
+      frameIntervalMs:lastFrameIntervalMs?Number(lastFrameIntervalMs.toFixed(2)):null,
+      frameP95Ms:metricPercentile(frameIntervalSamples,95),
+      cpuRenderSubmitMs:Number(lastRenderDurationMs.toFixed(2)),
+      cpuRenderP95Ms:metricPercentile(cpuRenderSamples,95),
+      gpuRenderMs:gpuFresh?Number(lastGpuRenderDurationMs.toFixed(2)):null,
+      gpuRenderP95Ms:gpuFresh?metricPercentile(gpuRenderSamples,95):null,
+      gpuFrameBudgetPercent:gpuFresh?Number((lastGpuRenderDurationMs/16.67*100).toFixed(1)):null,
+      timingSource:gpuFresh?'gpu-timer-query':'cpu-render-submission',
+      gpuTimerQuerySupported:!!gpuTimerExtension,
+      drawCalls:Number(render.calls)||0,triangles:Number(render.triangles)||0,points:Number(render.points)||0,
+      geometries:Number(renderer?.info?.memory?.geometries)||0,
+      textures:Number(renderer?.info?.memory?.textures)||0,
+      estimatedGpuBytes:memory.estimatedGpuBytes,gpuBudgetBytes:memory.gpuBudgetBytes,
+      gpuPressure:memory.gpuPressure,jsHeapUsedBytes:memory.usedJSHeapBytes,
+      jsHeapLimitBytes:memory.jsHeapLimitBytes,
+      quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
+      adaptiveLevel:adaptiveQualityLevel,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),
+      renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
+      dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates},
+      note:'FPS is based on renderer redraw intervals. GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percentage is GPU render time divided by 16.67 ms, not total GPU utilization.'
+    };
+  }
+  function formatMetricBytes(bytes){
+    const value=Number(bytes);if(!Number.isFinite(value)||value<0)return '—';
+    const units=['B','KB','MB','GB'];let amount=value,index=0;
+    while(amount>=1024&&index<units.length-1){amount/=1024;index++;}
+    return amount.toFixed(index===0?0:1)+' '+units[index];
+  }
+  function updatePerformanceMonitor(now=window.performance?.now?.()??Date.now(),force=false){
+    if(!performanceMonitorEnabled||(!force&&now-lastPerformanceEmitAt<500))return;
+    lastPerformanceEmitAt=now;
+    const stats=performanceStatsSnapshot(),panel=document.getElementById('render-stats-overlay');
+    const gpu=stats.gpuRenderMs===null?'unavailable':stats.gpuRenderMs.toFixed(2)+' ms';
+    const gpuBudget=stats.gpuFrameBudgetPercent===null?'—':stats.gpuFrameBudgetPercent.toFixed(0)+'% of 16.67 ms';
+    const heap=stats.jsHeapUsedBytes===null?'unavailable':formatMetricBytes(stats.jsHeapUsedBytes);
+    const gpuMemory=formatMetricBytes(stats.estimatedGpuBytes)+' / '+formatMetricBytes(stats.gpuBudgetBytes);
+    const rows=[
+      'PSTUDIO PERFORMANCE',
+      'FPS: '+(stats.fps===null?'—':stats.fps.toFixed(1))+'  |  Frame: '+(stats.frameIntervalMs===null?'—':stats.frameIntervalMs.toFixed(2)+' ms'),
+      'Frame P95: '+(stats.frameP95Ms===null?'—':stats.frameP95Ms.toFixed(2)+' ms'),
+      'CPU render submit: '+stats.cpuRenderSubmitMs.toFixed(2)+' ms',
+      'GPU render: '+gpu+'  ('+gpuBudget+')',
+      'Draw calls: '+stats.drawCalls+'  |  Triangles: '+stats.triangles.toLocaleString(),
+      'Geometry: '+stats.geometries+'  |  Textures: '+stats.textures,
+      'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
+      'Quality: '+stats.quality.toUpperCase()+'  |  Scale: '+Math.round(stats.dynamicResolutionScale*100)+'%  |  DPR: '+(stats.renderPixelRatio===null?'—':stats.renderPixelRatio.toFixed(2)),
+      'Dynamic GI: '+(stats.dynamicGI.enabled?'ON':'OFF')+' / '+stats.dynamicGI.status+' ('+stats.dynamicGI.validProbes+'/'+stats.dynamicGI.totalProbes+')',
+      'Timing: '+stats.timingSource+(stats.memorySafety?'  |  MEMORY SAFETY':''),
+      'FPS is based on renderer redraw intervals; GPU % is a frame-budget ratio.'
+    ];
+    if(panel)panel.textContent=rows.join(String.fromCharCode(10));
+    try{window.dispatchEvent(new CustomEvent('pstudio-render-stats',{detail:stats}));}catch(_){}
+  }
+  function togglePerformanceMonitor(){
+    performanceMonitorEnabled=!performanceMonitorEnabled;
+    const panel=document.getElementById('render-stats-overlay'),button=document.getElementById('render-stats-toggle');
+    if(panel)panel.hidden=!performanceMonitorEnabled;
+    if(button){button.setAttribute('aria-pressed',String(performanceMonitorEnabled));button.classList.toggle('active',performanceMonitorEnabled);}
+    if(performanceMonitorEnabled)updatePerformanceMonitor(window.performance?.now?.()??Date.now(),true);
+    return performanceMonitorEnabled;
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    const frameStarted=window.performance?.now?.()??Date.now();
+    if(lastDrawFrameStartedAt){
+      const interval=frameStarted-lastDrawFrameStartedAt;
+      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;pushMetricSample(frameIntervalSamples,interval);}
+    }
+    lastDrawFrameStartedAt=frameStarted;
     // Update the camera's world matrix before positioning camera-relative celestial meshes.
     camera.updateMatrixWorld(true);
     if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
@@ -750,13 +870,16 @@
       }
     }finally{
       restoreStaticSky(hiddenStaticSky);
+      serviceDynamicRadianceCache(window.performance?.now?.()??Date.now());
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+      pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
       sampleMemoryPressure();
       const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
+      updatePerformanceMonitor(now);
     }
   }
 
@@ -906,7 +1029,118 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!camera)return;for(const chunk of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(chunk.x,chunk.y,chunk.z));if((chunk.active||chunk.loading)&&d>chunk.unloadDistance)endWorldChunkLoad(chunk);else if(!chunk.active&&!chunk.loading&&d<chunk.loadDistance)beginWorldChunkLoad(chunk);}
   }
   function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
-  function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
+  function updateProbeVolumeBlend(){
+    if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();
+    probeVolumeGeneration++;
+    if(bakedLightProbeVolume?.length){
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+      dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;dynamicProbeSignature='';
+      if(dynamicGIEnabled)dynamicGIStatus='waiting-for-dynamic-lights';
+    }else{
+      dynamicProbeCache=[];dynamicProbeDirty=null;dynamicGIStatus=dynamicGIEnabled?'requires-baked-probes':'disabled';
+    }
+  }
+  function dynamicLightCacheSignature(){
+    const T=window.THREE,parts=[];
+    for(const [key,light] of [...dynamicLights.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])))){
+      const p=light.getWorldPosition?light.getWorldPosition(new T.Vector3()):light.position;
+      const q=value=>Number((Number(value)||0).toFixed(1));
+      parts.push(String(key)+':'+q(p?.x)+','+q(p?.y)+','+q(p?.z)+','+q(light.intensity)+','+q(light.distance)+','+(light.color?.getHexString?.()||'ffffff')+','+(light.isSpotLight?q(light.angle):0));
+    }
+    return parts.join('|');
+  }
+  function resetDynamicProbeCache(signature){
+    if(!bakedLightProbeVolume?.length)return false;
+    dynamicProbeSignature=signature;
+    if(dynamicProbeCache.length!==bakedLightProbeVolume.length){
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+    }
+    dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;
+    probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
+    return true;
+  }
+  function serviceDynamicRadianceCache(now){
+    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene)return;
+    if(now-lastDynamicProbeSignatureAt>=600){
+      lastDynamicProbeSignatureAt=now;
+      const signature=dynamicLightCacheSignature();
+      if(signature!==dynamicProbeSignature){
+        if(!signature){
+          dynamicProbeSignature='';dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+          dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);
+          dynamicProbeCursor=0;probeVolumeGeneration++;dynamicGIStatus='waiting-for-dynamic-lights';
+        }else resetDynamicProbeCache(signature);
+      }
+    }
+    if(!dynamicLights.size){dynamicGIStatus='waiting-for-dynamic-lights';return;}
+    if(!dynamicProbeDirty||!dynamicProbeDirty.length)return;
+    if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
+    if(now-lastDynamicProbeUpdateAt<DYNAMIC_PROBE_UPDATE_INTERVAL_MS)return;
+    const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    const recentRenderMs=gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs;
+    if(recentRenderMs>(gpuFresh?14:10))return;
+    const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
+    if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    let index=-1;
+    for(let offset=0;offset<dynamicProbeDirty.length;offset++){
+      const candidate=(dynamicProbeCursor+offset)%dynamicProbeDirty.length;
+      if(dynamicProbeDirty[candidate]){index=candidate;break;}
+    }
+    if(index<0){dynamicGIStatus='ready';return;}
+    const resolution=qualityPreset==='ultra'?128:qualityPreset==='maximum'?96:64;
+    const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
+    const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
+    const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
+    const oldEnvironment=scene.environment,oldBackground=scene.background,oldClear=renderer.getClearColor(new T.Color()).clone();
+    const oldClearAlpha=renderer.getClearAlpha(),oldAutoClear=renderer.autoClear,oldShadowAuto=renderer.shadowMap?.autoUpdate;
+    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],uniformSnapshots=[],savedVisibility=[];
+    const seenMaterials=new Set();
+    try{
+      scene.traverse(object=>{
+        if(object.isLight){
+          if(dynamicSet.has(object)){savedVisibility.push([object,object.visible]);object.visible=true;}
+          else if(object.visible){hiddenLights.push([object,object.visible]);object.visible=false;}
+        }
+        if(!object.isMesh)return;
+        const materials=Array.isArray(object.material)?object.material:[object.material];
+        for(const material of materials){
+          if(!material||seenMaterials.has(material))continue;seenMaterials.add(material);
+          const uniforms=material.userData?.pstudioProbeUniforms;
+          if(!uniforms)continue;
+          const saved=uniforms.map(value=>value.clone());uniformSnapshots.push([uniforms,saved]);
+          for(const value of uniforms)value.set(0,0,0);
+        }
+      });
+      probeCaptureActive=true;
+      scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);renderer.autoClear=true;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
+      cube.position.copy(position);scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
+      const light=generator.fromCubeRenderTarget(renderer,target),coefficients=light?.sh?.coefficients;
+      if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
+      const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0};
+      for(let i=0;i<9;i++){
+        const coefficient=coefficients[i],offset=i*3;
+        cached.coefficients[offset]=Number(coefficient.x)||0;
+        cached.coefficients[offset+1]=Number(coefficient.y)||0;
+        cached.coefficients[offset+2]=Number(coefficient.z)||0;
+      }
+      cached.valid=true;cached.updatedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
+      dynamicProbeCursor=(index+1)%dynamicProbeDirty.length;dynamicProbeUpdates++;probeVolumeGeneration++;
+      dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
+      light.dispose?.();
+      try{window.PStudioEvents?.emit('gi.dynamic-probe.updated',{index,total:dynamicProbeCache.length,resolution,status:dynamicGIStatus});}catch(_){}
+    }catch(error){
+      dynamicGIStatus='error';console.warn('[PStudio] Dynamic SH probe update skipped:',error);
+    }finally{
+      scene.remove(cube);probeCaptureActive=false;target.dispose();
+      for(const [uniforms,saved] of uniformSnapshots)for(let i=0;i<uniforms.length;i++)uniforms[i].copy(saved[i]);
+      for(const [light,visible] of hiddenLights)light.visible=visible;
+      for(const [light,visible] of savedVisibility)light.visible=visible;
+      scene.environment=oldEnvironment;scene.background=oldBackground;renderer.setClearColor(oldClear,oldClearAlpha);
+      renderer.autoClear=oldAutoClear;if(renderer.shadowMap)renderer.shadowMap.autoUpdate=oldShadowAuto;
+      renderer.setRenderTarget(oldTarget);lastDynamicProbeUpdateAt=now;
+    }
+  }
   async function bakeLightProbeVolume(o={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
@@ -2771,11 +3005,38 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
   }
   function updateObjectProbeUniforms(object,material){
-    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;
-    const center=new window.THREE.Vector3();object.getWorldPosition(center);
-    const grid=volume.pstudioGrid;
+    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;
+    if(!uniforms||!volume?.length||probeCaptureActive)return;
+    let cache=objectProbeRadianceCache.get(object);
+    if(!cache){
+      cache={position:new window.THREE.Vector3(),lastPosition:new window.THREE.Vector3(),coefficients:new Float32Array(27),generation:-1,valid:false};
+      objectProbeRadianceCache.set(object,cache);probeRadianceCacheMisses++;
+    }
+    object.getWorldPosition(cache.position);
+    const moved=!cache.valid||cache.generation!==probeVolumeGeneration||cache.lastPosition.distanceToSquared(cache.position)>0.0004;
+    if(!moved){
+      probeRadianceCacheHits++;
+      for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+      return;
+    }
+    probeRadianceCacheRecomputes++;cache.coefficients.fill(0);
+    const center=cache.position,grid=volume.pstudioGrid;
+    const accumulate=(index,weight,coefficientIndex,totals)=>{
+      const item=volume[index],coeff=item?.light?.sh?.coefficients?.[coefficientIndex];
+      if(coeff&&weight>0){
+        const base=weight*(Number(item.baseIntensity)||0);
+        totals[0]+=coeff.x*base;totals[1]+=coeff.y*base;totals[2]+=coeff.z*base;
+      }
+      const dynamic=dynamicProbeCache[index];
+      if(dynamic?.valid&&dynamic.coefficients&&weight>0){
+        const offset=coefficientIndex*3;
+        totals[0]+=dynamic.coefficients[offset]*weight;
+        totals[1]+=dynamic.coefficients[offset+1]*weight;
+        totals[2]+=dynamic.coefficients[offset+2]*weight;
+      }
+    };
     if(grid?.layout==='x-fastest'&&Array.isArray(grid.dims)&&grid.dims.length===3&&grid.min&&grid.max){
-      const dims=grid.dims.map(Number),valid=dims.every(v=>Number.isInteger(v)&&v>=2&&v<=4);
+      const dims=grid.dims.map(Number),valid=dims.every(value=>Number.isInteger(value)&&value>=2&&value<=4);
       const boundsValid=['x','y','z'].every(axis=>Number.isFinite(Number(grid.min[axis]))&&Number.isFinite(Number(grid.max[axis]))&&Number(grid.max[axis])>Number(grid.min[axis]));
       if(valid&&boundsValid&&volume.length>=dims[0]*dims[1]*dims[2]){
         const axis=(value,min,max,count)=>{const n=Math.max(0,Math.min(1,(value-min)/(max-min)))*(count-1);const lo=Math.floor(n);return{lo,hi:Math.min(count-1,lo+1),t:n-lo};};
@@ -2784,22 +3045,33 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         const z=axis(center.z,Number(grid.min.z),Number(grid.max.z),dims[2]);
         const volumeIndex=(ix,iy,iz)=>(iz*dims[1]+iy)*dims[0]+ix;
         for(let i=0;i<9;i++){
-          const out=uniforms[i];out.set(0,0,0);
+          const totals=[0,0,0];
           for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
             const ix=dx?x.hi:x.lo,iy=dy?y.hi:y.lo,iz=dz?z.hi:z.lo;
-            const wx=dx?x.t:1-x.t,wy=dy?y.t:1-y.t,wz=dz?z.t:1-z.t;
-            const weight=wx*wy*wz,item=volume[volumeIndex(ix,iy,iz)];
-            const coeff=item?.light?.sh?.coefficients?.[i];
-            if(coeff&&weight>0)out.addScaledVector(coeff,weight*(Number(item.baseIntensity)||0));
+            accumulate(volumeIndex(ix,iy,iz),(dx?x.t:1-x.t)*(dy?y.t:1-y.t)*(dz?z.t:1-z.t),i,totals);
           }
+          const offset=i*3;
+          cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
         }
-        return;
+      }else{
+        const near=volume.map((item,index)=>({item,index,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));
+        let sum=0;for(const entry of near){entry.weight=1/Math.max(0.25,entry.d);sum+=entry.weight;}
+        for(let i=0;i<9;i++){
+          const totals=[0,0,0];for(const entry of near)accumulate(entry.index,entry.weight/Math.max(1e-8,sum),i,totals);
+          const offset=i*3;cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
+        }
+      }
+    }else{
+      // Sparse or legacy probe collections retain bounded inverse-distance interpolation.
+      const near=volume.map((item,index)=>({item,index,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));
+      let sum=0;for(const entry of near){entry.weight=1/Math.max(0.25,entry.d);sum+=entry.weight;}
+      for(let i=0;i<9;i++){
+        const totals=[0,0,0];for(const entry of near)accumulate(entry.index,entry.weight/Math.max(1e-8,sum),i,totals);
+        const offset=i*3;cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
       }
     }
-    // Sparse or legacy probe collections retain the inverse-distance fallback.
-    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;
-    for(const entry of near){entry.w=1/Math.max(0.25,entry.d);sum+=entry.w;}
-    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const entry of near){const coeff=entry.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,entry.w/Math.max(1e-8,sum)*entry.item.baseIntensity);}}
+    cache.lastPosition.copy(center);cache.generation=probeVolumeGeneration;cache.valid=true;
+    for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
@@ -4838,6 +5110,29 @@ void main(){
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
+    togglePerformanceMonitor,
+    getPerformanceStats:performanceStatsSnapshot,
+    setDynamicGI:enabled=>{
+      const next=!!enabled;
+      if(next&&!bakedLightProbeVolume?.length)return{enabled:false,available:false,reason:'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'};
+      dynamicGIEnabled=next;
+      if(next){
+        const signature=dynamicLightCacheSignature();resetDynamicProbeCache(signature);
+        dynamicGIStatus=dynamicLights.size?'updating':'waiting-for-dynamic-lights';
+      }else{
+        dynamicProbeDirty=null;dynamicProbeCache=[];dynamicGIStatus='disabled';probeVolumeGeneration++;
+      }
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:dynamicGIEnabled,available:!!bakedLightProbeVolume?.length,status:dynamicGIStatus,probeCount:dynamicProbeCache.length,updateIntervalMs:DYNAMIC_PROBE_UPDATE_INTERVAL_MS,kind:'raster-captured-one-bounce-dynamic-sh-probe-cache'};
+    },
+    toggleDynamicGI:()=>{
+      const result=window.PStudio3D.setDynamicGI(!dynamicGIEnabled);
+      const button=document.getElementById('dynamic-gi-toggle');
+      if(button){button.setAttribute('aria-pressed',String(!!result.enabled));button.classList.toggle('active',!!result.enabled);}
+      const status=document.getElementById('gi-bake-status');
+      if(status)status.textContent=result.enabled?'Live GI: '+result.status:(result.reason||'Live GI disabled');
+      return result;
+    },
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
     setContactShadows:(enabled,options={})=>{
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;
@@ -4881,12 +5176,27 @@ void main(){
       stagedTextureUploads,
       parallelShaderCompileSupported,
       frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3))},performance:performanceStatsSnapshot(),gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,probeInterpolationCache:{hits:probeRadianceCacheHits,misses:probeRadianceCacheMisses,recomputes:probeRadianceCacheRecomputes,generation:probeVolumeGeneration},dynamic:{enabled:dynamicGIEnabled,status:dynamicGIStatus,probeCount:dynamicProbeCache.length,validProbes:dynamicProbeCache.filter(item=>item.valid).length,updates:dynamicProbeUpdates,updateIntervalMs:DYNAMIC_PROBE_UPDATE_INTERVAL_MS,kind:'raster-captured-one-bounce-dynamic-light-sh-cache',rayTraced:false},uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
-    clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed)drawFrame();return changed;},
-    bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed){updateProbeVolumeBlend();drawFrame();}return changed;},
+    bakeLightProbeVolume,
+    bakeEnvironmentGI:async options=>{
+      const status=document.getElementById('gi-bake-status');
+      if(status)status.textContent='Baking static SH probes...';
+      try{
+        const result=await bakeEnvironmentGI(options);
+        if(status)status.textContent='GI ready: '+result.probes+' probes, '+result.bounces+' bounces';
+        try{window.PStudioEvents?.emit('gi.bake.completed',result);}catch(_){}
+        return result;
+      }catch(error){
+        if(status)status.textContent='GI bake failed: '+String(error?.message||error);
+        try{window.PStudioEvents?.emit('gi.bake.failed',{message:String(error?.message||error)});}catch(_){}
+        throw error;
+      }
+    },
+    bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
     setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
     setClusteredLighting:enabled=>{clusteredLightingEnabled=!!enabled;updateClusteredLighting(true);return{enabled:clusteredLightingEnabled,available:!!clusteredLightingResources,active:clusteredLightingActive};},
