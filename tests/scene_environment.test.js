@@ -297,7 +297,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(dusk.sunAngularRadius>0.4&&dusk.sunAngularRadius<0.8,'the dusk sun should retain a natural, restrained angular diameter');
   assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?2.6:10)"));
   assert.match(renderer,/const horizonBand=context\.createLinearGradient/,'dusk should include a layered horizon afterglow');
-  assert.match(renderer,/const glowRadiusX=width\\*\\.17,glowRadiusY=height\\*\\.045/);
+  assert.ok(renderer.includes("const glowRadiusX=width*.17,glowRadiusY=height*.045"));
   assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
   assert.equal(night.sunIntensity,0);
   assert.equal(day.moonIntensity,0);
