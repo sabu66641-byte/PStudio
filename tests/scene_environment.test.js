@@ -396,7 +396,7 @@ test('dusk atmosphere uses layered twilight scattering, a defined solar core and
   assert.match(renderer,/pStudioAtmosphereGrain\*0\.00045/);
   assert.equal(presets.getPreset('dusk').twilightStrength,1);
   assert.ok(presets.getPreset('dusk').skyRayleigh>2.8);
-  assert.ok(presets.getPreset('dusk').cloudCoverage>0.6);
+  assert.ok(presets.getPreset('dusk').cloudCoverage>0.45&&presets.getPreset('dusk').cloudCoverage<0.55);
 });
 
 test('day and dusk panorama solar glow and cloud layers wrap cleanly across the longitude seam',()=>{
