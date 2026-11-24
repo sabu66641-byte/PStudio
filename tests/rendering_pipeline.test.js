@@ -982,7 +982,7 @@ test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production W
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
     'pstudio_webgpu_lab.mjs?v=20261124-pbr-tsl-lab1',
-    'existing project',
+    '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません'
   ])assert.ok(html.includes(token),token);
   for(const token of [
@@ -999,7 +999,7 @@ test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production W
     'keyLight.castShadow = true',
     'rendererCandidate.compileAsync(scene, camera)',
     'rendererCandidate.setAnimationLoop(',
-    'rendererCandidate.setAnimationLoop(null)',
+    'renderer.setAnimationLoop(null)',
     'rendererCandidate.dispose()'
   ])assert.ok(webgpuLab.includes(token),token);
   assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
