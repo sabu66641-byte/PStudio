@@ -227,7 +227,21 @@ test('night moon is a real spherical mesh with one-time surface texture creation
   assert.match(renderer,/updateMoonSkyMesh\(\)/);
   assert.doesNotMatch(renderer,/const moonRadius=48|context\.ellipse\(moon\.x/);
 });
-test('day and dusk panoramas include cloud texture, aligned solar discs and distinct warm twilight treatment',()=>{
+test('daylight sun is a one-time spherical photosphere with aligned direction and no stretched panorama disc',()=>{
+  assert.match(renderer,/function createSunSurfaceTexture\(T\)/);
+  assert.match(renderer,/function ensureSunMesh\(T\)/);
+  assert.match(renderer,/new T\.SphereGeometry\(1,48,32\)/);
+  assert.match(renderer,/sunMesh\.name='PStudioSunSphere'/);
+  assert.match(renderer,/function configureSunSky\(T,profile\)/);
+  assert.match(renderer,/function updateSunSkyMesh\(\)/);
+  assert.match(renderer,/sunMesh\.position\.copy\(camera\.position\)\.addScaledVector\(sunDirection,distance\)/);
+  assert.match(renderer,/sunMesh\.scale\.setScalar\(radius\)/);
+  assert.match(renderer,/configureSunSky\(T,profile\)/);
+  assert.match(renderer,/updateSunSkyMesh\(\)/);
+  assert.doesNotMatch(renderer,/context\.arc\(sun\.x,sun\.y,sunRadius/);
+});
+ 
+test('day and dusk panoramas use a spherical photosphere, richer cloud layers and distinct warm twilight treatment',()=>{
   assert.match(renderer,/const directionUv=\(x,y,z\)=>/);
   assert.match(renderer,/const sun=directionUv\(/);
   assert.match(renderer,/Soft, broken cloud banks and fine cirrus/);
@@ -258,7 +272,7 @@ test('editor orbit reaches near-vertical top-down and bottom-up views while game
 test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
   const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
   for(const [name,profile] of Object.entries({day,dusk,night,studio})){
-    for(const field of ['skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','skyExposure','twilightStrength','atmosphereSunColor','moonDirectionX','moonDirectionY','moonDirectionZ','moonIntensity','moonPhase','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
+    for(const field of ['sunIntensity','sunAngularRadius','sunColor','cloudDensity','cloudCoverage','cloudDetail','cloudBase','cloudTop','skySunX','skySunY','skySunZ','skyTurbidity','skyRayleigh','skyMieCoefficient','skyMieDirectionalG','skyExposure','twilightStrength','atmosphereSunColor','moonDirectionX','moonDirectionY','moonDirectionZ','moonIntensity','moonPhase','fogDensity','fogHeightFalloff','fogBaseHeight','fogAnisotropy'])
       assert.ok(Object.prototype.hasOwnProperty.call(profile,field),name+': '+field);
     assert.ok(Math.hypot(profile.skySunX,profile.skySunY,profile.skySunZ)>.9,name+' sun direction');
     assert.ok(profile.fogDensity>0,name+' fog density');
@@ -268,6 +282,10 @@ test('day dusk night and studio define physically distinct sun elevations and at
     assert.ok(Math.abs(profile.skySunY+profile.lightY)<.02,'visible sun and direct light Y must align: '+profile.name);
     assert.ok(Math.abs(profile.skySunZ+profile.lightZ)<.02,'visible sun and direct light Z must align: '+profile.name);
   }
+  assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
+  assert.ok(dusk.sunIntensity>1,'dusk should retain a visible warm solar photosphere');
+  assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
+  assert.equal(night.sunIntensity,0);
   assert.equal(day.moonIntensity,0);
   assert.equal(dusk.moonIntensity,0);
   assert.ok(night.moonIntensity>.5,'night moon should be visible');
