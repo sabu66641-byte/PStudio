@@ -687,7 +687,7 @@
         'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\n'+
         'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\n'+
         'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\n'+
-        'float pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.985 + 0.015 * pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside;\n'+
+        'float pStudioMirrorAmount = clamp(uMirrorReflectivity, 0.0, 1.0) * pStudioMirrorInside;\n'+
         'vec3 pStudioMirrorTinted = pStudioMirrorSample;\n'+
         'gl_FragColor.rgb = mix(gl_FragColor.rgb, pStudioMirrorTinted, pStudioMirrorAmount);'
       );
