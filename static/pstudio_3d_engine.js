@@ -75,6 +75,7 @@
   let activeEnvironmentPreset='day';
   let physicalSky=null;
   let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
+  let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunIntensity=0,sunAngularRadius=1.2;
   let adaptiveUltraTouchMode=false;
   const meshCache = new Map();
   const gridCache = new Map();
@@ -218,7 +219,7 @@
     interactionSurface.addEventListener('wheel',e=>{zoom=clampCameraZoom(zoom*Math.exp(e.deltaY*0.00075));updateCameraZoomReadout();scheduleCameraUpdate();e.preventDefault();},{passive:false});
     interactionSurface.addEventListener('contextmenu',e=>e.preventDefault());
   }
-  const CAMERA_ZOOM_MIN=0.035,CAMERA_ZOOM_MAX=32;
+  const CAMERA_ZOOM_MIN=0.035,CAMERA_ZOOM_MAX=128;
   function clampCameraZoom(value){return Math.max(CAMERA_ZOOM_MIN,Math.min(CAMERA_ZOOM_MAX,Number(value)||1));}
   function updateCameraZoomReadout(){
     const output=document.getElementById('camera-zoom-level');
@@ -650,6 +651,7 @@
     if(!renderer||!scene||!camera)return;
     if(physicalSky?.visible)physicalSky.position.copy(camera.position);
     updateMoonSkyMesh();
+    updateSunSkyMesh();
     updateEditorGridPresentation();
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
@@ -3498,6 +3500,150 @@ void main(){
     moonMesh.scale.setScalar(radius);
   }
 
+  function createSunSurfaceTexture(T){
+    const canvas=document.createElement('canvas');
+    canvas.width=512;canvas.height=256;
+    const context=canvas.getContext('2d');
+    if(!context)throw new Error('Canvas 2D context is unavailable for the solar photosphere texture.');
+    let seed=0x53554e32;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const image=context.createImageData(canvas.width,canvas.height);
+    for(let y=0;y<canvas.height;y++){
+      for(let x=0;x<canvas.width;x++){
+        const u=x/canvas.width,v=y/canvas.height;
+        const broad=Math.sin(u*31+Math.sin(v*13)*2.1)*Math.cos(v*19+u*7);
+        const medium=Math.sin(u*137+Math.cos(v*67))*Math.sin(v*91+u*43);
+        const fine=(random()-.5)*.22;
+        const granulation=Math.max(0,Math.min(1,.53+broad*.12+medium*.15+fine));
+        const value=188+granulation*59;
+        const i=(y*canvas.width+x)*4;
+        image.data[i]=value;image.data[i+1]=value;image.data[i+2]=value;image.data[i+3]=255;
+      }
+    }
+    context.putImageData(image,0,0);
+    context.save();
+    context.globalCompositeOperation='screen';
+    for(let i=0;i<420;i++){
+      const x=random()*canvas.width,y=random()*canvas.height,radius=.5+random()*4.2;
+      const glow=context.createRadialGradient(x,y,0,x,y,radius);
+      glow.addColorStop(0,'rgba(255,255,255,'+(0.07+random()*.13)+')');
+      glow.addColorStop(1,'rgba(255,255,255,0)');
+      context.fillStyle=glow;
+      context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+    }
+    context.restore();
+    for(let i=0;i<7;i++){
+      const x=42+random()*(canvas.width-84),y=24+random()*(canvas.height-48);
+      const radius=3+random()*6;
+      const spot=context.createRadialGradient(x,y,radius*.12,x,y,radius);
+      spot.addColorStop(0,'rgba(45,32,25,0.26)');
+      spot.addColorStop(.72,'rgba(74,52,37,0.13)');
+      spot.addColorStop(1,'rgba(74,52,37,0)');
+      context.fillStyle=spot;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+    }
+    const texture=new T.CanvasTexture(canvas);
+    texture.generateMipmaps=true;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.needsUpdate=true;
+    return texture;
+  }
+  function ensureSunMesh(T){
+    if(!scene)return null;
+    if(sunMesh?.parent===scene)return sunMesh;
+    if(!sunSurfaceTexture)sunSurfaceTexture=createSunSurfaceTexture(T);
+    if(!sunDirection)sunDirection=new T.Vector3();
+    if(!sunMesh){
+      const geometry=new T.SphereGeometry(1,48,32);
+      const material=new T.ShaderMaterial({
+        uniforms:{
+          uSunMap:{value:sunSurfaceTexture},
+          uSunColor:{value:new T.Color('#FFF4DD')},
+          uSunIntensity:{value:1.12}
+        },
+        vertexShader:[
+          'varying vec2 vSunUv;',
+          'varying vec3 vSunNormalWorld;',
+          'varying vec3 vSunWorldPosition;',
+          'void main(){',
+          'vSunUv=uv;',
+          'vSunNormalWorld=normalize(mat3(modelMatrix)*normal);',
+          'vSunWorldPosition=(modelMatrix*vec4(position,1.0)).xyz;',
+          'gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+          '}'
+        ].join('\n'),
+        fragmentShader:[
+          'uniform sampler2D uSunMap;',
+          'uniform vec3 uSunColor;',
+          'uniform float uSunIntensity;',
+          'varying vec2 vSunUv;',
+          'varying vec3 vSunNormalWorld;',
+          'varying vec3 vSunWorldPosition;',
+          'void main(){',
+          'vec3 normal=normalize(vSunNormalWorld);',
+          'vec3 viewDirection=normalize(cameraPosition-vSunWorldPosition);',
+          'float facing=clamp(dot(normal,viewDirection),0.0,1.0);',
+          'float limb=.68+.32*sqrt(facing);',
+          'float granulation=texture2D(uSunMap,vSunUv).r;',
+          'float surface=mix(.91,1.075,granulation);',
+          'float hotCore=pow(facing,16.0);',
+          'vec3 color=mix(uSunColor*.78,vec3(1.0,.985,.91),hotCore*.34);',
+          'color*=limb*surface*uSunIntensity;',
+          'color+=uSunColor*hotCore*.12;',
+          'gl_FragColor=vec4(color,1.0);',
+          '#include <colorspace_fragment>',
+          '}'
+        ].join('\n'),
+        depthTest:true,depthWrite:false,transparent:false,fog:false,toneMapped:false
+      });
+      sunMesh=new T.Mesh(geometry,material);
+      sunMesh.name='PStudioSunSphere';
+      sunMesh.frustumCulled=false;
+      sunMesh.renderOrder=1;
+    }else if(sunMesh.parent)sunMesh.parent.remove(sunMesh);
+    scene.add(sunMesh);
+    return sunMesh;
+  }
+  function configureSunSky(T,profile){
+    const isDaylight=profile.name==='day'||profile.name==='dusk';
+    sunIntensity=Math.max(0,Math.min(2,Number(profile.sunIntensity)||0));
+    sunAngularRadius=Math.max(.2,Math.min(4,Number(profile.sunAngularRadius)||1.2));
+    if(!isDaylight||sunIntensity<=.001||Number(profile.sunRadius)<=0){
+      if(sunMesh)sunMesh.visible=false;
+      return false;
+    }
+    let mesh=null;
+    try{mesh=ensureSunMesh(T);}
+    catch(error){
+      if(sunMesh)sunMesh.visible=false;
+      console.warn('[PStudio] Solar sphere setup failed; atmospheric scattering remains visible.',error);
+      return false;
+    }
+    if(!mesh)return false;
+    sunDirection.set(
+      Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
+      Number.isFinite(Number(profile.skySunY))?Number(profile.skySunY):-Number(profile.lightY||-1),
+      Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
+    );
+    if(sunDirection.lengthSq()<1e-8)sunDirection.set(.35,.89,.28);
+    sunDirection.normalize();
+    mesh.material.uniforms.uSunColor.value.set(profile.sunColor||profile.atmosphereSunColor||profile.lightColor||'#FFF4DD');
+    mesh.material.uniforms.uSunIntensity.value=sunIntensity;
+    mesh.visible=true;
+    return true;
+  }
+  function updateSunSkyMesh(){
+    if(!sunMesh||!camera)return;
+    const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
+    sunMesh.visible=(activeEnvironmentPreset==='day'||activeEnvironmentPreset==='dusk')&&sunIntensity>.001&&!hdrBackgroundVisible;
+    if(!sunMesh.visible||!sunDirection)return;
+    const distance=Math.max(camera.near+2,camera.far*.88);
+    const radius=distance*Math.tan(sunAngularRadius*Math.PI/180);
+    sunMesh.position.copy(camera.position).addScaledVector(sunDirection,distance);
+    sunMesh.scale.setScalar(radius);
+  }
+
   function createProceduralSkyTexture(T,profile){
     const canvas=document.createElement('canvas');
     const width=2048,height=1024;
@@ -3633,6 +3779,17 @@ void main(){
           context.stroke();
         }
       }
+      // A restrained second layer of very faint pinprick stars adds depth without changing
+      // the established Milky Way palette or the existing 8,200-star distribution.
+      for(let i=0;i<1500;i++){
+        const x=random()*width,y=4+random()*height*.49;
+        const tint=random();
+        const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
+        const radius=.08+random()*.2;
+        const alpha=.025+random()*.055;
+        context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
+        context.fillRect(x,y,radius,radius);
+      }
 
     }else{
       const sun=directionUv(
@@ -3653,7 +3810,7 @@ void main(){
       // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
       context.save();
       context.globalCompositeOperation='screen';
-      for(let i=0;i<(dusk?76:58);i++){
+      for(let i=0;i<(dusk?112:92);i++){
         const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
         const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
         context.save();context.translate(x,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
@@ -3667,11 +3824,17 @@ void main(){
           cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
           cloud.addColorStop(1,'rgba(210,232,247,0)');
         }
-        context.fillStyle=cloud;context.beginPath();context.arc(0,0,rx,0,Math.PI*2);context.fill();
+        context.fillStyle=cloud;
+        context.beginPath();
+        context.arc(0,0,rx,0,Math.PI*2);
+        context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
+        context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
+        context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
+        context.fill();
         context.restore();
       }
       context.lineCap='round';context.lineJoin='round';
-      for(let i=0;i<(dusk?62:84);i++){
+      for(let i=0;i<(dusk?112:148);i++){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
         context.beginPath();context.moveTo(x,y);
         context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
@@ -3692,10 +3855,7 @@ void main(){
       halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.13*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
       halo.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
-      context.beginPath();context.arc(sun.x,sun.y,sunRadius,0,Math.PI*2);
-      context.fillStyle=dusk?'#FFF0D5':'#FFFCEB';context.fill();
-      context.beginPath();context.arc(sun.x,sun.y,sunRadius*.72,0,Math.PI*2);
-      context.strokeStyle=dusk?'rgba(255,220,173,0.78)':'rgba(255,255,255,0.72)';context.lineWidth=1.2;context.stroke();
+      // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
     }
 
     const texture=new T.CanvasTexture(canvas);
@@ -3704,10 +3864,10 @@ void main(){
     texture.generateMipmaps=true;
     texture.minFilter=T.LinearMipmapLinearFilter;
     texture.magFilter=T.LinearFilter;
-    texture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.anisotropy=Math.min(16,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     texture.userData=texture.userData||{};
-    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?8200:0,proceduralCloudLayers:name==='day'||name==='dusk'};
+    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?9700:0,nightPrimaryStars:name==='night'?8200:0,proceduralCloudLayers:name==='day'||name==='dusk'};
     return texture;
   }
   function enhancePhysicalSkyShader(sky,Three){
@@ -3796,6 +3956,7 @@ void main(){
     };
     activeEnvironmentPreset=String(profile.name||'day');
     configureMoonSky(T,profile);
+    configureSunSky(T,profile);
     const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
     const cloudTierActive=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
