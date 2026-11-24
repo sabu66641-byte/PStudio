@@ -18,6 +18,9 @@
   }
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
+  let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0;
+  const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
+  let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
@@ -29,6 +32,8 @@
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
   let particleClock=0,lastRenderDurationMs=0;
+  const RENDER_METRIC_HISTORY=120;
+  const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const waterMaterials=new Set();
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
@@ -305,9 +310,21 @@
     return Math.min(dpr,profile.pixelRatio*scale);
   }
 
+  function effectiveRenderPixelRatio(selected=resolveQualityPreset(qualityPreset),level=adaptiveQualityLevel,adaptive=adaptiveQualityEnabled){
+    const base=resolveQualityRenderPixelRatio(selected,level,adaptive);
+    const memorySafe=memorySafetyApplied?Math.min(base,0.8):base;
+    return Math.max(0.45,memorySafe*dynamicResolutionScale);
+  }
+  function applyEffectiveRenderScale(){
+    if(!renderer)return 0;
+    const ratio=effectiveRenderPixelRatio();
+    renderer.setPixelRatio(ratio);composer?.setPixelRatio?.(renderer.getPixelRatio());
+    return ratio;
+  }
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
+    dynamicResolutionScale=1;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;dynamicResolutionLastChange=0;dynamicResolutionLastSampleAt=0;
     adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
@@ -331,7 +348,7 @@
     if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=adaptiveQualityEnabled?(adaptiveQualityLevel>=2?2:adaptiveQualityLevel===1?1:0):(['maximum','ultra'].includes(selected)?2:selected==='high'?1:0);
     if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
-      renderer.setPixelRatio(resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled));composer?.setPixelRatio?.(renderer.getPixelRatio());
+      applyEffectiveRenderScale();
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
@@ -353,10 +370,29 @@
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
   function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
+  function updateDynamicResolutionFromGpu(now,hasRecentGpuSample){
+    if(!adaptiveQualityEnabled||!renderer||!hasRecentGpuSample||lastGpuTimerTimestamp===dynamicResolutionLastSampleAt)return false;
+    dynamicResolutionLastSampleAt=lastGpuTimerTimestamp;
+    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    const targetMs=(touch||adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?20:16.67;
+    if(lastGpuRenderDurationMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
+    else if(lastGpuRenderDurationMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
+    else{dynamicResolutionSlowSamples=Math.max(0,dynamicResolutionSlowSamples-1);dynamicResolutionFastSamples=0;}
+    if(now-dynamicResolutionLastChange<900)return false;
+    let next=dynamicResolutionScale;
+    if(dynamicResolutionSlowSamples>=8&&dynamicResolutionScale>0.55)next=Math.max(0.55,dynamicResolutionScale-0.05);
+    else if(dynamicResolutionFastSamples>=45&&dynamicResolutionScale<1)next=Math.min(1,dynamicResolutionScale+0.025);
+    if(Math.abs(next-dynamicResolutionScale)<0.001)return false;
+    dynamicResolutionScale=next;dynamicResolutionLastChange=now;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;
+    applyEffectiveRenderScale();lastSize={width:0,height:0};resize();
+    try{window.PStudioEvents?.emit('render.dynamic-resolution.changed',{scale:Number(dynamicResolutionScale.toFixed(3)),gpuTimeMs:Number(lastGpuRenderDurationMs.toFixed(2)),targetMs});}catch(_){}
+    return true;
+  }
   function applyAdaptiveQuality(){
     if(!adaptiveQualityEnabled||!renderer)return;
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    updateDynamicResolutionFromGpu(now,hasRecentGpuSample);
     adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
     const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
@@ -370,9 +406,7 @@
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
-    const requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled);
-    const safeScale=memorySafetyApplied?Math.min(requestedPixelRatio,0.8):requestedPixelRatio;
-    renderer.setPixelRatio(safeScale);composer?.setPixelRatio?.(renderer.getPixelRatio());
+    const safeScale=applyEffectiveRenderScale();
     const effects=!memorySafetyApplied;
     qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
@@ -475,7 +509,7 @@
       // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
       // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
       if(qualityPreset==='ultra'){
-        const safeRatio=resolveQualityRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
+        const safeRatio=effectiveRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
         if(Math.abs(safeRatio-renderer.getPixelRatio())>.001){
           renderer.setPixelRatio(safeRatio);
           composer?.setPixelRatio?.(safeRatio);
@@ -499,7 +533,7 @@
         const entry=gpuTimerQueries[i],available=gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT_AVAILABLE);
         if(available){
           const nanoseconds=Number(gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT));
-          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;}
+          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;pushMetricSample(gpuRenderSamples,lastGpuRenderDurationMs);}
           gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);
         }else if(now-entry.submittedAt>2000){gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);}
       }
@@ -634,9 +668,8 @@
       memorySafetyApplied=true;
       try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:true}}));}catch(_){}
       // Drop only expensive screen-space effects and render scale; never dispose retained scene assets.
-      const current=renderer?.getPixelRatio?.()||1;
-      renderer?.setPixelRatio?.(Math.max(.65,current*.82));
-      composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
+      dynamicResolutionScale=Math.max(.55,dynamicResolutionScale*.82);
+      applyEffectiveRenderScale();
       qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
       if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
