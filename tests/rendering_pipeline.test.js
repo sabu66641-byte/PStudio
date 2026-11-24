@@ -869,6 +869,17 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):4096/);
 });
 
+test('manual Ultra quality remains selected on phones while internal render cost adapts to sustained frame timing',()=>{
+  assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice/);
+  assert.match(renderer,/adaptiveQualityEnabled=qualityPreset==='auto'\|\|adaptiveUltraTouchMode/);
+  assert.match(renderer,/adaptiveQualityLevel=adaptiveUltraTouchMode\?0:2/);
+  assert.match(renderer,/if\(!adaptiveQualityEnabled\|\|!renderer\)return/);
+  assert.match(renderer,/const selected=resolveQualityPreset\(qualityPreset\),base=QUALITY_PROFILES\[selected\]/);
+  assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[1024,1536,2048\]/);
+  assert.match(renderer,/adaptiveUltraTouchMode\?2048:4096/);
+  assert.match(renderer,/requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled/);
+});
+ 
 test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
   assert.match(renderer,/readSavedQualityPreset\(\)/);
   assert.match(renderer,/localStorage\?\.getItem\('pstudio-render-quality'\)/);
