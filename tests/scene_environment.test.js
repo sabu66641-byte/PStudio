@@ -388,7 +388,7 @@ test('night sky uses a more populated, brighter starfield while preserving the n
   assert.ok(renderer.includes("for(let i=0;i<12000;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<2600;i++)"));
   assert.ok(renderer.includes("(.12+random()*.55+band*.2)"));
-  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness;"));
+  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;"));
   assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
   assert.ok(renderer.includes("nightPrimaryStars:name==='night'?12000:0"));
 });
