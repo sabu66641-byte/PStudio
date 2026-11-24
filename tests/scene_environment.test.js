@@ -387,3 +387,33 @@ test('moon has a larger angular diameter and higher sphere tessellation',()=>{
   assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
   assert.match(renderer,/Math\.tan\(3\.0\*Math\.PI\/180\)/);
 });
+
+
+test('dusk atmosphere uses layered twilight scattering, a defined solar core and bounded color grain',()=>{
+  assert.match(renderer,/pStudioSunAngularRadius/);
+  assert.match(renderer,/pStudioSolarCore=pow\(pStudioSunAlignment,180\.0\)/);
+  assert.match(renderer,/pStudioPeachHorizon/);
+  assert.match(renderer,/pStudioAtmosphereGrain\*0\.00045/);
+  assert.equal(presets.getPreset('dusk').twilightStrength,1);
+  assert.ok(presets.getPreset('dusk').skyRayleigh>2.8);
+  assert.ok(presets.getPreset('dusk').cloudCoverage>0.6);
+});
+
+test('day and dusk panorama solar glow and cloud layers wrap cleanly across the longitude seam',()=>{
+  assert.match(renderer,/const drawWrappedX=\(x,margin,draw\)=>/);
+  assert.match(renderer,/drawWrappedX\(sun\.x,width\*\.18/);
+  assert.match(renderer,/drawWrappedX\(x,rx\+2/);
+  assert.match(renderer,/drawWrappedX\(x,length\+4/);
+  assert.match(renderer,/drawWrappedX\(sun\.x,glowRadius/);
+});
+
+test('camera world matrices are synchronized before camera-relative sky and celestial rendering',()=>{
+  const drawStart=renderer.indexOf('function drawFrame()');
+  const drawEnd=renderer.indexOf('function ',drawStart+20);
+  const drawBlock=renderer.slice(drawStart,drawEnd);
+  assert.ok(drawBlock.indexOf('camera.updateMatrixWorld(true)')>=0);
+  assert.ok(drawBlock.indexOf('physicalSky.position.copy(camera.position)')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+  assert.match(drawBlock,/physicalSky\.updateMatrixWorld\(true\)/);
+  assert.ok(drawBlock.indexOf('updateMoonSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+  assert.ok(drawBlock.indexOf('updateSunSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+});
