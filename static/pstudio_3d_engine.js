@@ -38,6 +38,12 @@
   let particleClock=0,lastRenderDurationMs=0;
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
+  function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh){
+    const ms=Number(renderMs);
+    if(!Number.isFinite(ms)||ms<0)return DYNAMIC_PROBE_UPDATE_INTERVAL_MS;
+    if(gpuFresh){if(ms<=6)return 300;if(ms<=9)return 550;if(ms<=12)return 900;return 1500;}
+    if(ms<=4)return 450;if(ms<=7)return 900;return 1500;
+  }
   const waterMaterials=new Set();
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
@@ -771,7 +777,7 @@
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
       adaptiveLevel:adaptiveQualityLevel,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),
       renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
-      dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates},
+      dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates,captureResolution:qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64,nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs(gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs,gpuFresh)},
       note:'FPS is based on renderer redraw intervals. GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percentage is GPU render time divided by 16.67 ms, not total GPU utilization.'
     };
   }
@@ -1087,10 +1093,11 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!dynamicLights.size){dynamicGIStatus='waiting-for-dynamic-lights';return;}
     if(!dynamicProbeDirty||!dynamicProbeDirty.length)return;
     if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
-    if(now-lastDynamicProbeUpdateAt<DYNAMIC_PROBE_UPDATE_INTERVAL_MS)return;
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     const recentRenderMs=gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs;
-    if(recentRenderMs>(gpuFresh?14:10))return;
+    const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh);
+    if(now-lastDynamicProbeUpdateAt<captureInterval)return;
+    if(recentRenderMs>(gpuFresh?12:7))return;
     const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
     if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
     let index=-1;
@@ -1099,7 +1106,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(dynamicProbeDirty[candidate]){index=candidate;break;}
     }
     if(index<0){dynamicGIStatus='ready';return;}
-    const resolution=qualityPreset==='ultra'?128:qualityPreset==='maximum'?96:64;
+    const resolution=qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64;
     const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
     const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
     const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
