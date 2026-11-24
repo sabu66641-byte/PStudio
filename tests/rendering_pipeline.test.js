@@ -800,7 +800,7 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
   assert.ok(renderer.includes('qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
-  assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;'));
+  assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;'));
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
