@@ -136,6 +136,7 @@
     if(!(select instanceof HTMLSelectElement)||select.dataset.pstudioSelectReady==='true')return;
     if(select.multiple||select.size>1||select.classList.contains('visually-hidden')||select.id==='global-language')return;
 
+    const instanceId=++sequence;
     const wrapper=document.createElement('span');
     wrapper.className='pstudio-select';
     const parent=select.parentElement;
@@ -146,12 +147,12 @@
     const trigger=document.createElement('button');
     trigger.type='button';
     trigger.className=(''+select.className+' pstudio-select-trigger').trim();
-    trigger.id=(select.id||'pstudio-select-'+(++sequence))+'-custom-trigger';
+    trigger.id=(select.id||'pstudio-select-'+instanceId)+'-custom-trigger';
     trigger.setAttribute('aria-haspopup','listbox');
     trigger.setAttribute('aria-expanded','false');
-    trigger.setAttribute('aria-controls','pstudio-select-menu-'+sequence);
+    trigger.setAttribute('aria-controls','pstudio-select-menu-'+instanceId);
     const menu=document.createElement('div');
-    menu.id='pstudio-select-menu-'+sequence;
+    menu.id='pstudio-select-menu-'+instanceId;
     menu.className='pstudio-select-menu';
     menu.role='listbox';
     menu.hidden=true;
