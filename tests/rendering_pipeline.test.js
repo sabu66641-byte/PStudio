@@ -907,7 +907,7 @@ test('all visible select controls use the shared dark in-app picker instead of n
   assert.ok(html.includes('/static/pstudio_selects.css?v=20261124-custom-selects1'));
   assert.ok(html.includes('/static/pstudio_selects.js?v=20261124-custom-selects1'));
   assert.match(selectUI,/select:not\(\.visually-hidden\):not\(\.pstudio-native-select\)/);
-  assert.match(selectUI,/menu\.role='listbox'/);
+  assert.match(selectUI,/menu\.setAttribute\('role','listbox'\)/);
   assert.match(selectUI,/new Event\('change',\{bubbles:true\}\)/);
   assert.match(selectUI,/new MutationObserver/);
   assert.ok(selectUI.includes('if(select.isConnected)continue;'));
