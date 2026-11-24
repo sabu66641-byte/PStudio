@@ -965,10 +965,10 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-ultra2x-v1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra2x-v1'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-ultra2x-v1'));
-  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-ultra2x-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-atmosphere-camera-v2'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-atmosphere-camera-v2'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-atmosphere-camera-v2'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-atmosphere-camera-v2'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
