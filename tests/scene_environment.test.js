@@ -241,10 +241,13 @@ test('editor grid adapts density and opacity at distance and disposes GridHelper
   assert.match(renderer,/for\(const grid of gridCache\.values\(\)\)\{gridGroup\.remove\(grid\);disposeGrid\(grid\);\}/);
 });
 
-test('editor orbit cannot rotate below the ground grid while gameplay camera keeps its full pitch range',()=>{
+test('editor orbit reaches near-vertical top-down and bottom-up views while gameplay camera keeps its full pitch range',()=>{
   assert.match(renderer,/function clampEditorOrbitPitch\(value\)/);
   assert.match(renderer,/if\(window\.PStudioEngine\?\.isRunning\?\.\(\)\)return Math\.max\(-1\.35,Math\.min\(1\.35,pitch\)\)/);
-  assert.match(renderer,/const maxDownward=Math\.max\(-1\.35,baseElevation-\.065\)/);
+  assert.match(renderer,/const maxElevation=Math\.PI\/2-\.01/);
+  assert.match(renderer,/const minPitch=baseElevation-maxElevation/);
+  assert.match(renderer,/const maxPitch=baseElevation\+maxElevation/);
+  assert.match(renderer,/offset\.set\(Math\.sin\(azimuth\)\*horizontal,Math\.sin\(elevation\)\*radius/);
   assert.match(renderer,/orbitPitch=clampEditorOrbitPitch\(orbitPitch\)/);
 });
 
