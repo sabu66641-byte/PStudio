@@ -28,7 +28,7 @@
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
-  let particleClock=0,lastRenderDurationMs=0;
+  let particleClock=0,lastRenderDurationMs=0,lastRenderCallTimestamp=0,lastFrameIntervalMs=0;
   const waterMaterials=new Set();
   let waterDepthTarget=null,waterDepthMaterial=null,waterDepthPrepassFailed=false;
   const instancedBatches=new Map();
@@ -78,7 +78,7 @@
   let physicalSky=null;
   let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
   let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunViewDirection=null,sunIntensity=0,sunAngularRadius=1.2,sunGlareStrength=0,moonGlareStrength=0;
-  let adaptiveMaximumTouchMode=false;
+  let adaptiveMaximumTouchMode=false,adaptiveUltraTouchMode=false;
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -286,9 +286,10 @@
     const dpr=Math.max(.6,Number(hardware.pixelRatio)||1);
     const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
     if(selected==='ultra'){
-      // Ultra renders at 2x the effective Maximum-tier pixel ratio on both axes.
-      // Limit the drawing buffer to the GPU texture edge and a device-aware pixel budget.
-      const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2;
+      // Full Ultra remains 2x Maximum on capable hardware; constrained devices reduce
+      // the actual drawing-buffer scale from measured frame cadence, then recover gradually.
+      const adaptiveScale=adaptive?[.52,.74,1][level]:1;
+      const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2*adaptiveScale;
       const rect=canvas?.getBoundingClientRect?.()||{};
       const width=Math.max(0,Number(rect.width)||0),height=Math.max(0,Number(rect.height)||0);
       if(width<=0||height<=0)return requested;
@@ -314,11 +315,13 @@
     const hardware=qualityHardwareCapabilities();
     adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
-    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
-    // Ultra keeps its 2x Maximum-tier output resolution. Adaptive levels tune costly effects
-    // around it; GPU texture and device memory limits remain authoritative.
+    adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
+      (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
+    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
+    // Ultra keeps the full effect stack. On constrained touch hardware it starts at a
+    // sustainable render scale and can move back to true 2x output after sustained headroom.
     adaptiveQualityLevel=2;
-    if(adaptiveMaximumTouchMode)adaptiveQualityLevel=1;
+    if(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)adaptiveQualityLevel=1;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
     const effectsEnabled=!memorySafetyApplied;
@@ -334,8 +337,8 @@
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      const requestedShadow=qualityPreset==='ultra'?[4096,6144,8192][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[1536,2048,3072][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
-      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?(qualityPreset==='ultra'?3.2:2.5):2;light.shadow.bias=-0.00003;light.shadow.normalBias=0.006;light.shadow.needsUpdate=true;}
+      const requestedShadow=(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?[1536,2048,3072][adaptiveQualityLevel]:qualityPreset==='ultra'?[4096,6144,8192][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?(qualityPreset==='ultra'?1.4:2.5):2;light.shadow.blurSamples=qualityPreset==='ultra'?5:8;light.shadow.bias=-0.00004;light.shadow.normalBias=0.004;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(effectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
       if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
@@ -350,13 +353,14 @@
     try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
-  function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
+  function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;lastFrameIntervalMs=0;lastRenderCallTimestamp=0;}
   function applyAdaptiveQuality(){
     if(!adaptiveQualityEnabled||!renderer)return;
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
-    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
-    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);
+    const hasFrameInterval=lastFrameIntervalMs>=8&&lastFrameIntervalMs<=250;
+    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':hasFrameInterval?'raf-frame-interval':'cpu-render-submission';
+    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:hasFrameInterval?lastFrameIntervalMs:(Number(lastRenderDurationMs)||0);
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
     if(adaptiveFrameEMA>19){adaptiveSlowFrames++;adaptiveFastFrames=0;}
     else if(adaptiveFrameEMA<15){adaptiveFastFrames++;adaptiveSlowFrames=0;}
@@ -381,10 +385,10 @@
     if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[24,36,48][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
     if(taaPass&&!temporalAAEnabled){taaPass.sampleLevel=adaptiveQualityLevel;taaPass.accumulateIndex=-1;}
-    const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
+    const shadowSizes=(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
     const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-    for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
+    for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.radius=qualityPreset==='ultra'?1.4:light.shadow.radius;light.shadow.blurSamples=qualityPreset==='ultra'?5:8;light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();
     try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale:safeScale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource,requested:qualityPreset});}catch(_){}
     try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
@@ -680,7 +684,9 @@
       }
       const farScale=Math.max(1,Math.min(3,distance/240));
       grid.scale.setScalar(farScale);
-      const opacity=distance>900?.14:distance>520?.19:distance>280?.25:distance>140?.32:.42;
+      const baseOpacity=distance>900?.14:distance>520?.19:distance>280?.25:distance>140?.32:.42;
+      // Keep the editor floor grid distinct from the sky in atmospheric presets.
+      const opacity=activeEnvironmentPreset==='studio'?baseOpacity:baseOpacity*.62;
       for(const material of gridMaterials(grid)){
         material.transparent=true;
         material.opacity=opacity;
@@ -3553,7 +3559,7 @@ void main(){
     moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
-    const radius=distance*Math.tan(2.25*Math.PI/180);
+    const radius=distance*Math.tan(3.0*Math.PI/180);
     moonMesh.position.copy(camera.position).addScaledVector(moonDirection,distance);
     moonMesh.scale.setScalar(radius);
     if(!sunViewDirection)sunViewDirection=new window.THREE.Vector3();
@@ -3770,7 +3776,8 @@ void main(){
 
       // Render the nebula at half resolution, then upscale before the texture mipmaps are built.
       const galaxyCanvas=document.createElement('canvas');
-      const galaxyWidth=1024,galaxyHeight=512;
+      // Generate the nebula at the panorama's native resolution instead of upscaling a soft half-size field.
+      const galaxyWidth=width,galaxyHeight=height;
       galaxyCanvas.width=galaxyWidth;galaxyCanvas.height=galaxyHeight;
       const galaxyContext=galaxyCanvas.getContext('2d');
       if(galaxyContext){
@@ -3809,7 +3816,7 @@ void main(){
         context.save();
         context.globalCompositeOperation='screen';
         context.globalAlpha=.96;
-        context.imageSmoothingEnabled=true;
+        context.imageSmoothingEnabled=false;
         context.drawImage(galaxyCanvas,0,0,width,height);
         context.restore();
       }
@@ -3858,11 +3865,11 @@ void main(){
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
-          const halo=context.createRadialGradient(x,y,0,x,y,radius*5.2);
-          halo.addColorStop(0,'rgba('+color+','+(alpha*.30).toFixed(3)+')');
+          const halo=context.createRadialGradient(x,y,0,x,y,radius*2.6);
+          halo.addColorStop(0,'rgba('+color+','+(alpha*.18).toFixed(3)+')');
           halo.addColorStop(1,'rgba('+color+',0)');
           context.fillStyle=halo;
-          context.fillRect(x-radius*5.2,y-radius*5.2,radius*10.4,radius*10.4);
+          context.fillRect(x-radius*2.6,y-radius*2.6,radius*5.2,radius*5.2);
         }
         context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
@@ -3966,11 +3973,11 @@ void main(){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
         context.beginPath();context.moveTo(x,y);
         context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
-        context.lineWidth=1+random()*(dusk?7:5);
+        context.lineWidth=.7+random()*(dusk?3.2:2.6);
         context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
-        context.globalAlpha=.12+random()*.22;
-        context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
-        context.shadowBlur=7+random()*18;
+        context.globalAlpha=.18+random()*.24;
+        context.shadowColor=dusk?'rgba(255,153,123,0.12)':'rgba(235,248,255,0.14)';
+        context.shadowBlur=1+random()*3;
         context.stroke();
       }
       context.restore();
@@ -3988,6 +3995,9 @@ void main(){
 
     const texture=new T.CanvasTexture(canvas);
     texture.mapping=T.EquirectangularReflectionMapping;
+    // Keep CanvasTexture's vertical upload orientation explicit so authored sun/moon
+    // directions line up with Three.js equirectangular background sampling.
+    texture.flipY=true;
     texture.colorSpace=T.SRGBColorSpace;
     texture.generateMipmaps=true;
     texture.minFilter=T.LinearMipmapLinearFilter;
@@ -4378,6 +4388,10 @@ void main(){
 
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
+    const renderCallTime=window.performance?.now?.()??Date.now();
+    if(lastRenderCallTimestamp>0){const interval=renderCallTime-lastRenderCallTimestamp;lastFrameIntervalMs=interval>=8&&interval<=250?interval:0;}
+    else lastFrameIntervalMs=0;
+    lastRenderCallTimestamp=renderCallTime;
     const T = window.THREE;
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
@@ -4796,7 +4810,7 @@ void main(){
     getCameraBasis,
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
-    setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
+    setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode||adaptiveUltraTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;adaptiveQualityFrameEMAReset();return adaptiveQualityEnabled;},
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
     setContactShadows:(enabled,options={})=>{
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;

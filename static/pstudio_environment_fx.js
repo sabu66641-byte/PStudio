@@ -672,7 +672,7 @@
         uProjection:{value:new Three.Matrix4()},
         uViewMatrix:{value:new Three.Matrix4()},
         uLightDirectionWorld:{value:new Three.Vector3(.35,.82,.44).normalize()},
-        uIntensity:{value:.42},uMaxDistance:{value:.82},uThickness:{value:.075},
+        uIntensity:{value:.3},uMaxDistance:{value:.65},uThickness:{value:.055},
         uDepthBias:{value:.018},uSteps:{value:12},uFadeStart:{value:28},uFadeEnd:{value:105}
       },
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
