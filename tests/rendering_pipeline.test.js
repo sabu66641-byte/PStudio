@@ -11,6 +11,7 @@ const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const selectUI = fs.readFileSync(path.join(root, 'static/pstudio_selects.js'), 'utf8');
 const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'), 'utf8');
+const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs'), 'utf8');
 
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
@@ -975,6 +976,36 @@ test('tablet and mobile workspace use a single main column with accessible proje
   ])assert.ok(html.includes(token),token);
 });
  
+test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production WebGL renderer',()=>{
+  for(const token of [
+    'id="webgpu-lab-open"',
+    'id="webgpu-lab-overlay"',
+    'id="webgpu-lab-canvas"',
+    'pstudio_webgpu_lab.mjs?v=20261124-pbr-tsl-lab1',
+    'existing project',
+    '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません'
+  ])assert.ok(html.includes(token),token);
+  for(const token of [
+    "import * as THREE from 'three/webgpu'",
+    "import * as TSL from 'three/tsl'",
+    'navigator.gpu.requestAdapter',
+    'await rendererCandidate.init()',
+    'rendererCandidate.backend?.isWebGPUBackend !== true',
+    'new THREE.MeshStandardMaterial',
+    'new THREE.MeshPhysicalMaterial',
+    'new THREE.MeshStandardNodeMaterial',
+    'TSL.mix(',
+    'new THREE.CanvasTexture',
+    'keyLight.castShadow = true',
+    'rendererCandidate.compileAsync(scene, camera)',
+    'rendererCandidate.setAnimationLoop(',
+    'rendererCandidate.setAnimationLoop(null)',
+    'rendererCandidate.dispose()'
+  ])assert.ok(webgpuLab.includes(token),token);
+  assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
+  assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
+});
+
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
   assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r187-tsl-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
