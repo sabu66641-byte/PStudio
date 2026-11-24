@@ -74,6 +74,8 @@
   let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='',scenePresetUsesPhysicalSky=false;
   let activeEnvironmentPreset='day';
   let physicalSky=null;
+  let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
+  let adaptiveUltraTouchMode=false;
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -267,7 +269,7 @@
       if(Number.isFinite(queried)&&queried>0)maxTextureSize=queried;
     }catch(_){}
     const memory=deviceMemoryGiB();
-    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):4096;
+    const memoryCap=qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(adaptiveUltraTouchMode?2048:4096);
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
     return Math.min(requestedSize,hardwareCap);
@@ -275,43 +277,83 @@
 
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
-    qualityPreset=QUALITY_PROFILES[name]?name:'auto';adaptiveQualityEnabled=qualityPreset==='auto';adaptiveQualityLevel=2;adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;
+    qualityPreset=QUALITY_PROFILES[name]?name:'auto';
+    adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
+    const hardware=qualityHardwareCapabilities();
+    adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
+      (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
+    adaptiveQualityEnabled=qualityPreset==='auto'||adaptiveUltraTouchMode;
+    adaptiveQualityLevel=adaptiveUltraTouchMode?0:2;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
-    const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=profile.ssr&&!!ssrPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=selected==='ultra'?2:selected==='high'?1:0;if(smaaPass)smaaPass.enabled=!taaPass;
+    const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
+    const effectsEnabled=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
+    qualityAOEnabled=effectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;
+    ssrEnabled=effectsEnabled&&profile.ssr&&!!ssrPass;
+    contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effectsEnabled&&!!profile.contactShadows):contactShadowsRequested);
+    if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
+    if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=adaptiveQualityEnabled?(adaptiveQualityLevel>=2?2:adaptiveQualityLevel===1?1:0):(selected==='ultra'?2:selected==='high'?1:0);
+    if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
-      const initialAdaptiveScale=qualityPreset==='auto'&&selected==='mobile'&&deviceMemoryGiB()>2?[0.68,0.84,1][adaptiveQualityLevel]:1;
+      const initialAdaptiveScale=adaptiveQualityEnabled?[0.68,0.84,1][adaptiveQualityLevel]:1;
       renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),profile.pixelRatio*initialAdaptiveScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-      renderer.shadowMap.enabled=true;renderer.shadowMap.type=profile.shadowMode==='vsm'?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;renderer.shadowMap.needsUpdate=true;
+      renderer.shadowMap.enabled=true;
+      renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
+      renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize);light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
+      const requestedShadow=adaptiveUltraTouchMode?[1024,1536,2048][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?4:3;light.shadow.bias=-0.00008;light.shadow.normalBias=0.018;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
-      volumetricCloudsEnabled=!!(profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
-      volumetricFogEnabled=!!(profile.atmosphere&&volumetricFogPass);if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
+      volumetricCloudsEnabled=!!(effectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
+      if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
+      volumetricFogEnabled=!!(effectsEnabled&&profile.atmosphere&&volumetricFogPass);
+      if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(gtaoPass?.updateGtaoMaterial){gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:0.52,thickness:selected==='ultra'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:0.85,samples:selected==='ultra'?32:16,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:2,samples:selected==='ultra'?32:24,radius:selected==='ultra'?9:8});}
       lastSize={width:0,height:0};resize();
     }
-    try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile});}catch(_){}
+    try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile,adaptive:adaptiveUltraTouchMode});}catch(_){}
     try{window.localStorage?.setItem('pstudio-render-quality',qualityPreset);}catch(_){}
-    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied}}));}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
+  function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
   function applyAdaptiveQuality(){
-    if(!adaptiveQualityEnabled||qualityPreset!=='auto'||!renderer)return;
-    const now=window.performance?.now?.()??Date.now();const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
-    if(adaptiveFrameEMA>23){adaptiveSlowFrames++;adaptiveFastFrames=0;}else if(adaptiveFrameEMA<13){adaptiveFastFrames++;adaptiveSlowFrames=0;}else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
+    if(!adaptiveQualityEnabled||!renderer)return;
+    const now=window.performance?.now?.()??Date.now();
+    const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
+    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:(Number(lastRenderDurationMs)||0);
+    adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
+    if(adaptiveFrameEMA>23){adaptiveSlowFrames++;adaptiveFastFrames=0;}
+    else if(adaptiveFrameEMA<13){adaptiveFastFrames++;adaptiveSlowFrames=0;}
+    else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
     if(now-adaptiveLastChange<1800)return;
-    let changed=false;if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}if(!changed)return;
-    adaptiveLastChange=now;adaptiveSlowFrames=0;adaptiveFastFrames=0;
-    const base=QUALITY_PROFILES[resolveQualityPreset('auto')],scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel],safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
+    let changed=false;
+    if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
+    else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
+    if(!changed)return;
+    adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
+    const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
+    const scale=base.pixelRatio*[0.68,0.84,1][adaptiveQualityLevel];
+    const safeScale=memorySafetyApplied?Math.min(scale,0.8):scale;
     renderer.setPixelRatio(Math.min(Math.max(0.6,Number(window.devicePixelRatio)||1),safeScale));composer?.setPixelRatio?.(renderer.getPixelRatio());
-    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effects&&!!base.contactShadows):contactShadowsRequested);if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel);}
-    const mapSize=resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel]),lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
+    const effects=adaptiveQualityLevel>=1&&!memorySafetyApplied;
+    qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
+    volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
+    volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;
+    contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?(effects&&!!base.contactShadows):contactShadowsRequested);
+    if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
+    if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
+    if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
+    const shadowSizes=adaptiveUltraTouchMode?[1024,1536,2048]:qualityPreset==='ultra'?[1024,2048,4096]:[1024,1536,2048];
+    const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
+    const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
-    lastSize={width:0,height:0};resize();try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource});}catch(_){}
-    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied}}));}catch(_){}
+    lastSize={width:0,height:0};resize();
+    try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource,requested:qualityPreset});}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
   }
 
   function ensureRenderer(){
@@ -607,6 +649,7 @@
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     if(physicalSky?.visible)physicalSky.position.copy(camera.position);
+    updateMoonSkyMesh();
     updateEditorGridPresentation();
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
@@ -3330,6 +3373,125 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     }finally{modelPreparationPending=Math.max(0,modelPreparationPending-1);}
   }
 
+  function createMoonSurfaceTexture(T){
+    const canvas=document.createElement('canvas');
+    canvas.width=512;canvas.height=256;
+    const context=canvas.getContext('2d');
+    if(!context)throw new Error('Canvas 2D context is unavailable for the lunar surface texture.');
+    let seed=0x4d4f4f4e;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const image=context.createImageData(canvas.width,canvas.height);
+    for(let i=0;i<image.data.length;i+=4){
+      const noise=(random()-.5)*24;
+      const tone=174+noise;
+      image.data[i]=tone*.96;image.data[i+1]=tone*.99;image.data[i+2]=Math.min(255,tone+12);image.data[i+3]=255;
+    }
+    context.putImageData(image,0,0);
+    for(let i=0;i<110;i++){
+      const x=random()*canvas.width,y=14+random()*(canvas.height-28);
+      const radius=2+Math.pow(random(),2)*13;
+      const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
+      shadow.addColorStop(0,'rgba(57,69,88,0.12)');
+      shadow.addColorStop(.68,'rgba(70,82,101,0.19)');
+      shadow.addColorStop(.9,'rgba(238,243,250,0.18)');
+      shadow.addColorStop(1,'rgba(244,247,252,0.02)');
+      context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
+    }
+    const texture=new T.CanvasTexture(canvas);
+    texture.colorSpace=T.SRGBColorSpace;
+    texture.wrapS=T.RepeatWrapping;texture.wrapT=T.ClampToEdgeWrapping;
+    texture.anisotropy=Math.min(4,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    texture.needsUpdate=true;
+    return texture;
+  }
+  function ensureMoonMesh(T){
+    if(!scene)return null;
+    if(moonMesh?.parent===scene)return moonMesh;
+    if(!moonSurfaceTexture)moonSurfaceTexture=createMoonSurfaceTexture(T);
+    if(!moonDirection)moonDirection=new T.Vector3();
+    if(!moonLightDirection)moonLightDirection=new T.Vector3();
+    if(!moonMesh){
+      const geometry=new T.SphereGeometry(1,48,32);
+      const material=new T.ShaderMaterial({
+        uniforms:{
+          uMoonMap:{value:moonSurfaceTexture},
+          uLightDirectionWorld:{value:new T.Vector3(0,-1,0)},
+          uMoonIntensity:{value:1}
+        },
+        vertexShader:`varying vec2 vMoonUv;
+varying vec3 vMoonNormalWorld;
+void main(){
+  vMoonUv=uv;
+  vMoonNormalWorld=normalize(mat3(modelMatrix)*normal);
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+}`,
+        fragmentShader:`uniform sampler2D uMoonMap;
+uniform vec3 uLightDirectionWorld;
+uniform float uMoonIntensity;
+varying vec2 vMoonUv;
+varying vec3 vMoonNormalWorld;
+void main(){
+  vec3 normal=normalize(vMoonNormalWorld);
+  vec3 lightDirection=normalize(uLightDirectionWorld);
+  float ndl=dot(normal,lightDirection);
+  float illumination=0.075+max(ndl,0.0)*1.12;
+  float terminator=smoothstep(-0.12,0.08,ndl);
+  vec3 lunar=texture2D(uMoonMap,vMoonUv).rgb;
+  vec3 color=lunar*illumination;
+  color*=mix(0.32,1.0,terminator);
+  color*=uMoonIntensity;
+  gl_FragColor=vec4(color,1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
+        depthTest:true,depthWrite:false,transparent:false,fog:false
+      });
+      moonMesh=new T.Mesh(geometry,material);
+      moonMesh.name='PStudioMoonSphere';
+      moonMesh.frustumCulled=false;
+      moonMesh.renderOrder=1;
+    }else if(moonMesh.parent)moonMesh.parent.remove(moonMesh);
+    scene.add(moonMesh);
+    return moonMesh;
+  }
+  function configureMoonSky(T,profile){
+    moonIntensity=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
+    if(profile.name!=='night'||moonIntensity<=.001){
+      if(moonMesh)moonMesh.visible=false;
+      return false;
+    }
+    const mesh=ensureMoonMesh(T);
+    if(!mesh)return false;
+    moonDirection.set(
+      Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):.38,
+      Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):.88,
+      Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
+    );
+    if(moonDirection.lengthSq()<1e-8)moonDirection.set(.38,.88,.27);
+    moonDirection.normalize();
+    const phase=Math.max(0,Math.min(1,Number.isFinite(Number(profile.moonPhase))?Number(profile.moonPhase):.84));
+    const phaseAngle=Math.acos(2*phase-1);
+    const tangent=new T.Vector3().crossVectors(new T.Vector3(0,1,0),moonDirection);
+    if(tangent.lengthSq()<1e-8)tangent.set(1,0,0).cross(moonDirection);
+    tangent.normalize();
+    moonLightDirection.copy(moonDirection).negate().multiplyScalar(Math.cos(phaseAngle))
+      .addScaledVector(tangent,Math.sin(phaseAngle)).normalize();
+    mesh.material.uniforms.uLightDirectionWorld.value.copy(moonLightDirection);
+    mesh.material.uniforms.uMoonIntensity.value=moonIntensity;
+    mesh.visible=true;
+    return true;
+  }
+  function updateMoonSkyMesh(){
+    if(!moonMesh||!camera)return;
+    const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
+    moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
+    if(!moonMesh.visible||!moonDirection)return;
+    const distance=Math.max(camera.near+2,camera.far*.88);
+    const radius=distance*Math.tan(1.5*Math.PI/180);
+    moonMesh.position.copy(camera.position).addScaledVector(moonDirection,distance);
+    moonMesh.scale.setScalar(radius);
+  }
+
   function createProceduralSkyTexture(T,profile){
     const canvas=document.createElement('canvas');
     const width=2048,height=1024;
@@ -3466,48 +3628,6 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         }
       }
 
-      const moon=directionUv(
-        Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):.38,
-        Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):.88,
-        Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
-      );
-      const moonIntensity=Math.max(0,Math.min(1,Number(profile.moonIntensity)||0));
-      if(moonIntensity>.001){
-        const moonRadius=48;
-        const halo=context.createRadialGradient(moon.x,moon.y,moonRadius*.12,moon.x,moon.y,moonRadius*7.2);
-        halo.addColorStop(0,'rgba(199,219,255,'+(moonIntensity*.30)+')');
-        halo.addColorStop(.18,'rgba(158,190,245,'+(moonIntensity*.16)+')');
-        halo.addColorStop(.46,'rgba(107,147,213,'+(moonIntensity*.065)+')');
-        halo.addColorStop(1,'rgba(83,122,194,0)');
-        context.fillStyle=halo;
-        context.fillRect(moon.x-moonRadius*7.2,moon.y-moonRadius*7.2,moonRadius*14.4,moonRadius*14.4);
-
-        const phase=Math.max(.5,Math.min(1,Number(profile.moonPhase)||.84));
-        const phaseDarkness=Math.max(0,Math.min(.68,(1-phase)*1.8));
-        context.save();
-        context.beginPath();context.arc(moon.x,moon.y,moonRadius,0,Math.PI*2);context.clip();
-        const lunar=context.createRadialGradient(moon.x-moonRadius*.38,moon.y-moonRadius*.43,moonRadius*.08,moon.x,moon.y,moonRadius*1.3);
-        lunar.addColorStop(0,'#F1F3F7');lunar.addColorStop(.48,'#DCE2EC');lunar.addColorStop(.82,'#B9C5D5');lunar.addColorStop(1,'#8494AA');
-        context.fillStyle=lunar;context.fillRect(moon.x-moonRadius,moon.y-moonRadius,moonRadius*2,moonRadius*2);
-        context.fillStyle='rgba(73,88,111,0.19)';
-        context.beginPath();context.ellipse(moon.x-moonRadius*.22,moon.y-moonRadius*.10,moonRadius*.34,moonRadius*.22,-.45,0,Math.PI*2);context.fill();
-        context.beginPath();context.ellipse(moon.x+moonRadius*.25,moon.y+moonRadius*.31,moonRadius*.23,moonRadius*.14,.35,0,Math.PI*2);context.fill();
-        for(let i=0;i<58;i++){
-          const angle=random()*Math.PI*2,distance=Math.sqrt(random())*moonRadius*.83;
-          const x=moon.x+Math.cos(angle)*distance,y=moon.y+Math.sin(angle)*distance;
-          const r=1.0+random()*3.2;
-          context.beginPath();context.ellipse(x,y,r,r*(.65+random()*.4),random()*Math.PI,0,Math.PI*2);
-          context.fillStyle='rgba(72,86,108,'+(0.08+random()*.14)+')';context.fill();
-          context.strokeStyle='rgba(249,251,255,'+(0.08+random()*.13)+')';context.lineWidth=.7;context.stroke();
-        }
-        const terminator=context.createLinearGradient(moon.x-moonRadius,moon.y,moon.x+moonRadius,moon.y);
-        terminator.addColorStop(0,'rgba(7,15,30,'+phaseDarkness.toFixed(3)+')');
-        terminator.addColorStop(.22,'rgba(7,15,30,'+(phaseDarkness*.35).toFixed(3)+')');
-        terminator.addColorStop(.58,'rgba(7,15,30,0)');
-        terminator.addColorStop(1,'rgba(7,15,30,0)');
-        context.fillStyle=terminator;context.fillRect(moon.x-moonRadius,moon.y-moonRadius,moonRadius*2,moonRadius*2);
-        context.restore();
-      }
     }else{
       const sun=directionUv(
         Number.isFinite(Number(profile.skySunX))?Number(profile.skySunX):-Number(profile.lightX||0),
@@ -3669,8 +3789,9 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       environmentIntensity:0.8,sunX:0.72,sunY:0.29,sunRadius:17,sunGlow:0.55,skySunX:0.35,skySunY:0.89,skySunZ:0.28,moonDirectionX:0.38,moonDirectionY:0.88,moonDirectionZ:0.27,moonIntensity:0.78,skyTurbidity:2.2,skyRayleigh:2.15,skyMieCoefficient:0.0048,skyMieDirectionalG:0.82,skyExposure:0.45,twilightStrength:0,atmosphereSunColor:'#FFF4DF',fogDensity:0.0018,fogHeightFalloff:0.018,fogBaseHeight:0,fogAnisotropy:0.42
     };
     activeEnvironmentPreset=String(profile.name||'day');
+    configureMoonSky(T,profile);
     const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
-    const cloudTierActive=qualityPreset!=='auto'||adaptiveQualityLevel>=1;
+    const cloudTierActive=!adaptiveQualityEnabled||adaptiveQualityLevel>=1;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
     const signature=String(profile.name||'day');
