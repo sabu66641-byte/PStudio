@@ -84,7 +84,7 @@ test('default environment configures fog, hemisphere light, sun light and existi
   assert.match(renderer, /hemisphereLight\.color\.set\(profile\.hemisphereSky\)/);
   assert.match(renderer, /hemisphereLight\.groundColor\.set\(profile\.hemisphereGround\)/);
   assert.match(renderer, /light\.castShadow=true/);
-  assert.match(renderer, /renderer\.shadowMap\.type=profile\.shadowMode==='vsm'\?window\.THREE\.VSMShadowMap:window\.THREE\.PCFSoftShadowMap/);
+  assert.match(renderer,/renderer\\.shadowMap\\.type=profile\\.shadowMode==='vsm'&&effectsEnabled\\?window\\.THREE\\.VSMShadowMap:window\\.THREE\\.PCFSoftShadowMap/);
   assert.doesNotMatch(renderer, /scene\.fog=null/);
 });
 
@@ -325,7 +325,8 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
   assert.match(renderer,/activeEnvironmentPreset='day'/);
   assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
-  assert.match(renderer,/volumetricCloudsEnabled=!!\(profile\.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio'\)/);
+  assert.match(renderer,/cloudTierActive=!adaptiveQualityEnabled\\|\\|adaptiveQualityLevel>=1/);
+  assert.match(renderer,/volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!\\(cloudTier\\?\\.clouds&&cloudTierActive&&volumetricCloudPass\\)/);
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.equal(presets.getPreset('studio').name,'studio');
