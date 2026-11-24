@@ -616,7 +616,7 @@
         'vec3 direct=uSunColor*(.38+forwardScatter*1.25)*lightTransmittance;',
         'float silverLining=pow(clamp(1.0-lightTransmittance,0.0,1.0),.38)*.22;',
         'float cloudMultipleScatter=(1.0-lightTransmittance)*(.12+.10*pow(powder,.6));',
-        'vec3 cloudLight=ambient*(.58+.22*pow(1.0-pow(1.0-pow(1.0-density,2.0),2.0),2.0)+cloudMultipleScatter)+direct*pow(powder,.72)+uSunColor*silverLining;'
+        'vec3 cloudLight=ambient*(.58+.22*pow(1.0-pow(1.0-pow(1.0-density,2.0),2.0),2.0)+cloudMultipleScatter)+direct*pow(powder,.72)+uSunColor*silverLining;',
         'scattering+=cloudLight*(alpha*transmittance);transmittance*=1.0-alpha;',
         '}',
         'vec3 result=source.rgb*transmittance+scattering*uAtmosphereStrength;',
