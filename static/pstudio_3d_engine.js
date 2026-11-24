@@ -20,6 +20,7 @@
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0;
   const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
+  let lastFrameRenderStats={calls:0,triangles:0,points:0,geometries:0,textures:0};
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
@@ -737,8 +738,16 @@
     if(!list.length)return null;const sorted=list.slice().sort((a,b)=>a-b);
     return sorted[Math.max(0,Math.min(sorted.length-1,Math.ceil((p/100)*sorted.length)-1))];
   }
+  function captureFrameRenderStats(){
+    const info=renderer?.info,render=info?.render||{},memory=info?.memory||{};
+    lastFrameRenderStats={
+      calls:Number(render.calls)||0,triangles:Number(render.triangles)||0,points:Number(render.points)||0,
+      geometries:Number(memory.geometries)||0,textures:Number(memory.textures)||0
+    };
+    return lastFrameRenderStats;
+  }
   function performanceStatsSnapshot(){
-    const memory=memorySnapshot(),render=renderer?.info?.render||{};
+    const memory=memorySnapshot(),render=lastFrameRenderStats;
     const now=window.performance?.now?.()??Date.now();
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     const meanInterval=metricMean(frameIntervalSamples);
@@ -870,9 +879,10 @@
       }
     }finally{
       restoreStaticSky(hiddenStaticSky);
-      serviceDynamicRadianceCache(window.performance?.now?.()??Date.now());
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
+      captureFrameRenderStats();
+      // Close the main-scene timer before the off-screen CubeCamera GI capture.
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
       sampleMemoryPressure();
@@ -880,6 +890,8 @@
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
+      // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
+      try{serviceDynamicRadianceCache(now);}catch(error){dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);}
     }
   }
 
@@ -5159,12 +5171,12 @@ void main(){
     },
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
-      calls:renderer.info?.render?.calls||0,
+      calls:lastFrameRenderStats.calls,
       contactShadows:{enabled:contactShadowsEnabled,available:!!contactShadowPass,steps:contactShadowPass?.uniforms?.uSteps?.value||0},
-      triangles:renderer.info?.render?.triangles||0,
-      points:renderer.info?.render?.points||0,
-      geometries:renderer.info?.memory?.geometries||0,
-      textures:renderer.info?.memory?.textures||0,
+      triangles:lastFrameRenderStats.triangles,
+      points:lastFrameRenderStats.points,
+      geometries:lastFrameRenderStats.geometries,
+      textures:lastFrameRenderStats.textures,
       instancedBatches:instancedBatches.size,
       clusteredLighting:{enabled:clusteredLightingEnabled,active:clusteredLightingActive,available:!!clusteredLightingResources,pointLights:clusteredLightingResources?.lightCount||0,clusteredPointLights:clusteredLightSet.size,nativeFallbackPointLights:[...dynamicLights.values()].filter(light=>light.isPointLight&&light.visible).length,updatedClusters:clusteredLightingUpdatedClusters,grid:[CLUSTER_GRID_X,CLUSTER_GRID_Y,CLUSTER_GRID_Z],maxLightsPerCluster:CLUSTER_MAX_PER_CELL,mode:'cpu-cluster-assignment-gpu-brdf'},
       virtualTexturing:{textures:virtualTextures.size,queuedPages:virtualTextureQueue.length,residentPages:virtualTexturePageCache.size,requestedPages:virtualTextureRequests,uploadedPages:virtualTextureTileUploads,atlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0),atlasCount:virtualTextureAtlases.size},

@@ -1062,3 +1062,22 @@ test('dynamic render resolution only reacts to fresh GPU timer samples and stays
   assert.match(renderer,/DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900/);
   assert.match(renderer,/applyEffectiveRenderScale\(\)/);
 });
+
+test('dynamic GI probe captures are excluded from main render timings and per-frame counters',()=>{
+  assert.ok(renderer.includes('function captureFrameRenderStats()'));
+  assert.ok(renderer.includes('const memory=memorySnapshot(),render=lastFrameRenderStats;'));
+  const start=renderer.indexOf('  function drawFrame(){');
+  const end=renderer.indexOf('  function createGpuParticleSystem(',start);
+  assert.ok(start>=0&&end>start,'drawFrame boundaries');
+  const frame=renderer.slice(start,end);
+  const renderTimingEnd=frame.indexOf('endGpuTimerQuery(gpuQuery)');
+  const renderStatsCapture=frame.indexOf('captureFrameRenderStats()');
+  const submitTimeCapture=frame.indexOf('lastRenderDurationMs=Math.max');
+  const performanceUpdate=frame.indexOf('updatePerformanceMonitor(now)');
+  const giCapture=frame.indexOf('serviceDynamicRadianceCache(now)');
+  assert.ok(submitTimeCapture>=0&&renderStatsCapture>submitTimeCapture,'submit time and frame counters are captured before GI work');
+  assert.ok(renderTimingEnd>renderStatsCapture&&giCapture>renderTimingEnd,'GPU timer query closes before GI probe capture');
+  assert.ok(performanceUpdate>renderTimingEnd&&giCapture>performanceUpdate,'performance snapshot is published before GI probe capture');
+  assert.ok(renderer.includes('calls:lastFrameRenderStats.calls'));
+  assert.ok(renderer.includes('triangles:lastFrameRenderStats.triangles'));
+});
