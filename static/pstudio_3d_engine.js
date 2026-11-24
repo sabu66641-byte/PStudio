@@ -4033,7 +4033,12 @@ void main(){
       fogDensity:Number.isFinite(Number(profile.fogDensity))?Number(profile.fogDensity):0.0018,
       fogHeightFalloff:Number.isFinite(Number(profile.fogHeightFalloff))?Number(profile.fogHeightFalloff):0.018,
       fogBaseHeight:Number.isFinite(Number(profile.fogBaseHeight))?Number(profile.fogBaseHeight):0,
-      fogAnisotropy:Number.isFinite(Number(profile.fogAnisotropy))?Number(profile.fogAnisotropy):0.42
+      fogAnisotropy:Number.isFinite(Number(profile.fogAnisotropy))?Number(profile.fogAnisotropy):0.42,
+      cloudDensity:Number.isFinite(Number(profile.cloudDensity))?Number(profile.cloudDensity):0.78,
+      cloudCoverage:Number.isFinite(Number(profile.cloudCoverage))?Number(profile.cloudCoverage):0.48,
+      cloudDetail:Number.isFinite(Number(profile.cloudDetail))?Number(profile.cloudDetail):0.58,
+      cloudBase:Number.isFinite(Number(profile.cloudBase))?Number(profile.cloudBase):54,
+      cloudTop:Number.isFinite(Number(profile.cloudTop))?Number(profile.cloudTop):108
     });
     return profile;
   }
