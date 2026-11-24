@@ -918,4 +918,16 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
   sandbox.window.PStudioEngine.isRunning=()=>true;
   assert.equal(clamp(-100),-1.35,'game camera lower limit remains unchanged');
   assert.equal(clamp(100),1.35,'game camera upper limit remains unchanged');
+  const updateStart=renderer.indexOf('function updateCamera(');
+  const updateEnd=renderer.indexOf('function refreshSelectionOutline',updateStart);
+  assert.ok(updateStart>=0&&updateEnd>updateStart,'camera update block is present');
+  const updateBlock=renderer.slice(updateStart,updateEnd);
+  for(const token of [
+    'if(window.PStudioEngine?.isRunning?.())',
+    'const baseElevation=Math.atan2(offset.y',
+    'const azimuth=Math.atan2(offset.x,offset.z)',
+    'const elevation=baseElevation-orbitPitch',
+    'offset.set(Math.sin(azimuth)*horizontal,Math.sin(elevation)*radius',
+    'offset.applyAxisAngle(right,orbitPitch)'
+  ])assert.ok(updateBlock.includes(token),token);
 });
