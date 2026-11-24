@@ -228,6 +228,7 @@
           if(node.nodeType!==Node.ELEMENT_NODE)continue;
           const removed=[...(node.matches?.('select')?[node]:[]),...(node.querySelectorAll?.('select')||[])];
           for(const select of removed){
+            if(select.isConnected)continue;
             const state=select.__pstudioSelectState;
             if(!state)continue;
             if(active===state)close(state,false);
