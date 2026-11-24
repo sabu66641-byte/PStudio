@@ -6,7 +6,8 @@ test('Three.js r187 core, TSL bridge, renderer addons and BVH runtime load toget
   const THREE = await import('three');
   assert.equal(THREE.REVISION, '187');
   assert.equal(typeof THREE.WebGLRenderer, 'function');
-  assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'function');
+  // r187 has no WebGLRenderer.setNodesHandler compatibility API. TSL is tested
+  // on its dedicated WebGPU path and must not be silently enabled on WebGL.
 
   const addonPaths = [
     'three/addons/loaders/GLTFLoader.js',
@@ -31,20 +32,14 @@ test('Three.js r187 core, TSL bridge, renderer addons and BVH runtime load toget
     'three/addons/objects/Reflector.js',
     'three/addons/environments/RoomEnvironment.js',
     'three/addons/objects/Sky.js',
-    'three/addons/tsl/WebGLNodesHandler.js'
   ];
 
   const addonModules = await Promise.all(addonPaths.map((specifier) => import(specifier)));
-  const [{ GLTFLoader }, { WebGLNodesHandler }] = [
-    addonModules[0],
-    addonModules[22]
-  ];
+  const { GLTFLoader } = addonModules[0];
   assert.equal(typeof GLTFLoader, 'function');
-  assert.equal(typeof WebGLNodesHandler, 'function');
-  assert.doesNotThrow(() => new WebGLNodesHandler());
-
   const tsl = await import('three/tsl');
   assert.equal(typeof tsl.vec3, 'function');
+  assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'undefined');
 
   const webgpu = await import('three/webgpu');
   assert.equal(typeof webgpu.WebGPURenderer, 'function');
