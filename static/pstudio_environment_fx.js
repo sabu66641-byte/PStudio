@@ -628,7 +628,7 @@
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
       const base={mobile:8,balanced:14,high:30,ultra:40,cinematic:40}[String(preset)]||30;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=[.58,.78,1][level];
+      const factor=preset==='ultra'?[.8,.9,1][level]:[.58,.78,1][level];
       const steps=Math.max(8,Math.min(40,Math.round(base*factor)));
       const lightSteps=preset==='high'||preset==='ultra'||preset==='cinematic'?2:1;
       pass.uniforms.uCloudSteps.value=steps;
@@ -725,7 +725,8 @@
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
       const base={mobile:5,balanced:7,high:12,ultra:18}[String(preset)]||12;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const steps=Math.max(4,Math.min(24,Math.round(base*[.6,.82,1][level])));
+      const factor=preset==='ultra'?[.78,.9,1][level]:[.6,.82,1][level];
+      const steps=Math.max(4,Math.min(24,Math.round(base*factor)));
       pass.uniforms.uSteps.value=steps;
       pass.userData=pass.userData||{};
       pass.userData.pstudioContactShadowQuality={preset,adaptiveLevel:level,steps};
@@ -800,7 +801,8 @@
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
       const base={mobile:8,balanced:10,high:16,ultra:24}[String(preset)]||16;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const steps=Math.max(6,Math.min(24,Math.round(base*[.62,.82,1][level])));
+      const factor=preset==='ultra'?[.83,.92,1][level]:[.62,.82,1][level];
+      const steps=Math.max(6,Math.min(24,Math.round(base*factor)));
       pass.uniforms.uFogSteps.value=steps;
       pass.userData=pass.userData||{};
       pass.userData.pstudioFogQuality={preset,adaptiveLevel:level,steps};
