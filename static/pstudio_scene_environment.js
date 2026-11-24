@@ -70,7 +70,7 @@
       sunRadius: 12,
       sunGlow: 0.56,
       sunIntensity: 1.24,
-      sunAngularRadius: 0.52,
+      sunAngularRadius: 0.9,
       sunColor: '#FFAA70',
       cloudDensity: 0.98,
       cloudCoverage: 0.62,
