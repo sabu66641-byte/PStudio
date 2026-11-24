@@ -312,19 +312,20 @@ test('day and dusk panoramas use a spherical photosphere, richer cloud layers an
 });
 
 test('scene viewport grid, axes and origin overlays are independently toggleable and excluded from play/reflections',()=>{
-  assert.match(renderer,/let editorOverlayVisibility=\{grid:true,axes:false,origin:true\}/);
-  assert.match(renderer,/function readEditorOverlayVisibility\(\)/);
-  assert.match(renderer,/function setEditorOverlayVisibility\(name,visible\)/);
-  assert.match(renderer,/function getEditorOverlayVisibility\(\)/);
-  assert.match(renderer,/new T\.AxesHelper\(3\.2\)/);
-  assert.match(renderer,/new T\.SphereGeometry\(0\.075,12,8\)/);
-  assert.match(renderer,/gridGroup\.visible=editorOverlayVisibility\.grid&&!window\.PStudioEngine\?\.isRunning\?\. \(\)/);
-  assert.match(renderer,/editorHelperGroup\.visible=!window\.PStudioEngine\?\.isRunning\?\. \(\)/);
-  assert.match(renderer,/hide\(gridGroup\);hide\(editorHelperGroup\);hide\(selectionGroup\)/);
-  assert.match(html,/data-scene-overlay="grid"/);
-  assert.match(html,/data-scene-overlay="axes"/);
-  assert.match(html,/data-scene-overlay="origin"/);
-  assert.match(html,/function toggleSceneOverlay\(name\)/);
+  for(const token of [
+    'let editorOverlayVisibility={grid:true,axes:false,origin:true}',
+    'function readEditorOverlayVisibility()',
+    'function setEditorOverlayVisibility(name,visible)',
+    'function getEditorOverlayVisibility()',
+    'new T.AxesHelper(3.2)',
+    'new T.SphereGeometry(0.075,12,8)',
+    'editorAxesHelper.visible=editorOverlayVisibility.axes',
+    'editorOriginMarker.visible=editorOverlayVisibility.origin',
+    'hide(gridGroup);hide(editorHelperGroup);hide(selectionGroup)'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('gridGroup.visible=editorOverlayVisibility.grid&&!window.PStudioEngine?.isRunning?.()'));
+  assert.ok(renderer.includes('editorHelperGroup.visible=!window.PStudioEngine?.isRunning?.()'));
+  for(const token of ['data-scene-overlay="grid"','data-scene-overlay="axes"','data-scene-overlay="origin"','function toggleSceneOverlay(name)'])assert.ok(html.includes(token),token);
 });
 
 test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
