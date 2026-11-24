@@ -229,8 +229,8 @@ test('night moon is a real spherical mesh with one-time surface texture creation
 });
 test('night moon sphere has finer surface detail, a larger apparent size and a real lunar aureole',()=>{
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
-  assert.match(renderer,/for\\(let i=0;i<280;i\\+\\+\\)/);
-  assert.match(renderer,/for\\(let i=0;i<900;i\\+\\+\\)/);
+  assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
+  assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
   assert.ok(renderer.includes("Math.tan(2.25*Math.PI/180)"));
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
@@ -341,11 +341,11 @@ test('physical-sky PMREM failure activates the procedural panorama as both visib
 
 
 test('night sky uses a more populated, brighter starfield while preserving the navy-blue palette',()=>{
-  assert.match(renderer,/const starBrightness=Math\\.max\\(\\.75,Math\\.min\\(1\\.8,Number\\(profile\\.starBrightness\\)\\|\\|1\\)\\)/);
-  assert.match(renderer,/for\\(let i=0;i<12000;i\\+\\+\\)/);
-  assert.match(renderer,/for\\(let i=0;i<2600;i\\+\\+\\)/);
-  assert.match(renderer,/\\.12\\+random\\(\\)\\*\\.55\\+band\\*\\.2/);
-  assert.match(renderer,/const alpha=\\(\\.045\\+random\\(\\)\\*\\.09\\)\\*starBrightness/);
+  assert.ok(renderer.includes("const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1))"));
+  assert.ok(renderer.includes("for(let i=0;i<12000;i++)"));
+  assert.ok(renderer.includes("for(let i=0;i<2600;i++)"));
+  assert.ok(renderer.includes("(.12+random()*.55+band*.2)"));
+  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness;"));
   assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
   assert.ok(renderer.includes("nightPrimaryStars:name==='night'?12000:0"));
 });
