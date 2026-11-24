@@ -3060,6 +3060,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         }
       }
     }else{
+      // Sparse or legacy probe collections retain bounded inverse-distance interpolation.
       const near=volume.map((item,index)=>({item,index,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));
       let sum=0;for(const entry of near){entry.weight=1/Math.max(0.25,entry.d);sum+=entry.weight;}
       for(let i=0;i<9;i++){
