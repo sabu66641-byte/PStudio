@@ -32,16 +32,15 @@ test('the saved locale is restored and Japanese is initialized on first visit', 
 });
 
 test('Korean locale includes workspace labels, runtime messages and page metadata', () => {
-  assert.match(html,/ko:\\s*"한국어"/);
-  assert.match(html,/"ko":\\s*\\{/);
+  assert.match(html,/ko:\s*"한국어"/);
+  assert.match(html,/"ko":\s*\{/);
   for (const label of ['"PROJECT":"프로젝트"','"INSPECTOR":"인스펙터"','"ULTRA QUALITY":"최고 화질"','"Run":"실행"']) {
     assert.ok(html.includes(label),label);
   }
-  assert.match(html,/ko:\\s*"PStudio — ps 개발 환경"/);
-  assert.match(html,/ko:\\s*\\{\\s*empty:/);
-  assert.match(html,/language === "zh" \\? "zh-Hans" : language/);
+  assert.match(html,/ko:\s*"PStudio — ps 개발 환경"/);
+  assert.match(html,/ko:\s*\{\s*empty:/);
+  assert.match(html,/language === "zh" \? "zh-Hans" : language/);
 });
-
 test('all six locales provide the three PS overview paragraphs', () => {
   const about = sectionBetween('const aboutTranslations =', 'const runtimeMessages');
   for (const locale of locales) {
