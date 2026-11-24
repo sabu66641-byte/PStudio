@@ -895,7 +895,7 @@ test('manual Ultra keeps the full premium effect stack on phones while adapting 
   assert.match(renderer,/if\(!adaptiveQualityEnabled\|\|!renderer\)return/);
   assert.match(renderer,/const selected=resolveQualityPreset\(qualityPreset\),base=QUALITY_PROFILES\[selected\]/);
   assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[1536,2048,3072\]/);
-  assert.match(renderer,/adaptiveUltraTouchMode\?\[1536,2048,3072\]\[adaptiveQualityLevel\]/);
+  assert.match(renderer,/const mapSize=resolveShadowMapSize\(shadowSizes\[adaptiveQualityLevel\]\)/);
   assert.match(renderer,/const scale=base\.pixelRatio\*\(selected==='ultra'\?\[0\.66,0\.78,0\.94\]\[adaptiveQualityLevel\]/);
   assert.match(renderer,/requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled/);
 });
@@ -967,10 +967,10 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-ultra-adaptive-viewport2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-night-dusk-ultra3'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-viewport-expand2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-ultra-quality2'));
-  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-sunset-polish2'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-night-dusk-ultra3'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-night-dusk-ultra3'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
