@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'templates', 'index.html'), 'utf8');
-const locales = ['ja', 'en', 'zh', 'es', 'fr'];
+const locales = ['ja', 'en', 'zh', 'es', 'fr', 'ko'];
 
 function sectionBetween(start, end) {
   const from = html.indexOf(start);
