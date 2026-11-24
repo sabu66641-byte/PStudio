@@ -692,7 +692,7 @@
         'float distanceFade=1.0-smoothstep(uFadeStart,uFadeEnd,viewDistance);',
         'if(distanceFade<=.001){gl_FragColor=source;return;}',
         'vec3 lightDirection=normalize(mat3(uViewMatrix)*normalize(uLightDirectionWorld));',
-        'float steps=clamp(uSteps,4.0,24.0);',
+        'float steps=clamp(uSteps,4.0,32.0);',
         'float stepLength=uMaxDistance/steps;',
         'float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
         'float occlusion=0.0;',
