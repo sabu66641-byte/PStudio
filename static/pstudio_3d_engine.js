@@ -4346,6 +4346,17 @@ void main(){
           {radius:height*.148,stops:[[0,'rgba(107,147,211,0.038)'],[.52,'rgba(68,104,171,0.022)'],[1,'rgba(35,57,111,0)']]}
         ];
         context.save();context.globalCompositeOperation='screen';
+        // Preserve the azimuth-aligned lunar airglow that joins the moon to the scene horizon.
+        const horizonRadiusX=width*.19,horizonRadiusY=height*.052;
+        drawWrappedX(moonUv.x,horizonRadiusX,wrappedX=>{
+          context.save();context.translate(wrappedX,height*.505);context.scale(1,horizonRadiusY/horizonRadiusX);
+          const lunarHorizon=context.createRadialGradient(0,0,0,0,0,horizonRadiusX);
+          lunarHorizon.addColorStop(0,'rgba(137,174,229,'+(0.052*moonGlow)+')');
+          lunarHorizon.addColorStop(.38,'rgba(91,132,197,'+(0.028*moonGlow)+')');
+          lunarHorizon.addColorStop(1,'rgba(35,61,108,0)');
+          context.fillStyle=lunarHorizon;context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
+          context.restore();
+        });
         context.globalAlpha=Math.min(1,moonGlow);
         for(const layer of glowLayers){
           drawWrappedX(moonUv.x,layer.radius,wrappedX=>{
