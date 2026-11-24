@@ -48,7 +48,7 @@ test('prepared model visibility diagnostics distinguish loading success from act
 });
 
 test('camera zoom is wide-range, pinch-out zooms in, and distant models expand the far clip plane',()=>{
-  assert.match(renderer,/CAMERA_ZOOM_MIN=0\.035,CAMERA_ZOOM_MAX=128/);
+  assert.match(renderer,/CAMERA_ZOOM_MIN=0\.012,CAMERA_ZOOM_MAX=256/);
   assert.match(renderer,/pinchDistance\/Math\.max\(1,distance\)/);
   assert.match(renderer,/adjustZoom:adjustCameraZoom/);
   assert.match(renderer,/requiredFar=Math\.max\(1600,Math\.min\(1000000,desiredDistance\+worldRenderConfig\.maxDrawDistance\+64\)\)/);
