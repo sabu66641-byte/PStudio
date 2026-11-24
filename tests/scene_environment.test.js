@@ -283,7 +283,9 @@ test('day dusk night and studio define physically distinct sun elevations and at
     assert.ok(Math.abs(profile.skySunZ+profile.lightZ)<.02,'visible sun and direct light Z must align: '+profile.name);
   }
   assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
-  assert.ok(dusk.sunIntensity>1,'dusk should retain a visible warm solar photosphere');
+  assert.ok(dusk.sunIntensity>1.2,'dusk should retain a bright warm solar photosphere');
+  assert.ok(dusk.sunAngularRadius>=2,'the dusk photosphere must be clearly visible against the halo');
+  assert.match(renderer,/const glowRadius=sunRadius\*\(dusk\?13:10\)/,'dusk glow should not overwhelm the solar disc');
   assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
   assert.equal(night.sunIntensity,0);
   assert.equal(day.moonIntensity,0);
