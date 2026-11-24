@@ -4173,7 +4173,7 @@ void main(){
       };
       const clamp01=value=>Math.max(0,Math.min(1,value));
 
-      // Render the nebula at half resolution, then upscale before the texture mipmaps are built.
+      // Render the nebula at native panorama resolution; a fifth high-frequency octave restores fine filament detail before mipmap generation.
       const galaxyCanvas=document.createElement('canvas');
       const galaxyWidth=width,galaxyHeight=height;
       galaxyCanvas.width=galaxyWidth;galaxyCanvas.height=galaxyHeight;
