@@ -3425,32 +3425,32 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
 
   function createMoonSurfaceTexture(T){
     const canvas=document.createElement('canvas');
-    canvas.width=1024;canvas.height=512;
+    canvas.width=2048;canvas.height=1024;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for the lunar surface texture.');
     let seed=0x4d4f4f4e;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
     const image=context.createImageData(canvas.width,canvas.height);
     for(let i=0;i<image.data.length;i+=4){
-      const noise=(random()-.5)*24;
-      const tone=174+noise;
-      image.data[i]=tone*.96;image.data[i+1]=tone*.99;image.data[i+2]=Math.min(255,tone+12);image.data[i+3]=255;
+      const noise=(random()-.5)*14;
+      const tone=190+noise;
+      image.data[i]=tone*.91;image.data[i+1]=tone*.97;image.data[i+2]=Math.min(255,tone+25);image.data[i+3]=255;
     }
     context.putImageData(image,0,0);
-    for(let i=0;i<280;i++){
-      const x=random()*canvas.width,y=28+random()*(canvas.height-56);
-      const radius=4+Math.pow(random(),2)*26;
+    for(let i=0;i<320;i++){
+      const x=random()*canvas.width,y=48+random()*(canvas.height-96);
+      const radius=6+Math.pow(random(),2)*34;
       const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
-      shadow.addColorStop(0,'rgba(57,69,88,0.12)');
-      shadow.addColorStop(.68,'rgba(70,82,101,0.19)');
-      shadow.addColorStop(.9,'rgba(238,243,250,0.18)');
-      shadow.addColorStop(1,'rgba(244,247,252,0.02)');
+      shadow.addColorStop(0,'rgba(48,68,101,0.075)');
+      shadow.addColorStop(.68,'rgba(67,88,125,0.13)');
+      shadow.addColorStop(.9,'rgba(225,237,255,0.15)');
+      shadow.addColorStop(1,'rgba(235,243,255,0.025)');
       context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
     }
     context.save();
-    for(let i=0;i<900;i++){
-      const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.55+random()*3.2;
-      context.fillStyle='rgba(55,67,86,'+(0.025+random()*.055).toFixed(3)+')';
+    for(let i=0;i<1200;i++){
+      const x=random()*canvas.width,y=36+random()*(canvas.height-72),radius=.7+random()*3.4;
+      context.fillStyle='rgba(54,75,111,'+(0.018+random()*.042).toFixed(3)+')';
       context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
     }
     context.restore();
@@ -3478,9 +3478,11 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         },
         vertexShader:`varying vec2 vMoonUv;
 varying vec3 vMoonNormalWorld;
+varying vec3 vMoonWorldPosition;
 void main(){
   vMoonUv=uv;
   vMoonNormalWorld=normalize(mat3(modelMatrix)*normal);
+  vMoonWorldPosition=(modelMatrix*vec4(position,1.0)).xyz;
   gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);
 }`,
         fragmentShader:`uniform sampler2D uMoonMap;
@@ -3489,17 +3491,22 @@ uniform float uMoonIntensity;
 uniform float uMoonGlare;
 varying vec2 vMoonUv;
 varying vec3 vMoonNormalWorld;
+varying vec3 vMoonWorldPosition;
 void main(){
   vec3 normal=normalize(vMoonNormalWorld);
   vec3 lightDirection=normalize(uLightDirectionWorld);
   float ndl=dot(normal,lightDirection);
-  float illumination=0.11+max(ndl,0.0)*1.28;
-  float terminator=smoothstep(-0.12,0.08,ndl);
+  float illumination=0.16+max(ndl,0.0)*1.08;
+  float terminator=smoothstep(-0.16,0.06,ndl);
   vec3 lunar=texture2D(uMoonMap,vMoonUv).rgb;
-  vec3 color=lunar*illumination;
-  color*=mix(0.32,1.0,terminator);
+  vec3 coolLunar=vec3(lunar.r*0.90,lunar.g*0.97,min(1.0,lunar.b*1.10+0.035));
+  vec3 color=mix(lunar,coolLunar,0.78)*illumination;
+  color*=mix(0.40,1.0,terminator);
   color*=uMoonIntensity;
-  color+=vec3(0.34,0.46,0.68)*uMoonGlare*0.24;
+  vec3 viewDirection=normalize(cameraPosition-vMoonWorldPosition);
+  float coolRim=pow(1.0-max(dot(normal,viewDirection),0.0),2.2);
+  color+=vec3(0.16,0.28,0.48)*coolRim*0.12;
+  color+=vec3(0.40,0.57,0.82)*uMoonGlare*0.20;
   gl_FragColor=vec4(color,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -3842,9 +3849,9 @@ void main(){
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
       if(moonGlow>.001){
         const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.055+moonGlow*.07));
-        moonAura.addColorStop(0,'rgba(170,199,242,'+(0.15*moonGlow)+')');
-        moonAura.addColorStop(.2,'rgba(117,153,211,'+(0.105*moonGlow)+')');
-        moonAura.addColorStop(.58,'rgba(83,119,181,'+(0.045*moonGlow)+')');
+        moonAura.addColorStop(0,'rgba(190,218,255,'+(0.21*moonGlow)+')');
+        moonAura.addColorStop(.2,'rgba(137,177,238,'+(0.14*moonGlow)+')');
+        moonAura.addColorStop(.58,'rgba(93,137,205,'+(0.06*moonGlow)+')');
         moonAura.addColorStop(1,'rgba(42,66,112,0)');
         context.save();context.globalCompositeOperation='screen';
         context.fillStyle=moonAura;context.fillRect(moonUv.x-width*.08,moonUv.y-height*.1,width*.16,height*.2);
@@ -4000,6 +4007,22 @@ void main(){
         halo.addColorStop(1,'rgba(255,255,255,0)');
         context.fillStyle=halo;context.fillRect(wrappedX-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
       });
+      if(dusk){
+        // Keep a small, high-luminance solar disc in the panorama as a robust visible fallback;
+        // the matching 3D photosphere adds surface detail when its mesh is in view.
+        drawWrappedX(sun.x,14,wrappedX=>{
+          const discRadius=6.5;
+          const disc=context.createRadialGradient(wrappedX,sun.y,0,wrappedX,sun.y,discRadius*2.8);
+          disc.addColorStop(0,'rgba(255,246,224,0.98)');
+          disc.addColorStop(.34,'rgba(255,207,157,0.96)');
+          disc.addColorStop(.68,'rgba(255,154,113,0.42)');
+          disc.addColorStop(1,'rgba(255,132,105,0)');
+          context.save();context.globalCompositeOperation='screen';
+          context.fillStyle=disc;context.beginPath();context.arc(wrappedX,sun.y,discRadius*2.8,0,Math.PI*2);context.fill();
+          context.restore();
+          context.fillStyle='rgba(255,239,211,0.96)';context.beginPath();context.arc(wrappedX,sun.y,discRadius*.46,0,Math.PI*2);context.fill();
+        });
+      }
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
     }
 
