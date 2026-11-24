@@ -34,7 +34,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Install pinned Three.js runtime dependencies for renderer smoke tests
-        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund three@0.188.0 three-mesh-bvh@0.9.18
+        run: npm install --package-lock=false --ignore-scripts --no-audit --no-fund
 
       - name: Run Python regression tests (including C++17 compile tests)
         run: python -m unittest discover -s tests -p "test_*.py" -v
