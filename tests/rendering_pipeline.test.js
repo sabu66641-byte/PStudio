@@ -133,7 +133,7 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
   assert.ok(shader.includes("pstudio-planar-mirror-water-v2"));
   assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
-  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity * (0.985 + 0.015 * pStudioMirrorFresnel)"));
+  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity, 0.0, 1.0) * pStudioMirrorInside"));
   assert.ok(renderer.includes("reflectivity:1.0"));
   assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
   assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
