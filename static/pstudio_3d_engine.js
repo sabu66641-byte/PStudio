@@ -724,8 +724,90 @@
       }
     }
   }
+  function pushMetricSample(list,value){
+    const sample=Number(value);
+    if(!Number.isFinite(sample)||sample<0)return;
+    list.push(sample);if(list.length>RENDER_METRIC_HISTORY)list.shift();
+  }
+  function metricMean(list){return list.length?list.reduce((sum,value)=>sum+value,0)/list.length:null;}
+  function metricPercentile(list,p){
+    if(!list.length)return null;const sorted=list.slice().sort((a,b)=>a-b);
+    return sorted[Math.max(0,Math.min(sorted.length-1,Math.ceil((p/100)*sorted.length)-1))];
+  }
+  function performanceStatsSnapshot(){
+    const memory=memorySnapshot(),render=renderer?.info?.render||{};
+    const now=window.performance?.now?.()??Date.now();
+    const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    const meanInterval=metricMean(frameIntervalSamples);
+    return{
+      fps:meanInterval&&meanInterval>0?Number((1000/meanInterval).toFixed(1)):null,
+      frameIntervalMs:lastFrameIntervalMs?Number(lastFrameIntervalMs.toFixed(2)):null,
+      frameP95Ms:metricPercentile(frameIntervalSamples,95),
+      cpuRenderSubmitMs:Number(lastRenderDurationMs.toFixed(2)),
+      cpuRenderP95Ms:metricPercentile(cpuRenderSamples,95),
+      gpuRenderMs:gpuFresh?Number(lastGpuRenderDurationMs.toFixed(2)):null,
+      gpuRenderP95Ms:gpuFresh?metricPercentile(gpuRenderSamples,95):null,
+      gpuFrameBudgetPercent:gpuFresh?Number((lastGpuRenderDurationMs/16.67*100).toFixed(1)):null,
+      timingSource:gpuFresh?'gpu-timer-query':'cpu-render-submission',
+      gpuTimerQuerySupported:!!gpuTimerExtension,
+      drawCalls:Number(render.calls)||0,triangles:Number(render.triangles)||0,points:Number(render.points)||0,
+      geometries:Number(renderer?.info?.memory?.geometries)||0,
+      textures:Number(renderer?.info?.memory?.textures)||0,
+      estimatedGpuBytes:memory.estimatedGpuBytes,gpuBudgetBytes:memory.gpuBudgetBytes,
+      gpuPressure:memory.gpuPressure,jsHeapUsedBytes:memory.usedJSHeapBytes,
+      jsHeapLimitBytes:memory.jsHeapLimitBytes,
+      quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
+      adaptiveLevel:adaptiveQualityLevel,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),
+      renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
+      note:'GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percent is GPU render time divided by 16.67 ms, not total GPU utilization.'
+    };
+  }
+  function formatMetricBytes(bytes){
+    const value=Number(bytes);if(!Number.isFinite(value)||value<0)return '—';
+    const units=['B','KB','MB','GB'];let amount=value,index=0;
+    while(amount>=1024&&index<units.length-1){amount/=1024;index++;}
+    return amount.toFixed(index===0?0:1)+' '+units[index];
+  }
+  function updatePerformanceMonitor(now=window.performance?.now?.()??Date.now(),force=false){
+    if(!performanceMonitorEnabled||(!force&&now-lastPerformanceEmitAt<500))return;
+    lastPerformanceEmitAt=now;
+    const stats=performanceStatsSnapshot(),panel=document.getElementById('render-stats-overlay');
+    const gpu=stats.gpuRenderMs===null?'unavailable':stats.gpuRenderMs.toFixed(2)+' ms';
+    const gpuBudget=stats.gpuFrameBudgetPercent===null?'—':stats.gpuFrameBudgetPercent.toFixed(0)+'% of 16.67 ms';
+    const heap=stats.jsHeapUsedBytes===null?'unavailable':formatMetricBytes(stats.jsHeapUsedBytes);
+    const gpuMemory=formatMetricBytes(stats.estimatedGpuBytes)+' / '+formatMetricBytes(stats.gpuBudgetBytes);
+    const rows=[
+      'PSTUDIO PERFORMANCE',
+      'FPS: '+(stats.fps===null?'—':stats.fps.toFixed(1))+'  |  Frame: '+(stats.frameIntervalMs===null?'—':stats.frameIntervalMs.toFixed(2)+' ms'),
+      'Frame P95: '+(stats.frameP95Ms===null?'—':stats.frameP95Ms.toFixed(2)+' ms'),
+      'CPU render submit: '+stats.cpuRenderSubmitMs.toFixed(2)+' ms',
+      'GPU render: '+gpu+'  ('+gpuBudget+')',
+      'Draw calls: '+stats.drawCalls+'  |  Triangles: '+stats.triangles.toLocaleString(),
+      'Geometry: '+stats.geometries+'  |  Textures: '+stats.textures,
+      'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
+      'Quality: '+stats.quality.toUpperCase()+'  |  Scale: '+Math.round(stats.dynamicResolutionScale*100)+'%  |  DPR: '+(stats.renderPixelRatio===null?'—':stats.renderPixelRatio.toFixed(2)),
+      'Timing: '+stats.timingSource+(stats.memorySafety?'  |  MEMORY SAFETY':''),
+      'GPU % is a frame-budget ratio, not device utilization.'
+    ];
+    if(panel)panel.textContent=rows.join(String.fromCharCode(10));
+    try{window.dispatchEvent(new CustomEvent('pstudio-render-stats',{detail:stats}));}catch(_){}
+  }
+  function togglePerformanceMonitor(){
+    performanceMonitorEnabled=!performanceMonitorEnabled;
+    const panel=document.getElementById('render-stats-overlay'),button=document.getElementById('render-stats-toggle');
+    if(panel)panel.hidden=!performanceMonitorEnabled;
+    if(button){button.setAttribute('aria-pressed',String(performanceMonitorEnabled));button.classList.toggle('active',performanceMonitorEnabled);}
+    if(performanceMonitorEnabled)updatePerformanceMonitor(window.performance?.now?.()??Date.now(),true);
+    return performanceMonitorEnabled;
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    const frameStarted=window.performance?.now?.()??Date.now();
+    if(lastDrawFrameStartedAt){
+      const interval=frameStarted-lastDrawFrameStartedAt;
+      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;pushMetricSample(frameIntervalSamples,interval);}
+    }
+    lastDrawFrameStartedAt=frameStarted;
     // Update the camera's world matrix before positioning camera-relative celestial meshes.
     camera.updateMatrixWorld(true);
     if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
@@ -784,12 +866,14 @@
     }finally{
       restoreStaticSky(hiddenStaticSky);
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+      pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
       endGpuTimerQuery(gpuQuery);
       const now=window.performance?.now?.()??Date.now();
       sampleMemoryPressure();
       const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
+      updatePerformanceMonitor(now);
     }
   }
 
