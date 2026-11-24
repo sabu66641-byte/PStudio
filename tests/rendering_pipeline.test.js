@@ -253,7 +253,7 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
 test('High, Maximum and Ultra enable the full atmospheric cloud rendering stack',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -1012,7 +1012,19 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
 
 test('Ultra preserves 2x output while avoiding oversized shadow maps and excessive AO sampling',()=>{
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
-  assert.ok(renderer.includes("const requestedShadow=qualityPreset==='ultra'?[2048,3072,4096][adaptiveQualityLevel]"));
-  assert.ok(renderer.includes("qualityPreset==='ultra'?[2048,3072,4096]"));
-  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[12,20,32][level]"));
+  assert.ok(renderer.includes("const requestedShadow=qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("qualityPreset==='ultra'?[3072,4096,8192]"));
+  assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][level]"));
+});
+
+
+test('High, Maximum and Ultra have progressively stronger independent ray-march and AO budgets',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.match(fx,/high:30,maximum:44,ultra:64/);
+  assert.match(fx,/high:16,maximum:26,ultra:32/);
+  assert.match(renderer,/high:\{pixelRatio:2,shadowSize:3072/);
+  assert.match(renderer,/maximum:\{pixelRatio:2\.1,shadowSize:4096/);
+  assert.match(renderer,/ultra:\{pixelRatio:4\.2,shadowSize:8192,shadowMode:'vsm'/);
+  assert.match(renderer,/selected==='ultra'\?\[16,28,40\]\[level\]:selected==='maximum'\?\[12,20,32\]\[level\]/);
+  assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'/);
 });
