@@ -442,21 +442,15 @@
     const T=window.THREE;
     const deviceGiB=deviceMemoryGiB();
     renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
-    let tslNodesEnabled=false;
-    try{
-      const TSLHandler=window.PStudioWebGLNodesHandler;
-      if(TSLHandler&&typeof renderer.setNodesHandler==='function'){
-        renderer.setNodesHandler(new TSLHandler());
-        tslNodesEnabled=true;
-      }
-    }catch(error){
-      console.warn('[PStudio] TSL node bridge could not be enabled; existing GLSL material paths remain active.',error);
-    }
+    const webgpuModuleAvailable=typeof window.PStudioWebGPURenderer==='function';
+    const tslModuleAvailable=!!window.PStudioTSL;
     window.PStudioRenderingRuntime=Object.freeze({
       threeRevision:String(T.REVISION||'unknown'),
       productionBackend:'webgl2',
       webgl2:renderer.capabilities?.isWebGL2===true,
-      tslNodesEnabled
+      webgpuModuleAvailable,
+      tslModuleAvailable,
+      tslNodesEnabled:false
     });
     try{
       const memoryGiB=deviceGiB;
