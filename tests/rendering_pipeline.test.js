@@ -882,7 +882,10 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
 
 test('Maximum remains distinct from Ultra, which requests true 2x output and device-aware sampling',()=>{
   assert.ok(renderer.includes("adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice"));
-  assert.ok(renderer.includes("adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode"));
+  assert.ok(renderer.includes("adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode||adaptiveUltraTouchMode"));
+  assert.ok(renderer.includes("adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice"));
+  assert.ok(renderer.includes("const adaptiveScale=adaptive?[.52,.74,1][level]:1"));
+  assert.ok(renderer.includes("adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':hasFrameInterval?'raf-frame-interval':'cpu-render-submission'"));
   assert.ok(renderer.includes("maximum:{pixelRatio:2.1,shadowSize:4096"));
   assert.ok(renderer.includes("ultra:{pixelRatio:4.2,shadowSize:8192"));
   assert.ok(renderer.includes("const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2"));
@@ -891,7 +894,7 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
   assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]"));
-  assert.ok(renderer.includes("const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]"));
+  assert.ok(renderer.includes("const shadowSizes=(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]"));
   assert.ok(renderer.includes("requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
   assert.ok(renderer.includes("scale:safeScale"));
 });
