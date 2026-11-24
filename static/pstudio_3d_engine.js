@@ -2403,7 +2403,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     let draco=null;
     if(window.PStudioDRACOLoader){
       draco=new window.PStudioDRACOLoader();
-      draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/draco/');
       draco.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
       loader.setDRACOLoader(draco);
     }
@@ -2411,7 +2411,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       try{
         if(!sharedKTX2Loader){
           sharedKTX2Loader=new window.PStudioKTX2Loader();
-          sharedKTX2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+          sharedKTX2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/basis/');
           sharedKTX2Loader.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
           sharedKTX2Loader.detectSupport(renderer);
         }
