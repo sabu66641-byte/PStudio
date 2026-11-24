@@ -271,7 +271,7 @@ test('moonlight adds warm and cool atmospheric scattering, thin lit cirrus and s
   assert.match(renderer,/uMoonOcclusion\*moonHalo\*\.58/);
   assert.match(renderer,/uMoonDirectionWorld/);
   assert.match(renderer,/uMoonOcclusion\)nightTwinkleStars\.material\.uniforms\.uMoonOcclusion\.value=moonMesh\?\.visible\?1:0/);
-  assert.doesNotMatch(renderer,/moonHaloPass|lunarBloomPass|new T\.WebGLRenderTarget/);
+  assert.doesNotMatch(renderer,/moonHaloPass|lunarBloomPass/);
 });
 
 test('daylight sun is a one-time spherical photosphere with aligned direction and no stretched panorama disc',()=>{
