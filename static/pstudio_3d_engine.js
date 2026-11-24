@@ -3460,7 +3460,13 @@ void main(){
       if(moonMesh)moonMesh.visible=false;
       return false;
     }
-    const mesh=ensureMoonMesh(T);
+    let mesh=null;
+    try{mesh=ensureMoonMesh(T);}
+    catch(error){
+      if(moonMesh)moonMesh.visible=false;
+      console.warn('[PStudio] Lunar sphere setup failed; retaining the procedural night sky without the moon.',error);
+      return false;
+    }
     if(!mesh)return false;
     moonDirection.set(
       Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):.38,
