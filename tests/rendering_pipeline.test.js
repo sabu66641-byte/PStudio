@@ -669,7 +669,7 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.equal(pass.uniforms.uCloudLightSteps.value,3);
   assert.equal(pass.setQuality('ultra',1).steps,54);
   assert.equal(pass.setQuality('ultra',0).steps,45);
-  assert.equal(pass.setQuality('maximum',2).steps,40);
+  assert.equal(pass.setQuality('maximum',2).steps,44);
   assert.equal(pass.setQuality('high',2).steps,30);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
@@ -710,7 +710,7 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   assert.equal(fog.uniforms.uFogSteps.value,32);
   assert.equal(fog.setQuality('ultra',1).steps,28);
   assert.equal(fog.setQuality('ultra',0).steps,24);
-  assert.equal(fog.setQuality('maximum',2).steps,24);
+  assert.equal(fog.setQuality('maximum',2).steps,26);
   assert.equal(fog.setQuality('high',2).steps,16);
   api.configureAtmosphere({sunDirection:[-0.4,-0.4,-0.4],lightDirection:[0.2,0.8,0.4],sunColor:'#ffb06f',fogColor:'#bb897e',fogAmbientColor:'#c5a0b8',fogDensity:.0032,fogHeightFalloff:.012,fogBaseHeight:3,fogAnisotropy:.58});
   assert.ok(Math.abs(fog.uniforms.uSunDirection.value.y-0.8728715609)<1e-8,'fog must follow the key light/moon direction when supplied');
@@ -965,10 +965,10 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-atmosphere-camera-v2'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-atmosphere-camera-v2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-atmosphere-camera-v2'));
-  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-atmosphere-camera-v2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
