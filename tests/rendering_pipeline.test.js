@@ -111,7 +111,7 @@ test('UV lightmaps generate per-triangle UV2 atlases and persist in IndexedDB',(
   for(const token of ['bakeUVLightmaps','createLightmapUVGeometry','bakeLightmapPixels','saveLightmaps','loadLightmaps','clearLightmaps','PStudioLightmaps','DataTexture','uv2'])assert.ok(renderer.includes(token),token);
 });
 test('BVH acceleration is optional and connected to occlusion raycasting',()=>{
-  assert.ok(html.includes('three-mesh-bvh@0.7.8'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes('acceleratedRaycast'));
   for(const token of ['computeBoundsTree','scheduleGeometryBVH','disposeBoundsTree'])assert.ok(renderer.includes(token),token);
 });
@@ -970,7 +970,7 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r188-tsl-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3'));
