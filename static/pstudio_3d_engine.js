@@ -470,6 +470,15 @@
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
     if (width !== lastSize.width || height !== lastSize.height) {
+      // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
+      // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
+      if(qualityPreset==='ultra'){
+        const safeRatio=resolveQualityRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
+        if(Math.abs(safeRatio-renderer.getPixelRatio())>.001){
+          renderer.setPixelRatio(safeRatio);
+          composer?.setPixelRatio?.(safeRatio);
+        }
+      }
       renderer.setSize(width, height, false);composer?.setSize(width,height);
       if(waterDepthTarget){const size=renderer.getDrawingBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
       camera.aspect = width / height;
