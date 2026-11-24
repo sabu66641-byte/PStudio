@@ -93,7 +93,10 @@ test('Mirror Water adds an isolated planar reflection path with bounded adaptive
     'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
     'pstudio-planar-mirror-water-v1','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
-    'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true'
+    'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
+    'return Math.max(0.5,Math.min(0.75,scale))',
+    'const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1',
+    'cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars]'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(engine.includes("case 'draw_mirror_water'"));
   assert.ok(engine.includes("type:'mirror_water'"));
