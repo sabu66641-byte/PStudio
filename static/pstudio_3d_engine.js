@@ -276,6 +276,30 @@
     return Math.min(requestedSize,hardwareCap);
   }
 
+  function resolveQualityRenderPixelRatio(selected,adaptiveLevel=2,adaptive=true){
+    const hardware=qualityHardwareCapabilities();
+    const dpr=Math.max(.6,Number(hardware.pixelRatio)||1);
+    const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
+    if(selected==='ultra'){
+      // Ultra renders at 2x the effective Maximum-tier pixel ratio on both axes.
+      // Limit the drawing buffer to the GPU texture edge and a device-aware pixel budget.
+      const requested=Math.min(dpr,QUALITY_PROFILES.maximum.pixelRatio)*2;
+      const rect=canvas?.getBoundingClientRect?.()||{};
+      const width=Math.max(0,Number(rect.width)||0),height=Math.max(0,Number(rect.height)||0);
+      if(width<=0||height<=0)return requested;
+      const memory=hardware.memoryGiB;
+      const pixelBudget=memory<=2?9500000:memory<=4?14000000:memory<=6?20000000:28000000;
+      const textureCap=hardware.maxTextureSize/Math.max(width,height);
+      const pixelCap=Math.sqrt(pixelBudget/(width*height));
+      return Math.max(.6,Math.min(requested,textureCap,pixelCap));
+    }
+    const profile=QUALITY_PROFILES[selected]||QUALITY_PROFILES.balanced;
+    const scale=adaptive
+      ?(selected==='maximum'?[.66,.78,.94][level]:[.68,.84,1][level])
+      :1;
+    return Math.min(dpr,profile.pixelRatio*scale);
+  }
+
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
@@ -283,12 +307,13 @@
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
     const hardware=qualityHardwareCapabilities();
-    adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
+    adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
-    adaptiveQualityEnabled=qualityPreset==='auto'||adaptiveUltraTouchMode;
-    // Start Ultra at the highest hardware-safe tier. Performance adaptation may reduce
-    // resolution, shadow size and samples later, but never disables premium effects by default.
-    adaptiveQualityLevel=adaptiveUltraTouchMode?1:2;
+    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
+    // Ultra keeps its 2x Maximum-tier output resolution. Adaptive levels tune costly effects
+    // around it; GPU texture and device memory limits remain authoritative.
+    adaptiveQualityLevel=2;
+    if(adaptiveMaximumTouchMode)adaptiveQualityLevel=1;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
     const effectsEnabled=!memorySafetyApplied;
