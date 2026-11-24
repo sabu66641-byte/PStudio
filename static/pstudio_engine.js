@@ -814,25 +814,32 @@
     const adaptiveLabel=adaptiveLabels[language]||'· ADAPTIVE';
     activeOutput.textContent=state.safetyLimited
       ? activeLabel+' '+safetyLabel
-      : state.requested==='ultra'&&state.adaptiveEnabled
-        ? activeLabel+' '+adaptiveLabel
-        : state.requested==='auto'?'→ '+activeLabel:activeLabel;
+      : state.requested==='ultra'
+        ? activeLabel+(state.resolutionLimited?' · DEVICE LIMIT':' · 2× OUTPUT')+(state.adaptiveEnabled?' '+adaptiveLabel:'')
+        : state.adaptiveEnabled&&state.requested==='maximum'
+          ? activeLabel+' '+adaptiveLabel
+          : state.requested==='auto'?'→ '+activeLabel:activeLabel;
     activeOutput.title=state.safetyLimited
       ? 'Runtime memory protection is temporarily reducing expensive effects.'
-      : state.requested==='ultra'&&state.adaptiveEnabled
-        ? 'Ultra remains selected. On touch devices, render resolution, shadow size and expensive effects adapt to measured performance to reduce freezes.'
-        : state.requested==='auto'
-          ? 'Automatically selected tier; adaptive quality monitors frame time.'
-          : 'Manual quality preset. Hardware texture limits and emergency memory protection remain active.';
+      : state.requested==='ultra'
+        ? 'Ultra targets 2x the Maximum-tier rendering resolution on both axes. GPU texture and memory limits may cap the effective drawing buffer; adaptive quality tunes expensive effects.'
+        : state.adaptiveEnabled&&state.requested==='maximum'
+          ? 'Maximum remains selected. On touch devices, expensive effects adapt to measured frame time.'
+          : state.requested==='auto'
+            ? 'Automatically selected tier; adaptive quality monitors frame time.'
+            : 'Manual quality preset. Hardware texture limits and emergency memory protection remain active.';
     activeOutput.dataset.requested=state.requested;
     activeOutput.dataset.active=state.active;
     activeOutput.dataset.adaptive=state.adaptiveEnabled?'true':'false';
     activeOutput.dataset.adaptiveLevel=String(state.adaptiveLevel);
     activeOutput.dataset.safetyLimited=state.safetyLimited?'true':'false';
+    activeOutput.dataset.outputMultiplier=String(state.outputMultiplier||1);
+    activeOutput.dataset.resolutionLimited=state.resolutionLimited?'true':'false';
+    activeOutput.dataset.renderPixelRatio=String(state.renderPixelRatio||1);
   }
   window.updatePStudioQualityControl=updatePStudioQualityControl;
   window.setPStudioQualityPreset=function(name){
-    const allowed=['auto','mobile','balanced','high','ultra'];
+    const allowed=['auto','mobile','balanced','high','maximum','ultra'];
     const requested=allowed.includes(String(name))?String(name):'auto';
     const result=window.PStudio3D?.setQualityPreset?.(requested);
     updatePStudioQualityControl();

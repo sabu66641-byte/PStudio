@@ -594,15 +594,15 @@
         'float t0=(uCloudBase-origin.y)/ray.y;float t1=(uCloudTop-origin.y)/ray.y;',
         'float begin=max(0.0,min(t0,t1));float finish=min(max(t0,t1),5200.0);',
         'if(finish<=begin){gl_FragColor=source;return;}',
-        'float steps=clamp(uCloudSteps,8.0,40.0);float stepLength=(finish-begin)/steps;',
+        'float steps=clamp(uCloudSteps,8.0,64.0);float stepLength=(finish-begin)/steps;',
         'float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
         'float transmittance=1.0;vec3 scattering=vec3(0.0);vec3 sun=normalize(uSunDirection);',
         'float phase=pHenyeyGreenstein(dot(-ray,sun),.68);',
-        'for(int i=0;i<40;i++){if(float(i)>=steps||transmittance<.018)break;',
+        'for(int i=0;i<64;i++){if(float(i)>=steps||transmittance<.018)break;',
         'float travel=begin+(float(i)+jitter)*stepLength;vec3 p=origin+ray*travel;',
         'float density=pCloudDensity(p);if(density<=.002)continue;',
         'float lightOptical=0.0;',
-        'for(int j=0;j<2;j++){if(float(j)>=uCloudLightSteps)break;',
+        'for(int j=0;j<3;j++){if(float(j)>=uCloudLightSteps)break;',
         'vec3 lightPoint=p+sun*(10.0+float(j)*18.0);',
         'lightOptical+=pCloudDensity(lightPoint)*(10.0+float(j)*18.0)*.012;',
         '}',
@@ -626,11 +626,11 @@
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:14,high:30,ultra:40,cinematic:40}[String(preset)]||30;
+      const base={mobile:8,balanced:14,high:30,maximum:40,ultra:64,cinematic:40}[String(preset)]||30;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.62,.76,1][level]:[.58,.78,1][level];
-      const steps=Math.max(8,Math.min(40,Math.round(base*factor)));
-      const lightSteps=preset==='high'||preset==='ultra'||preset==='cinematic'?2:1;
+      const factor=preset==='ultra'?[.70,.85,1][level]:preset==='maximum'?[.62,.76,1][level]:[.58,.78,1][level];
+      const steps=Math.max(8,Math.min(64,Math.round(base*factor)));
+      const lightSteps=preset==='ultra'?3:(preset==='high'||preset==='maximum'||preset==='cinematic'?2:1);
       pass.uniforms.uCloudSteps.value=steps;
       pass.uniforms.uCloudLightSteps.value=lightSteps;
       pass.userData=pass.userData||{};
@@ -692,11 +692,11 @@
         'float distanceFade=1.0-smoothstep(uFadeStart,uFadeEnd,viewDistance);',
         'if(distanceFade<=.001){gl_FragColor=source;return;}',
         'vec3 lightDirection=normalize(mat3(uViewMatrix)*normalize(uLightDirectionWorld));',
-        'float steps=clamp(uSteps,4.0,24.0);',
+        'float steps=clamp(uSteps,4.0,32.0);',
         'float stepLength=uMaxDistance/steps;',
         'float jitter=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);',
         'float occlusion=0.0;',
-        'for(int i=0;i<24;i++){',
+        'for(int i=0;i<32;i++){',
         'if(float(i)>=steps)break;',
         'float travel=.045+(float(i)+jitter)*stepLength;',
         'vec3 rayPoint=origin+lightDirection*travel;',
@@ -723,10 +723,10 @@
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:5,balanced:7,high:12,ultra:18}[String(preset)]||12;
+      const base={mobile:5,balanced:7,high:12,maximum:18,ultra:30}[String(preset)]||12;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.66,.83,1][level]:[.6,.82,1][level];
-      const steps=Math.max(4,Math.min(24,Math.round(base*factor)));
+      const factor=preset==='ultra'?[.75,.88,1][level]:preset==='maximum'?[.66,.83,1][level]:[.6,.82,1][level];
+      const steps=Math.max(4,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uSteps.value=steps;
       pass.userData=pass.userData||{};
       pass.userData.pstudioContactShadowQuality={preset,adaptiveLevel:level,steps};
@@ -771,9 +771,9 @@
         'vec3 ray=endp-origin;float len=length(ray);vec3 dir=ray/max(len,1e-5);',
         'vec3 sun=normalize(uSunDirection);float cosine=dot(-dir,sun);',
         'float phase=henyeyGreenstein(cosine,clamp(uFogAnisotropy,0.0,.88));',
-        'float steps=clamp(uFogSteps,6.0,24.0);float ds=len/steps;',
+        'float steps=clamp(uFogSteps,6.0,32.0);float ds=len/steps;',
         'float optical=0.0;vec3 scatter=vec3(0.0);',
-        'for(int i=0;i<24;i++){if(float(i)>=steps)break;',
+        'for(int i=0;i<32;i++){if(float(i)>=steps)break;',
         'float f=(float(i)+.5)/steps;vec3 p=origin+dir*(len*f);',
         'float h=p.y-uBaseHeight;',
         'float vertical=exp(-max(h,0.0)*uHeightFalloff);',
@@ -799,10 +799,10 @@
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:10,high:16,ultra:24}[String(preset)]||16;
+      const base={mobile:8,balanced:10,high:16,maximum:24,ultra:32}[String(preset)]||16;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.68,.84,1][level]:[.62,.82,1][level];
-      const steps=Math.max(6,Math.min(24,Math.round(base*factor)));
+      const factor=preset==='ultra'?[.75,.88,1][level]:preset==='maximum'?[.68,.84,1][level]:[.62,.82,1][level];
+      const steps=Math.max(6,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uFogSteps.value=steps;
       pass.userData=pass.userData||{};
       pass.userData.pstudioFogQuality={preset,adaptiveLevel:level,steps};
