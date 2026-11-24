@@ -28,6 +28,9 @@
   let gpuInstanceFrustumCullingEnabled=true;
   let occlusionRaycaster=null,occlusionEnabled=true,occlusionCursor=0,occlusionFrame=0;
   let lastProbeCameraPosition=null;
+  let probeVolumeGeneration=0,probeRadianceCacheHits=0,probeRadianceCacheMisses=0,probeRadianceCacheRecomputes=0;
+  const objectProbeRadianceCache=new WeakMap();
+  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
@@ -865,6 +868,7 @@
       }
     }finally{
       restoreStaticSky(hiddenStaticSky);
+      serviceDynamicRadianceCache(window.performance?.now?.()??Date.now());
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
       endGpuTimerQuery(gpuQuery);
@@ -1023,7 +1027,111 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!camera)return;for(const chunk of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(chunk.x,chunk.y,chunk.z));if((chunk.active||chunk.loading)&&d>chunk.unloadDistance)endWorldChunkLoad(chunk);else if(!chunk.active&&!chunk.loading&&d<chunk.loadDistance)beginWorldChunkLoad(chunk);}
   }
   function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
-  function updateProbeVolumeBlend(){if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();}
+  function updateProbeVolumeBlend(){
+    if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();
+    probeVolumeGeneration++;
+    if(bakedLightProbeVolume?.length){
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+      dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;dynamicProbeSignature='';
+      if(dynamicGIEnabled)dynamicGIStatus='waiting-for-dynamic-lights';
+    }else{
+      dynamicProbeCache=[];dynamicProbeDirty=null;dynamicProbeStatus=dynamicGIEnabled?'requires-baked-probes':'disabled';
+    }
+  }
+  function dynamicLightCacheSignature(){
+    const T=window.THREE,parts=[];
+    for(const [key,light] of [...dynamicLights.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])))){
+      const p=light.getWorldPosition?light.getWorldPosition(new T.Vector3()):light.position;
+      const q=value=>Number((Number(value)||0).toFixed(1));
+      parts.push(String(key)+':'+q(p?.x)+','+q(p?.y)+','+q(p?.z)+','+q(light.intensity)+','+q(light.distance)+','+(light.color?.getHexString?.()||'ffffff')+','+(light.isSpotLight?q(light.angle):0));
+    }
+    return parts.join('|');
+  }
+  function resetDynamicProbeCache(signature){
+    if(!bakedLightProbeVolume?.length)return false;
+    dynamicProbeSignature=signature;
+    if(dynamicProbeCache.length!==bakedLightProbeVolume.length){
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+    }
+    dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;
+    probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
+    return true;
+  }
+  function serviceDynamicRadianceCache(now){
+    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene||!dynamicLights.size)return;
+    if(now-lastDynamicProbeSignatureAt>=600){
+      lastDynamicProbeSignatureAt=now;
+      const signature=dynamicLightCacheSignature();
+      if(signature!==dynamicProbeSignature)resetDynamicProbeCache(signature);
+    }
+    if(!dynamicProbeDirty||!dynamicProbeDirty.length)return;
+    if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
+    if(now-lastDynamicProbeUpdateAt<DYNAMIC_PROBE_UPDATE_INTERVAL_MS)return;
+    const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    const recentRenderMs=gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs;
+    if(recentRenderMs>(gpuFresh?14:10))return;
+    const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
+    if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    let index=-1;
+    for(let offset=0;offset<dynamicProbeDirty.length;offset++){
+      const candidate=(dynamicProbeCursor+offset)%dynamicProbeDirty.length;
+      if(dynamicProbeDirty[candidate]){index=candidate;break;}
+    }
+    if(index<0){dynamicGIStatus='ready';return;}
+    const resolution=qualityPreset==='ultra'?128:qualityPreset==='maximum'?96:64;
+    const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
+    const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
+    const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
+    const oldEnvironment=scene.environment,oldBackground=scene.background,oldClear=renderer.getClearColor(new T.Color()).clone();
+    const oldClearAlpha=renderer.getClearAlpha(),oldAutoClear=renderer.autoClear,oldShadowAuto=renderer.shadowMap?.autoUpdate;
+    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],uniformSnapshots=[],savedVisibility=[];
+    const seenMaterials=new Set();
+    try{
+      scene.traverse(object=>{
+        if(object.isLight){
+          if(dynamicSet.has(object)){savedVisibility.push([object,object.visible]);object.visible=true;}
+          else if(object.visible){hiddenLights.push([object,object.visible]);object.visible=false;}
+        }
+        if(!object.isMesh)return;
+        const materials=Array.isArray(object.material)?object.material:[object.material];
+        for(const material of materials){
+          if(!material||seenMaterials.has(material))continue;seenMaterials.add(material);
+          const uniforms=material.userData?.pstudioProbeUniforms;
+          if(!uniforms)continue;
+          const saved=uniforms.map(value=>value.clone());uniformSnapshots.push([uniforms,saved]);
+          for(const value of uniforms)value.set(0,0,0);
+        }
+      });
+      probeCaptureActive=true;
+      scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);renderer.autoClear=true;
+      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
+      cube.position.copy(position);scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
+      const light=generator.fromCubeRenderTarget(renderer,target),coefficients=light?.sh?.coefficients;
+      if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
+      const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0};
+      for(let i=0;i<9;i++){
+        const coefficient=coefficients[i],offset=i*3;
+        cached.coefficients[offset]=Number(coefficient.x)||0;
+        cached.coefficients[offset+1]=Number(coefficient.y)||0;
+        cached.coefficients[offset+2]=Number(coefficient.z)||0;
+      }
+      cached.valid=true;cached.updatedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
+      dynamicProbeCursor=(index+1)%dynamicProbeDirty.length;dynamicProbeUpdates++;probeVolumeGeneration++;
+      dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
+      light.dispose?.();
+      try{window.PStudioEvents?.emit('gi.dynamic-probe.updated',{index,total:dynamicProbeCache.length,resolution,status:dynamicGIStatus});}catch(_){}
+    }catch(error){
+      dynamicGIStatus='error';console.warn('[PStudio] Dynamic SH probe update skipped:',error);
+    }finally{
+      scene.remove(cube);probeCaptureActive=false;target.dispose();
+      for(const [uniforms,saved] of uniformSnapshots)for(let i=0;i<uniforms.length;i++)uniforms[i].copy(saved[i]);
+      for(const [light,visible] of hiddenLights)light.visible=visible;
+      for(const [light,visible] of savedVisibility)light.visible=visible;
+      scene.environment=oldEnvironment;scene.background=oldBackground;renderer.setClearColor(oldClear,oldClearAlpha);
+      renderer.autoClear=oldAutoClear;if(renderer.shadowMap)renderer.shadowMap.autoUpdate=oldShadowAuto;
+      renderer.setRenderTarget(oldTarget);lastDynamicProbeUpdateAt=now;
+    }
+  }
   async function bakeLightProbeVolume(o={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
@@ -2888,11 +2996,38 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
   }
   function updateObjectProbeUniforms(object,material){
-    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;if(!uniforms||!volume?.length)return;
-    const center=new window.THREE.Vector3();object.getWorldPosition(center);
-    const grid=volume.pstudioGrid;
+    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;
+    if(!uniforms||!volume?.length||probeCaptureActive)return;
+    let cache=objectProbeRadianceCache.get(object);
+    if(!cache){
+      cache={position:new window.THREE.Vector3(),lastPosition:new window.THREE.Vector3(),coefficients:new Float32Array(27),generation:-1,valid:false};
+      objectProbeRadianceCache.set(object,cache);probeRadianceCacheMisses++;
+    }
+    object.getWorldPosition(cache.position);
+    const moved=!cache.valid||cache.generation!==probeVolumeGeneration||cache.lastPosition.distanceToSquared(cache.position)>0.0004;
+    if(!moved){
+      probeRadianceCacheHits++;
+      for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+      return;
+    }
+    probeRadianceCacheRecomputes++;cache.coefficients.fill(0);
+    const center=cache.position,grid=volume.pstudioGrid;
+    const accumulate=(index,weight,coefficientIndex,totals)=>{
+      const item=volume[index],coeff=item?.light?.sh?.coefficients?.[coefficientIndex];
+      if(coeff&&weight>0){
+        const base=weight*(Number(item.baseIntensity)||0);
+        totals[0]+=coeff.x*base;totals[1]+=coeff.y*base;totals[2]+=coeff.z*base;
+      }
+      const dynamic=dynamicProbeCache[index];
+      if(dynamic?.valid&&dynamic.coefficients&&weight>0){
+        const offset=coefficientIndex*3;
+        totals[0]+=dynamic.coefficients[offset]*weight;
+        totals[1]+=dynamic.coefficients[offset+1]*weight;
+        totals[2]+=dynamic.coefficients[offset+2]*weight;
+      }
+    };
     if(grid?.layout==='x-fastest'&&Array.isArray(grid.dims)&&grid.dims.length===3&&grid.min&&grid.max){
-      const dims=grid.dims.map(Number),valid=dims.every(v=>Number.isInteger(v)&&v>=2&&v<=4);
+      const dims=grid.dims.map(Number),valid=dims.every(value=>Number.isInteger(value)&&value>=2&&value<=4);
       const boundsValid=['x','y','z'].every(axis=>Number.isFinite(Number(grid.min[axis]))&&Number.isFinite(Number(grid.max[axis]))&&Number(grid.max[axis])>Number(grid.min[axis]));
       if(valid&&boundsValid&&volume.length>=dims[0]*dims[1]*dims[2]){
         const axis=(value,min,max,count)=>{const n=Math.max(0,Math.min(1,(value-min)/(max-min)))*(count-1);const lo=Math.floor(n);return{lo,hi:Math.min(count-1,lo+1),t:n-lo};};
@@ -2901,22 +3036,32 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         const z=axis(center.z,Number(grid.min.z),Number(grid.max.z),dims[2]);
         const volumeIndex=(ix,iy,iz)=>(iz*dims[1]+iy)*dims[0]+ix;
         for(let i=0;i<9;i++){
-          const out=uniforms[i];out.set(0,0,0);
+          const totals=[0,0,0];
           for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
             const ix=dx?x.hi:x.lo,iy=dy?y.hi:y.lo,iz=dz?z.hi:z.lo;
-            const wx=dx?x.t:1-x.t,wy=dy?y.t:1-y.t,wz=dz?z.t:1-z.t;
-            const weight=wx*wy*wz,item=volume[volumeIndex(ix,iy,iz)];
-            const coeff=item?.light?.sh?.coefficients?.[i];
-            if(coeff&&weight>0)out.addScaledVector(coeff,weight*(Number(item.baseIntensity)||0));
+            accumulate(volumeIndex(ix,iy,iz),(dx?x.t:1-x.t)*(dy?y.t:1-y.t)*(dz?z.t:1-z.t),i,totals);
           }
+          const offset=i*3;
+          cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
         }
-        return;
+      }else{
+        const near=volume.map((item,index)=>({item,index,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));
+        let sum=0;for(const entry of near){entry.weight=1/Math.max(0.25,entry.d);sum+=entry.weight;}
+        for(let i=0;i<9;i++){
+          const totals=[0,0,0];for(const entry of near)accumulate(entry.index,entry.weight/Math.max(1e-8,sum),i,totals);
+          const offset=i*3;cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
+        }
+      }
+    }else{
+      const near=volume.map((item,index)=>({item,index,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));
+      let sum=0;for(const entry of near){entry.weight=1/Math.max(0.25,entry.d);sum+=entry.weight;}
+      for(let i=0;i<9;i++){
+        const totals=[0,0,0];for(const entry of near)accumulate(entry.index,entry.weight/Math.max(1e-8,sum),i,totals);
+        const offset=i*3;cache.coefficients[offset]=totals[0];cache.coefficients[offset+1]=totals[1];cache.coefficients[offset+2]=totals[2];
       }
     }
-    // Sparse or legacy probe collections retain the inverse-distance fallback.
-    const near=volume.map(item=>({item,d:item.position.distanceToSquared(center)})).sort((a,b)=>a.d-b.d).slice(0,Math.min(4,volume.length));let sum=0;
-    for(const entry of near){entry.w=1/Math.max(0.25,entry.d);sum+=entry.w;}
-    for(let i=0;i<9;i++){const out=uniforms[i];out.set(0,0,0);for(const entry of near){const coeff=entry.item.light.sh.coefficients[i];if(coeff)out.addScaledVector(coeff,entry.w/Math.max(1e-8,sum)*entry.item.baseIntensity);}}
+    cache.lastPosition.copy(center);cache.generation=probeVolumeGeneration;cache.valid=true;
+    for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
@@ -4955,6 +5100,27 @@ void main(){
     getModelCollisionTriangles,
     setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
+    togglePerformanceMonitor,
+    getPerformanceStats:performanceStatsSnapshot,
+    setDynamicGI:enabled=>{
+      const next=!!enabled;
+      if(next&&!bakedLightProbeVolume?.length)return{enabled:false,available:false,reason:'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'};
+      dynamicGIEnabled=next;
+      if(next){
+        const signature=dynamicLightCacheSignature();resetDynamicProbeCache(signature);
+        dynamicGIStatus=dynamicLights.size?'updating':'waiting-for-dynamic-lights';
+      }else{
+        dynamicProbeDirty=null;dynamicProbeCache=[];dynamicGIStatus='disabled';probeVolumeGeneration++;
+      }
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:dynamicGIEnabled,available:!!bakedLightProbeVolume?.length,status:dynamicGIStatus,probeCount:dynamicProbeCache.length,updateIntervalMs:DYNAMIC_PROBE_UPDATE_INTERVAL_MS,kind:'raster-captured-one-bounce-dynamic-sh-probe-cache'};
+    },
+    toggleDynamicGI:()=>{
+      const result=window.PStudio3D.setDynamicGI(!dynamicGIEnabled);
+      const button=document.getElementById('dynamic-gi-toggle');
+      if(button){button.setAttribute('aria-pressed',String(!!result.enabled));button.classList.toggle('active',!!result.enabled);}
+      return result;
+    },
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
     setContactShadows:(enabled,options={})=>{
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;
@@ -4998,7 +5164,7 @@ void main(){
       stagedTextureUploads,
       parallelShaderCompileSupported,
       frustumCulledMeshes:[...modelInstances.values()].reduce((sum,instance)=>sum+instance.meshes.filter(mesh=>mesh.frustumCulled).length,0),
-      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource},gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
+      renderTimeMs:Number(lastRenderDurationMs.toFixed(2)),gpuRenderTimeMs:lastGpuRenderDurationMs?Number(lastGpuRenderDurationMs.toFixed(2)):null,timingSource:adaptiveMetricSource,gpuTimerQuerySupported:!!gpuTimerExtension,quality:resolveQualityPreset(qualityPreset),adaptive:{enabled:adaptiveQualityEnabled,level:adaptiveQualityLevel,frameEMA:Number(adaptiveFrameEMA.toFixed(2)),source:adaptiveMetricSource,dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3))},performance:performanceStatsSnapshot(),gi:{probeCount:bakedLightProbeVolume?.length||0,bounces:bakedGIBounces,objectLocalSH:true,probeInterpolationCache:{hits:probeRadianceCacheHits,misses:probeRadianceCacheMisses,recomputes:probeRadianceCacheRecomputes,generation:probeVolumeGeneration},dynamic:{enabled:dynamicGIEnabled,status:dynamicGIStatus,probeCount:dynamicProbeCache.length,validProbes:dynamicProbeCache.filter(item=>item.valid).length,updates:dynamicProbeUpdates,updateIntervalMs:DYNAMIC_PROBE_UPDATE_INTERVAL_MS,kind:'raster-captured-one-bounce-dynamic-light-sh-cache',rayTraced:false},uvLightmappedMeshes:lightmapTargets().filter(({object})=>!!object.userData.pstudioLightmapTexture).length,pendingLightmaps:pendingLightmaps.size,bvhAvailable:!!window.PStudioBVH},csm:{enabled:!!csm,cascades:csm?.cascades||0,shadowDistance:worldRenderConfig.shadowDistance},environmentFX:window.PStudioEnvironmentFX?.getStats?.()||null,memory:{deviceMemoryGiB:deviceMemoryGiB(),modelEstimateBytes:[...modelCache.values()].reduce((sum,asset)=>sum+(Number(asset.memoryEstimateBytes)||0),0),jsHeapUsedBytes:Number(window.performance?.memory?.usedJSHeapSize)||null,jsHeapLimitBytes:Number(window.performance?.memory?.jsHeapSizeLimit)||null,resourceCache:window.PStudioResources?.stats?.()||null,clusteredLightingBytes:clusteredLightingResources?.bytes||0,virtualTextureAtlasBytes:[...virtualTextureAtlases.values()].reduce((sum,atlas)=>sum+atlas.bytes,0)},volumetricClouds:{available:!!volumetricCloudPass,enabled:volumetricCloudsEnabled},waterDepthPrepass:{available:!!waterDepthTarget,failed:waterDepthPrepassFailed},temporalAA:{available:!!taaPass,enabled:!!taaPass?.enabled,accumulating:!!taaPass?.accumulate},volumetricFog:{available:!!volumetricFogPass,enabled:volumetricFogEnabled}
     }:null,
     loadEnvironmentHDR,
     bakeLightProbe,
