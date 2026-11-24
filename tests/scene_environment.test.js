@@ -469,5 +469,5 @@ test('opt-in dynamic GI incrementally captures a rasterized one-bounce SH cache 
     'rayTraced:false',
     'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'
   ])assert.ok(renderer.includes(token),token);
-  assert.ok(renderer.includes('id="dynamic-gi-toggle"')===false || html.includes('id="dynamic-gi-toggle"'));
+  assert.ok(html.includes('id="dynamic-gi-toggle"'));
 });
