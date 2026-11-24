@@ -37,12 +37,12 @@ test('auto quality keeps device-aware scaling while Ultra uses the shared 2x ren
   assert.ok(renderer.includes("applyEffectiveRenderScale()"));
   assert.ok(renderer.includes("selected==='maximum'?[.66,.78,.94][level]"));
   assert.ok(renderer.includes("const adaptiveScale=adaptive?[0.35,0.65,1][level]:1"));
-  assert.ok(renderer.includes("const targetRatio=requested*adaptiveScale"));
+  assert.ok(renderer.includes("const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap)"));
   assert.ok(renderer.includes("lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission'"));
 });
 test('Ultra can reduce actual drawing-buffer resolution when adaptive quality steps down',()=>{
   assert.ok(renderer.includes('const adaptiveScale=adaptive?[0.35,0.65,1][level]:1'));
-  assert.ok(renderer.includes('const targetRatio=requested*adaptiveScale'));
+  assert.ok(renderer.includes('const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap)'));
   assert.ok(renderer.includes('frame-interval-fallback'));
   assert.ok(renderer.includes('Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0)'));
 });
@@ -798,7 +798,7 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 });
 
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
-  assert.ok(renderer.includes('qualityAOEnabled=effectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
+  assert.ok(renderer.includes('qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;'));
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
@@ -1079,7 +1079,7 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
 
 test('Ultra preserves 2x output while avoiding oversized shadow maps and excessive AO sampling',()=>{
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
-  assert.ok(renderer.includes("const requestedShadow=qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("const requestedShadow=adaptiveUltraTouchMode?[1024,1536,2048][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[768,1024,1536][adaptiveQualityLevel]:qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]"));
   assert.ok(renderer.includes("qualityPreset==='ultra'?[3072,4096,8192]"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][level]"));
 });
