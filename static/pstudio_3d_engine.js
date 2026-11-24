@@ -4253,6 +4253,18 @@ void main(){
       );
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
       if(moonGlow>.001){
+        // Carry a faint, azimuth-aligned lunar glow down to the horizon air layer.
+        const horizonRadiusX=width*.19,horizonRadiusY=height*.052;
+        drawWrappedX(moonUv.x,horizonRadiusX,wrappedX=>{
+          context.save();context.translate(wrappedX,height*.505);context.scale(1,horizonRadiusY/horizonRadiusX);
+          const lunarHorizon=context.createRadialGradient(0,0,0,0,0,horizonRadiusX);
+          lunarHorizon.addColorStop(0,'rgba(137,174,229,'+(0.052*moonGlow)+')');
+          lunarHorizon.addColorStop(.38,'rgba(91,132,197,'+(0.028*moonGlow)+')');
+          lunarHorizon.addColorStop(1,'rgba(35,61,108,0)');
+          context.globalCompositeOperation='screen';context.fillStyle=lunarHorizon;
+          context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
+          context.restore();
+        });
         const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.065+moonGlow*.075));
         moonAura.addColorStop(0,'rgba(205,224,255,'+(0.19*moonGlow)+')');
         moonAura.addColorStop(.2,'rgba(151,190,246,'+(0.12*moonGlow)+')');
