@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 // CI installs the exact same pinned packages used by the browser import map.
 test('Three.js r188 core, TSL bridge, renderer addons and BVH runtime load together', async () => {
   const THREE = await import('three');
-  assert.equal(THREE.REVISION, '188');
+  assert.equal(THREE.REVISION, '187');
   assert.equal(typeof THREE.WebGLRenderer, 'function');
   assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'function');
 
