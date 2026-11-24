@@ -388,7 +388,7 @@ test('low-memory devices disable hardware MSAA and Auto selects conservative tie
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
   assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
   assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
-  assert.ok(renderer.includes("qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(adaptiveUltraTouchMode?2048:4096)"));
+  assert.ok(renderer.includes("qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096)"));
   assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
@@ -766,7 +766,7 @@ test('high and ultra quality presets activate GTAO automatically and adaptive qu
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','adaptiveUltraTouchMode?2048:4096','resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize))','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','memory<=4?2048:memory<=6?3072:4096','resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize))','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -890,7 +890,7 @@ test('manual Ultra quality remains selected on phones while internal render cost
   assert.match(renderer,/if\(!adaptiveQualityEnabled\|\|!renderer\)return/);
   assert.match(renderer,/const selected=resolveQualityPreset\(qualityPreset\),base=QUALITY_PROFILES\[selected\]/);
   assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[2048,3072,4096\]/);
-  assert.match(renderer,/adaptiveUltraTouchMode\?\[2048,3072,4096\]\[adaptiveQualityLevel\]/);
+  assert.match(renderer,/adaptiveUltraTouchMode\?\[2048,3072,4096\]:qualityPreset==='ultra'\?\[1024,2048,4096\]:\[1024,1536,2048\]/);
   assert.match(renderer,/requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled/);
 });
  
