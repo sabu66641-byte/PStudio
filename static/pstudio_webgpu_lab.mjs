@@ -16,6 +16,7 @@ let resizeObserver = null;
 let openingPromise = null;
 let generation = 0;
 let lastFrameTime = 0;
+let fallbackResizeListener = null;
 
 function setStatus(message, state = 'info') {
   if (!statusElement) return;
@@ -191,6 +192,10 @@ function disposeRenderer() {
     resizeObserver.disconnect();
     resizeObserver = null;
   }
+  if (fallbackResizeListener) {
+    window.removeEventListener('resize', fallbackResizeListener);
+    fallbackResizeListener = null;
+  }
   if (renderer) {
     try { renderer.setAnimationLoop(null); } catch (_) {}
     try { renderer.dispose(); } catch (_) {}
@@ -270,7 +275,10 @@ async function runLab(ticket) {
       ? new ResizeObserver(resizeLab)
       : null;
     resizeObserver?.observe(canvasHost);
-    if (!resizeObserver) window.addEventListener('resize', resizeLab);
+    if (!resizeObserver) {
+      fallbackResizeListener = resizeLab;
+      window.addEventListener('resize', fallbackResizeListener);
+    }
 
     rendererCandidate.setAnimationLoop((time) => {
       if (renderer !== rendererCandidate || !scene || !camera) return;
