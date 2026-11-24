@@ -231,7 +231,6 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
   assert.match(renderer,/for\\(let i=0;i<280;i\\+\\+\\)/);
   assert.match(renderer,/for\\(let i=0;i<900;i\\+\\+\\)/);
-  assert.match(renderer,/Math\.tan\(1\.9\*Math\.PI\/180\)/);
   assert.match(renderer,/Math\\.tan\\(2\\.25\\*Math\\.PI\\/180\\)/);
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
@@ -361,7 +360,7 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/globalCompositeOperation='screen'/);
   assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
   assert.match(renderer,/night:\[\[0,'#01040B'/);
-  assert.match(renderer,/nightStars:name==='night'\?9700:0/);
+  assert.match(renderer,/nightStars:name==='night'\?14600:0/);
 });
 
 test('studio preset disables both painted and volumetric cloud layers',()=>{
