@@ -3785,21 +3785,41 @@ void main(){
       context.fillRect(0,0,width,height);
       context.restore();
 
+      // A cool lunar aureole is painted into the panorama; the solid moon itself remains
+      // a separate sphere so its shape, terminator and crater relief remain correct.
+      const moonUv=directionUv(
+        Number.isFinite(Number(profile.moonDirectionX))?Number(profile.moonDirectionX):.38,
+        Number.isFinite(Number(profile.moonDirectionY))?Number(profile.moonDirectionY):.88,
+        Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
+      );
+      const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
+      if(moonGlow>.001){
+        const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.055+moonGlow*.07));
+        moonAura.addColorStop(0,'rgba(170,199,242,'+(0.15*moonGlow)+')');
+        moonAura.addColorStop(.2,'rgba(117,153,211,'+(0.105*moonGlow)+')');
+        moonAura.addColorStop(.58,'rgba(83,119,181,'+(0.045*moonGlow)+')');
+        moonAura.addColorStop(1,'rgba(42,66,112,0)');
+        context.save();context.globalCompositeOperation='screen';
+        context.fillStyle=moonAura;context.fillRect(moonUv.x-width*.08,moonUv.y-height*.1,width*.16,height*.2);
+        context.restore();
+      }
+
       // Fine stars dominate; only a tiny fraction are bright enough to bloom or sparkle.
       // Density and brightness rise gently inside the galactic band.
+      const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
       for(let i=0;i<8200;i++){
         const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
         const angle=u*Math.PI*2;
         const galacticCenterY=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
         const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
         const roll=random();
-        const radius=roll>.998?2.4+random()*1.15:roll>.972?1.0+random()*.65:.24+Math.pow(random(),2)*.78;
-        const alpha=Math.min(.94,(.095+random()*.43+band*.15)*(radius>1.7?1.18:1));
+        const radius=roll>.997?2.7+random()*1.35:roll>.955?1.05+random()*.72:.26+Math.pow(random(),2)*.82;
+        const alpha=Math.min(.98,(.115+random()*.50+band*.18)*(radius>1.7?1.2:1)*starBrightness);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
           const halo=context.createRadialGradient(x,y,0,x,y,radius*5.2);
-          halo.addColorStop(0,'rgba('+color+','+(alpha*.22).toFixed(3)+')');
+          halo.addColorStop(0,'rgba('+color+','+(alpha*.30).toFixed(3)+')');
           halo.addColorStop(1,'rgba('+color+',0)');
           context.fillStyle=halo;
           context.fillRect(x-radius*5.2,y-radius*5.2,radius*10.4,radius*10.4);
@@ -3822,8 +3842,8 @@ void main(){
         const x=random()*width,y=4+random()*height*.49;
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
-        const radius=.08+random()*.2;
-        const alpha=.025+random()*.055;
+        const radius=.1+random()*.25;
+        const alpha=(.035+random()*.075)*starBrightness;
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fillRect(x,y,radius,radius);
       }
@@ -3837,11 +3857,30 @@ void main(){
       const dusk=name==='dusk';
       const sunRadius=Math.max(6,Number(profile.sunRadius)||10);
       const glowStrength=Math.max(0,Math.min(1,Number(profile.sunGlow)||.45));
-      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.36:height*.25));
-      horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.27)':'rgba(255,238,196,0.22)');
-      horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.13)':'rgba(159,210,245,0.10)');
+      const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,(dusk?height*.19:height*.16));
+      horizonGlow.addColorStop(0,dusk?'rgba(255,166,105,0.22)':'rgba(255,238,196,0.22)');
+      horizonGlow.addColorStop(.24,dusk?'rgba(250,112,91,0.10)':'rgba(159,210,245,0.10)');
       horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+      if(dusk){
+        // Layered afterglow follows the horizon rather than creating a giant circular wash.
+        const bandY=Math.max(height*.44,Math.min(height*.56,sun.y));
+        const horizonBand=context.createLinearGradient(0,bandY-height*.12,0,bandY+height*.19);
+        horizonBand.addColorStop(0,'rgba(121,56,103,0)');
+        horizonBand.addColorStop(.22,'rgba(175,71,100,0.035)');
+        horizonBand.addColorStop(.46,'rgba(235,104,89,0.16)');
+        horizonBand.addColorStop(.61,'rgba(255,174,111,0.24)');
+        horizonBand.addColorStop(.78,'rgba(207,91,105,0.10)');
+        horizonBand.addColorStop(1,'rgba(77,45,83,0)');
+        context.save();context.globalCompositeOperation='screen';
+        context.fillStyle=horizonBand;context.fillRect(0,bandY-height*.12,width,height*.31);
+        const horizonMask=context.createRadialGradient(sun.x,bandY,4,sun.x,bandY,width*.42);
+        horizonMask.addColorStop(0,'rgba(255,204,145,0.28)');
+        horizonMask.addColorStop(.28,'rgba(255,144,113,0.17)');
+        horizonMask.addColorStop(1,'rgba(255,105,112,0)');
+        context.fillStyle=horizonMask;context.fillRect(0,bandY-height*.15,width,height*.36);
+        context.restore();
+      }
 
       if(name==='day'||name==='dusk'){
       // Soft, broken cloud banks and fine cirrus stop the sky from reading as a flat gradient.
@@ -3885,11 +3924,11 @@ void main(){
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?13:10);
+      const glowRadius=sunRadius*(dusk?8:10);
       const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,230,190,'+(0.44*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.28*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.1*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+      halo.addColorStop(0,dusk?'rgba(255,230,190,'+(0.30*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.21*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.08*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
       halo.addColorStop(1,'rgba(255,255,255,0)');
       context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
