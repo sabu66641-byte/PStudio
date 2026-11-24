@@ -331,7 +331,7 @@ test('scene viewport grid, axes and origin overlays are independently toggleable
 test('editor grid adapts density and opacity at distance and disposes GridHelper material arrays safely',()=>{
   assert.match(renderer,/function gridDivisionsForDistance\(baseDivisions,distance\)/);
   assert.match(renderer,/function updateEditorGridPresentation\(\)/);
-  assert.match(renderer,/const opacity=distance>900\?\.14:distance>520\?\.19:distance>280\?\.25:distance>140\?\.32:\.42/);
+  assert.match(renderer,/const opacity=distance>900\?\.10:distance>520\?\.13:distance>280\?\.16:distance>140\?\.19:\.22/);
   assert.match(renderer,/function disposeGrid\(grid\)/);
   assert.match(renderer,/for\(const material of gridMaterials\(grid\)\)material\?\.dispose\?\.\(\)/);
   assert.match(renderer,/for\(const grid of gridCache\.values\(\)\)\{gridGroup\.remove\(grid\);disposeGrid\(grid\);\}/);
