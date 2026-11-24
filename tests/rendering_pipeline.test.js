@@ -17,7 +17,11 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
   }
-  assert.ok(html.includes('three@0.160.0'));
+  assert.ok(html.includes('three@0.188.0'));
+  assert.ok(html.includes('"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.webgpu.js"'));
+  assert.ok(html.includes('"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.tsl.js"'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
+  assert.ok(html.includes('WebGLNodesHandler.js'));
 });
 
 test('auto quality keeps device-aware scaling while Ultra uses the shared 2x render helper',()=>{
@@ -591,7 +595,7 @@ test('BVH scheduling skips small meshes and permanently falls back after a const
     'elementCount<768',
     'pstudioBVHSkippedSmall',
     'pstudioBVHFailed',
-    'geometry.computeBoundsTree({maxLeafTris:12})',
+    'geometry.computeBoundsTree({maxLeafSize:12})',
     'this geometry will use standard raycasting'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('scheduleGeometryBVH(object.geometry)'));
