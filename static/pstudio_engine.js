@@ -815,14 +815,14 @@
     activeOutput.textContent=state.safetyLimited
       ? activeLabel+' '+safetyLabel
       : state.requested==='ultra'
-        ? activeLabel+(state.resolutionLimited?' · DEVICE LIMIT':' · 2× OUTPUT')+(state.adaptiveEnabled?' '+adaptiveLabel:'')
+        ? activeLabel+(state.resolutionLimited?(state.adaptiveLevel<2?' · ADAPTIVE RESOLUTION':' · DEVICE LIMIT'):' · 2× OUTPUT')+(state.adaptiveEnabled?' '+adaptiveLabel:'')
         : state.adaptiveEnabled&&state.requested==='maximum'
           ? activeLabel+' '+adaptiveLabel
           : state.requested==='auto'?'→ '+activeLabel:activeLabel;
     activeOutput.title=state.safetyLimited
       ? 'Runtime memory protection is temporarily reducing expensive effects.'
       : state.requested==='ultra'
-        ? 'Ultra targets 2x the Maximum-tier rendering resolution on both axes. GPU texture and memory limits may cap the effective drawing buffer; adaptive quality tunes expensive effects.'
+        ? 'Ultra keeps the full rendering effect stack and targets 2x Maximum-tier resolution. On constrained touch devices, frame-interval or GPU timing adjusts render scale and shadow-map size, then restores detail after sustained headroom.'
         : state.adaptiveEnabled&&state.requested==='maximum'
           ? 'Maximum remains selected. On touch devices, expensive effects adapt to measured frame time.'
           : state.requested==='auto'
