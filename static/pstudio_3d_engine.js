@@ -667,7 +667,7 @@
       const solarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
       const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
       if(composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
-        if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive;bloomPass.strength=Math.max(bloomStrength,celestialGlare*.72);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
+        if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,celestialGlare*.72);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
         const syncPostFXUniforms=(pass,required,update)=>{
