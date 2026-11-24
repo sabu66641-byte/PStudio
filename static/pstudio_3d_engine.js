@@ -442,6 +442,16 @@
     const T=window.THREE;
     const deviceGiB=deviceMemoryGiB();
     renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
+    const webgpuModuleAvailable=typeof window.PStudioWebGPURenderer==='function';
+    const tslModuleAvailable=!!window.PStudioTSL;
+    window.PStudioRenderingRuntime=Object.freeze({
+      threeRevision:String(T.REVISION||'unknown'),
+      productionBackend:'webgl2',
+      webgl2:renderer.capabilities?.isWebGL2===true,
+      webgpuModuleAvailable,
+      tslModuleAvailable,
+      tslNodesEnabled:false
+    });
     try{
       const memoryGiB=deviceGiB;
       const gpuBudget=Math.floor(Math.max(192,Math.min(2048,memoryGiB*256))*1024*1024);
@@ -2387,7 +2397,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     let draco=null;
     if(window.PStudioDRACOLoader){
       draco=new window.PStudioDRACOLoader();
-      draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/draco/');
       draco.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
       loader.setDRACOLoader(draco);
     }
@@ -2395,7 +2405,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       try{
         if(!sharedKTX2Loader){
           sharedKTX2Loader=new window.PStudioKTX2Loader();
-          sharedKTX2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+          sharedKTX2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/basis/');
           sharedKTX2Loader.setWorkerLimit(Math.max(1,Math.min(2,deviceMemoryGiB()<=2?1:2)));
           sharedKTX2Loader.detectSupport(renderer);
         }
@@ -2994,7 +3004,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
         geometry.userData.pstudioBVHScheduled=false;return;
       }
       if(!geometry.boundsTree){
-        try{geometry.computeBoundsTree({maxLeafTris:12});}
+        try{geometry.computeBoundsTree({targetLeafSize:12});}
         catch(error){
           geometry.userData.pstudioBVHFailed=true;
           console.warn('[PStudio] BVH build skipped; this geometry will use standard raycasting.',error);

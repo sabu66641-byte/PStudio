@@ -17,7 +17,17 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
   }
-  assert.ok(html.includes('three@0.160.0'));
+  assert.ok(html.includes('three@0.187.0'));
+  assert.ok(html.includes('"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js"'));
+  assert.ok(html.includes('"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js"'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
+  assert.ok(html.includes("import('three/webgpu')"));
+  assert.ok(html.includes("import('three/tsl')"));
+  assert.ok(html.includes('PStudioWebGPURenderer'));
+  assert.ok(html.includes('PStudioTSL'));
+  assert.ok(renderer.includes('webgpuModuleAvailable'));
+  assert.ok(renderer.includes('tslModuleAvailable'));
+  assert.ok(renderer.includes("tslNodesEnabled:false"));
 });
 
 test('auto quality keeps device-aware scaling while Ultra uses the shared 2x render helper',()=>{
@@ -107,7 +117,7 @@ test('UV lightmaps generate per-triangle UV2 atlases and persist in IndexedDB',(
   for(const token of ['bakeUVLightmaps','createLightmapUVGeometry','bakeLightmapPixels','saveLightmaps','loadLightmaps','clearLightmaps','PStudioLightmaps','DataTexture','uv2'])assert.ok(renderer.includes(token),token);
 });
 test('BVH acceleration is optional and connected to occlusion raycasting',()=>{
-  assert.ok(html.includes('three-mesh-bvh@0.7.8'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes('acceleratedRaycast'));
   for(const token of ['computeBoundsTree','scheduleGeometryBVH','disposeBoundsTree'])assert.ok(renderer.includes(token),token);
 });
@@ -591,7 +601,7 @@ test('BVH scheduling skips small meshes and permanently falls back after a const
     'elementCount<768',
     'pstudioBVHSkippedSmall',
     'pstudioBVHFailed',
-    'geometry.computeBoundsTree({maxLeafTris:12})',
+    'geometry.computeBoundsTree({targetLeafSize:12})',
     'this geometry will use standard raycasting'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('scheduleGeometryBVH(object.geometry)'));
@@ -966,7 +976,7 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-sunset-ultra-v3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-three-r187-tsl-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3'));

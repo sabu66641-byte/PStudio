@@ -33,6 +33,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Install pinned Three.js runtime dependencies for renderer smoke tests
+        run: npm install --package-lock=false --ignore-scripts --no-audit --no-fund
+
       - name: Run Python regression tests (including C++17 compile tests)
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
