@@ -279,6 +279,12 @@ test('editor orbit reaches near-vertical top-down and bottom-up views while game
 });
 
 
+test('editor ground grid is hidden while orbiting beneath its plane',()=>{
+  assert.match(renderer,/const belowGridPlane=camera\.position\.y<=grid\.position\.y\+0\.05/);
+  assert.match(renderer,/grid\.visible=!belowGridPlane/);
+  assert.match(renderer,/if\(belowGridPlane\)continue/);
+});
+
 test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
   const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
   for(const [name,profile] of Object.entries({day,dusk,night,studio})){
