@@ -626,7 +626,7 @@
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:14,high:30,maximum:40,ultra:64,cinematic:40}[String(preset)]||30;
+      const base={mobile:8,balanced:14,high:30,maximum:44,ultra:64,cinematic:40}[String(preset)]||30;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
       const factor=preset==='ultra'?[.70,.85,1][level]:preset==='maximum'?[.62,.76,1][level]:[.58,.78,1][level];
       const steps=Math.max(8,Math.min(64,Math.round(base*factor)));
@@ -799,7 +799,7 @@
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:10,high:16,maximum:24,ultra:32}[String(preset)]||16;
+      const base={mobile:8,balanced:10,high:16,maximum:26,ultra:32}[String(preset)]||16;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
       const factor=preset==='ultra'?[.75,.88,1][level]:preset==='maximum'?[.68,.84,1][level]:[.62,.82,1][level];
       const steps=Math.max(6,Math.min(32,Math.round(base*factor)));
