@@ -2591,8 +2591,10 @@ window.PStudio3DReady = new Promise(resolve => {
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.module.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.webgpu.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.tsl.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.188.0/examples/jsm/"
   }
 }
 </script>
@@ -2608,6 +2610,13 @@ try {
   try { const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'); window.PStudioDRACOLoader = DRACOLoader; }
   catch (error) { console.warn('[PStudio] Draco decoder unavailable:', error); }
   const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
+  try {
+    const { WebGLNodesHandler } = await import('three/addons/tsl/WebGLNodesHandler.js');
+    window.PStudioWebGLNodesHandler = WebGLNodesHandler;
+  } catch (error) {
+    window.PStudioWebGLNodesHandler = null;
+    console.warn('[PStudio] TSL compatibility bridge unavailable; legacy GLSL materials remain active.', error);
+  }
   window.THREE = THREE;
   window.PStudioGLTFLoader = GLTFLoader;
   window.PStudioSkeletonUtils = SkeletonUtils;
@@ -2640,7 +2649,7 @@ try {
   try { window.PStudioSimplifyModifier = (await import('three/addons/modifiers/SimplifyModifier.js')).SimplifyModifier; }
   catch (error) { console.warn('[PStudio] Automatic mesh LOD generation unavailable; source meshes will be retained.', error); }
   try {
-    const bvh = await import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js');
+    const bvh = await import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.18/build/index.module.js');
     THREE.Mesh.prototype.raycast = bvh.acceleratedRaycast;
     THREE.BufferGeometry.prototype.computeBoundsTree = bvh.computeBoundsTree;
     THREE.BufferGeometry.prototype.disposeBoundsTree = bvh.disposeBoundsTree;
@@ -2683,7 +2692,7 @@ try {
 <script src="/static/pstudio_game_ui.js"></script>
 <script src="/static/pstudio_environment_fx.js?v=20261124-moon-sunset-ultra-v3"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-moon-sunset-ultra-v3"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261124-moon-sunset-ultra-v3"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261124-three-r188-tsl-v1"></script>
 <script src="/static/pstudio_engine.js?v=20261124-moon-sunset-ultra-v3"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
