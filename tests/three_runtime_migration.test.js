@@ -43,6 +43,13 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
 
   const webgpu = await import('three/webgpu');
   assert.equal(typeof webgpu.WebGPURenderer, 'function');
+  assert.equal(typeof webgpu.MeshStandardMaterial, 'function');
+  assert.equal(typeof webgpu.MeshPhysicalMaterial, 'function');
+  assert.equal(typeof webgpu.MeshStandardNodeMaterial, 'function');
+  assert.equal(typeof webgpu.DirectionalLight, 'function');
+  assert.equal(typeof tsl.uv, 'function');
+  assert.equal(typeof tsl.mix, 'function');
+  assert.equal(typeof tsl.vec3, 'function');
 
   const bvh = await import('three-mesh-bvh');
   for (const name of ['acceleratedRaycast', 'computeBoundsTree', 'disposeBoundsTree', 'MeshBVH']) {

@@ -39,5 +39,8 @@ jobs:
       - name: Run Python regression tests (including C++17 compile tests)
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Check standalone WebGPU lab module syntax
+        run: node --check static/pstudio_webgpu_lab.mjs
+
       - name: Run JavaScript regression tests
         run: node --test tests/*.test.js
