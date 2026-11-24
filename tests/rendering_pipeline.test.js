@@ -47,6 +47,20 @@ test('Ultra can reduce actual drawing-buffer resolution when adaptive quality st
   assert.ok(renderer.includes('Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0)'));
 });
 
+test('constrained touch Maximum protects the frame budget by disabling full-screen volumetric and screen-space passes',()=>{
+  assert.ok(renderer.includes("adaptiveTouchPostFxBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode"));
+  assert.ok(renderer.includes("const premiumEffectsEnabled=effectsEnabled&&!adaptiveTouchPostFxBudget"));
+  assert.ok(renderer.includes("qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass"));
+  assert.ok(renderer.includes("ssrEnabled=premiumEffectsEnabled&&profile.ssr&&!!ssrPass"));
+  assert.ok(renderer.includes("volumetricCloudsEnabled=!!(premiumEffectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio')"));
+  assert.ok(renderer.includes("volumetricFogEnabled=!!(premiumEffectsEnabled&&profile.atmosphere&&volumetricFogPass)"));
+  assert.ok(renderer.includes("contactShadowsEnabled=!!contactShadowPass&&premiumEffectsEnabled"));
+  assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.72,.9,1.05][level]:Infinity"));
+  assert.ok(renderer.includes("adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)"));
+  assert.ok(renderer.includes("mobilePostFxBudget:adaptiveTouchPostFxBudget"));
+  assert.ok(renderer.includes("setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget"));
+});
+
 test('quality presets configure render resolution and shadow filtering', () => {
   for (const preset of ['mobile', 'balanced', 'high', 'maximum', 'ultra']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));
