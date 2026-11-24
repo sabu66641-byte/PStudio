@@ -1058,12 +1058,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return true;
   }
   function serviceDynamicRadianceCache(now){
-    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene||!dynamicLights.size)return;
+    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene)return;
     if(now-lastDynamicProbeSignatureAt>=600){
       lastDynamicProbeSignatureAt=now;
       const signature=dynamicLightCacheSignature();
-      if(signature!==dynamicProbeSignature)resetDynamicProbeCache(signature);
+      if(signature!==dynamicProbeSignature){
+        if(!signature){
+          dynamicProbeSignature='';dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+          dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);
+          dynamicProbeCursor=0;probeVolumeGeneration++;dynamicGIStatus='waiting-for-dynamic-lights';
+        }else resetDynamicProbeCache(signature);
+      }
     }
+    if(!dynamicLights.size){dynamicGIStatus='waiting-for-dynamic-lights';return;}
     if(!dynamicProbeDirty||!dynamicProbeDirty.length)return;
     if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
     if(now-lastDynamicProbeUpdateAt<DYNAMIC_PROBE_UPDATE_INTERVAL_MS)return;
