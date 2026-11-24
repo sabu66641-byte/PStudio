@@ -92,6 +92,7 @@
   let activeEnvironmentPreset='day';
   let physicalSky=null;
   let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
+  let nightTwinkleStars=null;
   let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunViewDirection=null,sunIntensity=0,sunAngularRadius=1.2,sunGlareStrength=0,moonGlareStrength=0;
   let adaptiveMaximumTouchMode=false,adaptiveUltraTouchMode=false,adaptiveTouchPostFxBudget=false;
   const meshCache = new Map();
@@ -851,6 +852,66 @@
     if(performanceMonitorEnabled)updatePerformanceMonitor(window.performance?.now?.()??Date.now(),true);
     return performanceMonitorEnabled;
   }
+  function ensureNightTwinkleStars(T){
+    if(nightTwinkleStars?.parent===scene)return nightTwinkleStars;
+    if(!scene)return null;
+    const count=56,geometry=new T.BufferGeometry();
+    const positions=new Float32Array(count*3),phases=new Float32Array(count),intensities=new Float32Array(count),speeds=new Float32Array(count);
+    let seed=0x4e494748;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    for(let i=0;i<count;i++){
+      const y=.16+random()*.82,angle=random()*Math.PI*2,radius=Math.sqrt(Math.max(0,1-y*y));
+      positions[i*3]=Math.cos(angle)*radius;positions[i*3+1]=y;positions[i*3+2]=Math.sin(angle)*radius;
+      phases[i]=random()*Math.PI*2;intensities[i]=.42+random()*.58;speeds[i]=.55+random()*.8;
+    }
+    geometry.setAttribute('position',new T.BufferAttribute(positions,3));
+    geometry.setAttribute('aPhase',new T.BufferAttribute(phases,1));
+    geometry.setAttribute('aIntensity',new T.BufferAttribute(intensities,1));
+    geometry.setAttribute('aSpeed',new T.BufferAttribute(speeds,1));
+    const material=new T.ShaderMaterial({
+      uniforms:{uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))}},
+      vertexShader:[
+        'attribute float aPhase;','attribute float aIntensity;','attribute float aSpeed;',
+        'uniform float uTime;','uniform float uPointScale;','varying float vTwinkle;','varying float vIntensity;',
+        'void main(){',
+        'float pulse=.58+.42*(.5+.5*sin(uTime*aSpeed+aPhase));',
+        'vTwinkle=pulse;vIntensity=aIntensity;',
+        'vec4 mvPosition=modelViewMatrix*vec4(position,1.0);',
+        'gl_Position=projectionMatrix*mvPosition;',
+        'gl_PointSize=(2.0+aIntensity*2.8)*uPointScale;',
+        '}'
+      ].join('\n'),
+      fragmentShader:[
+        'varying float vTwinkle;','varying float vIntensity;',
+        'void main(){',
+        'vec2 p=gl_PointCoord-vec2(.5);float r=length(p);',
+        'float core=exp(-r*r*190.0);',
+        'float rays=max(exp(-abs(p.x)*72.0)*exp(-abs(p.y)*8.0),exp(-abs(p.y)*72.0)*exp(-abs(p.x)*8.0));',
+        'float hexRay=pow(max(0.0,cos(atan(p.y,p.x)*6.0)),24.0)*smoothstep(.48,.02,r);',
+        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity;',
+        'if(alpha<.012)discard;',
+        'gl_FragColor=vec4(vec3(.72,.83,1.0)*alpha,alpha);',
+        '}'
+      ].join('\n'),
+      transparent:true,depthTest:true,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false
+    });
+    nightTwinkleStars=new T.Points(geometry,material);
+    nightTwinkleStars.name='PStudioNightTwinkleStars';
+    nightTwinkleStars.frustumCulled=false;
+    nightTwinkleStars.renderOrder=2;
+    scene.add(nightTwinkleStars);
+    return nightTwinkleStars;
+  }
+  function updateNightTwinkleStars(){
+    if(!nightTwinkleStars||!camera)return;
+    const visible=activeEnvironmentPreset==='night'&&!(hdrTexture&&hdrShowBackground);
+    nightTwinkleStars.visible=visible;
+    if(!visible)return;
+    nightTwinkleStars.position.copy(camera.position);
+    const distance=Math.max(camera.near+2,camera.far*.96);
+    nightTwinkleStars.scale.setScalar(distance);
+    if(nightTwinkleStars.material?.uniforms?.uTime)nightTwinkleStars.material.uniforms.uTime.value=(window.performance?.now?.()??Date.now())*.001;
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     const frameStarted=window.performance?.now?.()??Date.now();
@@ -864,6 +925,8 @@
     if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
     updateMoonSkyMesh();
     updateSunSkyMesh();
+    if(activeEnvironmentPreset==='night')ensureNightTwinkleStars(window.THREE);
+    updateNightTwinkleStars();
     updateEditorGridPresentation();
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
@@ -4097,7 +4160,7 @@ void main(){
         for(let i=0;i<values.length;i++)values[i]=random();
         return{width:gridWidth,height:gridHeight,values};
       };
-      const noiseGrids=[makeNoiseGrid(48,24),makeNoiseGrid(96,48),makeNoiseGrid(192,96),makeNoiseGrid(384,192)];
+      const noiseGrids=[makeNoiseGrid(48,24),makeNoiseGrid(96,48),makeNoiseGrid(192,96),makeNoiseGrid(384,192),makeNoiseGrid(768,384)];
       const sampleNoise=(grid,u,v)=>{
         const gx=u*grid.width,gy=Math.max(0,Math.min(grid.height-1,v*(grid.height-1)));
         const x0=Math.floor(gx)%grid.width,x1=(x0+1)%grid.width;
@@ -4125,6 +4188,7 @@ void main(){
             const medium=sampleNoise(noiseGrids[1],u,v);
             const fine=sampleNoise(noiseGrids[2],u,v);
             const micro=sampleNoise(noiseGrids[3],u,v);
+            const ultraFine=sampleNoise(noiseGrids[4],u,v);
             // A curved, seam-safe galactic plane with turbulent edge displacement.
             let center=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
             center+=(broad-.5)*.045+(medium-.5)*.018;
@@ -4132,12 +4196,13 @@ void main(){
             const distance=Math.abs(v-center);
             const core=Math.exp(-Math.pow(distance/bandWidth,2)*1.55);
             const haze=Math.exp(-Math.pow(distance/(bandWidth*3.15),2));
-            const structure=clamp01((medium*.48+fine*.34+micro*.18-.27)*1.65);
-            const knots=clamp01((fine*.62+micro*.38-.49)*2.15);
-            const dust=clamp01((fine*.54+micro*.46-.61)*2.25)*core;
-            const filaments=core*(.10+structure*.75+knots*.22);
+            const structure=clamp01((medium*.39+fine*.31+micro*.19+ultraFine*.11-.27)*1.72);
+            const knots=clamp01((fine*.48+micro*.34+ultraFine*.18-.49)*2.3);
+            const dust=clamp01((fine*.42+micro*.38+ultraFine*.20-.61)*2.3)*core;
+            const fiberRidges=Math.pow(clamp01(1-Math.abs(ultraFine-.5)*3.6),5.2);
+            const filaments=core*(.085+structure*.68+knots*.19+fiberRidges*.16);
             const outerHaze=haze*(.025+broad*.055);
-            const intensity=clamp01((filaments+outerHaze)*(1-dust*.68)*1.34);
+            const intensity=clamp01((filaments+outerHaze)*(1-dust*.68)*1.38);
             const warm=clamp01(.48+.36*Math.sin(angle*1.4+.4)+.28*(medium-.5));
             const cold=1-warm;
             const offset=(y*galaxyWidth+x)*4;
@@ -4155,6 +4220,18 @@ void main(){
         context.drawImage(galaxyCanvas,0,0,width,height);
         context.restore();
       }
+
+      // A restrained horizon airglow gives the starfield a real atmospheric boundary.
+      // It is a smooth, low-frequency band, not a full-screen fog pass.
+      const horizonAirglow=context.createLinearGradient(0,height*.405,0,height*.585);
+      horizonAirglow.addColorStop(0,'rgba(9,18,38,0)');
+      horizonAirglow.addColorStop(.36,'rgba(54,78,119,0.018)');
+      horizonAirglow.addColorStop(.52,'rgba(105,139,184,0.072)');
+      horizonAirglow.addColorStop(.68,'rgba(65,91,139,0.035)');
+      horizonAirglow.addColorStop(1,'rgba(8,15,30,0)');
+      context.save();context.globalCompositeOperation='screen';
+      context.fillStyle=horizonAirglow;context.fillRect(0,height*.405,width,height*.18);
+      context.restore();
 
       // Very faint wide-angle airglow keeps the black sky from becoming a flat void.
       const airglow=context.createRadialGradient(width*.72,height*.29,8,width*.72,height*.29,height*.55);
@@ -4176,6 +4253,18 @@ void main(){
       );
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
       if(moonGlow>.001){
+        // Carry a faint, azimuth-aligned lunar glow down to the horizon air layer.
+        const horizonRadiusX=width*.19,horizonRadiusY=height*.052;
+        drawWrappedX(moonUv.x,horizonRadiusX,wrappedX=>{
+          context.save();context.translate(wrappedX,height*.505);context.scale(1,horizonRadiusY/horizonRadiusX);
+          const lunarHorizon=context.createRadialGradient(0,0,0,0,0,horizonRadiusX);
+          lunarHorizon.addColorStop(0,'rgba(137,174,229,'+(0.052*moonGlow)+')');
+          lunarHorizon.addColorStop(.38,'rgba(91,132,197,'+(0.028*moonGlow)+')');
+          lunarHorizon.addColorStop(1,'rgba(35,61,108,0)');
+          context.globalCompositeOperation='screen';context.fillStyle=lunarHorizon;
+          context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
+          context.restore();
+        });
         const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.065+moonGlow*.075));
         moonAura.addColorStop(0,'rgba(205,224,255,'+(0.19*moonGlow)+')');
         moonAura.addColorStop(.2,'rgba(151,190,246,'+(0.12*moonGlow)+')');
@@ -4210,12 +4299,22 @@ void main(){
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fill();
         if(radius>2.8&&random()>.72){
-          context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
-          context.lineWidth=.65;
+          // Only the rare brightest stars receive a restrained six-fold diffraction flare.
+          context.save();context.translate(x,y);
+          context.strokeStyle='rgba('+color+','+(alpha*.34).toFixed(3)+')';
+          context.lineWidth=.58;context.lineCap='round';
           context.beginPath();
-          context.moveTo(x-radius*2.1,y);context.lineTo(x+radius*2.1,y);
-          context.moveTo(x,y-radius*2.1);context.lineTo(x,y+radius*2.1);
+          context.moveTo(-radius*3.4,0);context.lineTo(radius*3.4,0);
+          context.moveTo(0,-radius*3.4);context.lineTo(0,radius*3.4);
+          const diagonal=radius*2.35;
+          context.moveTo(-diagonal,-diagonal*.58);context.lineTo(diagonal,diagonal*.58);
+          context.moveTo(-diagonal,diagonal*.58);context.lineTo(diagonal,-diagonal*.58);
           context.stroke();
+          context.strokeStyle='rgba('+color+','+(alpha*.19).toFixed(3)+')';
+          context.lineWidth=.48;context.beginPath();
+          context.moveTo(-radius*1.8,-radius*3.1);context.lineTo(radius*1.8,radius*3.1);
+          context.moveTo(-radius*1.8,radius*3.1);context.lineTo(radius*1.8,-radius*3.1);
+          context.stroke();context.restore();
         }
       }
       // A restrained second layer of very faint pinprick stars adds depth without changing
