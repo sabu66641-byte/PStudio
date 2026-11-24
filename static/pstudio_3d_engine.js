@@ -869,26 +869,33 @@
     geometry.setAttribute('aIntensity',new T.BufferAttribute(intensities,1));
     geometry.setAttribute('aSpeed',new T.BufferAttribute(speeds,1));
     const material=new T.ShaderMaterial({
-      uniforms:{uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))}},
+      uniforms:{
+        uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))},
+        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0}
+      },
       vertexShader:[
         'attribute float aPhase;','attribute float aIntensity;','attribute float aSpeed;',
-        'uniform float uTime;','uniform float uPointScale;','varying float vTwinkle;','varying float vIntensity;',
+        'uniform float uTime;','uniform float uPointScale;','varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'float pulse=.58+.42*(.5+.5*sin(uTime*aSpeed+aPhase));',
-        'vTwinkle=pulse;vIntensity=aIntensity;',
+        'vTwinkle=pulse;vIntensity=aIntensity;vSkyDirection=normalize(position);',
         'vec4 mvPosition=modelViewMatrix*vec4(position,1.0);',
         'gl_Position=projectionMatrix*mvPosition;',
         'gl_PointSize=(2.0+aIntensity*2.8)*uPointScale;',
         '}'
       ].join('\n'),
       fragmentShader:[
-        'varying float vTwinkle;','varying float vIntensity;',
+        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;',
+        'varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'vec2 p=gl_PointCoord-vec2(.5);float r=length(p);',
         'float core=exp(-r*r*190.0);',
         'float rays=max(exp(-abs(p.x)*72.0)*exp(-abs(p.y)*8.0),exp(-abs(p.y)*72.0)*exp(-abs(p.x)*8.0));',
         'float hexRay=pow(max(0.0,cos(atan(p.y,p.x)*6.0)),24.0)*smoothstep(.48,.02,r);',
-        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity;',
+        'float alignment=dot(normalize(vSkyDirection),normalize(uMoonDirectionWorld));',
+        'float moonHalo=smoothstep(0.89,0.999,alignment);',
+        'float moonDim=1.0-uMoonOcclusion*moonHalo*.58;',
+        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim;',
         'if(alpha<.012)discard;',
         'gl_FragColor=vec4(vec3(.72,.83,1.0)*alpha,alpha);',
         '}'
@@ -911,6 +918,8 @@
     const distance=Math.max(camera.near+2,camera.far*.96);
     nightTwinkleStars.scale.setScalar(distance);
     if(nightTwinkleStars.material?.uniforms?.uTime)nightTwinkleStars.material.uniforms.uTime.value=(window.performance?.now?.()??Date.now())*.001;
+    if(nightTwinkleStars.material?.uniforms?.uMoonDirectionWorld&&moonDirection)nightTwinkleStars.material.uniforms.uMoonDirectionWorld.value.copy(moonDirection);
+    if(nightTwinkleStars.material?.uniforms?.uMoonOcclusion)nightTwinkleStars.material.uniforms.uMoonOcclusion.value=moonMesh?.visible?1:0;
   }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
@@ -4327,26 +4336,40 @@ void main(){
         Number.isFinite(Number(profile.moonDirectionZ))?Number(profile.moonDirectionZ):.27
       );
       const moonGlow=Math.max(0,Math.min(1.5,Number(profile.moonGlow)||0));
+      const moonV=moonUv.y/height;
       if(moonGlow>.001){
-        // Carry a faint, azimuth-aligned lunar glow down to the horizon air layer.
-        const horizonRadiusX=width*.19,horizonRadiusY=height*.052;
-        drawWrappedX(moonUv.x,horizonRadiusX,wrappedX=>{
-          context.save();context.translate(wrappedX,height*.505);context.scale(1,horizonRadiusY/horizonRadiusX);
-          const lunarHorizon=context.createRadialGradient(0,0,0,0,0,horizonRadiusX);
-          lunarHorizon.addColorStop(0,'rgba(137,174,229,'+(0.052*moonGlow)+')');
-          lunarHorizon.addColorStop(.38,'rgba(91,132,197,'+(0.028*moonGlow)+')');
-          lunarHorizon.addColorStop(1,'rgba(35,61,108,0)');
-          context.globalCompositeOperation='screen';context.fillStyle=lunarHorizon;
-          context.fillRect(-horizonRadiusX,-horizonRadiusX,horizonRadiusX*2,horizonRadiusX*2);
-          context.restore();
-        });
-        const moonAura=context.createRadialGradient(moonUv.x,moonUv.y,2,moonUv.x,moonUv.y,height*(.065+moonGlow*.075));
-        moonAura.addColorStop(0,'rgba(205,224,255,'+(0.19*moonGlow)+')');
-        moonAura.addColorStop(.2,'rgba(151,190,246,'+(0.12*moonGlow)+')');
-        moonAura.addColorStop(.58,'rgba(100,145,216,'+(0.052*moonGlow)+')');
-        moonAura.addColorStop(1,'rgba(42,66,112,0)');
+        // Three nested scattering lobes: warm near-limb bloom, cool blue halo and a broad atmospheric veil.
+        const glowLayers=[
+          {radius:height*.026,stops:[[0,'rgba(255,239,211,0.19)'],[.32,'rgba(246,230,205,0.14)'],[.68,'rgba(191,213,249,0.065)'],[1,'rgba(120,158,221,0)']]},
+          {radius:height*.074,stops:[[0,'rgba(211,226,255,0.12)'],[.35,'rgba(156,190,243,0.075)'],[.72,'rgba(91,132,205,0.028)'],[1,'rgba(58,87,150,0)']]},
+          {radius:height*.148,stops:[[0,'rgba(107,147,211,0.038)'],[.52,'rgba(68,104,171,0.022)'],[1,'rgba(35,57,111,0)']]}
+        ];
         context.save();context.globalCompositeOperation='screen';
-        context.fillStyle=moonAura;context.fillRect(moonUv.x-width*.08,moonUv.y-height*.1,width*.16,height*.2);
+        for(const layer of glowLayers){
+          drawWrappedX(moonUv.x,layer.radius,wrappedX=>{
+            const gradient=context.createRadialGradient(wrappedX,moonUv.y,1,wrappedX,moonUv.y,layer.radius);
+            for(const [stop,color] of layer.stops)gradient.addColorStop(stop,color);
+            context.fillStyle=gradient;
+            context.fillRect(wrappedX-layer.radius,moonUv.y-layer.radius,layer.radius*2,layer.radius*2);
+          });
+        }
+        // Moonlight catches a few very thin, high cirrus wisps in the same static panorama.
+        context.lineCap='round';context.lineJoin='round';
+        for(let i=0;i<34;i++){
+          const x=moonUv.x+(random()-.5)*width*.105;
+          const y=moonUv.y+(random()-.5)*height*.105;
+          const length=width*(.006+random()*.017);
+          const bend=(random()-.5)*height*.008;
+          const alpha=(.018+random()*.027)*moonGlow;
+          drawWrappedX(x,length+4,wrappedX=>{
+            context.beginPath();context.moveTo(wrappedX,y);
+            context.bezierCurveTo(wrappedX+length*.28,y+bend,wrappedX+length*.66,y-bend*.62,wrappedX+length,y+bend*.22);
+            context.strokeStyle='rgba(183,207,244,'+alpha.toFixed(3)+')';
+            context.lineWidth=.7+random()*1.15;
+            context.shadowColor='rgba(178,204,247,0.12)';context.shadowBlur=5+random()*8;
+            context.stroke();
+          });
+        }
         context.restore();
       }
 
@@ -4360,7 +4383,11 @@ void main(){
         const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
         const roll=random();
         const radius=roll>.996?2.8+random()*1.4:roll>.94?1.05+random()*.8:.27+Math.pow(random(),2)*.86;
-        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness);
+        const moonDxRaw=Math.abs(x-moonUv.x),moonDx=Math.min(moonDxRaw,width-moonDxRaw)*Math.max(.2,Math.cos((moonV-.5)*Math.PI));
+        const moonDy=y-moonUv.y;
+        const moonDistance=Math.sqrt(moonDx*moonDx+moonDy*moonDy);
+        const moonStarFade=1.0-.64*Math.exp(-Math.pow(moonDistance/(height*.062),2)*1.45);
+        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness*moonStarFade);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
@@ -4399,7 +4426,10 @@ void main(){
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
         const radius=.1+random()*.25;
-        const alpha=(.045+random()*.09)*starBrightness;
+        const moonDxRaw=Math.abs(x-moonUv.x),moonDx=Math.min(moonDxRaw,width-moonDxRaw)*Math.max(.2,Math.cos((moonV-.5)*Math.PI));
+        const moonDy=y-moonUv.y;
+        const moonMicroFade=1.0-.62*Math.exp(-(moonDx*moonDx+moonDy*moonDy)/(height*height*.0048));
+        const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fillRect(x,y,radius,radius);
       }
