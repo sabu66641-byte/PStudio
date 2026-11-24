@@ -374,6 +374,8 @@ test('night Milky Way adds high-frequency filament structure without a separate 
   assert.match(renderer,/const ultraFine=sampleNoise\(noiseGrids\[4\],u,v\)/);
   assert.match(renderer,/const fiberRidges=Math\.pow\(/);
   assert.match(renderer,/const horizonAirglow=context\.createLinearGradient\(0,height\*\.405,0,height\*\.585\)/);
+  assert.match(renderer,/const lunarHorizon=context\.createRadialGradient\(0,0,0,0,0,horizonRadiusX\)/);
+  assert.match(renderer,/drawWrappedX\(moonUv\.x,horizonRadiusX/);
 });
 
 test('bright night stars receive restrained diffraction flares and animated depth-tested twinkle points',()=>{
