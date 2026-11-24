@@ -238,7 +238,7 @@
     balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
     maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
-    ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
+    ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
   };
   function qualityHardwareCapabilities(){
     let maxTextureSize=Number(renderer?.capabilities?.maxTextureSize)||0;
@@ -274,7 +274,7 @@
     }catch(_){}
     const memory=deviceMemoryGiB();
     const memoryCap=qualityPreset==='ultra'
-      ?(memory<=2?3072:memory<=4?4096:memory<=8?6144:8192)
+      ?(memory<=2?2048:memory<=4?3072:4096)
       :qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096);
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
@@ -334,7 +334,7 @@
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      const requestedShadow=qualityPreset==='ultra'?[4096,6144,8192][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[1536,2048,3072][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      const requestedShadow=qualityPreset==='ultra'?[2048,3072,4096][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[1536,2048,3072][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
       for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?(qualityPreset==='ultra'?3.2:2.5):2;light.shadow.bias=-0.00003;light.shadow.normalBias=0.006;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(effectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
@@ -342,7 +342,7 @@
       volumetricFogEnabled=!!(effectsEnabled&&profile.atmosphere&&volumetricFogPass);
       if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
-      if(gtaoPass?.updateGtaoMaterial){const level=adaptiveQualityEnabled?adaptiveQualityLevel:2;const aoSamples=selected==='ultra'?[32,48,64][level]:selected==='maximum'?[12,20,32][level]:[8,12,16][level];const pdSamples=selected==='ultra'?[24,36,48][level]:selected==='maximum'?[14,22,32][level]:[12,18,24][level];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
+      if(gtaoPass?.updateGtaoMaterial){const level=adaptiveQualityEnabled?adaptiveQualityLevel:2;const aoSamples=selected==='ultra'?[12,20,32][level]:selected==='maximum'?[12,20,32][level]:[8,12,16][level];const pdSamples=selected==='ultra'?[14,22,32][level]:selected==='maximum'?[14,22,32][level]:[12,18,24][level];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.16:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?9:selected==='maximum'?9:8});}
       lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile,adaptive:adaptiveQualityEnabled,outputMultiplier:qualityPreset==='ultra'?2:1});}catch(_){}
@@ -379,9 +379,9 @@
     if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
-    if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[24,36,48][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
+    if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[12,20,32][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[14,22,32][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.72:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.16:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.0:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?3:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?9:selected==='maximum'?9:8});}
     if(taaPass&&!temporalAAEnabled){taaPass.sampleLevel=adaptiveQualityLevel;taaPass.accumulateIndex=-1;}
-    const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
+    const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[2048,3072,4096]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
     const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
@@ -691,7 +691,9 @@
   }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
-    if(physicalSky?.visible)physicalSky.position.copy(camera.position);
+    // Update the camera's world matrix before positioning camera-relative celestial meshes.
+    camera.updateMatrixWorld(true);
+    if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
     updateMoonSkyMesh();
     updateSunSkyMesh();
     updateEditorGridPresentation();
@@ -3466,7 +3468,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(!moonDirection)moonDirection=new T.Vector3();
     if(!moonLightDirection)moonLightDirection=new T.Vector3();
     if(!moonMesh){
-      const geometry=new T.SphereGeometry(1,48,32);
+      const geometry=new T.SphereGeometry(1,64,48);
       const material=new T.ShaderMaterial({
         uniforms:{
           uMoonMap:{value:moonSurfaceTexture},
@@ -3553,7 +3555,7 @@ void main(){
     moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
-    const radius=distance*Math.tan(2.25*Math.PI/180);
+    const radius=distance*Math.tan(3.0*Math.PI/180);
     moonMesh.position.copy(camera.position).addScaledVector(moonDirection,distance);
     moonMesh.scale.setScalar(radius);
     if(!sunViewDirection)sunViewDirection=new window.THREE.Vector3();
@@ -3746,6 +3748,11 @@ void main(){
       const u=((Math.atan2(z,x)/(Math.PI*2)+0.5)%1+1)%1;
       return{x:u*width,y:Math.acos(ny)/Math.PI*height};
     };
+    const drawWrappedX=(x,margin,draw)=>{
+      draw(x);
+      if(x<margin)draw(x+width);
+      else if(x>width-margin)draw(x-width);
+    };
 
     if(name==='night'){
       // A dark, periodic starfield with a structured Milky Way rather than a smooth painted stripe.
@@ -3770,7 +3777,7 @@ void main(){
 
       // Render the nebula at half resolution, then upscale before the texture mipmaps are built.
       const galaxyCanvas=document.createElement('canvas');
-      const galaxyWidth=1024,galaxyHeight=512;
+      const galaxyWidth=width,galaxyHeight=height;
       galaxyCanvas.width=galaxyWidth;galaxyCanvas.height=galaxyHeight;
       const galaxyContext=galaxyCanvas.getContext('2d');
       if(galaxyContext){
@@ -3927,11 +3934,13 @@ void main(){
         }
         context.restore();
       }else{
-        const horizonGlow=context.createRadialGradient(sun.x,sun.y,2,sun.x,sun.y,height*.16);
-        horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
-        horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
-        horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
-        context.fillStyle=horizonGlow;context.fillRect(0,0,width,height);
+        drawWrappedX(sun.x,width*.18,wrappedX=>{
+          const horizonGlow=context.createRadialGradient(wrappedX,sun.y,2,wrappedX,sun.y,height*.16);
+          horizonGlow.addColorStop(0,'rgba(255,238,196,0.22)');
+          horizonGlow.addColorStop(.24,'rgba(159,210,245,0.10)');
+          horizonGlow.addColorStop(1,'rgba(255,255,255,0)');
+          context.fillStyle=horizonGlow;context.fillRect(wrappedX-width*.16,sun.y-height*.16,width*.32,height*.32);
+        });
       }
 
       if(name==='day'||name==='dusk'){
@@ -3941,53 +3950,63 @@ void main(){
       for(let i=0;i<(dusk?112:92);i++){
         const x=random()*width,y=height*(dusk?.29:.18)+random()*height*(dusk?.18:.25);
         const rx=55+random()*(dusk?190:150),ry=4+random()*(dusk?17:11);
-        context.save();context.translate(x,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
-        const cloud=context.createRadialGradient(0,0,2,0,0,rx);
-        if(dusk){
-          cloud.addColorStop(0,'rgba(255,178,148,0.16)');
-          cloud.addColorStop(.46,'rgba(225,130,134,0.09)');
-          cloud.addColorStop(1,'rgba(190,117,163,0)');
-        }else{
-          cloud.addColorStop(0,'rgba(246,252,255,0.15)');
-          cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
-          cloud.addColorStop(1,'rgba(210,232,247,0)');
-        }
-        context.fillStyle=cloud;
-        context.beginPath();
-        context.arc(0,0,rx,0,Math.PI*2);
-        context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
-        context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
-        context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
-        context.fill();
-        context.restore();
+        drawWrappedX(x,rx+2,wrappedX=>{
+          context.save();context.translate(wrappedX,y);context.rotate((random()-.5)*.18);context.scale(1,ry/rx);
+          const cloud=context.createRadialGradient(0,0,2,0,0,rx);
+          if(dusk){
+            cloud.addColorStop(0,'rgba(255,178,148,0.20)');
+            cloud.addColorStop(.46,'rgba(225,130,134,0.105)');
+            cloud.addColorStop(1,'rgba(190,117,163,0)');
+          }else{
+            cloud.addColorStop(0,'rgba(246,252,255,0.15)');
+            cloud.addColorStop(.5,'rgba(220,239,250,0.075)');
+            cloud.addColorStop(1,'rgba(210,232,247,0)');
+          }
+          context.fillStyle=cloud;
+          context.beginPath();
+          context.arc(0,0,rx,0,Math.PI*2);
+          context.arc(-rx*.52,-ry*.34,rx*.47,0,Math.PI*2);
+          context.arc(rx*.43,-ry*.18,rx*.42,0,Math.PI*2);
+          context.arc(rx*.08,ry*.24,rx*.38,0,Math.PI*2);
+          context.fill();
+          context.restore();
+        });
       }
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:148);i++){
         const x=random()*width,y=height*(.12+random()*.34),length=60+random()*360;
-        context.beginPath();context.moveTo(x,y);
-        context.bezierCurveTo(x+length*.24,y+(random()-.5)*9,x+length*.68,y+(random()-.5)*15,x+length,y+(random()-.5)*8);
-        context.lineWidth=1+random()*(dusk?7:5);
-        context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
-        context.globalAlpha=.12+random()*.22;
-        context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
-        context.shadowBlur=7+random()*18;
-        context.stroke();
+        const yEnd=y+(random()-.5)*8,yControlA=y+(random()-.5)*9,yControlB=y+(random()-.5)*15;
+        const strokeWidth=1+random()*(dusk?7:5),strokeAlpha=.12+random()*.22,shadowBlur=7+random()*18;
+        drawWrappedX(x,length+4,wrappedX=>{
+          context.beginPath();context.moveTo(wrappedX,y);
+          context.bezierCurveTo(wrappedX+length*.24,yControlA,wrappedX+length*.68,yControlB,wrappedX+length,yEnd);
+          context.lineWidth=strokeWidth;
+          context.strokeStyle=dusk?'rgba(255,184,151,0.35)':'rgba(241,250,255,0.32)';
+          context.globalAlpha=strokeAlpha;
+          context.shadowColor=dusk?'rgba(255,153,123,0.22)':'rgba(235,248,255,0.24)';
+          context.shadowBlur=shadowBlur;
+          context.stroke();
+        });
       }
       context.restore();
       }
 
-      const glowRadius=sunRadius*(dusk?2.6:10);
-      const halo=context.createRadialGradient(sun.x,sun.y,1,sun.x,sun.y,glowRadius);
-      halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.18*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
-      halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.11*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
-      halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.045*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
-      halo.addColorStop(1,'rgba(255,255,255,0)');
-      context.fillStyle=halo;context.fillRect(sun.x-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      const glowRadius=sunRadius*(dusk?3.2:10);
+      drawWrappedX(sun.x,glowRadius,wrappedX=>{
+        const halo=context.createRadialGradient(wrappedX,sun.y,1,wrappedX,sun.y,glowRadius);
+        halo.addColorStop(0,dusk?'rgba(255,235,202,'+(0.22*glowStrength)+')':'rgba(255,250,226,'+(0.48*glowStrength)+')');
+        halo.addColorStop(.12,dusk?'rgba(255,161,105,'+(0.14*glowStrength)+')':'rgba(255,229,178,'+(0.22*glowStrength)+')');
+        halo.addColorStop(.42,dusk?'rgba(239,117,91,'+(0.065*glowStrength)+')':'rgba(174,220,249,'+(0.09*glowStrength)+')');
+        halo.addColorStop(1,'rgba(255,255,255,0)');
+        context.fillStyle=halo;context.fillRect(wrappedX-glowRadius,sun.y-glowRadius,glowRadius*2,glowRadius*2);
+      });
       // The photosphere itself is rendered by PStudioSunSphere; this panorama retains only the atmospheric halo.
     }
 
     const texture=new T.CanvasTexture(canvas);
     texture.mapping=T.EquirectangularReflectionMapping;
+    // Equirectangular panoramas are periodic horizontally. ClampToEdge creates a visible longitude seam.
+    texture.wrapS=T.RepeatWrapping;texture.wrapT=T.ClampToEdgeWrapping;
     texture.colorSpace=T.SRGBColorSpace;
     texture.generateMipmaps=true;
     texture.minFilter=T.LinearMipmapLinearFilter;
@@ -4010,16 +4029,24 @@ void main(){
     }
     material.uniforms.pStudioAtmosphereExposure={value:.45};
     material.uniforms.pStudioTwilightStrength={value:0};
+    material.uniforms.pStudioSunAngularRadius={value:0.52};
     const enhancement=[
       'retColor*=pStudioAtmosphereExposure;',
-      'float pStudioHorizonBand=exp(-abs(direction.y)*10.0);',
-      'float pStudioTwilight=smoothstep(-0.10,0.10,vSunDirection.y)*(1.0-smoothstep(0.12,0.48,vSunDirection.y))*pStudioTwilightStrength;',
-      'float pStudioSunAlignment=max(dot(direction,vSunDirection),0.0);',
-      'float pStudioSolarHalo=pow(pStudioSunAlignment,18.0);',
-      'vec3 pStudioWarmHorizon=mix(vec3(0.96,0.22,0.12),vec3(1.0,0.53,0.24),smoothstep(-0.12,0.34,direction.y));',
-      'retColor=mix(retColor,pStudioWarmHorizon,pStudioHorizonBand*pStudioTwilight*0.42);',
-      'retColor+=vec3(1.0,0.34,0.16)*pStudioSolarHalo*pStudioTwilight*0.13;',
-      'retColor+=vec3(0.36,0.53,0.82)*pow(pStudioSunAlignment,24.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.018;'
+      'float pStudioHorizonBand=exp(-abs(direction.y)*12.0);',
+      'float pStudioTwilight=smoothstep(-0.14,0.08,vSunDirection.y)*(1.0-smoothstep(0.10,0.52,vSunDirection.y))*pStudioTwilightStrength;',
+      'float pStudioSunAlignment=max(dot(normalize(direction),normalize(vSunDirection)),0.0);',
+      'float pStudioSolarHalo=pow(pStudioSunAlignment,42.0);',
+      'float pStudioSolarCore=pow(pStudioSunAlignment,180.0);',
+      'float pStudioHorizonWarmth=smoothstep(-0.16,0.025,direction.y)*(1.0-smoothstep(0.025,0.20,direction.y));',
+      'vec3 pStudioWarmHorizon=mix(vec3(0.48,0.20,0.36),vec3(1.0,0.48,0.25),smoothstep(-0.10,0.16,direction.y));',
+      'vec3 pStudioPeachHorizon=mix(vec3(0.72,0.28,0.38),vec3(1.0,0.72,0.43),smoothstep(-0.05,0.14,direction.y));',
+      'retColor=mix(retColor,pStudioWarmHorizon,pStudioHorizonBand*pStudioTwilight*0.34);',
+      'retColor=mix(retColor,pStudioPeachHorizon,pStudioHorizonWarmth*pStudioTwilight*0.16);',
+      'retColor+=vec3(1.0,0.30,0.13)*pStudioSolarHalo*pStudioTwilight*0.095;',
+      'retColor+=vec3(1.0,0.72,0.46)*pStudioSolarCore*pStudioTwilight*0.055;',
+      'retColor+=vec3(0.36,0.53,0.82)*pow(pStudioSunAlignment,30.0)*smoothstep(0.42,0.86,vSunDirection.y)*0.018;',
+      'float pStudioAtmosphereGrain=fract(sin(dot(direction.xy,vec2(127.1,311.7)))*43758.5453)-0.5;',
+      'retColor+=pStudioAtmosphereGrain*0.00045;'
     ].join('\n');
     const shaderWithUniforms=source.replace(uniformMarker,uniformMarker+'\nuniform float pStudioAtmosphereExposure;\nuniform float pStudioTwilightStrength;');
     material.fragmentShader=shaderWithUniforms.replace(marker,enhancement+'\n'+marker);
@@ -4055,6 +4082,7 @@ void main(){
       uniforms.sunPosition.value.copy(sunDirection).multiplyScalar(450000);
       if(uniforms.pStudioAtmosphereExposure)uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45));
       if(uniforms.pStudioTwilightStrength)uniforms.pStudioTwilightStrength.value=Math.max(0,Math.min(1,Number(profile.twilightStrength)||0));
+      if(uniforms.pStudioSunAngularRadius)uniforms.pStudioSunAngularRadius.value=Math.max(0.1,Math.min(4,Number(profile.sunAngularRadius)||0.52));
       physicalSky.visible=true;
       if(camera)physicalSky.position.copy(camera.position);
       return true;

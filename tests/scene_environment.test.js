@@ -218,7 +218,7 @@ test('night moon is a real spherical mesh with one-time surface texture creation
   assert.match(renderer,/for\(let i=0;i<12000;i\+\+\)/);
   assert.match(renderer,/function createMoonSurfaceTexture\(T\)/);
   assert.match(renderer,/function ensureMoonMesh\(T\)/);
-  assert.match(renderer,/new T\.SphereGeometry\(1,48,32\)/);
+  assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
   assert.match(renderer,/if\(moonMesh\?\.parent===scene\)return moonMesh/);
   assert.match(renderer,/function configureMoonSky\(T,profile\)/);
   assert.match(renderer,/function updateMoonSkyMesh\(\)/);
@@ -231,7 +231,7 @@ test('night moon sphere has finer surface detail, a larger apparent size and a r
   assert.match(renderer,/canvas\.width=1024;canvas\.height=512/);
   assert.ok(renderer.includes("for(let i=0;i<280;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<900;i++)"));
-  assert.ok(renderer.includes("Math.tan(2.25*Math.PI/180)"));
+  assert.ok(renderer.includes("Math.tan(3.0*Math.PI/180)"));
   assert.match(renderer,/const moonAura=context\.createRadialGradient/);
   assert.match(renderer,/uMoonGlare/);
   assert.match(renderer,/mesh\.material\.uniforms\.uMoonIntensity\.value=moonIntensity/);
@@ -295,7 +295,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
   assert.ok(dusk.sunIntensity>1.2,'dusk should retain a bright warm solar photosphere');
   assert.ok(dusk.sunAngularRadius>0.4&&dusk.sunAngularRadius<0.8,'the dusk sun should retain a natural, restrained angular diameter');
-  assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?2.6:10)"));
+  assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?3.2:10)"));
   assert.match(renderer,/const horizonBand=context\.createLinearGradient/,'dusk should include a layered horizon afterglow');
   assert.ok(renderer.includes("const glowRadiusX=width*.17,glowRadiusY=height*.045"));
   assert.ok(day.cloudDetail>.75&&dusk.cloudDetail>.8,'day and dusk require high-detail layered clouds');
@@ -354,7 +354,7 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/makeNoiseGrid=\(gridWidth,gridHeight\)=>/);
   assert.match(renderer,/sampleNoise=\(grid,u,v\)=>/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
-  assert.match(renderer,/galaxyWidth=1024,galaxyHeight=512/);
+  assert.match(renderer,/galaxyWidth=width,galaxyHeight=height/);
   assert.match(renderer,/const structure=clamp01\(/);
   assert.match(renderer,/const dust=clamp01\(/);
   assert.match(renderer,/globalCompositeOperation='screen'/);
@@ -374,4 +374,46 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.equal(presets.getPreset('studio').name,'studio');
+});
+
+
+test('night panorama keeps full-resolution Milky Way detail and wraps its longitude seam',()=>{
+  assert.match(renderer,/galaxyWidth=width,galaxyHeight=height/);
+  assert.match(renderer,/texture\.wrapS=T\.RepeatWrapping;texture\.wrapT=T\.ClampToEdgeWrapping/);
+  assert.match(renderer,/texture\.mapping=T\.EquirectangularReflectionMapping/);
+});
+
+test('moon has a larger angular diameter and higher sphere tessellation',()=>{
+  assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
+  assert.match(renderer,/Math\.tan\(3\.0\*Math\.PI\/180\)/);
+});
+
+
+test('dusk atmosphere uses layered twilight scattering, a defined solar core and bounded color grain',()=>{
+  assert.match(renderer,/pStudioSunAngularRadius/);
+  assert.match(renderer,/pStudioSolarCore=pow\(pStudioSunAlignment,180\.0\)/);
+  assert.match(renderer,/pStudioPeachHorizon/);
+  assert.match(renderer,/pStudioAtmosphereGrain\*0\.00045/);
+  assert.equal(presets.getPreset('dusk').twilightStrength,1);
+  assert.ok(presets.getPreset('dusk').skyRayleigh>2.8);
+  assert.ok(presets.getPreset('dusk').cloudCoverage>0.6);
+});
+
+test('day and dusk panorama solar glow and cloud layers wrap cleanly across the longitude seam',()=>{
+  assert.match(renderer,/const drawWrappedX=\(x,margin,draw\)=>/);
+  assert.match(renderer,/drawWrappedX\(sun\.x,width\*\.18/);
+  assert.match(renderer,/drawWrappedX\(x,rx\+2/);
+  assert.match(renderer,/drawWrappedX\(x,length\+4/);
+  assert.match(renderer,/drawWrappedX\(sun\.x,glowRadius/);
+});
+
+test('camera world matrices are synchronized before camera-relative sky and celestial rendering',()=>{
+  const drawStart=renderer.indexOf('function drawFrame()');
+  const drawEnd=renderer.indexOf('function ',drawStart+20);
+  const drawBlock=renderer.slice(drawStart,drawEnd);
+  assert.ok(drawBlock.indexOf('camera.updateMatrixWorld(true)')>=0);
+  assert.ok(drawBlock.indexOf('physicalSky.position.copy(camera.position)')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+  assert.match(drawBlock,/physicalSky\.updateMatrixWorld\(true\)/);
+  assert.ok(drawBlock.indexOf('updateMoonSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+  assert.ok(drawBlock.indexOf('updateSunSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
 });
