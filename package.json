@@ -5,7 +5,7 @@
   "type": "commonjs",
   "description": "Pinned browser renderer dependencies and Node.js runtime smoke tests for PStudio",
   "devDependencies": {
-    "three": "0.188.0",
+    "three": "0.187.0",
     "three-mesh-bvh": "0.9.18"
   }
 }
