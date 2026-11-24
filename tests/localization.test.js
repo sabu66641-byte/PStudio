@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'templates', 'index.html'), 'utf8');
-const locales = ['ja', 'en', 'zh', 'es', 'fr'];
+const locales = ['ja', 'en', 'zh', 'es', 'fr', 'ko'];
 
 function sectionBetween(start, end) {
   const from = html.indexOf(start);
@@ -14,7 +14,7 @@ function sectionBetween(start, end) {
   return html.slice(from, to);
 }
 
-test('all five header language options use the shared click handler', () => {
+test('all six header language options use the shared click handler', () => {
   for (const locale of locales) {
     assert.match(html, new RegExp('data-language="' + locale + '"'));
     assert.ok(!html.includes(`onclick="chooseLanguage('${locale}')"`), locale + ' must not have a duplicate inline click handler');
@@ -26,12 +26,22 @@ test('all five header language options use the shared click handler', () => {
 test('the saved locale is restored and Japanese is initialized on first visit', () => {
   assert.match(
     html,
-    /setLanguage\(\["ja", "en", "zh", "es", "fr"\]\.includes\(savedLanguage\) \? savedLanguage : "ja"\)/
+    /setLanguage\(\["ja", "en", "zh", "es", "fr", "ko"\]\.includes\(savedLanguage\) \? savedLanguage : "ja"\)/
   );
   assert.match(html, /document\.documentElement\.lang = language === "zh" \? "zh-Hans" : language/);
 });
 
-test('all five locales provide the three PS overview paragraphs', () => {
+test('Korean locale includes workspace labels, runtime messages and page metadata', () => {
+  assert.match(html,/ko:\s*"한국어"/);
+  assert.match(html,/"ko":\s*\{/);
+  for (const label of ['"PROJECT":"프로젝트"','"INSPECTOR":"인스펙터"','"ULTRA QUALITY":"최고 화질"','"Run":"실행"']) {
+    assert.ok(html.includes(label),label);
+  }
+  assert.match(html,/ko:\s*"PStudio — ps 개발 환경"/);
+  assert.match(html,/ko:\s*\{\s*empty:/);
+  assert.match(html,/language === "zh" \? "zh-Hans" : language/);
+});
+test('all six locales provide the three PS overview paragraphs', () => {
   const about = sectionBetween('const aboutTranslations =', 'const runtimeMessages');
   for (const locale of locales) {
     assert.match(about, new RegExp('"' + locale + '"\\s*:\\s*\\{'));

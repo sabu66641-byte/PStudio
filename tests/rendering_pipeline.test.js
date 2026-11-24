@@ -386,7 +386,7 @@ test('low-memory devices disable hardware MSAA and Auto selects conservative tie
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
   assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
   assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
-  assert.ok(renderer.includes('qualityPreset===\'auto\'?(memory<=2?1024:memory<=4?2048:4096):4096'));
+  assert.ok(renderer.includes("qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(adaptiveUltraTouchMode?2048:4096)"));
   assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
@@ -630,7 +630,7 @@ test('volumetric clouds use layered density shaping, light transmittance and ada
     'pass.setQuality','pass.configureAtmosphere','uCloudWind'
   ])assert.ok(fx.includes(token),token);
   assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)'));
-  assert.ok(renderer.includes("volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel)"));
+  assert.ok(renderer.includes("volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)"));
   assert.ok(fx.includes('source.rgb*transmittance+scattering*uAtmosphereStrength'));
   assert.doesNotThrow(()=>new Function(fx));
 });
@@ -751,14 +751,14 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 });
 
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
-  assert.ok(renderer.includes('qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
+  assert.ok(renderer.includes('qualityAOEnabled=effectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;'));
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','adaptiveUltraTouchMode?2048:4096','resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize))','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -866,9 +866,20 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/if\(memoryGiB<=3\|\|cpuCores<4\|\|maxTextureSize<4096\|\|\(touch&&memoryGiB<=4\)\)return 'balanced'/);
   assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'ultra'/);
   assert.match(renderer,/const baseProfile=QUALITY_PROFILES\[selected\],profile=baseProfile/);
-  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):4096/);
+  assert.match(renderer,/qualityPreset==='auto'\?\(memory<=2\?1024:memory<=4\?2048:4096\):\(adaptiveUltraTouchMode\?2048:4096\)/);
 });
 
+test('manual Ultra quality remains selected on phones while internal render cost adapts to sustained frame timing',()=>{
+  assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice/);
+  assert.match(renderer,/adaptiveQualityEnabled=qualityPreset==='auto'\|\|adaptiveUltraTouchMode/);
+  assert.match(renderer,/adaptiveQualityLevel=adaptiveUltraTouchMode\?0:2/);
+  assert.match(renderer,/if\(!adaptiveQualityEnabled\|\|!renderer\)return/);
+  assert.match(renderer,/const selected=resolveQualityPreset\(qualityPreset\),base=QUALITY_PROFILES\[selected\]/);
+  assert.match(renderer,/const shadowSizes=adaptiveUltraTouchMode\?\[1024,1536,2048\]/);
+  assert.match(renderer,/adaptiveUltraTouchMode\?2048:4096/);
+  assert.match(renderer,/requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled/);
+});
+ 
 test('quality preset selection persists, reports active hardware tier and emits UI updates',()=>{
   assert.match(renderer,/readSavedQualityPreset\(\)/);
   assert.match(renderer,/localStorage\?\.getItem\('pstudio-render-quality'\)/);
@@ -889,9 +900,21 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 });
 
 
+test('tablet and mobile workspace use a single main column with accessible project and inspector drawers',()=>{
+  for(const token of [
+    'id="project-explorer"','id="workspace-inspector"',
+    'data-workspace-panel="explorer"','data-workspace-panel="inspector"',
+    "toggleWorkspacePanel('explorer')","toggleWorkspacePanel('inspector')",
+    '.ide-shell[data-active-panel="explorer"] .explorer',
+    '.ide-shell[data-active-panel="inspector"] .inspector',
+    '.workspace-panel-backdrop','@media(max-width:1050px)',
+    'grid-template-columns:minmax(0,1fr)','clamp(125px,23dvh,175px)'
+  ])assert.ok(html.includes(token),token);
+});
+ 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-camera-orbit1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-quality-selector1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-ultra1'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra-adaptive1'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{

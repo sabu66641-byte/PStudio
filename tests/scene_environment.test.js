@@ -84,7 +84,7 @@ test('default environment configures fog, hemisphere light, sun light and existi
   assert.match(renderer, /hemisphereLight\.color\.set\(profile\.hemisphereSky\)/);
   assert.match(renderer, /hemisphereLight\.groundColor\.set\(profile\.hemisphereGround\)/);
   assert.match(renderer, /light\.castShadow=true/);
-  assert.match(renderer, /renderer\.shadowMap\.type=profile\.shadowMode==='vsm'\?window\.THREE\.VSMShadowMap:window\.THREE\.PCFSoftShadowMap/);
+  assert.match(renderer,/renderer\.shadowMap\.type=profile\.shadowMode==='vsm'&&effectsEnabled\?window\.THREE\.VSMShadowMap:window\.THREE\.PCFSoftShadowMap/);
   assert.doesNotMatch(renderer, /scene\.fog=null/);
 });
 
@@ -208,22 +208,25 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile)'));
   assert.ok(renderer.includes('const width=2048,height=1024;'));
   assert.ok(renderer.includes('for(let i=0;i<8200;i++)'));
-  assert.ok(renderer.includes('const moonRadius=48'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
   assert.ok(renderer.includes('uniforms.pStudioAtmosphereExposure.value=Math.max(.1,Math.min(1,Number(profile.skyExposure)||.45))'));
 });
 
-test('night panorama uses a detailed moon, Milky Way structure and multiscale stars',()=>{
+test('night moon is a real spherical mesh with one-time surface texture creation and camera-relative placement',()=>{
   assert.match(renderer,/A dark, periodic starfield with a structured Milky Way/);
-  assert.match(renderer,/four seeded noise octaves/i);
   assert.match(renderer,/for\(let i=0;i<8200;i\+\+\)/);
-  assert.match(renderer,/const galacticCenterY=\.315\+\.115\*Math\.sin\(angle-\.72\)\+\.035\*Math\.sin\(angle\*2\+1\.1\)/);
-  assert.match(renderer,/const moonRadius=48/);
-  assert.match(renderer,/context\.ellipse\(moon\.x-moonRadius/);
-  assert.match(renderer,/const phase=Math.max\(.5,Math.min\(1,Number\(profile.moonPhase\)\|\|.84\)\)/);
+  assert.match(renderer,/function createMoonSurfaceTexture\(T\)/);
+  assert.match(renderer,/function ensureMoonMesh\(T\)/);
+  assert.match(renderer,/new T\.SphereGeometry\(1,48,32\)/);
+  assert.match(renderer,/if\(moonMesh\?\.parent===scene\)return moonMesh/);
+  assert.match(renderer,/function configureMoonSky\(T,profile\)/);
+  assert.match(renderer,/function updateMoonSkyMesh\(\)/);
+  assert.match(renderer,/moonMesh\.position\.copy\(camera\.position\)\.addScaledVector\(moonDirection,distance\)/);
+  assert.match(renderer,/moonMesh\.scale\.setScalar\(radius\)/);
+  assert.match(renderer,/updateMoonSkyMesh\(\)/);
+  assert.doesNotMatch(renderer,/const moonRadius=48|context\.ellipse\(moon\.x/);
 });
-
 test('day and dusk panoramas include cloud texture, aligned solar discs and distinct warm twilight treatment',()=>{
   assert.match(renderer,/const directionUv=\(x,y,z\)=>/);
   assert.match(renderer,/const sun=directionUv\(/);
@@ -322,7 +325,8 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
   assert.match(renderer,/activeEnvironmentPreset='day'/);
   assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
-  assert.match(renderer,/volumetricCloudsEnabled=!!\(profile\.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio'\)/);
+  assert.match(renderer,/cloudTierActive=!adaptiveQualityEnabled\|\|adaptiveQualityLevel>=1/);
+  assert.match(renderer,/volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!\(cloudTier\?\.clouds&&cloudTierActive&&volumetricCloudPass\)/);
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.equal(presets.getPreset('studio').name,'studio');
