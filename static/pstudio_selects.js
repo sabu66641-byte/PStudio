@@ -244,5 +244,5 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});
   else start();
 
-  window.PStudioSelects={initialized:true,refresh:()=>scan(document),closeAll:()=>close(active,false)};
+  window.PStudioSelects={initialized:true,refresh:()=>{scan(document);document.querySelectorAll('select.pstudio-native-select').forEach(select=>sync(select.__pstudioSelectState));},closeAll:()=>close(active,false)};
 })();
