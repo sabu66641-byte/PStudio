@@ -5,7 +5,7 @@
   'use strict';
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
-  let renderer = null;
+  let renderer = null,composerPixelRatio=1,ssrSceneScanAt=0,ssrSceneTargetsPresent=false;
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false;
   function readSavedQualityPreset(){
@@ -238,7 +238,7 @@
     balanced:{pixelRatio:1.5,shadowSize:2048,shadowMode:'pcf',ao:false,ssr:false,clouds:false,atmosphere:false,contactShadows:false},
     high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
     maximum:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true},
-    ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}
+    ultra:{pixelRatio:4.2,shadowSize:4096,shadowMode:'pcf',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:false}
   };
   function qualityHardwareCapabilities(){
     let maxTextureSize=Number(renderer?.capabilities?.maxTextureSize)||0;
@@ -274,7 +274,7 @@
     }catch(_){}
     const memory=deviceMemoryGiB();
     const memoryCap=qualityPreset==='ultra'
-      ?(memory<=2?3072:memory<=4?4096:memory<=8?6144:8192)
+      ?(memory<=2?1536:memory<=4?2048:memory<=6?3072:4096)
       :qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096);
     const hardwareCap=Math.max(512,Math.min(maxTextureSize,memoryCap));
     const requestedSize=Math.max(512,Math.floor(Number(requested)||2048));
@@ -305,6 +305,21 @@
     return Math.min(dpr,profile.pixelRatio*scale);
   }
 
+  // Ultra keeps its 2x output target, but runs the scene/effect chain at a separate adaptive
+  // internal resolution. EffectComposer performs the final upscale into the full-size canvas.
+  function applyRenderResolution(selected=resolveQualityPreset(qualityPreset),level=adaptiveQualityLevel){
+    if(!renderer)return{renderPixelRatio:1,effectPixelRatio:1,internalScale:1};
+    const targetRatio=resolveQualityRenderPixelRatio(selected,level,adaptiveQualityEnabled);
+    const safeOutputRatio=memorySafetyApplied?Math.min(targetRatio,.8):targetRatio;
+    const tierScale=selected==='ultra'?[.56,.70,.84][Math.max(0,Math.min(2,Math.floor(Number(level)||0)))]:1;
+    const renderPixelRatio=composer?safeOutputRatio:safeOutputRatio*tierScale;
+    const effectPixelRatio=composer?Math.max(.6,safeOutputRatio*tierScale):renderPixelRatio;
+    if(Math.abs(renderPixelRatio-(renderer.getPixelRatio?.()||1))>.001)renderer.setPixelRatio(renderPixelRatio);
+    composerPixelRatio=effectPixelRatio;
+    composer?.setPixelRatio?.(effectPixelRatio);
+    return{renderPixelRatio,effectPixelRatio,internalScale:tierScale,targetPixelRatio:targetRatio};
+  }
+
   function applyQualityPreset(name='auto'){
     memorySafetyApplied=false;
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
@@ -315,9 +330,9 @@
     adaptiveMaximumTouchMode=qualityPreset==='maximum'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
-    // Ultra keeps its 2x Maximum-tier output resolution. Adaptive levels tune costly effects
-    // around it; GPU texture and device memory limits remain authoritative.
-    adaptiveQualityLevel=2;
+    // Start Ultra conservatively on touch/small-memory devices, then raise effect resolution
+    // only after stable frame-time samples. The final output target remains independent.
+    adaptiveQualityLevel=qualityPreset==='ultra'?(isTouchDevice||hardware.memoryGiB<=6?0:1):2;
     if(adaptiveMaximumTouchMode)adaptiveQualityLevel=1;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
@@ -329,20 +344,20 @@
     if(taaPass&&!temporalAAEnabled)taaPass.sampleLevel=adaptiveQualityEnabled?(adaptiveQualityLevel>=2?2:adaptiveQualityLevel===1?1:0):(['maximum','ultra'].includes(selected)?2:selected==='high'?1:0);
     if(smaaPass)smaaPass.enabled=!taaPass;
     if(renderer){
-      renderer.setPixelRatio(resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled));composer?.setPixelRatio?.(renderer.getPixelRatio());
+      applyRenderResolution(selected,adaptiveQualityLevel);
       renderer.shadowMap.enabled=true;
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      const requestedShadow=qualityPreset==='ultra'?[4096,6144,8192][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[1536,2048,3072][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
-      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?(qualityPreset==='ultra'?3.2:2.5):2;light.shadow.bias=-0.00003;light.shadow.normalBias=0.006;light.shadow.needsUpdate=true;}
+      const requestedShadow=qualityPreset==='ultra'?[2048,3072,4096][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[1536,2048,3072][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?2.5:2.2;light.shadow.bias=-0.00006;light.shadow.normalBias=0.012;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(effectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
       if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
       volumetricFogEnabled=!!(effectsEnabled&&profile.atmosphere&&volumetricFogPass);
       if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
       if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
-      if(gtaoPass?.updateGtaoMaterial){const level=adaptiveQualityEnabled?adaptiveQualityLevel:2;const aoSamples=selected==='ultra'?[32,48,64][level]:selected==='maximum'?[12,20,32][level]:[8,12,16][level];const pdSamples=selected==='ultra'?[24,36,48][level]:selected==='maximum'?[14,22,32][level]:[12,18,24][level];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
+      if(gtaoPass?.updateGtaoMaterial){const level=adaptiveQualityEnabled?adaptiveQualityLevel:2;const aoSamples=selected==='ultra'?[12,20,32][level]:selected==='maximum'?[12,20,32][level]:[8,12,16][level];const pdSamples=selected==='ultra'?[8,12,16][level]:selected==='maximum'?[14,22,32][level]:[12,18,24][level];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
       lastSize={width:0,height:0};resize();
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile,adaptive:adaptiveQualityEnabled,outputMultiplier:qualityPreset==='ultra'?2:1});}catch(_){}
@@ -368,9 +383,8 @@
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
-    const requestedPixelRatio=resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled);
-    const safeScale=memorySafetyApplied?Math.min(requestedPixelRatio,0.8):requestedPixelRatio;
-    renderer.setPixelRatio(safeScale);composer?.setPixelRatio?.(renderer.getPixelRatio());
+    const renderResolution=applyRenderResolution(selected,adaptiveQualityLevel);
+    const safeScale=renderResolution.renderPixelRatio;
     const effects=!memorySafetyApplied;
     qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
@@ -379,9 +393,9 @@
     if(contactShadowPass){contactShadowPass.enabled=contactShadowsEnabled;contactShadowPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
-    if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[32,48,64][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[24,36,48][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
+    if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[12,20,32][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[8,12,16][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.88:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
     if(taaPass&&!temporalAAEnabled){taaPass.sampleLevel=adaptiveQualityLevel;taaPass.accumulateIndex=-1;}
-    const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[4096,6144,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
+    const shadowSizes=adaptiveMaximumTouchMode?[1536,2048,3072]:qualityPreset==='ultra'?[2048,3072,4096]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
     const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
@@ -431,7 +445,7 @@
     const CSM=window.PStudioCSM;if(CSM){try{csm=new CSM({maxFar:worldRenderConfig.shadowDistance,cascades:3,mode:'practical',parent:scene,shadowMapSize:2048,lightDirection:new T.Vector3(-5,-9,-6).normalize(),camera});csm.fade=true;keyLight=csm.lights?.[0]||null;}catch(error){csm=null;console.warn('[PStudio] CSM initialization failed; using single-cascade fallback:',error);}}
     const FX=window.PStudioPostFX;
     if(FX?.EffectComposer&&FX?.RenderPass&&FX?.OutputPass){
-      composer=new FX.EffectComposer(renderer);composer.setPixelRatio?.(renderer.getPixelRatio());
+      composer=new FX.EffectComposer(renderer);composerPixelRatio=renderer.getPixelRatio();composer.setPixelRatio?.(composerPixelRatio);
       if(FX.TAARenderPass){taaPass=new FX.TAARenderPass(scene,camera);taaPass.accumulate=false;taaPass.sampleLevel=1;taaPass.enabled=true;composer.addPass(taaPass);}
       else composer.addPass(new FX.RenderPass(scene,camera));
       for(const target of [composer.renderTarget1,composer.renderTarget2]){if(target){target.depthBuffer=true;if(T.DepthTexture&&!target.depthTexture)target.depthTexture=new T.DepthTexture(Math.max(1,canvas.width),Math.max(1,canvas.height),T.UnsignedIntType);}}
@@ -470,17 +484,11 @@
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
     if (width !== lastSize.width || height !== lastSize.height) {
-      // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
-      // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
-      if(qualityPreset==='ultra'){
-        const safeRatio=resolveQualityRenderPixelRatio('ultra',adaptiveQualityLevel,adaptiveQualityEnabled);
-        if(Math.abs(safeRatio-renderer.getPixelRatio())>.001){
-          renderer.setPixelRatio(safeRatio);
-          composer?.setPixelRatio?.(safeRatio);
-        }
-      }
+      // Re-evaluate the full-size output and the lower internal effect target when a hidden
+      // viewport becomes visible or changes dimensions.
+      if(qualityPreset==='ultra')applyRenderResolution(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);
       renderer.setSize(width, height, false);composer?.setSize(width,height);
-      if(waterDepthTarget){const size=renderer.getDrawingBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
+      if(waterDepthTarget){const size=getEffectBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       lastSize = { width, height };
@@ -521,13 +529,19 @@
       while(gpuTimerQueries.length>8){const oldest=gpuTimerQueries.shift();gpuTimerGl.deleteQuery(oldest.query);}
     }catch(error){try{gpuTimerGl.deleteQuery(query);}catch(_){}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query end failed; CPU timing fallback will be used.',error);}
   }
+  function getEffectBufferSize(target){
+    const rect=canvas?.getBoundingClientRect?.()||{};
+    const ratio=composer?composerPixelRatio:(renderer?.getPixelRatio?.()||1);
+    target.set(Math.max(1,Math.floor((Number(rect.width)||1)*ratio)),Math.max(1,Math.floor((Number(rect.height)||1)*ratio)));
+    return target;
+  }
   function renderWaterDepthPrepass(){
     const fx=window.PStudioEnvironmentFX,stats=fx?.getStats?.();
     const needsDepth=Number(stats?.waterMaterials)>0||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled;
     if(!waterDepthTarget||!waterDepthMaterial||!needsDepth){
       fx?.setSceneDepthTexture?.(null,1,1,camera?.near,camera?.far);return false;
     }
-    const T=window.THREE,size=renderer.getDrawingBufferSize(new T.Vector2());
+    const T=window.THREE,size=getEffectBufferSize(new T.Vector2());
     if(waterDepthTarget.width!==Math.max(1,size.x)||waterDepthTarget.height!==Math.max(1,size.y))waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));
     const hidden=[];
     scene.traverse(object=>{
@@ -632,9 +646,7 @@
       memorySafetyApplied=true;
       try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:resolveQualityPreset(qualityPreset),adaptiveLevel:adaptiveQualityLevel,safetyLimited:true}}));}catch(_){}
       // Drop only expensive screen-space effects and render scale; never dispose retained scene assets.
-      const current=renderer?.getPixelRatio?.()||1;
-      renderer?.setPixelRatio?.(Math.max(.65,current*.82));
-      composer?.setPixelRatio?.(renderer?.getPixelRatio?.()||1);
+      applyRenderResolution(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);
       qualityAOEnabled=false;ssrEnabled=false;volumetricCloudsEnabled=false;volumetricFogEnabled=false;
       if(ssaoPass)ssaoPass.enabled=false;if(ssrPass)ssrPass.enabled=false;
       if(volumetricCloudPass)volumetricCloudPass.enabled=false;if(volumetricFogPass)volumetricFogPass.enabled=false;
@@ -689,6 +701,21 @@
       }
     }
   }
+  function hasVisibleSSRTargets(){
+    const now=window.performance?.now?.()??Date.now();
+    if(now-ssrSceneScanAt<900)return ssrSceneTargetsPresent;
+    ssrSceneScanAt=now;ssrSceneTargetsPresent=false;
+    scene?.traverse(object=>{
+      if(ssrSceneTargetsPresent||!object?.isMesh||!object.visible)return;
+      if(object.userData?.pstudioWaterSurface){ssrSceneTargetsPresent=true;return;}
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      if(materials.some(material=>material&&(
+        material.userData?.pstudioSSR===true||Number(material.metalness)>.16||
+        Number(material.transmission)>.12||Number(material.clearcoat)>.3
+      )))ssrSceneTargetsPresent=true;
+    });
+    return ssrSceneTargetsPresent;
+  }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     if(physicalSky?.visible)physicalSky.position.copy(camera.position);
@@ -698,16 +725,16 @@
     updateClusteredLighting();
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
-    const hiddenStaticSky=[];
+    const hiddenStaticSky=[],useSSR=ssrEnabled&&hasVisibleSSRTargets();
     try{
       renderWaterDepthPrepass();
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
       const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
-      if(composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||useSSR||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
         if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,celestialGlare*.72);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
-        if(ssrPass)ssrPass.enabled=ssrEnabled;
+        if(ssrPass)ssrPass.enabled=useSSR;
         const syncPostFXUniforms=(pass,required,update)=>{
           if(!pass||!camera)return;
           const uniforms=pass.uniforms;
@@ -3423,7 +3450,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
 
   function createMoonSurfaceTexture(T){
     const canvas=document.createElement('canvas');
-    canvas.width=1024;canvas.height=512;
+    canvas.width=1536;canvas.height=768;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for the lunar surface texture.');
     let seed=0x4d4f4f4e;
@@ -3435,7 +3462,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       image.data[i]=tone*.96;image.data[i+1]=tone*.99;image.data[i+2]=Math.min(255,tone+12);image.data[i+3]=255;
     }
     context.putImageData(image,0,0);
-    for(let i=0;i<280;i++){
+    for(let i=0;i<520;i++){
       const x=random()*canvas.width,y=28+random()*(canvas.height-56);
       const radius=4+Math.pow(random(),2)*26;
       const shadow=context.createRadialGradient(x-radius*.22,y-radius*.22,radius*.08,x,y,radius);
@@ -3446,7 +3473,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       context.fillStyle=shadow;context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
     }
     context.save();
-    for(let i=0;i<900;i++){
+    for(let i=0;i<1800;i++){
       const x=random()*canvas.width,y=18+random()*(canvas.height-36),radius=.55+random()*3.2;
       context.fillStyle='rgba(55,67,86,'+(0.025+random()*.055).toFixed(3)+')';
       context.beginPath();context.arc(x,y,radius,0,Math.PI*2);context.fill();
@@ -3466,7 +3493,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     if(!moonDirection)moonDirection=new T.Vector3();
     if(!moonLightDirection)moonLightDirection=new T.Vector3();
     if(!moonMesh){
-      const geometry=new T.SphereGeometry(1,48,32);
+      const geometry=new T.SphereGeometry(1,64,48);
       const material=new T.ShaderMaterial({
         uniforms:{
           uMoonMap:{value:moonSurfaceTexture},
@@ -3553,7 +3580,7 @@ void main(){
     moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
-    const radius=distance*Math.tan(2.25*Math.PI/180);
+    const radius=distance*Math.tan(2.8*Math.PI/180);
     moonMesh.position.copy(camera.position).addScaledVector(moonDirection,distance);
     moonMesh.scale.setScalar(radius);
     if(!sunViewDirection)sunViewDirection=new window.THREE.Vector3();
@@ -3768,9 +3795,9 @@ void main(){
       };
       const clamp01=value=>Math.max(0,Math.min(1,value));
 
-      // Render the nebula at half resolution, then upscale before the texture mipmaps are built.
+      // Render the nebula at the panorama's native resolution so filaments and dust lanes remain legible.
       const galaxyCanvas=document.createElement('canvas');
-      const galaxyWidth=1024,galaxyHeight=512;
+      const galaxyWidth=width,galaxyHeight=height;
       galaxyCanvas.width=galaxyWidth;galaxyCanvas.height=galaxyHeight;
       const galaxyContext=galaxyCanvas.getContext('2d');
       if(galaxyContext){
@@ -3847,7 +3874,7 @@ void main(){
       // Fine stars dominate; only a tiny fraction are bright enough to bloom or sparkle.
       // Density and brightness rise gently inside the galactic band.
       const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
-      for(let i=0;i<12000;i++){
+      for(let i=0;i<18000;i++){
         const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
         const angle=u*Math.PI*2;
         const galacticCenterY=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
@@ -3878,7 +3905,7 @@ void main(){
       }
       // A restrained second layer of very faint pinprick stars adds depth without changing
       // the established Milky Way palette or the existing main and micro-star distributions.
-      for(let i=0;i<2600;i++){
+      for(let i=0;i<8000;i++){
         const x=random()*width,y=4+random()*height*.49;
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
@@ -3995,7 +4022,7 @@ void main(){
     texture.anisotropy=Math.min(16,renderer?.capabilities?.getMaxAnisotropy?.()||1);
     texture.needsUpdate=true;
     texture.userData=texture.userData||{};
-    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?14600:0,nightPrimaryStars:name==='night'?12000:0,proceduralCloudLayers:name==='day'||name==='dusk'};
+    texture.userData.pstudioAtmosphere={preset:name,width,height,nightStars:name==='night'?26000:0,nightPrimaryStars:name==='night'?18000:0,proceduralCloudLayers:name==='day'||name==='dusk'};
     return texture;
   }
   function enhancePhysicalSkyShader(sky,Three){
@@ -4819,7 +4846,7 @@ void main(){
       const active=resolveQualityPreset(qualityPreset),hardware=qualityHardwareCapabilities();
       const targetPixelRatio=qualityPreset==='ultra'?Math.min(hardware.pixelRatio,QUALITY_PROFILES.maximum.pixelRatio)*2:resolveQualityRenderPixelRatio(active,adaptiveQualityLevel,adaptiveQualityEnabled);
       const renderPixelRatio=renderer?.getPixelRatio?.()||resolveQualityRenderPixelRatio(active,adaptiveQualityLevel,adaptiveQualityEnabled);
-      return{requested:qualityPreset,active,adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,hardware,outputMultiplier:qualityPreset==='ultra'?2:1,targetPixelRatio,renderPixelRatio,resolutionLimited:qualityPreset==='ultra'&&renderPixelRatio+0.001<targetPixelRatio};
+      return{requested:qualityPreset,active,adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,hardware,outputMultiplier:qualityPreset==='ultra'?2:1,targetPixelRatio,renderPixelRatio,effectPixelRatio:composer?composerPixelRatio:renderPixelRatio,internalScale:composer&&renderPixelRatio>0?composerPixelRatio/renderPixelRatio:1,resolutionLimited:qualityPreset==='ultra'&&renderPixelRatio+0.001<targetPixelRatio};
     },
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
