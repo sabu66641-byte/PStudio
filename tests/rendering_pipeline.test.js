@@ -17,9 +17,9 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
   }
-  assert.ok(html.includes('three@0.188.0'));
-  assert.ok(html.includes('"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.webgpu.js"'));
-  assert.ok(html.includes('"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.188.0/build/three.tsl.js"'));
+  assert.ok(html.includes('three@0.187.0'));
+  assert.ok(html.includes('"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js"'));
+  assert.ok(html.includes('"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.tsl.js"'));
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes('WebGLNodesHandler.js'));
 });
