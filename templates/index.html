@@ -1532,7 +1532,8 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
             en: "English",
             zh: "中文",
             es: "Español",
-            fr: "Français"
+            fr: "Français",
+            ko: "한국어"
         };
 
         const uiTranslations = {
@@ -1583,6 +1584,33 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 "ASSETS":"RESSOURCES", "EDITOR":"ÉDITEUR", "GAME / SCENE":"JEU / SCÈNE", "Saved locally":"Enregistré localement", "Clear":"Effacer", "Compile":"Compiler", "SCENE VIEW":"VUE DE LA SCÈNE",
                 "VIEW":"VUE", "AUTO":"AUTO", "QUALITY":"QUALITÉ", "LIGHT":"LÉGER", "STANDARD":"STANDARD", "HIGH QUALITY":"HAUTE QUALITÉ", "ULTRA QUALITY":"QUALITÉ ULTRA", "Object":"Objet", "Refresh":"Actualiser", "Play":"Jouer", "Stop":"Arrêter", "INSPECTOR":"INSPECTEUR", "SETTINGS":"PARAMÈTRES",
                 "GAME OBJECT":"OBJET DU JEU", "Name":"Nom", "Position X":"Position X", "Position Y":"Position Y", "Position Z":"Position Z", "OUTPUT":"SORTIE", "STDIN":"ENTRÉE STANDARD", "Copy":"Copier"
+            },
+            ko: {
+                "PS DEVELOPMENT ENVIRONMENT":"PS 개발 환경", "Editor":"편집기", "Examples":"예제", "Language Guide":"언어 가이드", "About ps":"ps 소개",
+                "Workspace / main.ps":"작업 공간 / main.ps", "Backup":"백업", "Save":"저장", "Run":"실행", "Menu":"메뉴",
+                "PROJECT":"프로젝트", "Project":"프로젝트", "GAME PROJECT":"게임 프로젝트", "WORKSPACE":"작업 공간",
+                "＋ Script":"＋ 스크립트", "＋ Scene":"＋ 장면", "＋ Asset":"＋ 에셋", "ASSETS":"에셋",
+                "EDITOR":"편집기", "GAME / SCENE":"게임 / 장면", "Saved locally":"로컬에 저장됨", "Clear":"지우기", "Compile":"컴파일",
+                "SCENE VIEW":"장면 보기", "VIEW":"보기", "AUTO":"자동", "QUALITY":"화질", "LIGHT":"저사양", "STANDARD":"표준",
+                "HIGH QUALITY":"고화질", "ULTRA QUALITY":"최고 화질", "Object":"오브젝트", "Refresh":"새로고침", "Play":"재생", "Stop":"정지",
+                "INSPECTOR":"인스펙터", "Inspector":"인스펙터", "SETTINGS":"설정", "GAME OBJECT":"게임 오브젝트",
+                "Select an object in the Scene view or Project tree to edit its properties.":"장면 보기 또는 프로젝트 목록에서 오브젝트를 선택해 속성을 편집하세요.",
+                "Name":"이름", "3D Model":"3D 모델", "Model Scale":"모델 크기", "Roughness":"거칠기", "Metalness":"금속도",
+                "Material color":"머티리얼 색상", "Apply GLB Material":"GLB 머티리얼 적용", "Position X":"위치 X", "Position Y":"위치 Y",
+                "Position Z":"위치 Z", "Rotation X (°)":"회전 X (°)", "Rotation Y (°)":"회전 Y (°)", "Rotation Z (°)":"회전 Z (°)",
+                "Width":"너비", "Height":"높이", "Sprite asset":"스프라이트 에셋", "None":"없음", "Attached ps script":"연결된 ps 스크립트",
+                "Enable Collider (GLB mesh)":"콜라이더 활성화(GLB 메시)", "Bloom":"블룸", "SSAO":"SSAO", "Bloom strength":"블룸 강도",
+                "Enable Particle Emitter":"파티클 이미터 활성화", "Particles / second":"초당 파티클 수", "Particle color":"파티클 색상",
+                "Particle speed":"파티클 속도", "Lifetime (seconds)":"수명(초)", "Max particles":"최대 파티클 수", "Delete Object":"오브젝트 삭제",
+                "Font size":"글꼴 크기", "Tab size":"탭 크기", "Soft wrap":"자동 줄 바꿈", "Show line numbers":"줄 번호 표시",
+                "EXECUTION":"실행", "Input mode":"입력 모드", "No stdin":"표준 입력 없음", "Use stdin":"표준 입력 사용",
+                "LANGUAGE":"언어", "GAME SCRIPT API":"게임 스크립트 API", "OUTPUT":"출력", "STDIN":"표준 입력", "Copy":"복사",
+                "PStudio is ready. Press Run to execute your ps program.":"PStudio 준비 완료. Run을 눌러 ps 프로그램을 실행하세요.",
+                "Ready · 960 × 540":"준비 완료 · 960 × 540", "Clear editor":"편집기 지우기", "Movement joystick":"이동 조이스틱", "JUMP":"점프",
+                "Interface language":"인터페이스 언어",
+                "Drop images / audio / GLB / GLTF models here":"이미지, 오디오, GLB/GLTF 모델을 여기에 놓으세요",
+                "Select GLTF textures and BIN files together":"GLTF 텍스처와 BIN 파일을 함께 선택하세요",
+                "Run sends your source to the PStudio server. Compile returns generated C++ without executing it.":"Run은 소스 코드를 PStudio 서버로 보내 실행합니다. Compile은 실행하지 않고 생성된 C++ 코드를 반환합니다."
             }
         };
 
@@ -2299,9 +2327,14 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 "intro": "ps est un langage de programmation en cours de développement, conçu pour écrire du code simple et facile à lire. Il privilégie une écriture accessible, proche de Python, et convertit le code ps en C++ pour l’exécuter.",
                 "goal": "L’objectif est de réduire les symboles inutiles et de rendre le sens ainsi que le déroulement du code faciles à comprendre. La simplicité d’écriture compte, tout comme les performances à l’exécution.",
                 "vision": "ps et PStudio sont développés progressivement. En plus d’ajouter des fonctionnalités, les éléments existants sont revus et améliorés afin d’être plus simples à utiliser et plus fiables."
+        },
+        "ko": {
+                "intro": "ps는 간단하고 읽기 쉬운 코드를 목표로 개발 중인 프로그래밍 언어입니다. Python처럼 쓰기 쉬운 문법을 지향하며 ps 코드를 C++로 변환해 실행합니다.",
+                "goal": "불필요한 기호를 줄이고 코드의 의미와 흐름을 자연스럽게 이해할 수 있도록 합니다. 작성 편의성과 실행 성능을 함께 중요하게 생각합니다.",
+                "vision": "ps와 PStudio는 단계적으로 개발되고 있습니다. 새 기능을 추가하는 동시에 기존 기능도 검토하고 개선해 사용성과 안정성을 높입니다."
         }
 };
-
+ 
         const runtimeMessages = {
             ja: {
                 empty: "エラー:\nコードが空です。",
@@ -2357,6 +2390,17 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 network: "Une erreur réseau s'est produite.",
                 copied: "Copié",
                 copyFailed: "Échec de la copie"
+            },
+            ko: {
+                empty: "오류:\n코드가 비어 있습니다.",
+                compiling: "ps 코드를 C++로 변환하고 컴파일하는 중...",
+                cpp: "[C++ 코드]",
+                result: "[실행 결과]",
+                error: "오류:\n",
+                unknown: "알 수 없는 오류",
+                network: "네트워크 오류가 발생했습니다.",
+                copied: "복사했습니다",
+                copyFailed: "복사하지 못했습니다"
             }
         };
 
@@ -2391,7 +2435,8 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                     en: "Ln " + line + ", Col " + column,
                     zh: "第 " + line + " 行，第 " + column + " 列",
                     es: "Lín. " + line + ", Col. " + column,
-                    fr: "Lig. " + line + ", Col. " + column
+                    fr: "Lig. " + line + ", Col. " + column,
+                    ko: line + "행, " + column + "열"
                 })[language];
             }
             const dictionaries = [
@@ -2455,7 +2500,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         }
 
         function setLanguage(language) {
-            const supported = ["ja", "en", "zh", "es", "fr"];
+            const supported = ["ja", "en", "zh", "es", "fr", "ko"];
             if (!supported.includes(language)) return false;
 
             currentLanguage = language;
@@ -2487,7 +2532,8 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
                 en: "PStudio — ps Development Environment",
                 zh: "PStudio — ps 开发环境",
                 es: "PStudio — Entorno de desarrollo ps",
-                fr: "PStudio — Environnement de développement ps"
+                fr: "PStudio — Environnement de développement ps",
+                ko: "PStudio — ps 개발 환경"
             };
             document.title = titles[language];
             try { localStorage.setItem("pstudio-language", language); } catch (_) {}
@@ -2503,7 +2549,7 @@ window.addEventListener('beforeunload',()=>{if(projectFiles[activeProjectFile]?.
         window.addEventListener("DOMContentLoaded", () => {
             let savedLanguage = null;
             try { savedLanguage = localStorage.getItem("pstudio-language"); } catch (_) {}
-            setLanguage(["ja", "en", "zh", "es", "fr"].includes(savedLanguage) ? savedLanguage : "ja");
+            setLanguage(["ja", "en", "zh", "es", "fr", "ko"].includes(savedLanguage) ? savedLanguage : "ja");
 
             const menu = document.getElementById("language-picker-menu");
             if (menu) {
