@@ -664,8 +664,8 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:36,lightSteps:2});
-  assert.equal(pass.uniforms.uCloudSteps.value,36);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:40,lightSteps:2});
+  assert.equal(pass.uniforms.uCloudSteps.value,40);
   assert.equal(pass.uniforms.uCloudLightSteps.value,2);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
