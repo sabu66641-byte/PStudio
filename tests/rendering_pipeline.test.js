@@ -102,6 +102,13 @@ test('Mirror Water adds an isolated planar reflection path with bounded adaptive
   assert.ok(engine.includes("type:'mirror_water'"));
   assert.ok(app.includes('"draw_mirror_water": (5, 7)'));
   assert.ok(html.includes('addMirrorWaterToScene()'));
+  assert.ok(html.includes('id="scene-object-add-select"'));
+  assert.ok(html.includes('value="mirror-water">水鏡（平面）'));
+  assert.ok(html.includes('function addSceneObjectFromMenu(kind)'));
+  assert.ok(html.includes('mirrorWidth:100,mirrorDepth:100'));
+  assert.ok(html.includes('function toggleSceneEditorExpanded(force)'));
+  assert.ok(html.includes('.game-surface.is-expanded'));
+  assert.ok(html.includes('mobile-scene-inspector'));
   assert.ok(html.includes('id="obj-mirror-water-settings"'));
   assert.ok(html.includes("updateSelectedObject('mirrorReflectivity',this.value)"));
   assert.ok(html.includes("updateSelectedObject('waveStrength',this.value)"));
