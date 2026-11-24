@@ -5127,6 +5127,8 @@ void main(){
       const result=window.PStudio3D.setDynamicGI(!dynamicGIEnabled);
       const button=document.getElementById('dynamic-gi-toggle');
       if(button){button.setAttribute('aria-pressed',String(!!result.enabled));button.classList.toggle('active',!!result.enabled);}
+      const status=document.getElementById('gi-bake-status');
+      if(status)status.textContent=result.enabled?'Live GI: '+result.status:(result.reason||'Live GI disabled');
       return result;
     },
     setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
@@ -5177,7 +5179,22 @@ void main(){
     loadEnvironmentHDR,
     bakeLightProbe,
     clearLightProbe:()=>{let changed=false;if(bakedLightProbe){scene?.remove(bakedLightProbe);bakedLightProbe=null;changed=true;}if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume){scene?.remove(item.light);item.light.dispose?.();}bakedLightProbeVolume=null;bakedGIBounces=0;changed=true;}if(changed){updateProbeVolumeBlend();drawFrame();}return changed;},
-    bakeLightProbeVolume,bakeEnvironmentGI,bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    bakeLightProbeVolume,
+    bakeEnvironmentGI:async options=>{
+      const status=document.getElementById('gi-bake-status');
+      if(status)status.textContent='Baking static SH probes...';
+      try{
+        const result=await bakeEnvironmentGI(options);
+        if(status)status.textContent='GI ready: '+result.probes+' probes, '+result.bounces+' bounces';
+        try{window.PStudioEvents?.emit('gi.bake.completed',result);}catch(_){}
+        return result;
+      }catch(error){
+        if(status)status.textContent='GI bake failed: '+String(error?.message||error);
+        try{window.PStudioEvents?.emit('gi.bake.failed',{message:String(error?.message||error)});}catch(_){}
+        throw error;
+      }
+    },
+    bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
     isOwnerChunkActive,
     setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
     setClusteredLighting:enabled=>{clusteredLightingEnabled=!!enabled;updateClusteredLighting(true);return{enabled:clusteredLightingEnabled,available:!!clusteredLightingResources,active:clusteredLightingActive};},
