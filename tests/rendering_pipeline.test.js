@@ -768,7 +768,7 @@ test('high and ultra quality presets activate GTAO automatically and adaptive qu
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  assert.ok(renderer.includes("const memoryCap=qualityPreset==='ultra'"));
+  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','const memoryCap=qualityPreset===\'ultra\'','memory<=2?1024:memory<=4?2048:4096','memory<=4?2048:memory<=6?3072:4096','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
 });
 
 
@@ -877,7 +877,7 @@ test('manual quality presets are never silently downgraded; auto selects a tier 
   assert.match(renderer,/if\(memoryGiB<=3\|\|cpuCores<4\|\|maxTextureSize<4096\|\|\(touch&&memoryGiB<=4\)\)return 'balanced'/);
   assert.match(renderer,/if\(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192\)return 'maximum'/);
   assert.match(renderer,/const baseProfile=QUALITY_PROFILES\[selected\],profile=baseProfile/);
-  assert.ok(renderer.includes("qualityPreset==='ultra'? (memory<=2?3072:memory<=4?4096:memory<=8?6144:8192)"));
+  assert.ok(renderer.includes("const memoryCap=qualityPreset==='ultra'"));
 });
 
 test('Maximum remains distinct from Ultra, which requests true 2x output and device-aware sampling',()=>{
