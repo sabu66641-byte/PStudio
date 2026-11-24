@@ -347,4 +347,3 @@ function initialize() {
   return true;
 }
 
-initialize();
