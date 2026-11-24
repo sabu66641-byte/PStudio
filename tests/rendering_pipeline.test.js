@@ -1028,3 +1028,34 @@ test('High, Maximum and Ultra have progressively stronger independent ray-march 
   assert.match(renderer,/selected==='ultra'\?\[16,28,40\]\[level\]:selected==='maximum'\?\[12,20,32\]\[level\]/);
   assert.match(renderer,/adaptiveUltraTouchMode=qualityPreset==='ultra'/);
 });
+
+
+test('performance telemetry separates frame pacing, CPU submission, GPU timer samples and estimated memory',()=>{
+  for(const token of [
+    'function performanceStatsSnapshot()',
+    'function pushMetricSample(list,value)',
+    'function updatePerformanceMonitor(',
+    'function togglePerformanceMonitor()',
+    'function updateDynamicResolutionFromGpu(',
+    'dynamicResolutionScale',
+    'EXT_disjoint_timer_query_webgl2',
+    'gpuFrameBudgetPercent',
+    'not total GPU utilization',
+    'pstudio-render-stats',
+    'getPerformanceStats:performanceStatsSnapshot',
+    'togglePerformanceMonitor'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(html.includes('id="render-stats-toggle"'));
+  assert.ok(html.includes('id="render-stats-overlay"'));
+  assert.ok(renderer.includes('RENDER_METRIC_HISTORY=120'));
+});
+
+test('dynamic render resolution only reacts to fresh GPU timer samples and stays inside configured bounds',()=>{
+  assert.match(renderer,/lastGpuTimerTimestamp===dynamicResolutionLastSampleAt/);
+  assert.match(renderer,/dynamicResolutionScale>0\.55/);
+  assert.match(renderer,/dynamicResolutionScale<1/);
+  assert.match(renderer,/targetMs\*1\.06/);
+  assert.match(renderer,/targetMs\*\.78/);
+  assert.match(renderer,/DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900/);
+  assert.match(renderer,/applyEffectiveRenderScale\(\)/);
+});
