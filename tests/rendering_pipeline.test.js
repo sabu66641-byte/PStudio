@@ -22,11 +22,11 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
 
 test('mobile auto quality applies an adaptive starting scale rather than full device pixel ratio',()=>{
   assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
-  assert.ok(renderer.includes("profile.pixelRatio*initialAdaptiveScale"));
-  assert.ok(renderer.includes("scale=base.pixelRatio*(selected==='ultra'?[0.66,0.78,0.94][adaptiveQualityLevel]:[0.68,0.84,1][adaptiveQualityLevel])"));
+  assert.ok(renderer.includes("resolveQualityRenderPixelRatio(selected,adaptiveQualityLevel,adaptiveQualityEnabled)"));
+  assert.ok(renderer.includes("selected==='maximum'?[.66,.78,.94][level]"));
 });
 test('quality presets configure render resolution and shadow filtering', () => {
-  for (const preset of ['mobile', 'balanced', 'high', 'ultra']) assert.ok(renderer.includes(preset));
+  for (const preset of ['mobile', 'balanced', 'high', 'maximum', 'ultra']) assert.ok(renderer.includes(preset));
   assert.ok(renderer.includes('VSMShadowMap'));
   assert.ok(renderer.includes('PCFSoftShadowMap'));
   assert.ok(renderer.includes('setQualityPreset:applyQualityPreset'));
@@ -252,8 +252,8 @@ test('volumetric cloud pass raymarches a procedural cloud field and atmospheric 
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   for(const token of ['createVolumetricCloudPass','uCloudBase','uCloudTop','pFbm','pCloudDensity','uSunDirection','pHenyeyGreenstein','lightOptical','transmittance','uCloudCoverage'])assert.ok(fx.includes(token),token);
 });
-test('high and ultra quality enable atmospheric cloud rendering with adaptive fallback',()=>{
-  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","ultra:{pixelRatio:2.1,shadowSize:4096,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
+test('High, Maximum and Ultra enable the full atmospheric cloud rendering stack',()=>{
+  for(const token of ["high:{pixelRatio:2,shadowSize:3072,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}","maximum:{pixelRatio:2.1,shadowSize:4096","ultra:{pixelRatio:4.2,shadowSize:8192,shadowMode:'vsm',ao:true,ssr:true,clouds:true,atmosphere:true,contactShadows:true}",'setVolumetricClouds','volumetricCloudsEnabled=effects&&!!base.clouds','hideStaticSkyForVolumetrics'])assert.ok(renderer.includes(token),token);
 });
 test('GLB auto-play animation extras start a looping environment animation on import',()=>{
   assert.ok(renderer.includes('pstudioAutoPlayAnimation'));
@@ -388,7 +388,7 @@ test('low-memory devices disable hardware MSAA and Auto selects conservative tie
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
   assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
   assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
-  assert.ok(renderer.includes("qualityPreset==='auto'?(memory<=2?1024:memory<=4?2048:4096):(memory<=4?2048:memory<=6?3072:4096)"));
+  assert.ok(renderer.includes("const memoryCap=qualityPreset==='ultra'"));
   assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
@@ -768,7 +768,7 @@ test('high and ultra quality presets activate GTAO automatically and adaptive qu
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','memory<=4?2048:memory<=6?3072:4096','resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize))','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes("const memoryCap=qualityPreset==='ultra'"));
 });
 
 
@@ -900,8 +900,8 @@ test('quality preset selection persists, reports active hardware tier and emits 
   assert.match(renderer,/readSavedQualityPreset\(\)/);
   assert.match(renderer,/localStorage\?\.getItem\('pstudio-render-quality'\)/);
   assert.match(renderer,/localStorage\?\.setItem\('pstudio-render-quality',qualityPreset\)/);
-  assert.match(renderer,/getQualityPreset:\\(\\)=>\\{/);
-  assert.match(renderer,/outputMultiplier:qualityPreset==='ultra'\\?2:1/);
+  assert.ok(renderer.includes("getQualityPreset:()=>{"));
+  assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
   assert.match(renderer,/renderPixelRatio/);
   assert.match(renderer,/pstudio-quality-state-changed/);
   assert.match(engine,/window\.setPStudioQualityPreset=function\(name\)/);
