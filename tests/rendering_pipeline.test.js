@@ -1048,6 +1048,8 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
   ])assert.ok(renderer.includes(token),token);
   assert.ok(html.includes('id="render-stats-toggle"'));
   assert.ok(html.includes('id="render-stats-overlay"'));
+  assert.ok(html.includes('id="gi-bake-button"'));
+  assert.ok(html.includes('id="gi-bake-status"'));
   assert.ok(renderer.includes('RENDER_METRIC_HISTORY=120'));
 });
 
