@@ -279,6 +279,12 @@ test('editor orbit reaches near-vertical top-down and bottom-up views while game
 });
 
 
+test('editor ground grid is hidden while orbiting beneath its plane',()=>{
+  assert.match(renderer,/const belowGridPlane=camera\.position\.y<=grid\.position\.y\+0\.05/);
+  assert.match(renderer,/grid\.visible=!belowGridPlane/);
+  assert.match(renderer,/if\(belowGridPlane\)continue/);
+});
+
 test('day dusk night and studio define physically distinct sun elevations and atmosphere controls',()=>{
   const day=presets.getPreset('day'),dusk=presets.getPreset('dusk'),night=presets.getPreset('night'),studio=presets.getPreset('studio');
   for(const [name,profile] of Object.entries({day,dusk,night,studio})){
@@ -369,10 +375,10 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.ok(cloudStart>=0&&cloudEnd>cloudStart,'static cloud rendering must be explicitly gated by day/dusk presets');
   assert.match(renderer,/activeEnvironmentPreset='day'/);
   assert.match(renderer,/activeEnvironmentPreset=String\(profile\.name\|\|'day'\)/);
-  assert.match(renderer,/cloudTierActive=!memorySafetyApplied/);
+  assert.match(renderer,/cloudTierActive=!memorySafetyApplied&&!adaptiveTouchPostFxBudget/);
   assert.match(renderer,/volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!\(cloudTier\?\.clouds&&cloudTierActive&&volumetricCloudPass\)/);
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
-  assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
+  assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.equal(presets.getPreset('studio').name,'studio');
 });
 
