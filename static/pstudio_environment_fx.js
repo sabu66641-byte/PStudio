@@ -626,11 +626,11 @@
     const originalRender=pass.render.bind(pass);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:14,high:30,maximum:40,ultra:64,cinematic:40}[String(preset)]||30;
+      const base={mobile:8,balanced:14,high:30,maximum:40,ultra:40,cinematic:40}[String(preset)]||30;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.70,.85,1][level]:preset==='maximum'?[.62,.76,1][level]:[.58,.78,1][level];
+      const factor=preset==='ultra'?[.55,.72,1][level]:preset==='maximum'?[.62,.76,1][level]:[.58,.78,1][level];
       const steps=Math.max(8,Math.min(64,Math.round(base*factor)));
-      const lightSteps=preset==='ultra'?3:(preset==='high'||preset==='maximum'||preset==='cinematic'?2:1);
+      const lightSteps=preset==='ultra'?2:(preset==='high'||preset==='maximum'||preset==='cinematic'?2:1);
       pass.uniforms.uCloudSteps.value=steps;
       pass.uniforms.uCloudLightSteps.value=lightSteps;
       pass.userData=pass.userData||{};
@@ -723,9 +723,9 @@
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:5,balanced:7,high:12,maximum:18,ultra:30}[String(preset)]||12;
+      const base={mobile:5,balanced:7,high:12,maximum:18,ultra:18}[String(preset)]||12;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.75,.88,1][level]:preset==='maximum'?[.66,.83,1][level]:[.6,.82,1][level];
+      const factor=preset==='ultra'?[.55,.75,1][level]:preset==='maximum'?[.66,.83,1][level]:[.6,.82,1][level];
       const steps=Math.max(4,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uSteps.value=steps;
       pass.userData=pass.userData||{};
@@ -799,9 +799,9 @@
     const pass=new FX.ShaderPass(shader);
     pass.enabled=false;
     pass.setQuality=(preset='high',adaptiveLevel=2)=>{
-      const base={mobile:8,balanced:10,high:16,maximum:24,ultra:32}[String(preset)]||16;
+      const base={mobile:8,balanced:10,high:16,maximum:24,ultra:24}[String(preset)]||16;
       const level=Math.max(0,Math.min(2,Math.floor(Number(adaptiveLevel)||0)));
-      const factor=preset==='ultra'?[.75,.88,1][level]:preset==='maximum'?[.68,.84,1][level]:[.62,.82,1][level];
+      const factor=preset==='ultra'?[.66,.83,1][level]:preset==='maximum'?[.68,.84,1][level]:[.62,.82,1][level];
       const steps=Math.max(6,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uFogSteps.value=steps;
       pass.userData=pass.userData||{};
