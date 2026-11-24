@@ -294,7 +294,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   }
   assert.ok(day.sunIntensity>1,'day should retain a bright solar photosphere');
   assert.ok(dusk.sunIntensity>1.2,'dusk should retain a bright warm solar photosphere');
-  assert.ok(dusk.sunAngularRadius>0.4&&dusk.sunAngularRadius<0.8,'the dusk sun should retain a natural, restrained angular diameter');
+  assert.ok(dusk.sunAngularRadius>1.2&&dusk.sunAngularRadius<1.8,'the dusk sun should remain clearly visible as a cinematic horizon disc');
   assert.ok(renderer.includes("const glowRadius=sunRadius*(dusk?3.2:10)"));
   assert.match(renderer,/const horizonBand=context\.createLinearGradient/,'dusk should include a layered horizon afterglow');
   assert.ok(renderer.includes("const glowRadiusX=width*.17,glowRadiusY=height*.045"));
@@ -307,7 +307,7 @@ test('day dusk night and studio define physically distinct sun elevations and at
   assert.ok(Math.abs(night.moonDirectionY+night.lightY)<.02,'night moon and moonlight Y must align');
   assert.ok(Math.abs(night.moonDirectionZ+night.lightZ)<.02,'night moon and moonlight Z must align');
   assert.ok(day.skySunY>.8,'day sun should be high in the sky');
-  assert.ok(dusk.skySunY>0&&dusk.skySunY<.1,'dusk sun should sit close to the horizon');
+  assert.ok(dusk.skySunY>0&&dusk.skySunY<.02,'dusk sun should sit on the visible horizon');
   assert.ok(night.skySunY<0,'night sun should be below the horizon');
   assert.equal(night.sunRadius,0,'night fallback must not draw a sun disc');
   assert.equal(night.sunGlow,0,'night fallback must not draw a solar halo');
@@ -416,4 +416,29 @@ test('camera world matrices are synchronized before camera-relative sky and cele
   assert.match(drawBlock,/physicalSky\.updateMatrixWorld\(true\)/);
   assert.ok(drawBlock.indexOf('updateMoonSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
   assert.ok(drawBlock.indexOf('updateSunSkyMesh()')>drawBlock.indexOf('camera.updateMatrixWorld(true)'));
+});
+
+
+test('dusk sun is placed in the default editor camera hemisphere and remains synchronized with direct light',()=>{
+  const dusk=presets.getPreset('dusk');
+  const cameraLength=Math.hypot(6,5,8);
+  const cameraForward=[-6/cameraLength,-5/cameraLength,-8/cameraLength];
+  const sun=[dusk.skySunX,dusk.skySunY,dusk.skySunZ];
+  const sunLength=Math.hypot(...sun);
+  const alignment=cameraForward.reduce((sum,value,index)=>sum+value*sun[index]/sunLength,0);
+  assert.ok(alignment>0.88,'dusk sun must face the default editor camera instead of being behind it');
+  assert.ok(Math.abs(dusk.skySunX+dusk.lightX)<.02);
+  assert.ok(Math.abs(dusk.skySunY+dusk.lightY)<.02);
+  assert.ok(Math.abs(dusk.skySunZ+dusk.lightZ)<.02);
+  assert.ok(dusk.sunAngularRadius>1.2,'sun disc should be distinguishable at the 3D viewport scale');
+  assert.ok(dusk.cloudCoverage<0.55,'the dusk cloud layer must not bury the solar disc');
+});
+
+test('night moon is explicitly blue-white tinted and harmonizes with the atmosphere',()=>{
+  const night=presets.getPreset('night');
+  assert.equal(night.moonColor,'#C7DCFF');
+  assert.ok(night.moonGlow>1);
+  assert.match(renderer,/uMoonTint/);
+  assert.match(renderer,/blueLimb=pow\(1\.0-facing,2\.4\)/);
+  assert.match(renderer,/vec3\(0\.80,0\.92,1\.12\)/);
 });
