@@ -804,6 +804,7 @@
     const state=window.PStudio3D?.getQualityPreset?.();
     if(!select||!activeOutput||!state)return;
     if(select.value!==state.requested)select.value=state.requested;
+    window.PStudioSelects?.refresh?.();
     const activeOption=[...select.options].find(option=>option.value===state.active);
     const activeLabel=activeOption?.textContent?.trim()||String(state.active).toUpperCase();
     const language=String(document.documentElement.lang||'en').split('-')[0];

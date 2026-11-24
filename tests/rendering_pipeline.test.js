@@ -9,6 +9,8 @@ const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf
 const physics = fs.readFileSync(path.join(root, 'static/pstudio_physics.js'), 'utf8');
 const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+const selectUI = fs.readFileSync(path.join(root, 'static/pstudio_selects.js'), 'utf8');
+const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'), 'utf8');
 
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
@@ -662,8 +664,8 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:36,lightSteps:2});
-  assert.equal(pass.uniforms.uCloudSteps.value,36);
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:40,lightSteps:2});
+  assert.equal(pass.uniforms.uCloudSteps.value,40);
   assert.equal(pass.uniforms.uCloudLightSteps.value,2);
   assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
@@ -900,6 +902,22 @@ test('scene toolbar exposes all five render quality tiers and keeps the control 
 });
 
 
+test('all visible select controls use the shared dark in-app picker instead of native platform popups',()=>{
+  for(const id of ['render-quality-select','obj-sprite','obj-script','shader-node-mode','font-size','tab-size','input-mode'])assert.ok(html.includes('id="'+id+'"'),id);
+  assert.ok(html.includes('/static/pstudio_selects.css?v=20261124-custom-selects1'));
+  assert.ok(html.includes('/static/pstudio_selects.js?v=20261124-custom-selects1'));
+  assert.match(selectUI,/select:not\(\.visually-hidden\):not\(\.pstudio-native-select\)/);
+  assert.match(selectUI,/menu\.setAttribute\('role','listbox'\)/);
+  assert.match(selectUI,/new Event\('change',\{bubbles:true\}\)/);
+  assert.match(selectUI,/new MutationObserver/);
+  assert.ok(selectUI.includes('if(select.isConnected)continue;'));
+  assert.match(selectUI,/window\.PStudioSelects=\{initialized:true/);
+  assert.ok(selectUI.includes("select.classList.add('pstudio-native-select')"));
+  assert.ok(selectCSS.includes('background:#1b222c'));
+  assert.ok(selectCSS.includes('.pstudio-select-option[aria-selected="true"]'));
+  assert.doesNotThrow(()=>new Function(selectUI));
+});
+ 
 test('tablet and mobile workspace use a single main column with accessible project and inspector drawers',()=>{
   for(const token of [
     'id="project-explorer"','id="workspace-inspector"',
@@ -913,8 +931,10 @@ test('tablet and mobile workspace use a single main column with accessible proje
 });
  
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-moon-ultra1'));
-  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-ultra-adaptive1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261124-solar-sphere-cloud1'));
+  assert.ok(html.includes('/static/pstudio_engine.js?v=20261124-custom-select-quality-sync1'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-cloud-atmosphere2'));
+  assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-solar-cloud-presets1'));
 });
 
 test('editor orbit camera reaches near-vertical top-down and bottom-up views without crossing pole singularities',()=>{
