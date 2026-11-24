@@ -354,7 +354,7 @@ test('night sky uses a periodic multi-octave Milky Way field and a dense fine-st
   assert.match(renderer,/makeNoiseGrid=\(gridWidth,gridHeight\)=>/);
   assert.match(renderer,/sampleNoise=\(grid,u,v\)=>/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
-  assert.match(renderer,/galaxyWidth=1024,galaxyHeight=512/);
+  assert.match(renderer,/galaxyWidth=width,galaxyHeight=height/);
   assert.match(renderer,/const structure=clamp01\(/);
   assert.match(renderer,/const dust=clamp01\(/);
   assert.match(renderer,/globalCompositeOperation='screen'/);
@@ -374,4 +374,16 @@ test('studio preset disables both painted and volumetric cloud layers',()=>{
   assert.match(renderer,/volumetricCloudsEnabled=effects&&!!base\.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.match(renderer,/volumetricCloudsEnabled=!!enabled&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio'/);
   assert.equal(presets.getPreset('studio').name,'studio');
+});
+
+
+test('night panorama keeps full-resolution Milky Way detail and wraps its longitude seam',()=>{
+  assert.match(renderer,/galaxyWidth=width,galaxyHeight=height/);
+  assert.match(renderer,/texture\.wrapS=T\.RepeatWrapping;texture\.wrapT=T\.ClampToEdgeWrapping/);
+  assert.match(renderer,/texture\.mapping=T\.EquirectangularReflectionMapping/);
+});
+
+test('moon has a larger angular diameter and higher sphere tessellation',()=>{
+  assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
+  assert.match(renderer,/Math\.tan\(3\.0\*Math\.PI\/180\)/);
 });
