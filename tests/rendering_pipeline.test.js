@@ -386,7 +386,7 @@ test('low-memory devices disable hardware MSAA and Auto selects conservative tie
   assert.ok(renderer.includes('antialias:deviceGiB>=6'));
   assert.ok(renderer.includes('if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return \'mobile\''));
   assert.ok(renderer.includes('if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return \'balanced\''));
-  assert.ok(renderer.includes('qualityPreset===\'auto\'?(memory<=2?1024:memory<=4?2048:4096):4096'));
+  assert.ok(renderer.includes('qualityPreset===\\'auto\\'?(memory<=2?1024:memory<=4?2048:4096):(adaptiveUltraTouchMode?2048:4096)'));
   assert.ok(renderer.includes('const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile'));
 });
 
@@ -630,7 +630,7 @@ test('volumetric clouds use layered density shaping, light transmittance and ada
     'pass.setQuality','pass.configureAtmosphere','uCloudWind'
   ])assert.ok(fx.includes(token),token);
   assert.ok(renderer.includes('volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)'));
-  assert.ok(renderer.includes("volumetricCloudPass.setQuality?.(resolveQualityPreset('auto'),adaptiveQualityLevel)"));
+  assert.ok(renderer.includes("volumetricCloudPass.setQuality?.(selected,adaptiveQualityLevel)"));
   assert.ok(fx.includes('source.rgb*transmittance+scattering*uAtmosphereStrength'));
   assert.doesNotThrow(()=>new Function(fx));
 });
@@ -751,14 +751,14 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 });
 
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
-  assert.ok(renderer.includes('qualityAOEnabled=profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
+  assert.ok(renderer.includes('qualityAOEnabled=effectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao;'));
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
 test('shadow map dimensions are capped by GPU texture limits and reported device-memory class',()=>{
-  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','resolveShadowMapSize(csm?Math.min(4096,profile.shadowSize):profile.shadowSize)','resolveShadowMapSize([1024,1536,2048][adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
+  for(const token of ['function resolveShadowMapSize(requested)','getParameter?.(gl.MAX_TEXTURE_SIZE)','memory<=2?1024:memory<=4?2048:4096','adaptiveUltraTouchMode?2048:4096','resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize))','const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel])'])assert.ok(renderer.includes(token),token);
 });
 
 
