@@ -9,6 +9,7 @@ const modules = Promise.all([
   import('../static/pstudio_rendering_materials.mjs'),
   import('../static/pstudio_rendering_backend.mjs'),
   import('../static/pstudio_rendering_pipeline.mjs'),
+  import('../static/pstudio_rendering_environment_tsl.mjs'),
   import('../static/pstudio_rendering_migration.mjs')
 ]);
 
@@ -163,7 +164,7 @@ test('WebGPU Lab consumes the reusable strict WebGPU scene-session API', () => {
 
 
 test('WebGPU material preflight rejects legacy GLSL hooks and unsupported material types', async () => {
-  const [THREE, , , , , migration] = await modules;
+  const [THREE, , , , , , migration] = await modules;
   const scene = new THREE.Scene();
   const geometry = new THREE.BoxGeometry();
   const pbr = new THREE.MeshStandardMaterial();
@@ -194,7 +195,7 @@ test('WebGPU material preflight rejects legacy GLSL hooks and unsupported materi
 });
 
 test('WebGPU production migration status reports blockers without claiming parity', async () => {
-  const [, , , , , migration] = await modules;
+  const [, , , , , , migration] = await modules;
   const status = migration.getPStudioWebGPUMigrationStatus({ navigatorRef: {} });
   assert.equal(status.productionBackend, 'webgl2');
   assert.equal(status.targetBackend, 'webgpu-tsl');
@@ -205,7 +206,7 @@ test('WebGPU production migration status reports blockers without claiming parit
 });
 
 test('WebGPU scene sessions reject unsupported materials before requesting a GPU device', async () => {
-  const [THREE, , , , , migration] = await modules;
+  const [THREE, , , , , , migration] = await modules;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
   const geometry = new THREE.BoxGeometry();
@@ -217,4 +218,66 @@ test('WebGPU scene sessions reject unsupported materials before requesting a GPU
   );
   material.dispose();
   geometry.dispose();
+});
+
+
+test('TSL environment generates deterministic equirectangular sky radiance for day and night', async () => {
+  const [THREE, , , , , environmentTSL] = await modules;
+  const presets = require('../static/pstudio_scene_environment.js');
+  const resolver = require('../static/pstudio_rendering_environment.js');
+  const day = resolver.resolvePStudioEnvironmentState(presets.getPreset('day'));
+  const night = resolver.resolvePStudioEnvironmentState(presets.getPreset('night'));
+  for (const key of ['skyTop','skyMid','skyHorizon','skyGround','environmentIntensity','sunIntensity','sunAngularRadius','starBrightness','moonDirection','moonIntensity']) {
+    assert.notEqual(day[key], undefined, 'day:' + key);
+    assert.notEqual(night[key], undefined, 'night:' + key);
+  }
+  const first = environmentTSL.generatePStudioEnvironmentPixels(day,128,64);
+  const second = environmentTSL.generatePStudioEnvironmentPixels(day,128,64);
+  const nightPixels = environmentTSL.generatePStudioEnvironmentPixels(night,128,64);
+  assert.equal(first.width,128);
+  assert.equal(first.height,64);
+  assert.deepEqual(first.data,second.data);
+  assert.equal(first.data.length,128*64*4);
+  for(let i=3;i<first.data.length;i+=4) assert.equal(first.data[i],255);
+  const dayMean = first.data.reduce((sum,value,index)=>sum+(index%4===0?value:0),0);
+  const nightMean = nightPixels.data.reduce((sum,value,index)=>sum+(index%4===0?value:0),0);
+  assert.ok(dayMean>0&&nightMean>0);
+  assert.ok(nightPixels.data.some((value,index)=>index%4===0&&value>nightMean/(128*64)));
+});
+
+test('TSL environment owns a sky NodeMaterial and matching PBR IBL texture with safe preset updates', async () => {
+  const [THREE, , , , , environmentTSL] = await modules;
+  const presets = require('../static/pstudio_scene_environment.js');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45,1,0.1,80);
+  camera.position.set(3,4,5);
+  const originalEnvironment = new THREE.DataTexture(new Uint8Array([0,0,0,255]),1,1);
+  scene.environment = originalEnvironment;
+  scene.environmentIntensity = 0.37;
+  const handle = environmentTSL.createPStudioTSLEnvironment(scene,{
+    profile:presets.getPreset('night'),
+    camera,
+    resolution:128
+  });
+  assert.equal(handle.kind,'pstudio-tsl-atmospheric-environment');
+  assert.equal(handle.skyMesh.material.isMeshBasicNodeMaterial,true);
+  assert.ok(handle.skyMesh.material.colorNode);
+  assert.equal(scene.environment,handle.environmentTexture);
+  assert.equal(scene.environment.mapping,THREE.EquirectangularReflectionMapping);
+  assert.equal(scene.environment.colorSpace,THREE.SRGBColorSpace);
+  assert.deepEqual(handle.getState().resolution,[128,64]);
+  assert.equal(handle.getState().preset,'night');
+  assert.equal(handle.getState().ibl,true);
+  assert.equal(handle.updateCamera(camera),true);
+  assert.deepEqual(handle.skyMesh.position.toArray(),camera.position.toArray());
+  const initialTextureVersion = handle.environmentTexture.version;
+  assert.equal(handle.setProfile(presets.getPreset('day')),true);
+  assert.ok(handle.environmentTexture.version>initialTextureVersion);
+  assert.equal(handle.getState().preset,'day');
+  assert.equal(scene.environmentIntensity,0.92);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(scene.environment,originalEnvironment);
+  assert.equal(scene.environmentIntensity,0.37);
+  originalEnvironment.dispose();
 });
