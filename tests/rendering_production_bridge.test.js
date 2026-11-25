@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const modules = Promise.all([
   import('three/webgpu'),
   import('../static/pstudio_rendering_production_bridge.mjs')
@@ -202,4 +204,31 @@ test('production bridge deduplicates concurrent initialization and permits retry
   assert.equal(creates, 1);
   assert.equal(bridge.getState().backend, 'webgpu');
   bridge.dispose();
+});
+
+test('production 3D render loop is wired to a fail-closed WebGPU bridge with resize and fallback routing', () => {
+  const root = path.join(__dirname, '..');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+
+  for (const token of [
+    'window.PStudioProductionRenderingBridgeFactory',
+    'function getProductionWebGPUFeatureBlockers',
+    'function requestProductionWebGPUMigration',
+    "productionRendererBridge.render()",
+    'productionRendererBridge.resize(width,height,bridgePixelRatio)',
+    'fallbackFromWebGPUForUnsupportedFeatures(commandsByObject)',
+    'productionPendingCommands=commandsByObject',
+    'requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true})',
+    'getWebGPUMigrationDiagnostics:'
+  ]) {
+    assert.ok(engine.includes(token), 'production engine integration: ' + token);
+  }
+
+  for (const token of [
+    '/static/pstudio_rendering_production_bridge.mjs?v=20261125-production-scene-bridge-v1',
+    'window.PStudioProductionRenderingBridgeFactory = productionBridge.createPStudioProductionRenderingBridge'
+  ]) {
+    assert.ok(html.includes(token), 'application bootstrap: ' + token);
+  }
 });
