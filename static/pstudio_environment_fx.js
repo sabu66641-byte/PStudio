@@ -9,19 +9,32 @@
     if(!material)return;
     const data=material.userData||(material.userData={});
     const alreadyTagged=data.pstudioTSLPortVersion===1&&Array.isArray(data.pstudioTSLFeatures);
-    if(!alreadyTagged){
+    if(alreadyTagged){
+      const approvedHookMatches=material.pstudioTSLPortApprovedCompileHook===material.onBeforeCompile
+        &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+      const knownCSM=data.pstudioCSMOnlyHook===true
+        &&data.pstudioProbeShaderSetup!==true
+        &&data.pstudioCSMHook===material.onBeforeCompile
+        &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+      if(!approvedHookMatches&&!knownCSM)data.pstudioTSLPortHasForeignHook=true;
+    }else{
       const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function';
       const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function';
-      const knownCSM= data.pstudioCSMOnlyHook===true
-        && data.pstudioProbeShaderSetup!==true
-        && data.pstudioCSMHook===material.onBeforeCompile
-        && !ownCacheKey;
+      const knownCSM=data.pstudioCSMOnlyHook===true
+        &&data.pstudioProbeShaderSetup!==true
+        &&data.pstudioCSMHook===material.onBeforeCompile
+        &&!ownCacheKey;
       data.pstudioTSLPortHasForeignHook=(ownCompile&&!knownCSM)||(ownCacheKey&&!knownCSM);
       data.pstudioTSLPortVersion=1;
     }
     const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
     if(!features.includes(feature))features.push(feature);
     data.pstudioTSLFeatures=features;
+  };
+  const sealTSLPortable=(material)=>{
+    if(!material)return;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
   };
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
   const LEAF = /tree|foliage|leaf|leaves|canopy|grass|meadow|wildflower|pine|bush|shrub/i;
@@ -291,6 +304,7 @@
       }
     };
     material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v4-'+role+'-translucency-'+(translucency>0?'on':'off')+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioFoliageHQ={time:u.time,role,strength:u.strength,speed:u.speed,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
@@ -373,6 +387,7 @@
       shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',mapChunk);
     };
     material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v2-'+(previousKey?previousKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha',steps:8};
     parallaxMaterials.add(material);
     return material;
@@ -456,6 +471,7 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-world-triplanar-pbr-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioTriplanarHQ={scale:scaleValue,sharpness:4.0,normalWeight:.72,projection:'world-space'};
     triplanarMaterials.add(material);
     return material;
@@ -531,6 +547,7 @@
         'roughnessFactor=clamp(roughnessFactor+pStudioRock*.12-uPStudioTerrainWetness*(.05+.12*pStudioNoiseValue),.12,1.0);');
     };
     material.customProgramCacheKey=()=>'pstudio-terrain-layered-pbr-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioTerrainHQ=u;
     if(T()?.DoubleSide!==undefined)material.side=T().DoubleSide;
     terrainMaterials.add(material);
