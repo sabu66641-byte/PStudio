@@ -10,6 +10,7 @@
   let productionRendererPromotionStarted = false;
   let productionRendererPromotionPromise = null;
   let productionRendererFallbackRequested = false;
+  let lastWebGPUBridgePixelRatio = 0;
   let productionWebGPUCompileStage = null;
   let productionWebGPUBlockers = [];
   let rendererInitializationFailed=false;
@@ -718,6 +719,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             if(snapshot.state==='ready'&&snapshot.backend==='webgpu'){
               productionWebGPUCompileStage=null;
               productionRendererFallbackRequested=false;
+            }else if(snapshot.state==='ready'&&snapshot.backend==='webgl2'){
+              productionWebGPUCompileStage=null;
+              productionRendererFallbackRequested=false;
             }else if(snapshot.state==='fallback'||snapshot.state==='failed'||snapshot.state==='disposed'){
               productionWebGPUCompileStage=null;
             }
@@ -802,7 +806,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
-    if (width !== lastSize.width || height !== lastSize.height) {
+    const bridgePixelRatio=Number(renderer.getPixelRatio?.())||1;
+    const bridgeRatioChanged=!!productionRendererBridge&&Math.abs(bridgePixelRatio-lastWebGPUBridgePixelRatio)>.001;
+    if (width !== lastSize.width || height !== lastSize.height || bridgeRatioChanged) {
       // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
       // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
       if(qualityPreset==='ultra'){
@@ -817,8 +823,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       if(productionRendererBridge){
-        const ratio=Number(renderer.getPixelRatio?.())||1;
-        productionRendererBridge.resize(width,height,ratio);
+        productionRendererBridge.resize(width,height,bridgePixelRatio);
+        lastWebGPUBridgePixelRatio=bridgePixelRatio;
       }
       lastSize = { width, height };
     }
@@ -1462,6 +1468,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     // Keep the last valid WebGL frame on screen while legacy PBR materials are
     // converted and the WebGPU pipeline is compiled; never render mixed material backends.
     if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')return;
+    if(productionRendererFallbackRequested&&productionRendererBridge?.getState?.().backend==='webgpu')return;
     const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
     applyCameraShake();camera.updateMatrixWorld(true);
     const frameStarted=window.performance?.now?.()??Date.now();
@@ -1486,7 +1493,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       try{
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
+        productionRendererFallbackRequested=true;
         productionRendererBridge.useFallback(error).catch(fallbackError=>{
+          productionRendererFallbackRequested=false;
           console.error('[PStudio] WebGPU frame failure and WebGL2 recovery both failed.',error,fallbackError);
         });
       }finally{
@@ -6360,8 +6369,8 @@ void main(){
     }
     for(const instance of pendingFrameInstances)frameCameraToModel(instance);
     refreshSelectionOutline();
-    updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
     fallbackFromWebGPUForUnsupportedFeatures(commandsByObject);
+    updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
     if(!productionRendererPromotionStarted){
       productionRendererPromotionStarted=true;
       requestProductionWebGPUMigration({automatic:true}).catch(error=>{

@@ -4,7 +4,7 @@ import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
-  Object.freeze({ id: 'renderer-lifecycle', label: '非同期WebGPU初期化と本番フレームループの統合' }),
+  Object.freeze({ id: 'renderer-parity-validation', label: '本番WebGPUの実機負荷・長時間動作・WebGL2復旧の回帰検証' }),
   Object.freeze({ id: 'legacy-materials', label: '地形・水面・植生・VFXのカスタムGLSLをTSLへ移植' }),
   Object.freeze({ id: 'environment-effects', label: '物理大気散乱・体積雲・高度フォグ・水面反射の環境表現を移植' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・SH GI・CSM・水面反射のTSL／WebGPU移植' }),
@@ -116,6 +116,8 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
     productionReady: false,
     completedFoundations: Object.freeze([
       'strict WebGPU backend initialization',
+      'production dual-canvas bridge with compatibility-gated WebGPU promotion and WebGL2 recovery',
+      'production scene frame-loop, resize and staged material-conversion handoff',
       'standard/physical PBR NodeMaterial conversion',
       'TSL RenderPipeline with Bloom',
       'TSL atmospheric sky and shared equirectangular PBR IBL',

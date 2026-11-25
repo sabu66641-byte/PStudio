@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const THREE = require('three');
-const { createPStudioProductionRenderingBridge } = require('../static/pstudio_rendering_production_bridge.mjs');
+const modules = Promise.all([
+  import('three/webgpu'),
+  import('../static/pstudio_rendering_production_bridge.mjs')
+]);
 
 function makeElement(tagName, documentRef) {
   const attributes = new Map();
@@ -54,7 +56,7 @@ function makeCanvasDOM() {
   return { legacyCanvas, children };
 }
 
-function makeScene() {
+function makeScene(THREE) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 1000);
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
@@ -63,8 +65,10 @@ function makeScene() {
 }
 
 test('production bridge keeps WebGL2 visible until a compatible WebGPU scene is ready', async () => {
+  const [THREE, bridgeModule] = await modules;
+  const { createPStudioProductionRenderingBridge } = bridgeModule;
   const { legacyCanvas, children } = makeCanvasDOM();
-  const { scene, camera } = makeScene();
+  const { scene, camera } = makeScene(THREE);
   let creates = 0;
   let renders = 0;
   let resizes = 0;
@@ -106,8 +110,10 @@ test('production bridge keeps WebGL2 visible until a compatible WebGPU scene is 
 });
 
 test('production bridge fails closed for a scene with a custom GLSL material hook', async () => {
+  const [THREE, bridgeModule] = await modules;
+  const { createPStudioProductionRenderingBridge } = bridgeModule;
   const { legacyCanvas, children } = makeCanvasDOM();
-  const { scene, camera } = makeScene();
+  const { scene, camera } = makeScene(THREE);
   const mesh = scene.children[0];
   mesh.material.onBeforeCompile = () => {};
   let creates = 0;
@@ -128,8 +134,10 @@ test('production bridge fails closed for a scene with a custom GLSL material hoo
 });
 
 test('production bridge activates the existing WebGL2 fallback after WebGPU initialization failure', async () => {
+  const [THREE, bridgeModule] = await modules;
+  const { createPStudioProductionRenderingBridge } = bridgeModule;
   const { legacyCanvas } = makeCanvasDOM();
-  const { scene, camera } = makeScene();
+  const { scene, camera } = makeScene(THREE);
   const bridge = createPStudioProductionRenderingBridge({
     legacyCanvas,
     scene,
@@ -145,8 +153,10 @@ test('production bridge activates the existing WebGL2 fallback after WebGPU init
 });
 
 test('production bridge can recover from WebGPU device loss without replacing the legacy renderer', async () => {
+  const [THREE, bridgeModule] = await modules;
+  const { createPStudioProductionRenderingBridge } = bridgeModule;
   const { legacyCanvas } = makeCanvasDOM();
-  const { scene, camera } = makeScene();
+  const { scene, camera } = makeScene(THREE);
   let disposed = 0;
   const bridge = createPStudioProductionRenderingBridge({
     legacyCanvas,
@@ -168,8 +178,10 @@ test('production bridge can recover from WebGPU device loss without replacing th
 });
 
 test('production bridge deduplicates concurrent initialization and permits retry after policy blockers clear', async () => {
+  const [THREE, bridgeModule] = await modules;
+  const { createPStudioProductionRenderingBridge } = bridgeModule;
   const { legacyCanvas } = makeCanvasDOM();
-  const { scene, camera } = makeScene();
+  const { scene, camera } = makeScene(THREE);
   let allowed = false;
   let creates = 0;
   const bridge = createPStudioProductionRenderingBridge({
