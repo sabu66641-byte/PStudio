@@ -1531,7 +1531,8 @@ test('dynamic GI probe captures are excluded from main render timings and per-fr
 test('Dynamic GI capture cadence and quality-tier resolution are delegated to the modular scheduler',()=>{
   assert.ok(renderer.includes('function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh)'));
   assert.ok(renderer.includes('const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh)'));
-  assert.ok(renderer.includes('dynamicProbeCaptureResolution(qualityPreset)'));
+  assert.ok(renderer.includes('const resolveProbeResolution=window.PStudioRenderingGI?.dynamicProbeCaptureResolution;'));
+  assert.ok(renderer.includes('resolveProbeResolution(qualityPreset)'));
   assert.ok(renderer.includes('nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs'));
   for(const token of [
     'export function dynamicProbeCaptureIntervalMs(renderMs, gpuFresh)',
