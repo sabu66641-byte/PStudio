@@ -342,7 +342,15 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         return pipelineHandle.setBloom(settings);
       },
       setClusteredLightingSnapshot(snapshot) {
-        if (disposed || !clusteredLightingHandle) return false;
+        if (disposed || !snapshot) return false;
+        if (!clusteredLightingHandle) {
+          clusterStorageHandle = createPStudioTSLClusterStorage(renderer, options.clusteredLightingOptions || {});
+          clusteredLightingHandle = applyPStudioTSLClusteredLighting(scene, {
+            storage: clusterStorageHandle,
+            snapshot
+          });
+          return true;
+        }
         return clusteredLightingHandle.update(snapshot);
       },
       getState() {
