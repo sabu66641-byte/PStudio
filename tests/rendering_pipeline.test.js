@@ -292,7 +292,7 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
 test('automatic LOD work is serialized into idle callbacks without forced timeout execution',()=>{
   assert.ok(renderer.includes('const autoLODQueue=[]'));
   assert.ok(renderer.includes('function scheduleAutoLODPump()'));
-  assert.ok(renderer.includes('window.requestIdleCallback(pump)'));
+  assert.ok(renderer.includes('window.requestIdleCallback(deadline=>{void pump(deadline);},{timeout:1000})'));
   assert.ok(!renderer.includes('requestIdleCallback(build,{timeout:1200})'));
 });
 
@@ -1483,4 +1483,33 @@ test('Dynamic GI probe capture cadence scales with measured render headroom and 
   assert.match(helper,/if\(ms<=12\)return 900/);
   assert.match(helper,/if\(ms<=4\)return 450/);
   assert.match(helper,/if\(ms<=7\)return 900/);
+});
+
+
+test('r187 WebGL initialization guards missing finalization primitives and unsupported WebGL 2 without retry loops',()=>{
+  const start=renderer.indexOf('function ensureRenderer(){');
+  const end=renderer.indexOf('try{',renderer.indexOf('window.PStudioRenderingRuntime=Object.freeze({',start));
+  assert.ok(start>=0&&end>start,'renderer initialization guard boundaries');
+  const init=renderer.slice(start,end);
+  assert.ok(init.includes('rendererInitializationFailed'));
+  assert.ok(init.includes("typeof WeakRef!=='function'||typeof FinalizationRegistry!=='function'"));
+  assert.ok(init.includes('renderer.capabilities?.isWebGL2!==true'));
+  assert.ok(init.includes('failRendererInitialization(error)'));
+  assert.ok(init.includes('Three.js r187 requires WebGL 2'));
+  assert.ok(init.includes("productionBackend:'webgl2'"));
+  assert.doesNotMatch(init,/new T\.WebGLRenderer\([\s\S]*?catch/);
+});
+
+test('GLTF worker serializes r187 iridescence thickness min/max and hydrates legacy range packets',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  const hydrateStart=renderer.indexOf('async function hydrateGLTFWorkerPacket');
+  const hydrateEnd=renderer.indexOf('function ',hydrateStart+20);
+  const hydrate=renderer.slice(hydrateStart,hydrateEnd);
+  assert.ok(worker.includes('iridescenceThicknessMinimum: Number.isFinite(material.iridescenceThicknessMinimum)'));
+  assert.ok(worker.includes('iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum)'));
+  assert.ok(renderer.includes('if(Number.isFinite(desc.iridescenceThicknessMinimum))'));
+  assert.ok(renderer.includes('if(Number.isFinite(desc.iridescenceThicknessMaximum))'));
+  assert.ok(renderer.includes('else if(Array.isArray(desc.iridescenceThicknessRange))'));
+  assert.ok(hydrate.includes('params.iridescenceThicknessMinimum'));
+  assert.ok(hydrate.includes('params.iridescenceThicknessMaximum'));
 });
