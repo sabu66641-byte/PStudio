@@ -1049,7 +1049,7 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   const pass=api.createVolumetricCloudPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector2,Vector3,Color});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:64,lightSteps:3});
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:64,baseSteps:64,frameBudgetScale:1,lightSteps:3});
   assert.equal(pass.uniforms.uCloudSteps.value,64);
   assert.equal(pass.uniforms.uCloudLightSteps.value,3);
   assert.equal(pass.setQuality('ultra',1).steps,54);
@@ -1063,6 +1063,31 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.equal(pass.uniforms.uCloudDensity.value,.7);
   assert.ok(pass.shader.fragmentShader.includes('lightTransmittance'));
 });
+test('volumetric quality scales from its preset baseline without compounding across frames',()=>{
+  const vm=require('node:vm');
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  const sandbox={window:{},console,Math,Number,Set,Map,Object,Array,String};
+  vm.runInNewContext(fx,sandbox,{timeout:1000});
+  const api=sandbox.window.PStudioEnvironmentFX;
+  class Vector3{constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}normalize(){const n=Math.hypot(this.x,this.y,this.z)||1;this.x/=n;this.y/=n;this.z/=n;return this;}}
+  class Vector2{constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}}
+  class Matrix4{}
+  class Color{constructor(value){this.value=value;}set(value){this.value=value;return this;}}
+  class ShaderPass{constructor(shader){this.uniforms=shader.uniforms;this.shader=shader;this.render=()=>{};this.userData={};}}
+  const three={DepthTexture:class{},Matrix4,Vector2,Vector3,Color};
+  const cloud=api.createVolumetricCloudPass({ShaderPass},three);
+  const fog=api.createVolumetricFogPass({ShaderPass},three);
+  const shadow=api.createContactShadowPass({ShaderPass},{DepthTexture:class{},Matrix4,Vector3});
+  for(const pass of [cloud,fog,shadow]){
+    const uniform=pass===cloud?'uCloudSteps':pass===fog?'uFogSteps':'uSteps';
+    const baseline=pass.setQuality('ultra',2).steps;
+    assert.equal(pass.setFrameBudgetScale(0.5),true);
+    assert.equal(pass.uniforms[uniform].value,Math.max(pass===cloud?8:pass===fog?6:4,Math.round(baseline*0.5)));
+    assert.equal(pass.setFrameBudgetScale(1),true);
+    assert.equal(pass.uniforms[uniform].value,baseline);
+  }
+});
+
 test('water v3 adds Beer-Lambert depth absorption and grazing-angle reflection response',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   for(const token of [
@@ -1091,7 +1116,7 @@ test('volumetric fog synchronizes preset lighting and adapts its ray-march budge
   const fog=api.createVolumetricFogPass({ShaderPass},three);
   assert.ok(fog);
   const quality=fog.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:32});
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:32,baseSteps:32,frameBudgetScale:1});
   assert.equal(fog.uniforms.uFogSteps.value,32);
   assert.equal(fog.setQuality('ultra',1).steps,28);
   assert.equal(fog.setQuality('ultra',0).steps,24);
@@ -1206,7 +1231,7 @@ test('contact shadow pass ray-marches scene depth with bounded quality levels an
   const pass=api.createContactShadowPass({ShaderPass},{DepthTexture,Matrix4,Vector3});
   assert.ok(pass);
   const quality=pass.setQuality('ultra',2);
-  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:30});
+  assert.deepEqual({...quality},{preset:'ultra',adaptiveLevel:2,steps:30,baseSteps:30,frameBudgetScale:1});
   assert.equal(pass.uniforms.uSteps.value,30);
   assert.equal(pass.setQuality('ultra',1).steps,26);
   assert.equal(pass.setQuality('ultra',0).steps,23);
