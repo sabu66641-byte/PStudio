@@ -1471,7 +1471,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
   assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-daylight-hq-r1'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-tsl-surface-v2'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
@@ -1812,8 +1812,10 @@ test('TSL surface graphs build Triplanar, layered terrain, parallax and foliage 
   for(const spec of materialSpecs){
     const source=new THREE.MeshStandardMaterial({map:spec.map,normalMap:spec.normalMap});
     source.userData=spec.userData;
-    source.onBeforeCompile=function(){};
-    source.customProgramCacheKey=function(){return 'pstudio-legacy-surface';};
+    source.onBeforeCompile=function approvedSurfaceHook(){};
+    source.customProgramCacheKey=function approvedSurfaceCacheKey(){return 'pstudio-legacy-surface';};
+    source.pstudioTSLPortApprovedCompileHook=source.onBeforeCompile;
+    source.pstudioTSLPortApprovedCacheKey=source.customProgramCacheKey;
     const converted=createPStudioNodeMaterial(source);
     nodeMaterials.push(converted);
     const mesh=new THREE.Mesh(geometry,converted);
@@ -1869,13 +1871,23 @@ test('TSL surface setup rolls back earlier material graphs when a later feature 
   const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
   const scene=new THREE.Scene();
   const geometry=new THREE.BufferGeometry();
+  const approve=(material)=>{
+    const hook=function approvedSurfaceHook(){};
+    const cacheKey=function approvedSurfaceCacheKey(){return 'pstudio-test-surface';};
+    material.onBeforeCompile=hook;
+    material.customProgramCacheKey=cacheKey;
+    material.pstudioTSLPortApprovedCompileHook=hook;
+    material.pstudioTSLPortApprovedCacheKey=cacheKey;
+  };
   const foliage=new THREE.MeshStandardNodeMaterial();
   foliage.userData={
     pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],
     pstudioFoliageHQ:{role:'leaf',strength:{value:.8},speed:{value:1},height:4,base:0,direction:{x:.83,y:.56},translucency:0,thickness:.5,scatteringPower:3,translucencyColor:'#d9edaa'}
   };
+  approve(foliage);
   const invalidTerrain=new THREE.MeshStandardNodeMaterial();
   invalidTerrain.userData={pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['triplanar']};
+  approve(invalidTerrain);
   scene.add(new THREE.Mesh(geometry,foliage),new THREE.Mesh(geometry,invalidTerrain));
   assert.throws(()=>applyPStudioTSLSurfaceFeatures(scene),/rolled back all partial TSL surface material graphs/);
   assert.equal(foliage.positionNode,null);
