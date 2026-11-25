@@ -32,6 +32,100 @@ function loadBackupValidator() {
   return context;
 }
 
+
+function loadProjectImportHarness({ failPersist = false } = {}) {
+  const html = read('templates/index.html');
+  const helpers = [
+    extract(html, 'function safeProjectName(', '\\nasync function exportProjectBackup'),
+    extract(html, 'function validateBackupDataUrl(', '\\nasync function exportNativeEcsProject'),
+    extract(html, 'function decodeBackupBase64(', '\\nfunction validateBackupDataUrl'),
+    extract(html, 'function copySavedEcsComponentPayload(', '\\nfunction validateAndBuildBackup'),
+    extract(html, 'function validateAndBuildBackup(', '\\nasync function importProjectBackup'),
+    extract(html, 'async function importProjectBackup(', '\\nfunction loadProject(')
+  ].join('\\n\\n');
+
+  const assets = new Map([['tree.glb', new Blob(['old-model'], { type: 'model/old' })]]);
+  const storage = new Map([['PSTUDIO_PROJECT', 'previous-storage']]);
+  const deps = {
+    window: {
+      PStudioECS: { sceneComponentSchemaVersion: 1 },
+      PStudioEngine: { isRunning: () => false },
+      PStudioAssetStore: {
+        async get(name) { return assets.get(name) || null; },
+        async put(name, blob) { assets.set(name, blob); },
+        async remove(name) { assets.delete(name); }
+      },
+      PStudio3D: { invalidateAsset() {} }
+    },
+    toast() {},
+    PSTUDIO_BACKUP_FORMAT: 'pstudio-project',
+    PSTUDIO_BACKUP_VERSION: 1,
+    PSTUDIO_BACKUP_LIMIT: 64 * 1024 * 1024,
+    showPStudioConfirm: async () => true,
+    localStorage: {
+      getItem(key) { return storage.get(key) ?? null; },
+      setItem(key, value) { storage.set(key, value); },
+      removeItem(key) { storage.delete(key); }
+    },
+    PROJECT_KEY: 'PSTUDIO_PROJECT',
+    projectFiles: { 'old.ps': { type: 'ps', content: 'old' } },
+    projectAssets: [{ name: 'tree.glb', kind: 'model' }],
+    sceneObjects: [{ id: 'old-scene', x: 0, y: 0, z: 0 }],
+    sceneEnvironment: { preset: 'day' },
+    activeProjectFile: 'old.ps',
+    selectedObjectId: 'old-scene',
+    isDirty: true,
+    codeEditor: { value: 'old' },
+    document: { getElementById: () => ({ textContent: '' }) },
+    renderProjectTree() {},
+    openProjectFile() {},
+    persistProject() { if (failPersist) throw new Error('injected persistence failure'); },
+    updateLineNumbers() {},
+    updateCursor() {},
+    syncSceneEnvironmentPresetButtons() {},
+    switchWorkspaceView() {},
+    loadSceneText() {},
+    setOutput(message) { deps.lastOutput = message; },
+    console, TextEncoder, Blob, Uint8Array, atob, btoa,
+    Set, Map, Math, Number, Object, Array, String, Boolean, TypeError, Error, JSON
+  };
+  const factory = new Function('deps', `
+    const {
+      window, toast, PSTUDIO_BACKUP_FORMAT, PSTUDIO_BACKUP_VERSION, PSTUDIO_BACKUP_LIMIT,
+      showPStudioConfirm, localStorage, PROJECT_KEY, document, renderProjectTree,
+      openProjectFile, persistProject, updateLineNumbers, updateCursor,
+      syncSceneEnvironmentPresetButtons, switchWorkspaceView, loadSceneText,
+      setOutput, console, TextEncoder, Blob, Uint8Array, atob, btoa,
+      Set, Map, Math, Number, Object, Array, String, Boolean, TypeError, Error, JSON
+    } = deps;
+    let {
+      projectFiles, projectAssets, sceneObjects, sceneEnvironment, activeProjectFile,
+      selectedObjectId, isDirty, codeEditor
+    } = deps;
+    ${helpers}
+    return {
+      importProjectBackup,
+      getState: () => ({ projectFiles, projectAssets, sceneObjects, sceneEnvironment, activeProjectFile, selectedObjectId, isDirty, codeEditor }),
+      getStorage: () => localStorage.getItem(PROJECT_KEY),
+      getAsset: name => window.PStudioAssetStore.get(name),
+      getOutput: () => deps.lastOutput
+    };
+  `);
+  return factory(deps);
+}
+
+function backupArchive(objects, assets = [], binaryAssets = []) {
+  return {
+    format: 'pstudio-project',
+    version: 1,
+    project: {
+      files: { 'main.ps': { type: 'ps', content: 'ps "restored"' } },
+      assets, objects, environment: { preset: 'night' }, active: 'main.ps'
+    },
+    binaryAssets
+  };
+}
+
 function archiveFor(object) {
   return {
     format: 'pstudio-project',
@@ -56,6 +150,48 @@ function loadECS() {
   vm.runInNewContext(read('static/pstudio_ecs.js'), sandbox, { filename: 'pstudio_ecs.js' });
   return window.PStudioECS;
 }
+
+
+test('actual backup import installs the restored project with current and future ECS payloads intact', async () => {
+  const harness = loadProjectImportHarness();
+  const objects = [
+    { id: 'current', x: 1, y: 2, z: 0, ecsComponentsVersion: 1, ecsComponents: [{ type: 'Health', data: { hp: 55 } }] },
+    { id: 'future', x: 3, y: 4, z: 0, ecsComponentsVersion: 7, ecsComponents: [{ type: 'FutureRuntime', data: { opaque: [1, 2] } }] }
+  ];
+  const archive = backupArchive(objects);
+  const raw = JSON.stringify(archive);
+  await harness.importProjectBackup({ size: raw.length, text: async () => raw });
+
+  const state = harness.getState();
+  assert.equal(state.activeProjectFile, 'main.ps');
+  assert.equal(state.sceneObjects.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.sceneObjects[0].ecsComponents)), objects[0].ecsComponents);
+  assert.equal(state.sceneObjects[0].ecsComponentsVersion, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.sceneObjects[1].ecsComponents)), objects[1].ecsComponents);
+  assert.equal(state.sceneObjects[1].ecsComponentsVersion, 7);
+  const savedScene = JSON.parse(state.projectFiles['main.scene'].content);
+  assert.deepEqual(savedScene.objects.map(object => object.ecsComponentsVersion), [1, 7]);
+  assert.equal(harness.getStorage() !== 'previous-storage', true);
+});
+
+test('backup import rolls back storage, assets and live ECS payload records after a later transaction failure', async () => {
+  const harness = loadProjectImportHarness({ failPersist: true });
+  const archive = backupArchive(
+    [{ id: 'restored', x: 0, y: 0, z: 0, ecsComponentsVersion: 1, ecsComponents: [{ type: 'Renderable', data: { asset: 'tree.glb' } }] }],
+    [{ name: 'tree.glb', kind: 'model', format: 'glb', mime: 'application/octet-stream', size: 1 }],
+    [{ name: 'tree.glb', type: 'application/octet-stream', size: 1, data: btoa('n') }]
+  );
+  const raw = JSON.stringify(archive);
+  await harness.importProjectBackup({ size: raw.length, text: async () => raw });
+
+  const state = harness.getState();
+  assert.equal(state.projectFiles['old.ps'].content, 'old');
+  assert.equal(state.sceneObjects[0].id, 'old-scene');
+  assert.equal(harness.getStorage(), 'previous-storage');
+  const restoredAsset = await harness.getAsset('tree.glb');
+  assert.equal(await restoredAsset.text(), 'old-model');
+  assert.match(harness.getOutput(), /injected persistence failure/);
+});
 
 test('old unversioned array and type-keyed Component payloads survive a real backup import validator', () => {
   const validator = loadBackupValidator();
