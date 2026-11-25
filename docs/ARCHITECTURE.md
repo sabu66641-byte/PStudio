@@ -109,7 +109,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - The game runtime owns legacy ps callback state and emits frame render commands. ECS Systems are scheduled around the Physics step: update, prePhysics, then postPhysics.
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations. ECS PhysicsBody is configuration; the Physics solver remains authoritative for runtime body motion.
-- ECS owns typed Component data, generic System scheduling and runtime simulation TimeState. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields. Browser frame scheduling remains a platform service.
+- ECS owns typed Component data, generic System scheduling and runtime simulation TimeState. Scene Object Transform is a bidirectional editor/legacy-ps bridge: externally changed Scene Object values win conflicts, while ECS-only Transform changes are copied back. The runtime synchronizes again after legacy ps callbacks and before postUpdate Systems. PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields. Browser frame scheduling remains a platform service.
 - Existing legacy ps callbacks, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
