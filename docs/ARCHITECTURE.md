@@ -76,7 +76,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 
 ### IDE and game runtime
 
-- `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching.
+- `templates/index.html`: IDE, navigation, project explorer, source editor, scene view, Inspector, asset import, project backup, language switching. The backup validator preserves versioned ECS Component payloads, migrates legacy unversioned payloads, and leaves future schema versions opaque.
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
