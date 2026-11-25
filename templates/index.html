@@ -2989,6 +2989,12 @@ try {
   }
 
   try {
+    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261125-production-session-v1');
+  } catch (error) {
+    window.PStudioRenderingMigration = null;
+    console.warn('[PStudio] Shared WebGPU migration session unavailable; the production WebGL2 path remains active.', error);
+  }
+  try {
     window.PStudioReflector = (await import('three/addons/objects/Reflector.js')).Reflector;
   } catch (error) {
     console.warn('[PStudio] Planar water reflection unavailable; basic water will be used.', error);
