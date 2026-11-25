@@ -198,8 +198,8 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
     throw new Error('Three.js r187 StorageBufferAttribute/TSL storage APIs are unavailable.');
   }
 
-  const lightAttribute = new THREE.StorageBufferAttribute(lightFloats, 4);
-  const clusterAttribute = new THREE.StorageBufferAttribute(clusterFloats, 4);
+  const lightAttribute = new THREE.StorageBufferAttribute(lightFloats / 4, 4);
+  const clusterAttribute = new THREE.StorageBufferAttribute(clusterFloats / 4, 4);
   lightAttribute.setUsage(THREE.DynamicDrawUsage);
   clusterAttribute.setUsage(THREE.DynamicDrawUsage);
   const lightStorage = TSL.storage(lightAttribute, 'vec4', lightAttribute.count).toReadOnly();
