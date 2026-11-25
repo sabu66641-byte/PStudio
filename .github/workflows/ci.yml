@@ -51,6 +51,9 @@ jobs:
       - name: Check TSL water module syntax
         run: node --check static/pstudio_rendering_water_tsl.mjs
 
+      - name: Check TSL clustered lighting module syntax
+        run: node --check static/pstudio_rendering_clustered_lighting_tsl.mjs
+
       - name: Check production 3D engine syntax
         run: node --check static/pstudio_3d_engine.js
 
