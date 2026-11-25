@@ -77,6 +77,17 @@ test('built-in Basic, Lambert, Phong, Toon and Matcap materials convert to match
   }
 });
 
+test('direct TSL conversion refuses to silently discard custom GLSL hooks', async () => {
+  const [THREE, , materials] = await modules;
+  const source = new THREE.MeshStandardMaterial();
+  source.onBeforeCompile = () => {};
+  assert.throws(
+    () => materials.createPStudioNodeMaterial(source),
+    /custom GLSL hooks/
+  );
+  source.dispose();
+});
+
 test('scene converter handles shared built-in material families and preserves unsupported materials', async () => {
   const [THREE, , materials] = await modules;
   const scene = new THREE.Scene();
