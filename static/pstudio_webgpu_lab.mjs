@@ -1,5 +1,8 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
+import { createPStudioWebGPUBackend } from './pstudio_rendering_backend.mjs';
+import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs';
+import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
 const canvas = document.getElementById('webgpu-lab-canvas');
@@ -9,6 +12,9 @@ const openButton = document.getElementById('webgpu-lab-open');
 const closeButton = document.getElementById('webgpu-lab-close');
 
 let renderer = null;
+let backendHandle = null;
+let pipelineHandle = null;
+let materialConversion = null;
 let scene = null;
 let camera = null;
 let animatedGroup = null;
@@ -196,7 +202,19 @@ function disposeRenderer() {
     window.removeEventListener('resize', fallbackResizeListener);
     fallbackResizeListener = null;
   }
-  if (renderer) {
+  if (pipelineHandle) {
+    try { pipelineHandle.dispose(); } catch (_) {}
+    pipelineHandle = null;
+  }
+  if (materialConversion) {
+    try { materialConversion.disposeSourceMaterials(); } catch (_) {}
+    materialConversion = null;
+  }
+  if (backendHandle) {
+    try { backendHandle.dispose(); } catch (_) {}
+    backendHandle = null;
+    renderer = null;
+  } else if (renderer) {
     try { renderer.setAnimationLoop(null); } catch (_) {}
     try { renderer.dispose(); } catch (_) {}
     renderer = null;
@@ -229,42 +247,36 @@ async function runLab(ticket) {
     if (ticket !== generation || overlay?.hidden) return;
 
     const memoryGiB = Math.max(1, Number(navigator.deviceMemory) || 4);
-    const rendererCandidate = new THREE.WebGPURenderer({
+    setStatus('共有WebGPUバックエンドを初期化しています…');
+    backendHandle = await createPStudioWebGPUBackend({
       canvas,
       antialias: memoryGiB >= 4,
       alpha: false,
       powerPreference: 'low-power'
     });
-    renderer = rendererCandidate;
-
-    setStatus('WebGPUレンダラーを初期化しています…');
-    await rendererCandidate.init();
+    renderer = backendHandle.renderer;
 
     if (ticket !== generation || overlay?.hidden) {
-      rendererCandidate.dispose();
-      if (renderer === rendererCandidate) renderer = null;
+      disposeRenderer();
       return;
     }
 
-    if (rendererCandidate.backend?.isWebGPUBackend !== true) {
-      throw new Error('Three.jsがWebGL 2フォールバックを選択しました。WebGPUでの検証とは扱わず、既存プレビューを維持します。');
-    }
-
     const pixelRatioCap = memoryGiB <= 2 ? 1 : memoryGiB <= 4 ? 1.1 : 1.35;
-    rendererCandidate.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
-    rendererCandidate.outputColorSpace = THREE.SRGBColorSpace;
-    rendererCandidate.toneMapping = THREE.ACESFilmicToneMapping;
-    rendererCandidate.toneMappingExposure = 1.0;
-    rendererCandidate.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = true;
 
     const lab = createLabScene(memoryGiB);
     scene = lab.scene;
     camera = lab.camera;
     animatedGroup = lab.animatedGroup;
+    materialConversion = convertPStudioScenePBRMaterials(scene);
     resizeLab();
 
-    setStatus('PBRマテリアルとTSLノードをコンパイルしています…');
-    await rendererCandidate.compileAsync(scene, camera);
+    setStatus('TSL NodeMaterialとRenderPipelineをコンパイルしています…');
+    await renderer.compileAsync(scene, camera);
 
     if (ticket !== generation || overlay?.hidden) {
       disposeRenderer();
@@ -280,15 +292,19 @@ async function runLab(ticket) {
       window.addEventListener('resize', fallbackResizeListener);
     }
 
-    rendererCandidate.setAnimationLoop((time) => {
-      if (renderer !== rendererCandidate || !scene || !camera) return;
+    pipelineHandle = createPStudioRenderPipeline(renderer, scene, camera, {
+      bloom: { strength: 0.18, radius: 0.22, threshold: 0.82 }
+    });
+
+    renderer.setAnimationLoop((time) => {
+      if (renderer !== backendHandle?.renderer || !scene || !camera || !pipelineHandle) return;
       const elapsed = lastFrameTime ? Math.min(0.05, Math.max(0, (time - lastFrameTime) / 1000)) : 0;
       lastFrameTime = time;
       if (animatedGroup) animatedGroup.rotation.y += elapsed * 0.16;
-      rendererCandidate.render(scene, camera);
+      pipelineHandle.render();
     });
 
-    setStatus('WebGPU実行中：標準PBR、テクスチャ、物理マテリアル、シャドウ、TSLノードを検証しています。', 'success');
+    setStatus('共有WebGPUバックエンド／TSL NodeMaterial／RenderPipeline／Bloomを実行中です。', 'success');
   } catch (error) {
     if (ticket === generation) {
       disposeRenderer();
@@ -341,6 +357,8 @@ function initialize() {
     getState: () => ({
       active: !!renderer,
       backend: renderer?.backend?.isWebGPUBackend ? 'webgpu' : 'inactive',
+      pipeline: pipelineHandle?.getState?.().pipeline || null,
+      nodeMaterials: materialConversion?.convertedMaterials || 0,
       threeRevision: String(THREE.REVISION || 'unknown')
     })
   });
