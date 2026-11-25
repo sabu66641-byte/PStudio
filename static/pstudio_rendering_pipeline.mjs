@@ -40,7 +40,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     renderPipeline.needsUpdate = true;
   }
 
-  rebuildOutput();
+  try {
+    rebuildOutput();
+  } catch (error) {
+    try { scenePass.dispose?.(); } catch (_) {}
+    try { renderPipeline.dispose(); } catch (_) {}
+    throw error;
+  }
 
   return Object.freeze({
     kind: 'webgpu-tsl-render-pipeline',
