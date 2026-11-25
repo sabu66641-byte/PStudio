@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import { createPStudioWebGPUBackend } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs';
+import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs?v=20261125-safe-pbr1';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
