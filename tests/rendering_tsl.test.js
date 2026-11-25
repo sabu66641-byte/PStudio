@@ -297,7 +297,7 @@ test('WebGPU production migration status reports blockers without claiming parit
   assert.equal(status.targetBackend, 'webgpu-tsl');
   assert.equal(status.webgpuAvailable, false);
   assert.equal(status.productionReady, false);
-  assert.ok(status.blockers.some(item => item.id === 'renderer-lifecycle'));
+  assert.ok(status.blockers.some(item => item.id === 'renderer-parity-validation'));
   assert.ok(status.blockers.some(item => item.id === 'legacy-materials'));
 });
 
