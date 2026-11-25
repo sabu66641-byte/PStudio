@@ -235,17 +235,7 @@ function resizeLab() {
 
 async function runLab(ticket) {
   try {
-    if (!('gpu' in navigator) || !navigator.gpu) {
-      throw new Error('このブラウザーではWebGPUが利用できません。既存のWebGL 2プレビューはそのまま利用できます。');
-    }
-
-    setStatus('WebGPUアダプターを確認しています…');
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
-    if (!adapter) {
-      throw new Error('利用可能なWebGPUアダプターが見つかりませんでした。');
-    }
     if (ticket !== generation || overlay?.hidden) return;
-
     const memoryGiB = Math.max(1, Number(navigator.deviceMemory) || 4);
     setStatus('共有WebGPUバックエンドを初期化しています…');
     backendHandle = await createPStudioWebGPUBackend({
