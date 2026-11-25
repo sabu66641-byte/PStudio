@@ -189,8 +189,10 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     }
 
     materialConversion = convertPStudioScenePBRMaterials(scene);
-    if (materialConversion.skippedMaterials !== 0) {
-      throw new Error('A scene material changed after WebGPU preflight; conversion was rolled back.');
+    // Existing NodeMaterials are valid WebGPU inputs and are intentionally skipped
+    // by the legacy PBR converter. Only a newly detected legacy GLSL hook is fatal.
+    if (materialConversion.skippedLegacyShaderHooks !== 0) {
+      throw new Error('A legacy GLSL material hook appeared after WebGPU preflight; conversion was rolled back.');
     }
 
     await renderer.compileAsync(scene, camera);
