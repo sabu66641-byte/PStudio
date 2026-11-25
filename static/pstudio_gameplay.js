@@ -9,6 +9,77 @@
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
   const hasOwn=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
+
+  function clearSceneFallbackState(sceneObjects){
+    const ids=new Set((sceneObjects||[]).filter(object=>object&&object.id!==undefined&&object.id!==null).map(object=>String(object.id)));
+    for(const id of ids){
+      stats.delete(id);inventories.delete(id);equipment.delete(id);weaponCombos.delete(id);aiStates.delete(id);
+      const prefix=id+'>';
+      for(const key of [...attackTimes.keys()])if(key.startsWith(prefix))attackTimes.delete(key);
+    }
+  }
+  function migrateDefinitionFallback(map,getterName,setterName,bridge){
+    if(!map.size)return true;
+    if(typeof bridge?.[getterName]!=='function'||typeof bridge?.[setterName]!=='function')return false;
+    try{
+      for(const [id,value] of map){
+        if(bridge[getterName](id))continue;
+        if(bridge[setterName](id,value)===false)return false;
+      }
+      map.clear();return true;
+    }catch(error){
+      console.warn('[PStudio Gameplay] ECS definition fallback migration deferred:',error);
+      return false;
+    }
+  }
+  function migrateNavigationFallback(bridge){
+    if(!fallbackNavNodes.size&&!fallbackBlockedNavNodes.size)return true;
+    if(typeof bridge?.getNavigationNode!=='function'||typeof bridge?.addNavigationNode!=='function'||
+       typeof bridge?.connectNavigationNodes!=='function'||typeof bridge?.setNavigationNodeBlocked!=='function')return false;
+    try{
+      for(const node of fallbackNavNodes.values()){
+        if(!bridge.getNavigationNode(node.id)&&bridge.addNavigationNode(node.id,node.x,node.y,node.z)===false)return false;
+      }
+      for(const node of fallbackNavNodes.values()){
+        const current=bridge.getNavigationNode(node.id);
+        if(!current)return false;
+        for(const link of node.links){
+          const target=bridge.getNavigationNode(link);
+          if(!target)return false;
+          if(!current.links.includes(link)&&bridge.connectNavigationNodes(node.id,link)===false)return false;
+        }
+      }
+      for(const id of fallbackBlockedNavNodes){
+        if(bridge.setNavigationNodeBlocked(id,true)===false)return false;
+      }
+      fallbackNavNodes.clear();fallbackBlockedNavNodes.clear();return true;
+    }catch(error){
+      console.warn('[PStudio Gameplay] ECS navigation fallback migration deferred:',error);
+      return false;
+    }
+  }
+  function retireLegacyFallbackState(sceneObjects,bridge){
+    // Scene-keyed snapshots have already been imported by bridge.initialize().
+    // Removing them here avoids retaining a second authoritative copy beside ECS Components.
+    clearSceneFallbackState(sceneObjects);
+    // Global quest/dialogue state has also been imported into standalone ECS Entities.
+    quests.clear();
+    if(typeof bridge?.getDialogueState==='function'&&bridge.getDialogueState()){
+      for(const key of Object.keys(dialogueStates))delete dialogueStates[key];
+      lastDialogueChoice='';
+    }
+    migrateDefinitionFallback(itemDefinitions,'getItemDefinition','setItemDefinition',bridge);
+    migrateDefinitionFallback(questDefinitions,'getQuestDefinition','setQuestDefinition',bridge);
+    migrateDefinitionFallback(weaponDefinitions,'getWeaponDefinition','setWeaponDefinition',bridge);
+    migrateNavigationFallback(bridge);
+    // Preserve a pre-ECS UI intent when the UI Component bridge is available.
+    if(activeUI&&typeof window.PStudioECSUI?.open==='function'){
+      try{
+        if(!window.PStudioECSUI.getOverlay?.())window.PStudioECSUI.open(activeUI.type,activeUI.ownerId||'');
+        activeUI=null;
+      }catch(error){console.warn('[PStudio Gameplay] ECS UI fallback migration deferred:',error);}
+    }
+  }
   function setRecordValue(record,key,value){
     Object.defineProperty(record,String(key),{value,enumerable:true,configurable:true,writable:true});
   }
@@ -54,7 +125,9 @@
         lastDialogueChoice=dialogueStates.choice;
       }
     };
-    return bridge.initialize(sceneObjects||[],legacy);
+    const initialized=bridge.initialize(sceneObjects||[],legacy);
+    if(initialized)retireLegacyFallbackState(sceneObjects||[],bridge);
+    return initialized;
   }
   function persistECS(sceneObjects){
     const bridge=window.PStudioECSGameplay;
