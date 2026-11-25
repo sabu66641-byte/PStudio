@@ -204,6 +204,8 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
   clusterAttribute.setUsage(THREE.DynamicDrawUsage);
   const lightStorage = TSL.storage(lightAttribute, 'vec4', lightAttribute.count).toReadOnly();
   const clusterStorage = TSL.storage(clusterAttribute, 'vec4', clusterAttribute.count).toReadOnly();
+  const nearUniform = TSL.uniform(0.1);
+  const farUniform = TSL.uniform(DEFAULT_FAR);
   let disposed = false;
   let uploads = 0;
   let lastLightCount = 0;
@@ -212,6 +214,12 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
     kind: 'pstudio-tsl-cluster-storage',
     lightStorage,
     clusterStorage,
+    nearUniform,
+    farUniform,
+    grid: Object.freeze({ ...grid }),
+    maxLights,
+    maxPerCell,
+    recordWidth,
     lightAttribute,
     clusterAttribute,
     update(snapshot) {
@@ -225,6 +233,8 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
       clusterAttribute.array.set(snapshot.clusterData);
       lightAttribute.needsUpdate = true;
       clusterAttribute.needsUpdate = true;
+      nearUniform.value = Math.max(0.001, finite(snapshot.near, 0.1));
+      farUniform.value = Math.max(nearUniform.value * 1.01, finite(snapshot.far, DEFAULT_FAR));
       lastLightCount = Math.max(0, Math.min(maxLights, Math.floor(finite(snapshot.lightCount, 0))));
       uploads++;
       return true;
@@ -237,6 +247,165 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
       disposed = true;
       lightAttribute.dispose?.();
       clusterAttribute.dispose?.();
+      return true;
+    }
+  });
+}
+
+
+function requiredClusterTSLFunctions() {
+  const names = [
+    'screenUV','positionView','normalView','float','int','vec3','floor','clamp','log',
+    'max','Loop','If','storage','getDistanceAttenuation'
+  ];
+  return names.filter(name=>TSL[name]===undefined);
+}
+
+/**
+ * Emits clustered point-light irradiance into Three.js' PBR lighting context.
+ * Cluster bins are camera-space and use the same normalized screen tiles and
+ * logarithmic view-depth slicing as PStudio's existing WebGL cluster shader.
+ */
+export function createPStudioTSLClusterIrradianceNode(storage) {
+  if (!storage?.lightStorage?.isNode || !storage?.clusterStorage?.isNode) {
+    throw new TypeError('PStudio clustered irradiance requires initialized TSL StorageBuffer nodes.');
+  }
+  const missing=requiredClusterTSLFunctions();
+  if(missing.length)throw new Error('Three.js r187 is missing clustered TSL functions: '+missing.join(', '));
+
+  const {grid,maxPerCell,recordWidth,nearUniform,farUniform}=storage;
+  const lightRecords=storage.lightStorage;
+  const clusterRecords=storage.clusterStorage;
+  const expression=TSL.Fn(()=>{
+    const uv=TSL.screenUV;
+    const px=TSL.int(TSL.floor(TSL.clamp(uv.x,0,0.999999).mul(grid.x)));
+    const py=TSL.int(TSL.floor(TSL.clamp(uv.y,0,0.999999).mul(grid.y)));
+    const near=TSL.float(nearUniform);
+    const far=TSL.float(farUniform);
+    const depth=TSL.max(TSL.positionView.z.negate(),near);
+    const depthRatio=TSL.log(depth.div(near)).div(TSL.log(far.div(near)).max(1e-5));
+    const pz=TSL.int(TSL.floor(TSL.clamp(depthRatio.mul(grid.z),0,grid.z-1)));
+    const clusterIndex=pz.mul(grid.y*grid.x).add(py.mul(grid.x)).add(px);
+    const clusterBase=clusterIndex.mul(recordWidth);
+    const count=TSL.int(clusterRecords.element(clusterBase).x).clamp(0,maxPerCell);
+    const total=TSL.vec3(0).toVar();
+
+    TSL.Loop({start:0,end:maxPerCell},({i})=>{
+      TSL.If(i.lessThan(count),()=>{
+        const lightIndex=TSL.int(clusterRecords.element(clusterBase.add(i).add(1)).x);
+        const lightBase=lightIndex.mul(3);
+        const positionRange=lightRecords.element(lightBase);
+        const colorIntensity=lightRecords.element(lightBase.add(1));
+        const decay=lightRecords.element(lightBase.add(2));
+        const delta=positionRange.xyz.sub(TSL.positionView);
+        const distance=delta.length().max(0.0001);
+        const direction=delta.div(distance);
+        const attenuation=TSL.getDistanceAttenuation({
+          lightDistance:distance,
+          cutoffDistance:positionRange.w,
+          decayExponent:decay.x
+        });
+        const cosine=TSL.max(TSL.normalView.dot(direction),0);
+        total.addAssign(colorIntensity.rgb.mul(colorIntensity.w).mul(attenuation).mul(cosine));
+      });
+    });
+
+    return total;
+  })();
+
+  return new THREE.IrradianceNode(expression);
+}
+
+/**
+ * Attaches the cluster irradiance term to converted PBR NodeMaterials while
+ * retaining every non-clustered scene light. The input snapshot owns membership.
+ */
+export function applyPStudioTSLClusteredLighting(root,options={}) {
+  if(!root?.traverse)throw new TypeError('A Three.js Object3D or Scene is required.');
+  const storage=options.storage;
+  const snapshot=options.snapshot;
+  if(!storage||!snapshot)throw new TypeError('PStudio cluster storage and initial packed snapshot are required.');
+  if(typeof THREE.LightsNode!=='function'||typeof THREE.IrradianceNode!=='function'){
+    throw new Error('Three.js r187 LightsNode/IrradianceNode exports are unavailable.');
+  }
+
+  const sceneLights=[];
+  const materials=new Set();
+  root.traverse(object=>{
+    if(object?.isLight)sceneLights.push(object);
+    if(!(object?.isMesh||object?.isLine||object?.isPoints||object?.isSprite)||!object.material)return;
+    const assigned=Array.isArray(object.material)?object.material:[object.material];
+    for(const material of assigned)if(material?.isNodeMaterial===true)materials.add(material);
+  });
+
+  const entries=[];
+  const clusteredNode=createPStudioTSLClusterIrradianceNode(storage);
+  let disposed=false;
+  let lastMembership='';
+
+  for(const material of materials){
+    if(material.lightsNode&&typeof material.lightsNode.getLights!=='function'){
+      throw new Error('PStudio cannot replace a custom NodeMaterial lightsNode without an explicit adapter.');
+    }
+    const originalLightsNode=material.lightsNode??null;
+    const baseLights=originalLightsNode?.getLights?.()||sceneLights;
+    const lightsNode=new THREE.LightsNode();
+    const entry={material,originalLightsNode,baseLights:[...baseLights],lightsNode};
+    material.lightsNode=lightsNode;
+    entries.push(entry);
+  }
+
+  function updateLights(clusteredSet) {
+    const membership=[];
+    for(const entry of entries){
+      const retained=entry.baseLights.filter(light=>!light?.isLight||(
+        light.visible!==false&&!clusteredSet.has(light)
+      ));
+      const signature=retained.map(light=>light?.uuid||light?.id||String(light)).join('|');
+      membership.push(signature);
+      entry.lightsNode.setLights([...retained,clusteredNode]);
+    }
+    const next=membership.join('||');
+    if(next!==lastMembership){
+      lastMembership=next;
+      for(const entry of entries)entry.material.needsUpdate=true;
+      return true;
+    }
+    return false;
+  }
+
+  try{
+    updateLights(snapshot.clusteredLights||new Set());
+    storage.update(snapshot);
+  }catch(error){
+    for(const entry of entries)if(entry.material.lightsNode===entry.lightsNode)entry.material.lightsNode=entry.originalLightsNode;
+    throw new Error('PStudio failed to attach clustered TSL lighting; all material light lists were restored.',{cause:error});
+  }
+
+  return Object.freeze({
+    kind:'pstudio-tsl-clustered-lighting',
+    materialCount:entries.length,
+    update(nextSnapshot){
+      if(disposed)return false;
+      storage.update(nextSnapshot);
+      updateLights(nextSnapshot.clusteredLights||new Set());
+      return true;
+    },
+    getState(){
+      return Object.freeze({
+        disposed,
+        materialCount:entries.length,
+        storage:storage.getState(),
+        clusteredLights:lastMembership
+      });
+    },
+    dispose(){
+      if(disposed)return false;
+      disposed=true;
+      for(const entry of entries){
+        if(entry.material.lightsNode===entry.lightsNode)entry.material.lightsNode=entry.originalLightsNode;
+        entry.material.needsUpdate=true;
+      }
       return true;
     }
   });
