@@ -217,7 +217,7 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
     'window.PStudioProductionRenderingBridgeFactory',
     'function getProductionWebGPUFeatureBlockers',
     'function requestProductionWebGPUMigration',
-    "if(csm)add('cascaded-shadow-maps'",
+    "if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps'",
     "if(waterMaterials.size>0",
     "if(dynamicGIEnabled||probeCaptureActive)",
     "productionRendererBridge.render()",
