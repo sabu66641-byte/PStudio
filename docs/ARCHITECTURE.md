@@ -81,6 +81,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, water, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
+- `static/pstudio_ecs_time.js`: runtime-only simulation clock and time-scale Component; browser frame scheduling remains platform-owned.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
 - `static/pstudio_gameplay.js`: compatibility-facing gameplay API for combat, health, inventory, quests, dialogue and navigation.
 - `static/pstudio_ecs_gameplay.js`: ECS-owned gameplay state Components and Systems for Health, Inventory, Equipment, CombatState, AIController, MovementIntent, QuestProgress, DialogueSession and NavigationNode. The bridge snapshots per-Scene-Object gameplay state at Stop; standalone Navigation graph Entities retain their existing in-memory lifetime.
@@ -108,7 +109,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - The game runtime owns legacy ps callback state and emits frame render commands. ECS Systems are scheduled around the Physics step: update, prePhysics, then postPhysics.
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations. ECS PhysicsBody is configuration; the Physics solver remains authoritative for runtime body motion.
-- ECS owns typed Component data and generic System scheduling. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields.
+- ECS owns typed Component data, generic System scheduling and runtime simulation TimeState. Scene Object Transform remains the editor-coordinate bridge; PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields. Browser frame scheduling remains a platform service.
 - Existing legacy ps callbacks, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
