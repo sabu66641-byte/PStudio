@@ -44,7 +44,7 @@ test('environment state clamps invalid values and uses deterministic water color
   assert.equal(state.cloudDetail, 1);
   assert.equal(state.cloudBase, 100);
   assert.equal(state.cloudTop, 101);
-  assert.equal(state.cloudSteps, 64);
+  // Volumetric march steps are owned by the pass quality controller, not environment state.
   assert.equal(state.waterAbsorption, 0);
   assert.equal(state.waterReflectionTint, environment.waterDefaults.dusk.reflection);
   assert.ok(Object.isFrozen(state));
