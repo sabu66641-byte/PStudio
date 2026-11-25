@@ -108,7 +108,7 @@ export function generatePStudioEnvironmentPixels(state, width = 512, height = 25
   const moon = colorBytes(state.moonColor, '#c7dcff');
   const sunDir = state.sunDirection || [0.35,0.89,0.28];
   const moonDir = state.moonDirection || [0,1,0];
-  const sunRadius = clamp(state.sunAngularRadius,0.01,5,0.28) * Math.PI / 180;
+  const sunRadius = Math.max(0.5,clamp(state.sunAngularRadius,0.01,5,0.28)) * Math.PI / 180;
   const sunPower = clamp(state.sunIntensity,0,8,1.24);
   const sunGlow = clamp(state.sunGlow,0,4,0.76);
   const moonPower = clamp(state.moonIntensity,0,4,0);
