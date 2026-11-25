@@ -447,6 +447,7 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
       if (disposed) return false;
       disposed = true;
       for (const entry of applied) {
+        try { entry.shHandle?.dispose?.(); } catch (_) {}
         for (const [key, value] of Object.entries(entry.previous)) entry.material[key] = value;
         if (entry.material.userData) {
           delete entry.material.userData.pstudioTSLFeaturesApplied;
