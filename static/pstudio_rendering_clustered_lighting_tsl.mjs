@@ -349,6 +349,8 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
   const clusteredNode=createPStudioTSLClusterIrradianceNode(storage);
   let disposed=false;
   let lastMembership='';
+  let lastClusteredLights = new Set(snapshot.clusteredLights || []);
+  let lastEnabled = snapshot.enabled !== false;
   let lastRevision = Number.isFinite(Number(snapshot.revision)) ? Number(snapshot.revision) : null;
 
   for(const material of materials){
@@ -398,11 +400,15 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
     update(nextSnapshot){
       if(disposed)return false;
       const revision = Number.isFinite(Number(nextSnapshot?.revision)) ? Number(nextSnapshot.revision) : null;
-      const membershipChanged = (nextSnapshot?.clusteredLights||new Set()).size !== (snapshot.clusteredLights||new Set()).size
-        || [...(nextSnapshot?.clusteredLights||new Set())].some(light => !(snapshot.clusteredLights||new Set()).has(light));
-      if(revision === null || revision !== lastRevision || membershipChanged || nextSnapshot?.enabled !== (snapshot.enabled !== false)) {
+      const nextClusteredLights = nextSnapshot?.clusteredLights || new Set();
+      const membershipChanged = nextClusteredLights.size !== lastClusteredLights.size
+        || [...nextClusteredLights].some(light => !lastClusteredLights.has(light));
+      const nextEnabled = nextSnapshot?.enabled !== false;
+      if(revision === null || revision !== lastRevision || membershipChanged || nextEnabled !== lastEnabled) {
         storage.update(nextSnapshot);
-        updateLights(nextSnapshot.clusteredLights||new Set());
+        updateLights(nextClusteredLights);
+        lastClusteredLights = new Set(nextClusteredLights);
+        lastEnabled = nextEnabled;
         lastRevision = revision;
         return true;
       }
