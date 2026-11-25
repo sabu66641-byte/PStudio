@@ -1,11 +1,11 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v4';
+import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v5';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs?v=20261126-shared-frame-resources-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
-import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v6';
+import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v7';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
-import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-tsl-v1';
+import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-tsl-v2';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
@@ -140,6 +140,8 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL RenderPipeline with shared beauty/depth/packed-view-normal frame resources and Bloom',
       'TSL atmospheric sky and shared equirectangular PBR IBL',
       'shared frame-budget and environment-state modules',
+      'TSL clustered point-light irradiance with revisioned StorageBuffer uploads and native-light overflow fallback',
+      'TSL SH irradiance nodes preserving PStudio 9xRGB probe coefficients and temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass'
     ]),
