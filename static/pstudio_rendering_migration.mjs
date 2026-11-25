@@ -1,7 +1,7 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
 import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
-import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-tsl-ibl-v2';
+import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-lifecycle', label: '非同期WebGPU初期化と本番フレームループの統合' }),
