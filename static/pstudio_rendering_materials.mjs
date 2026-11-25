@@ -1,5 +1,15 @@
 import * as THREE from 'three/webgpu';
 
+const NODE_MATERIAL_TYPES = Object.freeze([
+  ['isMeshBasicMaterial', 'MeshBasicNodeMaterial'],
+  ['isMeshLambertMaterial', 'MeshLambertNodeMaterial'],
+  ['isMeshPhongMaterial', 'MeshPhongNodeMaterial'],
+  ['isMeshToonMaterial', 'MeshToonNodeMaterial'],
+  ['isMeshMatcapMaterial', 'MeshMatcapNodeMaterial'],
+  ['isMeshStandardMaterial', 'MeshStandardNodeMaterial'],
+  ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial']
+]);
+
 function cloneUserData(value) {
   if (!value || typeof value !== 'object') return {};
   try {
@@ -9,41 +19,42 @@ function cloneUserData(value) {
   }
 }
 
+function resolveNodeMaterialClass(source) {
+  const entry = NODE_MATERIAL_TYPES.find(([flag]) => source?.[flag] === true);
+  if (!entry) return null;
+  const MaterialClass = THREE[entry[1]];
+  return typeof MaterialClass === 'function' ? { MaterialClass, nodeType: entry[1] } : null;
+}
+
 export function isPStudioLegacyPBRMaterial(material) {
   return Boolean(material?.isMeshStandardMaterial || material?.isMeshPhysicalMaterial);
 }
 
+export function isPStudioLegacyNodeConvertibleMaterial(material) {
+  return Boolean(resolveNodeMaterialClass(material));
+}
+
 /**
- * Copies public standard/physical PBR state into the matching r187 NodeMaterial.
- * The native NodeMaterial.copy() path carries texture references and extended
- * physical properties such as diffuseRoughness and iridescence.
- * Legacy onBeforeCompile hooks are detached; custom shading must be expressed
- * as TSL nodes before the converted material is used by WebGPU.
+ * Copies supported built-in Three.js mesh material state into its matching
+ * r187 NodeMaterial. Custom GLSL hooks are deliberately not discarded: callers
+ * must preflight and port those hooks explicitly before conversion.
  */
-export function createPStudioNodePBRMaterial(source, options = {}) {
-  if (!isPStudioLegacyPBRMaterial(source)) {
-    throw new TypeError('PStudio TSL material conversion requires MeshStandardMaterial or MeshPhysicalMaterial.');
+export function createPStudioNodeMaterial(source, options = {}) {
+  const resolved = resolveNodeMaterialClass(source);
+  if (!resolved) {
+    throw new TypeError('PStudio TSL conversion requires a supported built-in Mesh material.');
   }
-
-  const MaterialClass = source.isMeshPhysicalMaterial
-    ? THREE.MeshPhysicalNodeMaterial
-    : THREE.MeshStandardNodeMaterial;
-  if (typeof MaterialClass !== 'function') {
-    throw new Error('The pinned Three.js build does not expose the required NodeMaterial class.');
-  }
-
+  const { MaterialClass, nodeType } = resolved;
   const target = new MaterialClass();
   const originalUserData = source.userData;
   const safeMetadata = cloneUserData(originalUserData);
 
   try {
-    // NodeMaterial.copy() clones userData as JSON. Temporarily supply a safe
-    // snapshot so cyclic custom metadata cannot abort an otherwise valid copy.
     source.userData = safeMetadata;
     target.copy(source);
   } catch (error) {
     target.dispose();
-    throw new Error('PStudio could not copy the source PBR material into its TSL NodeMaterial.', { cause: error });
+    throw new Error('PStudio could not copy the source material into its TSL NodeMaterial.', { cause: error });
   } finally {
     source.userData = originalUserData;
   }
@@ -51,34 +62,41 @@ export function createPStudioNodePBRMaterial(source, options = {}) {
   target.userData = {
     ...safeMetadata,
     pstudioNodeMaterial: true,
-    pstudioSourceMaterialType: source.type || 'MeshStandardMaterial',
+    pstudioSourceMaterialType: source.type || 'Material',
+    pstudioNodeMaterialType: nodeType,
     pstudioRenderingBackend: 'webgpu-tsl'
   };
   target.onBeforeCompile = () => {};
-  target.name = options.name ?? (source.name ? source.name + ' [TSL]' : 'PStudio PBR [TSL]');
+  target.name = options.name ?? (source.name ? source.name + ' [TSL]' : 'PStudio ' + nodeType);
   target.needsUpdate = true;
   return target;
 }
 
+export function createPStudioNodePBRMaterial(source, options = {}) {
+  if (!isPStudioLegacyPBRMaterial(source)) {
+    throw new TypeError('PStudio PBR conversion requires MeshStandardMaterial or MeshPhysicalMaterial.');
+  }
+  return createPStudioNodeMaterial(source, options);
+}
+
 /**
- * Converts PBR materials on a scene tree while preserving shared-material
- * identity. Non-PBR materials are deliberately left unchanged.
+ * Converts supported built-in mesh materials on a scene tree while preserving
+ * shared-material identity. Unsupported and custom-hook materials remain intact.
  */
 export function convertPStudioScenePBRMaterials(root, options = {}) {
   if (!root?.traverse) throw new TypeError('A Three.js Object3D or Scene is required.');
   const converted = new Map();
   const originalAssignments = [];
+  const convertedByType = Object.create(null);
   let convertedMeshes = 0;
   let skippedMaterials = 0;
-
   let skippedLegacyShaderHooks = 0;
+
   const convertOne = (source) => {
-    if (!isPStudioLegacyPBRMaterial(source)) {
+    if (!source || !isPStudioLegacyNodeConvertibleMaterial(source)) {
       if (source) skippedMaterials += 1;
       return source;
     }
-    // Custom GLSL hooks are not represented by standard/physical PBR state.
-    // Keep these materials intact until their shader behavior has a TSL port.
     const hasCustomShaderHook = (
       Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')
       && typeof source.onBeforeCompile === 'function'
@@ -91,7 +109,12 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       skippedLegacyShaderHooks += 1;
       return source;
     }
-    if (!converted.has(source)) converted.set(source, createPStudioNodePBRMaterial(source, options));
+    if (!converted.has(source)) {
+      const nodeMaterial = createPStudioNodeMaterial(source, options);
+      converted.set(source, nodeMaterial);
+      const type = nodeMaterial.userData.pstudioNodeMaterialType;
+      convertedByType[type] = (convertedByType[type] || 0) + 1;
+    }
     return converted.get(source);
   };
 
@@ -114,13 +137,14 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
     for (const material of converted.values()) {
       try { material.dispose?.(); } catch (_) {}
     }
-    throw new Error('PStudio rolled back a partial scene PBR-to-TSL material conversion.', { cause: error });
+    throw new Error('PStudio rolled back a partial scene material-to-TSL conversion.', { cause: error });
   }
 
   let released = false;
   return Object.freeze({
     convertedMaterials: converted.size,
     convertedMeshes,
+    convertedByType: Object.freeze({ ...convertedByType }),
     skippedMaterials,
     skippedLegacyShaderHooks,
     disposeSourceMaterials() {
