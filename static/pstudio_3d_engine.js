@@ -508,6 +508,7 @@
         webgpuModuleAvailable,
         tslModuleAvailable,
         tslNodesEnabled:false,
+        migration:window.PStudioRenderingMigration?.getPStudioWebGPUMigrationStatus?.({navigatorRef:window.navigator})||null,
         error:String(error?.message||error)
       });
       console.error('[PStudio] Three.js r187 WebGL2 renderer initialization failed:',error);
@@ -539,7 +540,8 @@
       webgl2:renderer.capabilities?.isWebGL2===true,
       webgpuModuleAvailable,
       tslModuleAvailable,
-      tslNodesEnabled:false
+      tslNodesEnabled:false,
+      migration:window.PStudioRenderingMigration?.getPStudioWebGPUMigrationStatus?.({navigatorRef:window.navigator})||null
     });
     try{
       const memoryGiB=deviceGiB;
@@ -600,6 +602,23 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     hemisphereLight=new T.HemisphereLight(0xeaf2ff,0x394150,0.9);scene.add(hemisphereLight);
     if(!csm){keyLight=new T.DirectionalLight(0xfff3df,2.8);keyLight.position.set(5,9,6);keyLight.castShadow=true;keyLight.shadow.mapSize.set(2048,2048);keyLight.shadow.camera.left=-32;keyLight.shadow.camera.right=32;keyLight.shadow.camera.top=32;keyLight.shadow.camera.bottom=-32;keyLight.shadow.camera.near=0.5;keyLight.shadow.camera.far=100;keyLight.shadow.camera.updateProjectionMatrix();keyLight.shadow.bias=-0.00008;keyLight.shadow.normalBias=0.018;scene.add(keyLight,keyLight.target);}
     occlusionRaycaster=new T.Raycaster();occlusionRaycaster.firstHitOnly=true;applyQualityPreset(qualityPreset);setupControls();return true;
+  }
+
+  function renderingBackendStatus(){
+    let migration=null;
+    try{
+      migration=window.PStudioRenderingMigration?.getPStudioWebGPUMigrationStatus?.({navigatorRef:window.navigator,scene})||null;
+    }catch(error){
+      migration={productionReady:false,error:String(error?.message||error)};
+    }
+    return Object.freeze({
+      active:renderer?.backend?.isWebGPUBackend===true?'webgpu':'webgl2',
+      target:'webgpu-tsl',
+      webgpuAvailable:!!migration?.webgpuAvailable,
+      productionReady:migration?.productionReady===true,
+      sceneReady:migration?.sceneReady??null,
+      blockers:migration?.blockers||[]
+    });
   }
 
   function disposeGroup(group) {
@@ -6242,6 +6261,7 @@ void main(){
   }
   window.PStudio3D = {
     render,
+    getRenderingBackendStatus:renderingBackendStatus,
     clear,
     frameObject,
     adjustZoom:adjustCameraZoom,
@@ -6323,6 +6343,7 @@ void main(){
     },
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{
+      renderingBackend:renderingBackendStatus(),
       calls:lastFrameRenderStats.calls,
       contactShadows:{enabled:contactShadowsEnabled,available:!!contactShadowPass,steps:contactShadowPass?.uniforms?.uSteps?.value||0},
       triangles:lastFrameRenderStats.triangles,
