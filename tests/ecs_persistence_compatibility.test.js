@@ -15,7 +15,7 @@ function loadBackupValidator() {
   const source = read('templates/index.html');
   const helpers = [
     extract(source, 'function safeProjectName(', '\nasync function exportProjectBackup'),
-    extract(source, 'function validateBackupDataUrl(', '\nasync function exportNativeEcsProject'),
+    extract(source, 'function validateBackupDataUrl(', '\nfunction safeProjectName'),
     extract(source, 'function decodeBackupBase64(', '\nfunction validateBackupDataUrl'),
     extract(source, 'function copySavedEcsComponentPayload(', '\nfunction validateAndBuildBackup'),
     extract(source, 'function validateAndBuildBackup(', '\nasync function importProjectBackup')
@@ -37,7 +37,7 @@ function loadProjectImportHarness({ failPersist = false } = {}) {
   const html = read('templates/index.html');
   const helpers = [
     extract(html, 'function safeProjectName(', '\nasync function exportProjectBackup'),
-    extract(html, 'function validateBackupDataUrl(', '\nasync function exportNativeEcsProject'),
+    extract(html, 'function validateBackupDataUrl(', '\nfunction safeProjectName'),
     extract(html, 'function decodeBackupBase64(', '\nfunction validateBackupDataUrl'),
     extract(html, 'function copySavedEcsComponentPayload(', '\nfunction validateAndBuildBackup'),
     extract(html, 'function validateAndBuildBackup(', '\nasync function importProjectBackup'),

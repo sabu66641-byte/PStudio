@@ -1602,11 +1602,52 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           if(distance<loadRadius){
             const normalized=distance/Math.max(1,loadRadius);
             if(interest.priority>bestPriority||(interest.priority===bestPriority&&normalized<bestNormalized)){
-              bestPriority=interest.priority;bestDistance=distance;bestNormalized=normalized;
+              bestPriority=interest.priority;
+              bestDistance=distance;
+              bestNormalized=normalized;
             }
           }
         }
       }else if(useCameraFallback){
+        const dx=chunk.x-camera.position.x;
+        const dy=chunk.y-camera.position.y;
+        const dz=chunk.z-camera.position.z;
+        const distance=Math.hypot(dx,dy,dz);
+        if(distance<=chunk.unloadDistance)shouldStay=true;
+        if(distance<chunk.loadDistance){
+          bestPriority=0;
+          bestDistance=distance;
+          bestNormalized=distance/Math.max(1,chunk.loadDistance);
+        }
+      }
+      if((chunk.active||chunk.loading)&&!shouldStay)endWorldChunkLoad(chunk);
+      if(!chunk.active&&!chunk.loading&&bestPriority>-Infinity){
+        loadCandidates.push({chunk,priority:bestPriority,distance:bestDistance,normalized:bestNormalized});
+      }
+    }
+    loadCandidates.sort((a,b)=>b.priority-a.priority||a.normalized-b.normalized||a.distance-b.distance||String(a.chunk.id).localeCompare(String(b.chunk.id)));
+    const configuredLimit=Number(worldRenderConfig.maxConcurrentChunkLoads);
+    const maxConcurrent=Math.max(1,Math.min(32,Number.isFinite(configuredLimit)?Math.floor(configuredLimit):4));
+    for(const candidate of loadCandidates){
+      if(loadingCount>=maxConcurrent)break;
+      beginWorldChunkLoad(candidate.chunk);
+      if(candidate.chunk.loading)loadingCount++;
+    }
+  }
+  function setWorldRenderConfig(o={}){
+    if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));
+    if(Number.isFinite(Number(o.shadowDistance))){
+      worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));
+      if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
+    }
+    if(Array.isArray(o.lodDistances)&&o.lodDistances.length){
+      const a=o.lodDistances.slice(0,8).map(Number);
+      if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;
+    }
+    if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));
+    if(Number.isFinite(Number(o.maxConcurrentChunkLoads)))worldRenderConfig.maxConcurrentChunkLoads=Math.max(1,Math.min(32,Math.floor(Number(o.maxConcurrentChunkLoads))));
+    return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};
+  }
   function updateProbeVolumeBlend(){
     if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();
     probeVolumeGeneration++;
@@ -5400,9 +5441,14 @@ void main(){
         if(defaults.emissive&&material.emissive)material.emissive.copy(defaults.emissive);
         if(Number.isFinite(defaults.emissiveIntensity))material.emissiveIntensity=defaults.emissiveIntensity;
         material.side=defaults.side;
-        const toonSettings=override?.toon||state?.toon||null;
-        if(toonSettings&&toonSettings.enabled!==false)window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
         const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
+        const toonSettings=override?.toon||state?.toon||null;
+        if(toonSettings&&toonSettings.enabled!==false){
+          window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
+          if(Object.prototype.hasOwnProperty.call(toonSettings,'windStrength')){
+            window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
+          }
+        }
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
