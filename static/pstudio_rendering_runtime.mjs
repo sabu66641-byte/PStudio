@@ -109,6 +109,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           powerPreference: options.powerPreference,
           environmentProfile: options.environmentProfile,
           environmentResolution: options.environmentResolution,
+          csm: options.csm,
           pipelineOptions: options.pipelineOptions,
           configureRenderer: options.configureRenderer,
           onStageChange: (stage, details) => {
