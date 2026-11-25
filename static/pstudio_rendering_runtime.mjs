@@ -110,6 +110,9 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           environmentProfile: options.environmentProfile,
           environmentResolution: options.environmentResolution,
           csm: options.csm,
+          clusteredLightingOptions: options.clusteredLightingOptions,
+          getClusteredLightingSnapshot: options.getClusteredLightingSnapshot,
+          clusteredLightingSnapshot: options.clusteredLightingSnapshot,
           pipelineOptions: options.pipelineOptions,
           configureRenderer: options.configureRenderer,
           onStageChange: (stage, details) => {
@@ -147,6 +150,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           handle: webgpu,
           render: () => webgpu.render(),
           resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
+          setClusteredLightingSnapshot: (snapshot) => webgpu.setClusteredLightingSnapshot?.(snapshot) === true,
           dispose: () => webgpu.dispose?.()
         });
         publish('ready', { backend: 'webgpu', capabilities: webgpu.capabilities || null });
@@ -185,6 +189,10 @@ export function createPStudioProductionRendererRuntime(options = {}) {
     resize(width, height, pixelRatio) {
       if (disposed || !active || state !== 'ready') return false;
       return active.resize?.(width, height, pixelRatio) !== false;
+    },
+    setClusteredLightingSnapshot(snapshot) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setClusteredLightingSnapshot?.(snapshot) === true;
     },
     useFallback(cause = new Error('PStudio requested the WebGL2 compatibility renderer.')) {
       if (disposed || !allowFallback || typeof createFallback !== 'function') return Promise.resolve(false);
