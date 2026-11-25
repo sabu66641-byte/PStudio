@@ -26,6 +26,12 @@ test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the prod
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
 });
 
+test('browser runtime refuses a mismatched Three.js core revision before exposing renderer globals',()=>{
+  assert.ok(html.includes("if (String(THREE.REVISION) !== '187')"));
+  assert.ok(html.includes('PStudio requires Three.js r187'));
+  assert.ok(html.includes("three@0.187.0/build/three.module.js"));
+});
+
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
