@@ -19,6 +19,13 @@ function cloneUserData(value) {
   }
 }
 
+function hasCustomShaderHook(material) {
+  return Boolean(
+    (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
+    || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
+  );
+}
+
 function resolveNodeMaterialClass(source) {
   const entry = NODE_MATERIAL_TYPES.find(([flag]) => source?.[flag] === true);
   if (!entry) return null;
@@ -43,6 +50,9 @@ export function createPStudioNodeMaterial(source, options = {}) {
   const resolved = resolveNodeMaterialClass(source);
   if (!resolved) {
     throw new TypeError('PStudio TSL conversion requires a supported built-in Mesh material.');
+  }
+  if (hasCustomShaderHook(source)) {
+    throw new TypeError('PStudio cannot convert a material with custom GLSL hooks until its shader behavior is ported to TSL.');
   }
   const { MaterialClass, nodeType } = resolved;
   const target = new MaterialClass();
