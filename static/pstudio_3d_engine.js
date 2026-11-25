@@ -620,13 +620,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
     const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
-    if(Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植が未完了です。');
+    if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
     if(!supportsSurfaceTSL&&(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0))add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
     if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
     if(!supportsSurfaceTSL&&Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
     let hasLegacyMirrorWater=false;
     scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
-    if(hasLegacyMirrorWater)add('mirror-water','独立したMirror WaterオブジェクトのTSLリフレクター移行が未完了です。');
+    if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
     if(Number(fx.causticMaterials)>0)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
@@ -968,6 +968,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
+    const hadForeignHook =
+      (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function')
+      || (Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function');
     const uniforms={
       uMirrorReflection:{value:null},
       uMirrorTextureMatrix:{value:new T.Matrix4()},
@@ -1000,6 +1003,18 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     };
     material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v2';
     material.userData.pstudioMirrorUniforms=uniforms;
+    const features=new Set(Array.isArray(material.userData.pstudioTSLFeatures)?material.userData.pstudioTSLFeatures:[]);
+    features.add('water');
+    material.userData.pstudioTSLPortVersion=1;
+    material.userData.pstudioTSLPortHasForeignHook=hadForeignHook;
+    material.userData.pstudioTSLFeatures=[...features];
+    material.userData.pstudioWaterTSLSettings={
+      mirrorOnly:true,amplitude:0,waveStrength:0.05,
+      shallow:'#0b3d52',deep:'#0b3d52',foam:'#0b3d52',
+      reflectivity:1,reflectionResolutionScale:0.5,absorption:0.01
+    };
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
     return material;
   }
   function createMirrorWaterState(material){
@@ -6380,7 +6395,12 @@ void main(){
         }else if(d.type==='water')mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
         if(d.type==='mirror_water'){
           const state=mesh.userData.pstudioMirrorWater;
-          if(state){state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));}
+          if(state){
+            state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));
+            state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));
+            const tslSettings=mesh.material?.userData?.pstudioWaterTSLSettings;
+            if(tslSettings){tslSettings.reflectivity=state.reflectivity;tslSettings.waveStrength=state.waveStrength;}
+          }
         }
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
