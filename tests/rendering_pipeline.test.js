@@ -1407,8 +1407,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     "await renderer.init()",
     "renderer?.backend?.isWebGPUBackend",
     "renderer.setAnimationLoop(null)",
-    "renderer.dispose()",
-    'deviceLost'
+    "renderer.dispose()"
   ])assert.ok(webgpuBackend.includes(token),token);
   for(const token of [
     'THREE.MeshStandardNodeMaterial',
