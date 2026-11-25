@@ -14,6 +14,18 @@ const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'),
 const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs'), 'utf8');
 
 
+test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/GLTFLoader.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/libs/meshopt_decoder.module.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/KTX2Loader.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/DRACOLoader.js"));
+  assert.doesNotMatch(worker,/three@0\.160\.0/);
+  assert.ok(html.includes('"three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"'));
+  assert.ok(html.includes('"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"'));
+  assert.ok(html.includes('"three-mesh-bvh": "0.9.18"')||html.includes('"three-mesh-bvh": "0.9.18"'));
+});
+
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
