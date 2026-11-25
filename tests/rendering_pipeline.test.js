@@ -1700,3 +1700,34 @@ test('r187 PMREM uses cube-render-target outputs for environment, physical sky a
   assert.ok(renderer.includes('pmremGenerator.fromScene(skyScene,0.04)'));
   assert.doesNotMatch(renderer,/CubeUVReflectionMapping|renderer\.setViewport\s*\(|renderer\.setScissor\s*\(/);
 });
+
+
+test('WebGPU TSL scene pass exposes shared beauty, depth and packed view-normal resources',()=>{
+  assert.ok(webgpuPipeline.includes("import * as TSL from 'three/tsl'")); 
+  assert.ok(webgpuPipeline.includes('scenePass.setMRT(TSL.mrt({'));
+  assert.ok(webgpuPipeline.includes('output: TSL.output'));
+  assert.ok(webgpuPipeline.includes('normal: TSL.packNormalToRGB(TSL.normalView)'));
+  assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('depth')"));
+  assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('normal')"));
+  assert.ok(webgpuPipeline.includes('normalTexture.type = THREE.UnsignedByteType'));
+  assert.ok(webgpuPipeline.includes('getFrameResources()'));
+  assert.ok(webgpuPipeline.includes("normalEncoding: 'packed-rgb-unorm8'"));
+});
+
+test('pinned Three.js r187 exports the required TSL MRT and normal packing APIs',async()=>{
+  const TSL = await import('three/tsl');
+  const THREE = await import('three/webgpu');
+  assert.equal(typeof TSL.mrt,'function');
+  assert.equal(typeof TSL.packNormalToRGB,'function');
+  assert.ok(TSL.output);
+  assert.ok(TSL.normalView);
+  assert.equal(typeof THREE.RenderPipeline,'function');
+});
+
+test('TSL RenderPipeline continues to fail closed for a non-WebGPU backend',async()=>{
+  const { createPStudioRenderPipeline } = await import('../static/pstudio_rendering_pipeline.mjs');
+  assert.throws(
+    ()=>createPStudioRenderPipeline({backend:{isWebGPUBackend:false}},{isScene:true},{isCamera:true}),
+    /requires an initialized WebGPU backend/
+  );
+});
