@@ -16,6 +16,7 @@ const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs
 const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
+const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
 
 
 test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
@@ -46,6 +47,9 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-production-session-v1'));
+  assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
+  assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
   assert.ok(html.includes('PStudioTSL'));
   assert.ok(renderer.includes('webgpuModuleAvailable'));
@@ -1374,33 +1378,30 @@ test('tablet and mobile workspace use a single main column with accessible proje
   ])assert.ok(html.includes(token),token);
 });
  
-test('WebGPU PBR and TSL pilot uses shared backend, material conversion and RenderPipeline modules',()=>{
+test('WebGPU PBR and TSL pilot uses the shared production scene-session modules',()=>{
   for(const token of [
     'id="webgpu-lab-open"',
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
     'pstudio_webgpu_lab.mjs?v=20261125-shared-rendering-tsl-v1',
     '既存プロジェクト',
-    '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません'
+    '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
+    'pstudio_rendering_migration.mjs?v=20261125-production-session-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_backend.mjs'",
-    "from './pstudio_rendering_materials.mjs?v=20261125-safe-pbr1'",
-    "from './pstudio_rendering_pipeline.mjs'",
-    'createPStudioWebGPUBackend({',
-    'convertPStudioScenePBRMaterials(scene)',
+    "from './pstudio_rendering_migration.mjs'",
+    'createPStudioWebGPUSceneSession({',
+    'sessionHandle.render()',
+    'sessionHandle.dispose()',
     'new THREE.MeshStandardMaterial',
     'new THREE.MeshPhysicalMaterial',
     'new THREE.MeshStandardNodeMaterial',
     'TSL.mix(',
     'new THREE.CanvasTexture',
     'keyLight.castShadow = true',
-    'renderer.compileAsync(scene, camera)',
-    'pipelineHandle = createPStudioRenderPipeline(',
-    'pipelineHandle.render()',
-    'pipelineHandle.dispose()'
+    'configureRenderer:'
   ])assert.ok(webgpuLab.includes(token),token);
   for(const token of [
     "await renderer.init()",
@@ -1412,7 +1413,7 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
     'THREE.MeshStandardNodeMaterial',
     'THREE.MeshPhysicalNodeMaterial',
     'target.copy(source)',
-    'target.onBeforeCompile = () => {}',
+    'skippedLegacyShaderHooks',
     'convertPStudioScenePBRMaterials'
   ])assert.ok(webgpuMaterials.includes(token),token);
   for(const token of [
@@ -1422,6 +1423,14 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
     'renderPipeline.render()',
     'renderPipeline.dispose()'
   ])assert.ok(webgpuPipeline.includes(token),token);
+  for(const token of [
+    'inspectPStudioWebGPUSceneMaterials',
+    'createPStudioWebGPUSceneSession',
+    'await renderer.compileAsync(scene, camera)',
+    'createPStudioRenderPipeline(',
+    'device.lost',
+    'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE'
+  ])assert.ok(webgpuMigration.includes(token),token);
   assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
   assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
   assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);

@@ -8,7 +8,8 @@ const modules = Promise.all([
   import('three/tsl'),
   import('../static/pstudio_rendering_materials.mjs'),
   import('../static/pstudio_rendering_backend.mjs'),
-  import('../static/pstudio_rendering_pipeline.mjs')
+  import('../static/pstudio_rendering_pipeline.mjs'),
+  import('../static/pstudio_rendering_migration.mjs')
 ]);
 
 test('shared WebGPU backend reports capabilities and refuses unavailable GPU contexts', async () => {
@@ -148,15 +149,72 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.equal(pipeline.dispose(), false);
 });
 
-test('WebGPU Lab consumes the same modular backend, PBR converter and RenderPipeline', () => {
+test('WebGPU Lab consumes the reusable strict WebGPU scene-session API', () => {
   const root = path.resolve(__dirname, '..');
   const lab = fs.readFileSync(path.join(root, 'static', 'pstudio_webgpu_lab.mjs'), 'utf8');
   for (const token of [
-    'createPStudioWebGPUBackend',
-    'convertPStudioScenePBRMaterials',
-    'createPStudioRenderPipeline',
-    'pipelineHandle.render()',
-    'pipelineHandle.dispose()'
+    'createPStudioWebGPUSceneSession',
+    'sessionHandle.render()',
+    'sessionHandle.dispose()',
+    'configureRenderer'
   ]) assert.ok(lab.includes(token), token);
   assert.doesNotMatch(lab, /rendererCandidate\.render\(scene, camera\)/);
+});
+
+
+test('WebGPU material preflight rejects legacy GLSL hooks and unsupported material types', async () => {
+  const [THREE, , , , , migration] = await modules;
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BoxGeometry();
+  const pbr = new THREE.MeshStandardMaterial();
+  scene.add(new THREE.Mesh(geometry, pbr));
+  const supported = migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(supported.compatible, true);
+  assert.equal(supported.materialCount, 1);
+  assert.equal(supported.standardPBR, 1);
+
+  const customPBR = new THREE.MeshStandardMaterial();
+  customPBR.onBeforeCompile = () => {};
+  scene.add(new THREE.Mesh(geometry, customPBR));
+  const custom = migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(custom.compatible, false);
+  assert.equal(custom.legacyShaderHooks, 1);
+  assert.equal(custom.unsupported[0].reason, 'custom-glsl-hook-requires-tsl-port');
+
+  const shaderMaterial = new THREE.ShaderMaterial();
+  scene.add(new THREE.Mesh(geometry, shaderMaterial));
+  const mixed = migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(mixed.compatible, false);
+  assert.equal(mixed.unsupportedMaterials, 2);
+
+  pbr.dispose();
+  customPBR.dispose();
+  shaderMaterial.dispose();
+  geometry.dispose();
+});
+
+test('WebGPU production migration status reports blockers without claiming parity', async () => {
+  const [, , , , , migration] = await modules;
+  const status = migration.getPStudioWebGPUMigrationStatus({ navigatorRef: {} });
+  assert.equal(status.productionBackend, 'webgl2');
+  assert.equal(status.targetBackend, 'webgpu-tsl');
+  assert.equal(status.webgpuAvailable, false);
+  assert.equal(status.productionReady, false);
+  assert.ok(status.blockers.some(item => item.id === 'renderer-lifecycle'));
+  assert.ok(status.blockers.some(item => item.id === 'legacy-materials'));
+});
+
+test('WebGPU scene sessions reject unsupported materials before requesting a GPU device', async () => {
+  const [THREE, , , , , migration] = await modules;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  const geometry = new THREE.BoxGeometry();
+  const material = new THREE.ShaderMaterial();
+  scene.add(new THREE.Mesh(geometry, material));
+  await assert.rejects(
+    migration.createPStudioWebGPUSceneSession({ canvas: {}, scene, camera, navigatorRef: {} }),
+    error => error.code === 'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE'
+  );
+  material.dispose();
+  geometry.dispose();
 });

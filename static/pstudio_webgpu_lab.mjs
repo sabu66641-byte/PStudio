@@ -1,8 +1,6 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
-import { createPStudioWebGPUBackend } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs?v=20261125-safe-pbr1';
-import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
+import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
 const canvas = document.getElementById('webgpu-lab-canvas');
@@ -12,9 +10,7 @@ const openButton = document.getElementById('webgpu-lab-open');
 const closeButton = document.getElementById('webgpu-lab-close');
 
 let renderer = null;
-let backendHandle = null;
-let pipelineHandle = null;
-let materialConversion = null;
+let sessionHandle = null;
 let scene = null;
 let camera = null;
 let animatedGroup = null;
@@ -202,20 +198,15 @@ function disposeRenderer() {
     window.removeEventListener('resize', fallbackResizeListener);
     fallbackResizeListener = null;
   }
-  if (pipelineHandle) {
-    try { pipelineHandle.dispose(); } catch (_) {}
-    pipelineHandle = null;
-  }
-  if (materialConversion) {
-    try { materialConversion.disposeSourceMaterials(); } catch (_) {}
-    materialConversion = null;
-  }
-  if (backendHandle) {
-    try { backendHandle.dispose(); } catch (_) {}
-    backendHandle = null;
+  if (sessionHandle) {
+    try { sessionHandle.dispose(); } catch (_) {}
+    sessionHandle = null;
     renderer = null;
   } else if (renderer) {
-    try { renderer.setAnimationLoop(null); } catch (_) {}
+    try {
+      const stopped = renderer.setAnimationLoop(null);
+      stopped?.catch?.(() => {});
+    } catch (_) {}
     try { renderer.dispose(); } catch (_) {}
     renderer = null;
   }
@@ -237,42 +228,43 @@ async function runLab(ticket) {
   try {
     if (ticket !== generation || overlay?.hidden) return;
     const memoryGiB = Math.max(1, Number(navigator.deviceMemory) || 4);
-    setStatus('共有WebGPUバックエンドを初期化しています…');
-    backendHandle = await createPStudioWebGPUBackend({
-      canvas,
-      antialias: memoryGiB >= 4,
-      alpha: false,
-      powerPreference: 'low-power'
-    });
-    renderer = backendHandle.renderer;
-
-    if (ticket !== generation || overlay?.hidden) {
-      disposeRenderer();
-      return;
-    }
-
     const pixelRatioCap = memoryGiB <= 2 ? 1 : memoryGiB <= 4 ? 1.1 : 1.35;
-    renderer.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    renderer.shadowMap.enabled = true;
-
     const lab = createLabScene(memoryGiB);
     scene = lab.scene;
     camera = lab.camera;
     animatedGroup = lab.animatedGroup;
-    materialConversion = convertPStudioScenePBRMaterials(scene);
-    resizeLab();
 
-    setStatus('TSL NodeMaterialとRenderPipelineをコンパイルしています…');
-    await renderer.compileAsync(scene, camera);
+    setStatus('共有WebGPUバックエンドとTSLシーンを準備しています…');
+    sessionHandle = await createPStudioWebGPUSceneSession({
+      canvas,
+      scene,
+      camera,
+      navigatorRef: navigator,
+      antialias: memoryGiB >= 4,
+      alpha: false,
+      powerPreference: 'low-power',
+      configureRenderer: (nextRenderer) => {
+        nextRenderer.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
+        nextRenderer.outputColorSpace = THREE.SRGBColorSpace;
+        nextRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+        nextRenderer.toneMappingExposure = 1.0;
+        nextRenderer.shadowMap.enabled = true;
+      },
+      pipelineOptions: {
+        bloom: { strength: 0.18, radius: 0.22, threshold: 0.82 }
+      },
+      onDeviceLost: (info) => {
+        if (ticket === generation) setStatus('WebGPUデバイスが失われました：' + info.message, 'error');
+      }
+    });
+    renderer = sessionHandle.renderer;
 
     if (ticket !== generation || overlay?.hidden) {
       disposeRenderer();
       return;
     }
 
+    resizeLab();
     resizeObserver = typeof ResizeObserver === 'function'
       ? new ResizeObserver(resizeLab)
       : null;
@@ -282,16 +274,12 @@ async function runLab(ticket) {
       window.addEventListener('resize', fallbackResizeListener);
     }
 
-    pipelineHandle = createPStudioRenderPipeline(renderer, scene, camera, {
-      bloom: { strength: 0.18, radius: 0.22, threshold: 0.82 }
-    });
-
     renderer.setAnimationLoop((time) => {
-      if (renderer !== backendHandle?.renderer || !scene || !camera || !pipelineHandle) return;
+      if (renderer !== sessionHandle?.renderer || !scene || !camera || !sessionHandle) return;
       const elapsed = lastFrameTime ? Math.min(0.05, Math.max(0, (time - lastFrameTime) / 1000)) : 0;
       lastFrameTime = time;
       if (animatedGroup) animatedGroup.rotation.y += elapsed * 0.16;
-      pipelineHandle.render();
+      sessionHandle.render();
     });
 
     setStatus('共有WebGPUバックエンド／TSL NodeMaterial／RenderPipeline／Bloomを実行中です。', 'success');
@@ -347,8 +335,8 @@ function initialize() {
     getState: () => ({
       active: !!renderer,
       backend: renderer?.backend?.isWebGPUBackend ? 'webgpu' : 'inactive',
-      pipeline: pipelineHandle?.getState?.().pipeline || null,
-      nodeMaterials: materialConversion?.convertedMaterials || 0,
+      pipeline: sessionHandle?.getState?.().pipeline?.pipeline || null,
+      nodeMaterials: sessionHandle?.getState?.().materials?.convertedMaterials || 0,
       threeRevision: String(THREE.REVISION || 'unknown')
     })
   });
