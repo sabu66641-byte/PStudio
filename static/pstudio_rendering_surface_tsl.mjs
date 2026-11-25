@@ -400,7 +400,8 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
 
     const previous = Object.fromEntries([
       'colorNode', 'roughnessNode', 'metalnessNode', 'emissiveNode',
-      'positionNode', 'castShadowPositionNode', 'alphaTestNode', 'opacityNode'
+      'positionNode', 'castShadowPositionNode', 'alphaTestNode', 'opacityNode',
+      'side', 'transparent', 'depthWrite'
     ].map((key) => [key, material[key]]));
     let foliageRole = null;
     try {
