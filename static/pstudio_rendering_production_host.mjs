@@ -9,7 +9,8 @@ import { createPStudioRendererCanvasHost } from './pstudio_rendering_canvas_host
 export function createPStudioProductionRendererHost(options = {}) {
   const canvasHost = createPStudioRendererCanvasHost({
     primaryCanvas: options.primaryCanvas,
-    fallbackCanvas: options.fallbackCanvas
+    fallbackCanvas: options.fallbackCanvas,
+    initialBackend: options.initialBackend
   });
   let disposed = false;
   const userStateChange = options.onStateChange;
@@ -30,6 +31,8 @@ export function createPStudioProductionRendererHost(options = {}) {
     kind: 'pstudio-production-renderer-host',
     initialize: runtime.initialize,
     render: runtime.render,
+    resize: runtime.resize,
+    useFallback: runtime.useFallback,
     getState() {
       return Object.freeze({
         ...runtime.getState(),

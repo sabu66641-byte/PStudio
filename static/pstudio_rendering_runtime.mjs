@@ -72,6 +72,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           backend: fallback.backend || 'webgl2',
           handle: fallback,
           render: () => fallback.render(),
+          resize: (width, height, pixelRatio) => fallback.resize?.(width, height, pixelRatio) !== false,
           dispose: () => fallback.dispose?.()
         });
         try { previous?.dispose?.(); } catch (_) {}
@@ -110,6 +111,9 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           environmentResolution: options.environmentResolution,
           pipelineOptions: options.pipelineOptions,
           configureRenderer: options.configureRenderer,
+          onStageChange: (stage, details) => {
+            try { options.onStageChange?.(stage, details); } catch (_) {}
+          },
           onDeviceLost: (info) => {
             if (!isCurrent(ticket)) return;
             publish('device-lost', { backend: 'webgpu', deviceLoss: info });
@@ -141,6 +145,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           backend: 'webgpu',
           handle: webgpu,
           render: () => webgpu.render(),
+          resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
           dispose: () => webgpu.dispose?.()
         });
         publish('ready', { backend: 'webgpu', capabilities: webgpu.capabilities || null });
@@ -175,6 +180,15 @@ export function createPStudioProductionRendererRuntime(options = {}) {
     render() {
       if (disposed || !active || state !== 'ready') return false;
       return active.render() !== false;
+    },
+    resize(width, height, pixelRatio) {
+      if (disposed || !active || state !== 'ready') return false;
+      return active.resize?.(width, height, pixelRatio) !== false;
+    },
+    useFallback(cause = new Error('PStudio requested the WebGL2 compatibility renderer.')) {
+      if (disposed || !allowFallback || typeof createFallback !== 'function') return Promise.resolve(false);
+      const error = cause instanceof Error ? cause : new Error(String(cause || 'WebGL2 fallback requested.'));
+      return activateFallback(error, generation).then(Boolean, () => false);
     },
     getState() {
       return Object.freeze({

@@ -104,6 +104,9 @@ export function createPStudioRendererCanvasHost(options = {}) {
   }
 
   applyLayout();
+  if (options.initialBackend !== undefined && options.initialBackend !== null) {
+    activate(options.initialBackend);
+  }
 
   return Object.freeze({
     kind: 'pstudio-renderer-canvas-host',

@@ -151,8 +151,12 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
+  const reportStage = (stage, details = {}) => {
+    try { options.onStageChange?.(stage, Object.freeze({ ...details })); } catch (_) {}
+  };
 
   try {
+    reportStage('initializing-backend');
     backendHandle = await createPStudioWebGPUBackend({
       canvas,
       navigatorRef: options.navigatorRef,
@@ -202,6 +206,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       });
     }
 
+    reportStage('converting-materials', { materialCount: compatibility.materialCount });
     materialConversion = convertPStudioScenePBRMaterials(scene);
     // Existing NodeMaterials are valid WebGPU inputs and are intentionally skipped
     // by the legacy PBR converter. Only a newly detected legacy GLSL hook is fatal.
@@ -216,6 +221,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     });
     environmentHandle.updateCamera(camera);
 
+    reportStage('compiling', { convertedMaterials: materialConversion.convertedMaterials || 0 });
     await renderer.compileAsync(scene, camera);
     if (options.signal?.aborted) {
       const error = new Error('WebGPU scene session initialization was cancelled.');
@@ -229,12 +235,25 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       camera,
       options.pipelineOptions || {}
     );
+    reportStage('ready', { convertedMaterials: materialConversion.convertedMaterials || 0 });
 
     return Object.freeze({
       kind: 'pstudio-webgpu-scene-session',
       renderer,
       capabilities,
       deviceLost: deviceLostPromise,
+      resize(width, height, pixelRatio) {
+        if (disposed) return false;
+        const nextWidth = Math.floor(Number(width));
+        const nextHeight = Math.floor(Number(height));
+        if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight) || nextWidth < 1 || nextHeight < 1) return false;
+        const ratio = Number(pixelRatio);
+        if (Number.isFinite(ratio) && ratio > 0 && Math.abs(renderer.getPixelRatio() - ratio) > 0.001) {
+          renderer.setPixelRatio(Math.max(0.5, Math.min(4.5, ratio)));
+        }
+        renderer.setSize(nextWidth, nextHeight, false);
+        return true;
+      },
       render() {
         if (disposed || (deviceLoss && deviceLoss.reason !== 'destroyed')) return false;
         environmentHandle?.updateCamera?.(camera);
@@ -270,10 +289,12 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { environmentHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
+        reportStage('disposed');
         return true;
       }
     });
   } catch (error) {
+    reportStage('failed', { message: String(error?.message || error) });
     try { pipelineHandle?.dispose?.(); } catch (_) {}
     try { environmentHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
