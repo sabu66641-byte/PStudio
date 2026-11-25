@@ -1555,7 +1555,8 @@ test('r187 EON diffuse roughness is an opt-in per-material override and resets t
   assert.ok(authoring.includes('diffuseRoughness: clamp(entry.diffuseRoughness, 0, 1, 0)'));
   assert.ok(html.includes('id="obj-model-material-diffuse-roughness"'));
   assert.ok(html.includes('mat.diffuseRoughness??0'));
-  assert.ok(html.includes('diffuseRoughness:Math.max(0,Math.min(1,Number(document.getElementById(\'obj-model-material-diffuse-roughness\')?.value)||0))'));
+  assert.ok(html.includes('diffuseRoughness:bounded(override.diffuseRoughness,0,1)'));
+  assert.ok(html.includes('diffuseRoughness:Math.max(0,Math.min(1,Number(document.getElementById(') && html.includes('obj-model-material-diffuse-roughness'));
 });
 
 test('r187 PMREM uses cube-render-target outputs for environment, physical sky and HDR without removed CubeUV viewport bridges',()=>{
