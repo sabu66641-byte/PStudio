@@ -69,6 +69,7 @@ export function createPStudioNodeMaterial(source, options = {}) {
   }
   const { MaterialClass, nodeType } = resolved;
   const target = new MaterialClass();
+  const approvedSurfaceFeatures = isPStudioTSLSurfaceFeatureMaterial(source);
   const originalUserData = source.userData;
   const safeMetadata = cloneUserData(originalUserData);
 
@@ -102,6 +103,9 @@ export function createPStudioNodeMaterial(source, options = {}) {
     pstudioRenderingBackend: 'webgpu-tsl'
   };
   target.onBeforeCompile = () => {};
+  // Carry the preflight decision across the legacy-to-NodeMaterial boundary;
+  // userData alone must never be able to assert this approval.
+  target.pstudioTSLSurfacePreflightApproved = approvedSurfaceFeatures;
   target.name = options.name ?? (source.name ? source.name + ' [TSL]' : 'PStudio ' + nodeType);
   target.needsUpdate = true;
   return target;
