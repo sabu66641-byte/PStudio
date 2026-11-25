@@ -109,9 +109,15 @@ function applyTriplanar(material, metadata) {
     const normalX = readNormal(position.yz.mul(scale));
     const normalY = readNormal(position.zx.mul(scale));
     const normalZ = readNormal(position.xy.mul(scale));
-    const worldX = TSL.vec3(normal.x.sign().mul(normalX.z), normalX.y, normalX.x);
-    const worldY = TSL.vec3(normalY.x, normal.y.sign().mul(normalY.z), normalY.y);
-    const worldZ = TSL.vec3(normalZ.x, normalZ.y, normal.z.sign().mul(normalZ.z));
+    // Each projection uses a right-handed tangent frame:
+    // X -> (Y, Z), Y -> (Z, X), Z -> (X, Y). Flip the bitangent
+    // component together with the face normal on negative-facing planes.
+    const signX = normal.x.sign();
+    const signY = normal.y.sign();
+    const signZ = normal.z.sign();
+    const worldX = TSL.vec3(signX.mul(normalX.z), normalX.x, signX.mul(normalX.y));
+    const worldY = TSL.vec3(signY.mul(normalY.y), signY.mul(normalY.z), normalY.x);
+    const worldZ = TSL.vec3(normalZ.x, signZ.mul(normalZ.y), signZ.mul(normalZ.z));
     const blendedWorldNormal = worldX.mul(weights.x)
       .add(worldY.mul(weights.y))
       .add(worldZ.mul(weights.z))
