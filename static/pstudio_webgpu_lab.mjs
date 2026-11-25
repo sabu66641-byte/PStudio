@@ -243,6 +243,7 @@ async function runLab(ticket) {
       antialias: memoryGiB >= 4,
       alpha: false,
       powerPreference: 'low-power',
+      environmentProfile: window.PStudioSceneEnvironment?.getPreset?.('day') || { name: 'day' },
       configureRenderer: (nextRenderer) => {
         nextRenderer.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
         nextRenderer.outputColorSpace = THREE.SRGBColorSpace;
