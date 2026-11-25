@@ -1471,6 +1471,29 @@ test('dynamic render resolution only reacts to fresh GPU timer samples and stays
   assert.match(renderer,/applyEffectiveRenderScale\(\)/);
 });
 
+test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{
+  assert.ok(renderer.includes("let postProcessingFailed=false,postProcessingFailureReason=''"));
+  assert.ok(renderer.includes('function resetPostProcessingFailure(){'));
+  assert.ok(renderer.includes('if(!postProcessingFailed&&composer&&('));
+  const start=renderer.indexOf('  function drawFrame(){');
+  const end=renderer.indexOf('  function createGpuParticleSystem(',start);
+  assert.ok(start>=0&&end>start,'drawFrame boundaries');
+  const frame=renderer.slice(start,end);
+  const catchStart=frame.indexOf('try{composer.render();}catch(initialPostError){');
+  const catchEnd=frame.indexOf('\n      }else{',catchStart);
+  assert.ok(catchStart>=0&&catchEnd>catchStart,'composer failure handler');
+  const recovery=frame.slice(catchStart,catchEnd);
+  assert.ok(recovery.includes('postProcessingFailed=true'));
+  assert.ok(recovery.includes('postProcessingFailureReason='));
+  assert.ok(recovery.includes('renderer.setRenderTarget(null)'));
+  assert.ok(recovery.includes('renderer.render(scene,camera)'));
+  assert.ok(recovery.includes('composer.render();recovered=true;'));
+  assert.ok(renderer.includes('postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null}'));
+  const qualityStart=renderer.indexOf('function applyQualityPreset');
+  assert.ok(renderer.slice(qualityStart,qualityStart+180).includes('resetPostProcessingFailure()'));
+  for(const token of ['setGodRays:(enabled,intensity=1)=>{\n      resetPostProcessingFailure();','setPostProcessing:(bloom,ssao,strength,ssr)=>{resetPostProcessingFailure();','setContactShadows:(enabled,options={})=>{\n      resetPostProcessingFailure();'])assert.ok(renderer.includes(token),token);
+});
+
 test('dynamic GI probe captures are excluded from main render timings and per-frame counters',()=>{
   assert.ok(renderer.includes('function captureFrameRenderStats()'));
   assert.ok(renderer.includes('const memory=memorySnapshot(),render=lastFrameRenderStats;'));
