@@ -14,6 +14,24 @@ const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'),
 const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs'), 'utf8');
 
 
+test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/GLTFLoader.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/libs/meshopt_decoder.module.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/KTX2Loader.js"));
+  assert.ok(worker.includes("three@0.187.0/examples/jsm/loaders/DRACOLoader.js"));
+  assert.doesNotMatch(worker,/three@0\.160\.0/);
+  assert.ok(html.includes('"three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"'));
+  assert.ok(html.includes('"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
+});
+
+test('browser runtime refuses a mismatched Three.js core revision before exposing renderer globals',()=>{
+  assert.ok(html.includes("if (String(THREE.REVISION) !== '187')"));
+  assert.ok(html.includes('PStudio requires Three.js r187'));
+  assert.ok(html.includes("three@0.187.0/build/three.module.js"));
+});
+
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
   for (const addon of ['GTAOPass.js', 'SSRPass.js', 'RGBELoader.js', 'LightProbeGenerator.js']) {
     assert.ok(html.includes(addon), addon);
@@ -198,6 +216,18 @@ test('automatic LOD supports static imported and general meshes',()=>{
   assert.ok(html.includes('three/addons/modifiers/SimplifyModifier.js'));
   for(const x of ['scheduleAutoLOD','pstudioAutoLOD','pstudioAutoLODGenerating','render.lod.generated','applyAutoLOD'])assert.ok(renderer.includes(x),x);
 });
+
+test('r187 async SimplifyModifier results are awaited serially and discarded after source invalidation',()=>{
+  const start=renderer.indexOf('function scheduleAutoLODPump(){');
+  const end=renderer.indexOf('function scheduleAutoLOD(',start);
+  assert.ok(start>=0&&end>start,'automatic LOD scheduler boundaries');
+  const scheduler=renderer.slice(start,end);
+  assert.match(scheduler,/const pump=async deadline=>/);
+  assert.match(scheduler,/await modifier\.modify\(/);
+  assert.match(scheduler,/if\(!isCurrent\(\)\)\{[\s\S]*?lod\.dispose\?\.\(\)/);
+  assert.match(scheduler,/finally\{\s*autoLODPumpScheduled=false;\s*if\(autoLODQueue\.length\)scheduleAutoLODPump\(\);\s*\}/);
+  assert.doesNotMatch(scheduler,/const lod=modifier\.modify\(/);
+});
 test('occlusion culling checks scene meshes and instanced sources incrementally',()=>{
   for(const x of ['updateOcclusionVisibility','occlusionRaycaster','pstudioOccluded','setOcclusionCulling','instanceSources'])assert.ok(renderer.includes(x),x);
 });
@@ -280,7 +310,7 @@ test('GLTF instance rendering reuses mesh references and avoids unchanged materi
 test('automatic LOD work is serialized into idle callbacks without forced timeout execution',()=>{
   assert.ok(renderer.includes('const autoLODQueue=[]'));
   assert.ok(renderer.includes('function scheduleAutoLODPump()'));
-  assert.ok(renderer.includes('window.requestIdleCallback(pump)'));
+  assert.ok(renderer.includes('window.requestIdleCallback(deadline=>{void pump(deadline);},{timeout:1000})'));
   assert.ok(!renderer.includes('requestIdleCallback(build,{timeout:1200})'));
 });
 
@@ -1471,4 +1501,34 @@ test('Dynamic GI probe capture cadence scales with measured render headroom and 
   assert.match(helper,/if\(ms<=12\)return 900/);
   assert.match(helper,/if\(ms<=4\)return 450/);
   assert.match(helper,/if\(ms<=7\)return 900/);
+});
+
+
+test('r187 WebGL initialization guards missing finalization primitives and unsupported WebGL 2 without retry loops',()=>{
+  const start=renderer.indexOf('function ensureRenderer(){');
+  const end=renderer.indexOf('try{\n      const memoryGiB',start);
+  assert.ok(start>=0&&end>start,'renderer initialization guard boundaries');
+  const init=renderer.slice(start,end);
+  assert.ok(init.includes('rendererInitializationFailed'));
+  assert.ok(init.includes("typeof WeakRef!=='function'||typeof FinalizationRegistry!=='function'"));
+  assert.ok(init.includes('renderer.capabilities?.isWebGL2!==true'));
+  assert.ok(init.includes('failRendererInitialization(error)'));
+  assert.ok(init.includes('Three.js r187 requires WebGL 2'));
+  assert.ok(init.includes("productionBackend:'webgl2'"));
+  assert.ok(init.includes('catch(error)'));
+});
+
+test('GLTF worker serializes r187 iridescence thickness min/max and hydrates legacy range packets',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  const hydrateStart=renderer.indexOf('async function hydrateGLTFWorkerPacket');
+  const hydrateEnd=renderer.indexOf('function ',hydrateStart+20);
+  const hydrate=renderer.slice(hydrateStart,hydrateEnd);
+  assert.ok(worker.includes('iridescenceThicknessMinimum: Number.isFinite(material.iridescenceThicknessMinimum)'));
+  assert.ok(worker.includes('iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum)'));
+  assert.ok(renderer.includes('if(Number.isFinite(desc.iridescenceThicknessMinimum)||Number.isFinite(desc.iridescenceThicknessMaximum))'));
+  assert.ok(renderer.includes('params.iridescenceThicknessMinimum='));
+  assert.ok(renderer.includes('params.iridescenceThicknessMaximum='));
+  assert.ok(renderer.includes('else if(Array.isArray(desc.iridescenceThicknessRange))'));
+  assert.ok(hydrate.includes('params.iridescenceThicknessMinimum'));
+  assert.ok(hydrate.includes('params.iridescenceThicknessMaximum'));
 });

@@ -2919,6 +2919,9 @@ window.PStudio3DReady = new Promise(resolve => {
 try {
   // Core 3D dependencies are required; visual add-ons are optional.
   const THREE = await import('three');
+  if (String(THREE.REVISION) !== '187') {
+    throw new Error(`PStudio requires Three.js r187; received r${String(THREE.REVISION || 'unknown')}.`);
+  }
   const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
   try { const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js'); window.PStudioMeshoptDecoder = MeshoptDecoder; }
   catch (error) { console.warn('[PStudio] Meshopt decoder unavailable:', error); }

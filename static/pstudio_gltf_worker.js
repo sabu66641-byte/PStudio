@@ -1,7 +1,7 @@
 // GLTFLoader imports the bare specifier "three". Module workers do not inherit the
 // document import map, so use a self-contained ESM bundle for the parser.
-import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js?bundle';
-import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js';
+import { GLTFLoader } from 'https://esm.sh/three@0.187.0/examples/jsm/loaders/GLTFLoader.js?bundle';
+import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/meshopt_decoder.module.js';
 const TRANSFERS = new Set();
 const VIRTUAL_IMAGES = new Map();
 
@@ -134,7 +134,10 @@ async function serializeMaterial(material, materialIds, textures, textureIds, im
     sheenRoughness: material.sheenRoughness,
     iridescence: material.iridescence,
     iridescenceIOR: material.iridescenceIOR,
-    iridescenceThicknessRange: material.iridescenceThicknessRange?.slice?.() || null,
+    iridescenceThicknessMinimum: Number.isFinite(material.iridescenceThicknessMinimum) ? material.iridescenceThicknessMinimum : null,
+    iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum) ? material.iridescenceThicknessMaximum : null,
+    iridescenceThicknessRange: Number.isFinite(material.iridescenceThicknessMinimum) && Number.isFinite(material.iridescenceThicknessMaximum)
+      ? [material.iridescenceThicknessMinimum, material.iridescenceThicknessMaximum] : null,
     anisotropy: material.anisotropy,
     specularIntensity: material.specularIntensity,
     specularColor: colorArray(material.specularColor),
@@ -320,7 +323,10 @@ async function serializeGLTF(gltf,assetKey='') {
       sheen: material.sheen, sheenColor: colorArray(material.sheenColor),
       sheenRoughness: material.sheenRoughness, iridescence: material.iridescence,
       iridescenceIOR: material.iridescenceIOR,
-      iridescenceThicknessRange: material.iridescenceThicknessRange?.slice?.() || null,
+      iridescenceThicknessMinimum: Number.isFinite(material.iridescenceThicknessMinimum) ? material.iridescenceThicknessMinimum : null,
+      iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum) ? material.iridescenceThicknessMaximum : null,
+      iridescenceThicknessRange: Number.isFinite(material.iridescenceThicknessMinimum) && Number.isFinite(material.iridescenceThicknessMaximum)
+        ? [material.iridescenceThicknessMinimum, material.iridescenceThicknessMaximum] : null,
       anisotropy: material.anisotropy, specularIntensity: material.specularIntensity,
       specularColor: colorArray(material.specularColor),
       textureSlots, userData: safeJSON(material.userData)
@@ -427,9 +433,9 @@ async function parseGLB(message) {
   let ktx2Loader=null;
   if ((json.extensionsUsed || []).includes('KHR_texture_basisu')) {
     try {
-      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/KTX2Loader.js?bundle');
+      const module = await import('https://esm.sh/three@0.187.0/examples/jsm/loaders/KTX2Loader.js?bundle');
       ktx2Loader = new module.KTX2Loader();
-      ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+      ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/basis/');
       ktx2Loader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
       const support=message.textureSupport||{};
       const extensions={
@@ -456,9 +462,9 @@ async function parseGLB(message) {
   let dracoLoader=null;
   if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) {
     try {
-      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/DRACOLoader.js?bundle');
+      const module = await import('https://esm.sh/three@0.187.0/examples/jsm/loaders/DRACOLoader.js?bundle');
       dracoLoader = new module.DRACOLoader();
-      dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/draco/');
       dracoLoader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
       loader.setDRACOLoader(dracoLoader);
     } catch (cause) {
