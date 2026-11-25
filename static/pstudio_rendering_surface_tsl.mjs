@@ -26,8 +26,16 @@ function readFeatureList(material) {
 export function isPStudioTSLSurfaceFeatureMaterial(material) {
   const data = material?.userData || {};
   const features = readFeatureList(material);
+  const approvedHookMatches = typeof material?.onBeforeCompile === 'function'
+    && material.pstudioTSLPortApprovedCompileHook === material.onBeforeCompile
+    && material.pstudioTSLPortApprovedCacheKey === material.customProgramCacheKey;
+  const knownCSMHook = data.pstudioCSMOnlyHook === true
+    && data.pstudioProbeShaderSetup !== true
+    && data.pstudioCSMHook === material?.onBeforeCompile
+    && material.pstudioTSLPortApprovedCacheKey === material.customProgramCacheKey;
   return data.pstudioTSLPortVersion === 1
     && data.pstudioTSLPortHasForeignHook !== true
+    && (approvedHookMatches || knownCSMHook)
     && features.length > 0
     && features.every((feature) => SUPPORTED_FEATURES.has(feature));
 }
@@ -95,7 +103,7 @@ function applyTriplanar(material, metadata) {
     const normalX = readNormal(position.yz.mul(scale));
     const normalY = readNormal(position.zx.mul(scale));
     const normalZ = readNormal(position.xy.mul(scale));
-    const worldX = TSL.vec3(normal.x.sign().mul(normalX.z), normalX.x, normalX.y);
+    const worldX = TSL.vec3(normal.x.sign().mul(normalX.z), normalX.y, normalX.x);
     const worldY = TSL.vec3(normalY.x, normal.y.sign().mul(normalY.z), normalY.y);
     const worldZ = TSL.vec3(normalZ.x, normalZ.y, normal.z.sign().mul(normalZ.z));
     const blendedWorldNormal = worldX.mul(weights.x)
@@ -155,7 +163,7 @@ function applyParallax(material) {
     const layerDepth = step / 8;
     const candidateUV = uv.sub(rayOffset.mul(layerDepth));
     const heightUV = normalUV.add(candidateUV.sub(uv));
-    const height = TSL.float(1).sub(TSL.texture(material.normalMap, heightUV).a);
+    const height = TSL.float(1).sub(TSL.texture(material.normalMap, heightUV).setUpdateMatrix(true).a);
     const crossed = TSL.float(layerDepth).greaterThanEqual(height);
     const firstHit = crossed.and(foundIntersection.not());
     parallaxUV = TSL.select(firstHit, candidateUV, parallaxUV);
