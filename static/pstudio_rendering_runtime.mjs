@@ -3,10 +3,10 @@ import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.m
 /**
  * Coordinates the asynchronous renderer hand-off used by the production engine.
  *
- * This module deliberately does not create a WebGL renderer: the legacy engine
- * owns that renderer and its large set of WebGL-only effects until each feature
- * has a tested TSL replacement. Callers provide the existing renderer path as
- * a fallback adapter, avoiding a second canvas/context acquisition.
+ * WebGPU and WebGL contexts cannot safely share one HTMLCanvasElement. The
+ * optional fallback therefore requires a distinct canvas supplied by the host.
+ * The legacy engine remains the owner of its WebGL-only effects until each
+ * feature has a tested TSL replacement.
  */
 export function createPStudioProductionRendererRuntime(options = {}) {
   const { canvas, scene, camera } = options;
@@ -17,7 +17,12 @@ export function createPStudioProductionRendererRuntime(options = {}) {
 
   const createWebGPU = options.createWebGPU || createPStudioWebGPUSceneSession;
   const createFallback = options.createFallback;
+  const fallbackCanvas = options.fallbackCanvas || null;
   const allowFallback = options.allowFallback !== false;
+  if (allowFallback && typeof createFallback === 'function') {
+    if (!fallbackCanvas) throw new TypeError('A separate fallbackCanvas is required; WebGPU and WebGL contexts must not share one canvas.');
+    if (fallbackCanvas === canvas) throw new TypeError('The WebGPU canvas and WebGL fallback canvas must be different elements.');
+  }
   const controller = new AbortController();
   let state = 'idle';
   let active = null;
@@ -90,7 +95,8 @@ export function createPStudioProductionRendererRuntime(options = {}) {
         let fallback = null;
         try {
           fallback = await createFallback({
-            canvas,
+            canvas: fallbackCanvas,
+            webgpuCanvas: canvas,
             scene,
             camera,
             signal: controller.signal,
