@@ -6,20 +6,14 @@ const modules = Promise.all([
 ]);
 
 function makeScene(THREE) {
-  return {
-    canvas: {},
-    scene: new THREE.Scene(),
-    camera: new THREE.PerspectiveCamera()
-  };
+  return { canvas: {}, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera() };
 }
 
 test('production runtime initializes WebGPU once and delegates rendering/disposal', async () => {
   const [THREE, runtimeModule] = await modules;
   const input = makeScene(THREE);
-  let creates = 0;
-  let renders = 0;
-  let disposals = 0;
-  const runtime = createPStudioProductionRendererRuntime({
+  let creates = 0, renders = 0, disposals = 0;
+  const runtime = runtimeModule.createPStudioProductionRendererRuntime({
     ...input,
     createWebGPU: async () => {
       creates += 1;
@@ -30,7 +24,6 @@ test('production runtime initializes WebGPU once and delegates rendering/disposa
       };
     }
   });
-
   const [first, second] = await Promise.all([runtime.initialize(), runtime.initialize()]);
   assert.equal(first, second);
   assert.equal(creates, 1);
@@ -46,11 +39,10 @@ test('production runtime initializes WebGPU once and delegates rendering/disposa
 });
 
 test('production runtime falls back only through the caller-provided legacy adapter', async () => {
-  const input = makeScene();
-  let fallbackCreates = 0;
-  let fallbackRenders = 0;
-  let fallbackDisposals = 0;
-  const runtime = createPStudioProductionRendererRuntime({
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  let fallbackCreates = 0, fallbackRenders = 0, fallbackDisposals = 0;
+  const runtime = runtimeModule.createPStudioProductionRendererRuntime({
     ...input,
     createWebGPU: async () => {
       const error = new Error('WebGPU unavailable');
@@ -67,7 +59,6 @@ test('production runtime falls back only through the caller-provided legacy adap
       };
     }
   });
-
   await runtime.initialize();
   assert.equal(fallbackCreates, 1);
   assert.equal(runtime.getState().backend, 'webgl2');
@@ -79,14 +70,14 @@ test('production runtime falls back only through the caller-provided legacy adap
 });
 
 test('production runtime does not silently fall back when fallback is disabled', async () => {
-  const input = makeScene();
-  const runtime = createPStudioProductionRendererRuntime({
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  const runtime = runtimeModule.createPStudioProductionRendererRuntime({
     ...input,
     allowFallback: false,
     createWebGPU: async () => { throw new Error('initialization failed'); },
     createFallback: async () => { throw new Error('must not be called'); }
   });
-
   await assert.rejects(runtime.initialize(), /initialization failed/);
   assert.equal(runtime.getState().state, 'failed');
   assert.equal(runtime.getState().backend, null);
@@ -94,14 +85,13 @@ test('production runtime does not silently fall back when fallback is disabled',
 });
 
 test('disposing during asynchronous initialization prevents late renderer adoption', async () => {
-  const input = makeScene();
-  let resolveWebGPU;
-  let lateDisposals = 0;
-  const runtime = createPStudioProductionRendererRuntime({
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  let resolveWebGPU, lateDisposals = 0;
+  const runtime = runtimeModule.createPStudioProductionRendererRuntime({
     ...input,
     createWebGPU: () => new Promise(resolve => { resolveWebGPU = resolve; })
   });
-
   const pending = runtime.initialize();
   assert.equal(runtime.getState().state, 'initializing-webgpu');
   runtime.dispose();
