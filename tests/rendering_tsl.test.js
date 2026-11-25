@@ -158,7 +158,7 @@ test('WebGPU Lab consumes the reusable strict WebGPU scene-session API', () => {
     'sessionHandle.dispose()',
     'configureRenderer'
   ]) assert.ok(lab.includes(token), token);
-  assert.doesNotMatch(lab, /rendererCandidate\\.render\\(scene, camera\\)/);
+  assert.doesNotMatch(lab, /rendererCandidate\.render\(scene, camera\)/);
 });
 
 
