@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
+import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-tsl-sh-gi-v1';
 
-const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail']);
+const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail', 'sh-gi']);
 const EPSILON = 1e-5;
 
 function finite(value, fallback) {
@@ -401,25 +402,29 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
     const previous = Object.fromEntries([
       'colorNode', 'roughnessNode', 'metalnessNode', 'emissiveNode',
       'positionNode', 'castShadowPositionNode', 'alphaTestNode', 'opacityNode',
-      'side', 'transparent', 'depthWrite'
+      'side', 'transparent', 'depthWrite', 'lightsNode'
     ].map((key) => [key, material[key]]));
     let foliageRole = null;
+    let shHandle = null;
     try {
       if (hasTriplanar) applyTriplanar(material, material.userData);
       if (hasParallax) applyParallax(material);
       if (features.includes('terrain')) applyTerrain(material, material.userData);
       if (features.includes('foliage')) foliageRole = applyFoliage(material, material.userData, options);
       if (features.includes('water-detail')) applyWaterDetail(material, material.userData);
+      if (features.includes('sh-gi')) shHandle = attachPStudioTSLSHProbeToMaterial(material, options.sceneLights || []);
       material.userData = {
         ...material.userData,
         pstudioTSLFeaturesApplied: features.slice(),
         pstudioTSLFoliageRole: foliageRole
       };
       material.needsUpdate = true;
-      applied.push({ material, previous });
+      applied.push({ material, previous, shHandle });
     } catch (error) {
+      try { shHandle?.dispose?.(); } catch (_) {}
       for (const [key, value] of Object.entries(previous)) material[key] = value;
       for (const entry of applied) {
+        try { entry.shHandle?.dispose?.(); } catch (_) {}
         for (const [key, value] of Object.entries(entry.previous)) entry.material[key] = value;
         if (entry.material.userData) {
           delete entry.material.userData.pstudioTSLFeaturesApplied;
