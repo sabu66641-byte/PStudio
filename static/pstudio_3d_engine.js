@@ -617,6 +617,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const blockers=[];
     const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
     const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
+    const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
     const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
     const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
@@ -640,7 +641,6 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(ssrEnabled)add('screen-space-reflections','SSRのTSL移植が未完了です。');
     if(godRaysEnabled||godRaysFallbackEnabled)add('god-rays','God RaysのTSL移植が未完了です。');
     if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
-    const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
     if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
     if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
