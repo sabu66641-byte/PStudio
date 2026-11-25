@@ -251,6 +251,10 @@ The Backup menu also exports a **Native C++17 ECS project (.zip)** with Componen
 
 Run the focused JavaScript regression suites with `node --test tests/ecs.test.js tests/ecs_physics.test.js tests/physics.test.js`. The full JavaScript suite is `node --test tests/*.test.js`; Python tests are `python -m unittest discover -s tests -p "test_*.py" -v`.
 
+### Time State 1.0
+
+`window.PStudioECSTime` stores the runtime simulation clock in a non-persistent, internal `TimeState` Component. `start()` resets the clock on Play, `setTimeScale(value)` preserves the `set_time_scale()` ps API and its 0–4 clamp, `beginFrame(rawDeltaTime)` applies the existing 0.1-second scaled-delta cap while tracking scaled/unscaled elapsed time, and `clear()` removes the singleton Entity on Stop or startup failure. The browser `requestAnimationFrame` scheduler remains a platform service; TimeState owns simulation timing data, not frame scheduling.
+
 ## Project Backup and Restore
 
 Use the **Backup** menu in the application header to export or restore a portable `.pstudio` project archive. The archive includes project scripts, scene files, scene-object settings, image/audio data URLs, and the binary GLB/GLTF model files stored in IndexedDB. This allows a project to be moved to another browser or device instead of relying only on the current browser's local storage.
