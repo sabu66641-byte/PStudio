@@ -2917,6 +2917,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(Array.isArray(desc.normalScale))params.normalScale=new T.Vector2(...desc.normalScale);
       const Constructors={MeshPhysicalMaterial:T.MeshPhysicalMaterial,MeshStandardMaterial:T.MeshStandardMaterial,MeshBasicMaterial:T.MeshBasicMaterial,MeshLambertMaterial:T.MeshLambertMaterial,MeshPhongMaterial:T.MeshPhongMaterial,MeshToonMaterial:T.MeshToonMaterial,LineBasicMaterial:T.LineBasicMaterial,PointsMaterial:T.PointsMaterial};
       const Constructor=Constructors[desc.type]||T.MeshStandardMaterial;
+      if(desc.type==='MeshPhysicalMaterial'&&Number.isFinite(desc.diffuseRoughness))params.diffuseRoughness=Math.max(0,Math.min(1,desc.diffuseRoughness));
       const material=new Constructor(params);
       material.name=desc.name||'';
       material.userData=desc.userData||{};
@@ -4187,6 +4188,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
           copy=material.clone();setupLightingMaterial(copy);
           materialDefaults.set(copy,{
             roughness:Number.isFinite(material.roughness)?material.roughness:0.72,
+            diffuseRoughness:Number.isFinite(material.diffuseRoughness)?material.diffuseRoughness:null,
             metalness:Number.isFinite(material.metalness)?material.metalness:0.04,
             color:material.color?.clone?.()||null,
             emissive:material.emissive?.clone?.()||null,
@@ -4201,6 +4203,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         for(const configured of (Array.isArray(object.material)?object.material:[object.material])){
           if(configured&&!materialDefaults.has(configured))materialDefaults.set(configured,{
             roughness:Number.isFinite(configured.roughness)?configured.roughness:0.72,
+            diffuseRoughness:Number.isFinite(configured.diffuseRoughness)?configured.diffuseRoughness:null,
             metalness:Number.isFinite(configured.metalness)?configured.metalness:0.04
           });
         }
@@ -5449,7 +5452,7 @@ void main(){
       metalness:state.metalness??null,
       toon:state.toon??null,
       modelOverrides:overrides.map(item=>[
-        item.name,item.roughness??null,item.metalness??null,item.color??null,
+        item.name,item.roughness??null,item.diffuseRoughness??null,item.metalness??null,item.color??null,
         item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
       ]),
       normalGeometrySignature
@@ -5507,6 +5510,7 @@ void main(){
       for(const material of materials){
         const defaults=instance.materialDefaults.get(material);if(!defaults)continue;
         material.roughness=defaults.roughness;
+        if('diffuseRoughness' in material&&Number.isFinite(defaults.diffuseRoughness))material.diffuseRoughness=defaults.diffuseRoughness;
         material.metalness=defaults.metalness;
         if(defaults.color&&material.color)material.color.copy(defaults.color);
         if(defaults.emissive&&material.emissive)material.emissive.copy(defaults.emissive);
@@ -5522,6 +5526,7 @@ void main(){
         }
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
+        if('diffuseRoughness' in material&&Number.isFinite(override.diffuseRoughness))material.diffuseRoughness=Math.max(0,Math.min(1,override.diffuseRoughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
         if(override.color&&material.color)material.color.set(override.color);
         if(typeof override.doubleSide==='boolean')material.side=override.doubleSide?window.THREE.DoubleSide:(defaults.side??window.THREE.FrontSide);
