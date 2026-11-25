@@ -113,7 +113,7 @@ export function generatePStudioEnvironmentPixels(state, width = 512, height = 25
   const sunGlow = clamp(state.sunGlow,0,4,0.76);
   const moonPower = clamp(state.moonIntensity,0,4,0);
   const stars = state.name === 'night' ? clamp(state.starBrightness,0,4,1.5) : 0;
-  const exposure = clamp(state.skyExposure,0.1,2,0.56);
+  const exposure = Math.pow(2,clamp(state.skyExposure,0.1,2,0.56)-0.5);
   const atmosphere = clamp(state.atmosphereStrength,0,1,0.96);
   const cellWidth = Math.max(3, Math.round(w / 128));
   const cellHeight = Math.max(3, Math.round(h / 64));
@@ -249,11 +249,21 @@ export function createPStudioTSLEnvironment(scene, options = {}) {
   const sunContribution = uniforms.sunColor.mul(
     sunDisk.mul(uniforms.sunIntensity).add(sunHalo.mul(uniforms.sunIntensity))
   );
+  const twilightBand = TSL.float(1).sub(TSL.smoothstep(0.02,0.42,y));
+  const twilightContribution = uniforms.sunColor.mul(twilightBand.mul(uniforms.twilight).mul(0.14));
+  const starCell = TSL.floor(direction.mul(420));
+  const starHash = TSL.fract(TSL.sin(
+    TSL.dot(starCell,TSL.vec3(127.1,311.7,74.7))
+  ).mul(43758.5453));
+  const starVisibility = TSL.smoothstep(-0.12,0.08,y);
+  const starMask = TSL.step(TSL.float(0.9987),starHash).mul(starVisibility).mul(uniforms.stars);
+  const starContribution = TSL.vec3(0.58,0.74,1.0).mul(starMask.mul(0.9));
   const moonAlignment = TSL.dot(direction,uniforms.moonDirection).clamp(-1,1);
   const moonDisk = TSL.smoothstep(TSL.float(0.99994),TSL.float(0.999985),moonAlignment);
   const moonHalo = TSL.pow(moonAlignment.max(0),TSL.float(180)).mul(uniforms.moonIntensity).mul(0.12);
   const moonContribution = uniforms.moonColor.mul(moonDisk.mul(uniforms.moonIntensity).mul(0.42).add(moonHalo));
-  const skyColor = baseSky.add(sunContribution).add(moonContribution);
+  const skyColor = baseSky.add(sunContribution).add(moonContribution)
+    .add(twilightContribution).add(starContribution);
   const material = new THREE.MeshBasicNodeMaterial();
   material.colorNode = skyColor;
   material.side = THREE.BackSide;
@@ -317,7 +327,9 @@ export function createPStudioTSLEnvironment(scene, options = {}) {
         preset: state.name,
         ibl: scene.environment === environmentTexture,
         intensity: state.environmentIntensity,
-        resolution: Object.freeze([pixels.width,pixels.height])
+        resolution: Object.freeze([pixels.width,pixels.height]),
+        skyNode: true,
+        iblMapping: 'equirectangular'
       });
     },
     dispose() {
