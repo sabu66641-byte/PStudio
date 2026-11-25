@@ -43,7 +43,7 @@ function requiredTSLFunctions() {
     'positionViewDirection', 'normalWorldGeometry', 'cameraViewMatrix',
     'cameraNear', 'cameraFar', 'modelNormalMatrix', 'time', 'vec2', 'vec3',
     'float', 'color', 'mix', 'max', 'min', 'clamp', 'sin', 'cos', 'pow',
-    'exp', 'smoothstep', 'reflector', 'perspectiveDepthToViewZ'
+    'exp', 'smoothstep', 'reflector', 'perspectiveDepthToViewZ', 'uv', 'vertexColor'
   ];
   return names.filter((name) => TSL[name] === undefined);
 }
@@ -252,7 +252,7 @@ export function createPStudioTSLWaterDepthPrepass(renderer, scene, camera) {
     return hidden;
   }
 
-  function withDepthState(callback) {
+  function captureDepthState() {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const width = Math.max(1, Math.floor(size.x || 1));
     const height = Math.max(1, Math.floor(size.y || 1));
@@ -286,12 +286,30 @@ export function createPStudioTSLWaterDepthPrepass(renderer, scene, camera) {
     }
   }
 
+  function withDepthState(callback) {
+    const state = captureDepthState();
+    try {
+      return callback(state.width, state.height);
+    } finally {
+      state.restore();
+    }
+  }
+
+  async function withDepthStateAsync(callback) {
+    const state = captureDepthState();
+    try {
+      return await callback(state.width, state.height);
+    } finally {
+      state.restore();
+    }
+  }
+
   return Object.freeze({
     kind: 'pstudio-tsl-water-depth-prepass',
     depthTexture: target.depthTexture,
-    compile() {
+    async compile() {
       if (disposed) throw new Error('PStudio water prepass has been disposed.');
-      withDepthState(() => renderer.compileAsync(scene, camera));
+      await withDepthStateAsync(() => renderer.compileAsync(scene, camera));
       return true;
     },
     prepareFrame() {
@@ -335,7 +353,8 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
   const missing = requiredTSLFunctions();
   if (missing.length) throw new Error('Three.js r187 is missing TSL water APIs: ' + missing.join(', '));
   const entries = collectWaterMeshes(root);
-  if (entries.length > MAX_WATER_REFLECTORS) {
+  const reflectorCountRequested = entries.reduce((sum, entry) => sum + entry.indices.length, 0);
+  if (reflectorCountRequested > MAX_WATER_REFLECTORS) {
     throw new Error('The current scene exceeds the safe TSL planar water reflector limit.');
   }
 
@@ -353,19 +372,22 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
         const clone = source.clone();
         clone.userData = { ...(source.userData || {}) };
         clone.pstudioTSLSurfacePreflightApproved = true;
+        touchedMaterials.add(clone);
         const settings = readSettings(source);
         buildWaterNodes(clone, settings, depthTexture, entry.object, reflectors);
         nextMaterials[index] = clone;
-        touchedMaterials.add(clone);
       }
       entry.object.material = Array.isArray(originalMaterial) ? nextMaterials : nextMaterials[0];
-      assignments.push({ object: entry.object, originalMaterial, assignedMaterial: entry.object.material });
+      const previousActive = entry.object.userData?.pstudioWaterTSLActive;
+      entry.object.userData ||= {};
       entry.object.userData.pstudioWaterTSLActive = true;
+      assignments.push({ object: entry.object, originalMaterial, assignedMaterial: entry.object.material, previousActive });
     }
   } catch (error) {
     for (const entry of assignments.reverse()) {
       entry.object.material = entry.originalMaterial;
-      delete entry.object.userData.pstudioWaterTSLActive;
+      if (entry.previousActive === undefined) delete entry.object.userData.pstudioWaterTSLActive;
+      else entry.object.userData.pstudioWaterTSLActive = entry.previousActive;
     }
     for (const reflector of reflectors) {
       try { reflector.object.remove(reflector.node.target); } catch (_) {}
@@ -390,7 +412,8 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
       disposed = true;
       for (const entry of assignments) {
         if (entry.object.material === entry.assignedMaterial) entry.object.material = entry.originalMaterial;
-        delete entry.object.userData.pstudioWaterTSLActive;
+        if (entry.previousActive === undefined) delete entry.object.userData.pstudioWaterTSLActive;
+    else entry.object.userData.pstudioWaterTSLActive = entry.previousActive;
       }
       for (const reflector of reflectors) {
         try { reflector.object.remove(reflector.node.target); } catch (_) {}
