@@ -1469,7 +1469,9 @@ test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fall
   assert.match(controller,/hasRecentGpuSample&&Number\.isFinite\(lastGpuRenderDurationMs\)/);
   assert.match(controller,/source='gpu-timer-query'/);
   assert.match(controller,/document\.visibilityState!=='hidden'/);
-  assert.match(controller,/frameInterval<8\|\|frameInterval>100/);
+  assert.match(controller,/now-lastFrameIntervalSampleAt>250/);
+  assert.match(controller,/frameInterval<1\|\|frameInterval>100/);
+  assert.match(renderer,/lastFrameIntervalSampleAt=frameStarted/);
   assert.match(controller,/source='frame-interval-fallback'/);
   assert.match(controller,/sampleAt===dynamicResolutionLastSampleAt/);
   assert.match(controller,/dynamicResolutionScale>0\.55/);
