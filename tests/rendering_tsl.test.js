@@ -234,11 +234,22 @@ test('TSL environment generates deterministic equirectangular sky radiance for d
   const first = environmentTSL.generatePStudioEnvironmentPixels(day,128,64);
   const second = environmentTSL.generatePStudioEnvironmentPixels(day,128,64);
   const nightPixels = environmentTSL.generatePStudioEnvironmentPixels(night,128,64);
+  const cloudFreeDay = environmentTSL.generatePStudioEnvironmentPixels({...day,cloudDensity:0},128,64);
   assert.equal(first.width,128);
   assert.equal(first.height,64);
   assert.deepEqual(first.data,second.data);
   assert.equal(first.data.length,128*64*4);
   for(let i=3;i<first.data.length;i+=4) assert.equal(first.data[i],255);
+  assert.notDeepEqual(first.data,cloudFreeDay.data,'day/dusk sky map includes its static cloud radiance');
+  assert.deepEqual(nightPixels.data,environmentTSL.generatePStudioEnvironmentPixels({...night,cloudDensity:2},128,64).data,
+    'night does not receive the daylight static cloud field');
+  for(let y=4;y<60;y+=5){
+    const left=(y*128)*4,right=(y*128+127)*4;
+    for(let channel=0;channel<3;channel++){
+      assert.ok(Math.abs(first.data[left+channel]-first.data[right+channel])<=18,
+        'equirectangular horizontal seam remains continuous');
+    }
+  }
   const dayMean = first.data.reduce((sum,value,index)=>sum+(index%4===0?value:0),0);
   const nightMean = nightPixels.data.reduce((sum,value,index)=>sum+(index%4===0?value:0),0);
   assert.ok(dayMean>0&&nightMean>0);
@@ -262,6 +273,8 @@ test('TSL environment owns a sky NodeMaterial and matching PBR IBL texture with 
   assert.equal(handle.kind,'pstudio-tsl-atmospheric-environment');
   assert.equal(handle.skyMesh.material.isMeshBasicNodeMaterial,true);
   assert.ok(handle.skyMesh.material.colorNode);
+  assert.equal(handle.getState().skyNode,'equirectangular-tsl-texture-sample');
+  assert.equal(handle.getState().radianceSource,'shared-sky-and-pbr-ibl');
   assert.equal(scene.environment,handle.environmentTexture);
   assert.equal(scene.environment.mapping,THREE.EquirectangularReflectionMapping);
   assert.equal(scene.environment.colorSpace,THREE.SRGBColorSpace);
