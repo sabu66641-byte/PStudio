@@ -17,6 +17,7 @@ const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
 const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
+const webgpuEnvironmentTSL = fs.readFileSync(path.join(root, 'static/pstudio_rendering_environment_tsl.mjs'), 'utf8');
 
 
 test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
@@ -1428,9 +1429,21 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'createPStudioWebGPUSceneSession',
     'await renderer.compileAsync(scene, camera)',
     'createPStudioRenderPipeline(',
+    'createPStudioTSLEnvironment(scene',
+    'environmentHandle.updateCamera(camera)',
+    'environmentHandle?.setProfile?.(profile)',
     'device.lost',
     'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE'
   ])assert.ok(webgpuMigration.includes(token),token);
+  for(const token of [
+    'generatePStudioEnvironmentPixels',
+    'MeshBasicNodeMaterial',
+    'EquirectangularReflectionMapping',
+    'scene.environment = environmentTexture',
+    'TSL.smoothstep',
+    'starContribution',
+    'updateCamera(camera)'
+  ])assert.ok(webgpuEnvironmentTSL.includes(token),token);
   assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
   assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
   assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);
