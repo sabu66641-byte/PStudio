@@ -83,7 +83,7 @@ test('environment module loads before FX and the renderer consumes it through gl
   const fxIndex=html.indexOf('pstudio_environment_fx.js');
   const rendererIndex=html.indexOf('pstudio_3d_engine.js');
   assert.ok(envIndex>=0&&fxIndex>envIndex&&rendererIndex>fxIndex);
-  assert.ok(html.includes('pstudio_rendering_environment.js?v=20261125-environment-state-v1'));
+  assert.ok(html.includes('pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2'));
 });
 
 
