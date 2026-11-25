@@ -40,6 +40,11 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
   const { SimplifyModifier } = await import('three/addons/modifiers/SimplifyModifier.js');
   assert.equal(typeof SimplifyModifier, 'function');
   assert.equal(SimplifyModifier.prototype.modify.constructor.name, 'AsyncFunction');
+  const physicalMaterial = new THREE.MeshPhysicalMaterial();
+  assert.equal(physicalMaterial.iridescenceThicknessMinimum, 100);
+  assert.equal(physicalMaterial.iridescenceThicknessMaximum, 400);
+  physicalMaterial.dispose();
+
   const tsl = await import('three/tsl');
   assert.equal(typeof tsl.vec3, 'function');
   assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'undefined');
