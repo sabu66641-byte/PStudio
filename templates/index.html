@@ -2989,7 +2989,7 @@ try {
   }
 
   try {
-    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-water-tsl-v3');
+    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-gi-tsl-v1');
   } catch (error) {
     window.PStudioRenderingMigration = null;
     console.warn('[PStudio] Shared WebGPU migration session unavailable; the production WebGL2 path remains active.', error);
