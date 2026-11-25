@@ -4112,6 +4112,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!bakedLightProbeVolume?.length)return material;
     if(material.userData.pstudioProbeShaderSetup)return material;
     const oldCompile=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material),probeUniforms=Array.from({length:9},()=>new window.THREE.Vector3());
+    const data=material.userData||(material.userData={});
+    const approvedPrevious=data.pstudioTSLPortVersion===1
+      &&data.pstudioTSLPortHasForeignHook!==true
+      &&material.pstudioTSLPortApprovedCompileHook===oldCompile
+      &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+    const csmOnlyPrevious=data.pstudioCSMOnlyHook===true
+      &&data.pstudioCSMHook===oldCompile
+      &&data.pstudioProbeShaderSetup!==true
+      &&!Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+    const foreignPrevious=!approvedPrevious&&!csmOnlyPrevious&&(
+      (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof oldCompile==='function')
+      ||(Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function')
+    );
     material.onBeforeCompile=function(shader,rendererRef){if(typeof oldCompile==='function')oldCompile.call(this,shader,rendererRef);shader.uniforms.uPStudioSH={value:probeUniforms};
       shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
 uniform vec3 uPStudioSH[9];
@@ -4119,11 +4132,31 @@ vec3 pstudioEvaluateSH(vec3 n){float x=n.x,y=n.y,z=n.z;vec3 value=uPStudioSH[0]*
       shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>',`#include <lights_fragment_begin>
 reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(viewMatrix))*geometry.normal))*BRDF_Lambert(diffuseColor.rgb);`);
       material.userData.pstudioProbeUniforms=probeUniforms;};
-    material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
+    material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};
+    data.pstudioProbeShaderSetup=true;
+    data.pstudioTSLPortVersion=1;
+    data.pstudioTSLPortHasForeignHook=foreignPrevious;
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes('sh-gi'))features.push('sh-gi');
+    data.pstudioTSLFeatures=features;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
+    return material;
   }
   function updateObjectProbeUniforms(object,material){
-    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;
-    if(!uniforms||!volume?.length||probeCaptureActive)return;
+    const uniforms=material?.userData?.pstudioProbeUniforms;
+    const tslUniforms=material?.userData?.pstudioTSLProbeUniforms;
+    const volume=bakedLightProbeVolume;
+    if((!Array.isArray(uniforms)||uniforms.length<9)&&(!Array.isArray(tslUniforms)||tslUniforms.length<9))return;
+    if(!volume?.length||probeCaptureActive)return;
+    const publishCoefficients=coefficients=>{
+      for(let i=0;i<9;i++){
+        const offset=i*3,x=coefficients[offset],y=coefficients[offset+1],z=coefficients[offset+2];
+        if(typeof uniforms?.[i]?.set==='function')uniforms[i].set(x,y,z);
+        const value=tslUniforms?.[i]?.value;
+        if(typeof value?.set==='function')value.set(x,y,z);
+      }
+    };
     let cache=objectProbeRadianceCache.get(object);
     if(!cache){
       cache={position:new window.THREE.Vector3(),lastPosition:new window.THREE.Vector3(),coefficients:new Float32Array(27),generation:-1,valid:false};
@@ -4133,7 +4166,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const moved=!cache.valid||cache.generation!==probeVolumeGeneration||cache.lastPosition.distanceToSquared(cache.position)>0.0004;
     if(!moved){
       probeRadianceCacheHits++;
-      for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+      publishCoefficients(cache.coefficients);
       return;
     }
     probeRadianceCacheRecomputes++;cache.coefficients.fill(0);
@@ -4188,7 +4221,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     cache.lastPosition.copy(center);cache.generation=probeVolumeGeneration;cache.valid=true;
-    for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+    publishCoefficients(cache.coefficients);
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
