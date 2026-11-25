@@ -3,6 +3,7 @@ import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs?v=20261126-shared-frame-resources-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
+import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v1';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
@@ -17,6 +18,7 @@ const PRODUCTION_BLOCKERS = Object.freeze([
 ]);
 
 function hasCustomShaderHooks(material) {
+  if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
   const userData = material?.userData || {};
   const csmOnly = userData.pstudioCSMOnlyHook === true
     && userData.pstudioProbeShaderSetup !== true
@@ -161,6 +163,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let environmentHandle = null;
   let pipelineHandle = null;
   let csmHandle = null;
+  let surfaceHandle = null;
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
@@ -227,8 +230,12 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       throw new Error('A legacy GLSL material hook appeared after WebGPU preflight; conversion was rolled back.');
     }
 
+    const environmentProfile = options.environmentProfile || globalThis.PStudioSceneEnvironment?.getPreset?.('day');
+    reportStage('porting-surface-features', { materialCount: materialConversion.convertedMaterials || 0 });
+    surfaceHandle = applyPStudioTSLSurfaceFeatures(scene, { environmentProfile });
+
     environmentHandle = createPStudioTSLEnvironment(scene, {
-      profile: options.environmentProfile || globalThis.PStudioSceneEnvironment?.getPreset?.('day'),
+      profile: environmentProfile,
       camera,
       resolution: options.environmentResolution
     });
@@ -296,6 +303,10 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           pipeline: pipelineHandle?.getState?.() || null,
           environment: environmentHandle?.getState?.() || null,
           csm: csmHandle?.getState?.() || null,
+          surfaceFeatures: Object.freeze({
+            materialCount: surfaceHandle?.materialCount || 0,
+            features: surfaceHandle?.features || Object.freeze([])
+          }),
           materials: Object.freeze({
             convertedMeshes: materialConversion?.convertedMeshes || 0,
             convertedMaterials: materialConversion?.convertedMaterials || 0,
@@ -309,6 +320,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { pipelineHandle?.dispose?.(); } catch (_) {}
         try { environmentHandle?.dispose?.(); } catch (_) {}
         try { csmHandle?.dispose?.(); } catch (_) {}
+        try { surfaceHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
         reportStage('disposed');
@@ -320,6 +332,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { pipelineHandle?.dispose?.(); } catch (_) {}
     try { environmentHandle?.dispose?.(); } catch (_) {}
     try { csmHandle?.dispose?.(); } catch (_) {}
+    try { surfaceHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
     try { backendHandle?.dispose?.(); } catch (_) {}
     throw error;
