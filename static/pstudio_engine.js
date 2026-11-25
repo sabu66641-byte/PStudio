@@ -738,6 +738,8 @@ function callBuiltin(c, name, a) {
       const ecsAfterScripts = window.PStudioECS;
       if (ecsAfterScripts?.hasActiveSystems?.()) {
         const ecsContext = { sceneObjects: sceneObjects || [], runtime };
+        // Import direct ps callback/editor-coordinate writes before postUpdate Systems read Transform.
+        ecsAfterScripts.syncSceneObjects(sceneObjects || []);
         ecsAfterScripts.updatePhase?.('postUpdate', dt, ecsContext);
         ecsAfterScripts.applySceneObjectTransforms(sceneObjects || []);
       }
