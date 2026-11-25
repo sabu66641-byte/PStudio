@@ -1488,7 +1488,7 @@ test('Dynamic GI probe capture cadence scales with measured render headroom and 
 
 test('r187 WebGL initialization guards missing finalization primitives and unsupported WebGL 2 without retry loops',()=>{
   const start=renderer.indexOf('function ensureRenderer(){');
-  const end=renderer.indexOf('try{',renderer.indexOf('window.PStudioRenderingRuntime=Object.freeze({',start));
+  const end=renderer.indexOf('try{\\n      const memoryGiB',start);
   assert.ok(start>=0&&end>start,'renderer initialization guard boundaries');
   const init=renderer.slice(start,end);
   assert.ok(init.includes('rendererInitializationFailed'));
