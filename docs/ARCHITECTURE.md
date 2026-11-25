@@ -110,10 +110,10 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - The 3D renderer owns Three.js resources and rendering caches.
 - The physics module owns fixed-step body state and collision calculations. ECS PhysicsBody is configuration; the Physics solver remains authoritative for runtime body motion.
 - ECS owns typed Component data, generic System scheduling and runtime simulation TimeState. Scene Object Transform is a bidirectional editor/legacy-ps bridge: externally changed Scene Object values win conflicts, while ECS-only Transform changes are copied back. The runtime synchronizes again after legacy ps callbacks and before postUpdate Systems. PhysicsTransform/PhysicsState hold solver world-space data and are deliberately not copied into editor Transform fields. Browser frame scheduling remains a platform service.
-- Existing legacy ps callbacks, renderer ownership and collision dispatch remain in place. Their migration into ECS is incremental and must preserve the documented frame order and coordinate ownership.
+- Existing ps callback execution remains a compatibility/runtime service boundary; ECS owns the per-object script state/lifecycle metadata and custom Systems. Collision-pair detection and dispatch remain in Physics/runtime services, with results surfaced as ECS CollisionEvent Entities and PStudioEvents. These adapters are intentional ownership boundaries, not duplicate authoritative gameplay-state stores.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
-Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state.
+Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state. The final Scene-sync audit adds a repeatable Node benchmark (`node benchmarks/ecs_scene_sync.js`) and lifecycle stress tests. Candidate per-frame snapshot/Map/cache rewrites were measured and reverted because they did not produce a consistent gain in the available runtime; the stable synchronization path is retained until a target-browser benchmark proves a better implementation.
 
 ## ECS and Physics frame contract
 
