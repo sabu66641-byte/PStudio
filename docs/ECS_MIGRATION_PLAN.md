@@ -57,7 +57,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | ps script global variables | Runtime `states` Map | Runtime-only `ScriptState.variables` Component per Scene Object | Phase 21 implemented |
 | ps script lifecycle | Runtime `initialized` / `started` Sets and landing-sequence Map | Runtime-only `ScriptLifecycle` Component per Scene Object | Phase 21 implemented |
 | ps ECS System locals | Runtime `ecsStates` Map keyed by System and Entity | Runtime-only `ScriptSystemState` Component keyed by System ID on each matching Entity | Phase 21 implemented |
-| Simulation time | Runtime `timeScale` field and frame-clock calculation | Dedicated runtime-only `TimeState` Component; frame scheduling remains a service boundary | Pending Phase 22 |
+| Simulation time | Runtime `timeScale` field and frame-clock calculation | Dedicated runtime-only `TimeState` Component; frame scheduling remains a service boundary | Phase 22 implemented |
 | Legacy gameplay state | PStudioGameplay Maps retained as compatibility fallbacks | Remove only duplicate authoritative stores after API and lifecycle parity tests | Pending Phase 23 |
 | Editor/runtime synchronization | Scene Object serialization adapters and ECS runtime Components | Audit deterministic ownership and eliminate redundant synchronization only where proven safe | Pending Phase 24 |
 | Durable compatibility | Versioned ECS payload plus project backup importer | End-to-end old/new project, future-schema and backup round-trip validation | Pending Phase 25 |
@@ -85,7 +85,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 19. **Rendering authoring Components** — move Toon/NPR settings, per-GLB material overrides, custom shader source, model scale and mesh collider activation into persistent ECS Components; migrate legacy Scene Object fields once and keep GPU resources in renderer services. (Phase 19 implemented.)
 20. **Scene behavior and 2D presentation** — move ps script assignment, SpriteRenderer configuration, Collider2D activation, model asset references and editor manipulation settings into persistent ECS Components; preserve AST/asset/GPU/Canvas services. (Phase 20 implemented.)
 21. **ps Script Runtime State** — move per-Scene Object script variables, initialization/start lifecycle, per-Entity ps System locals and landing sequence state into runtime-only ECS Components. (Phase 21 implemented.)
-22. **TimeState** — move the simulation clock/time-scale state into a dedicated runtime-only ECS Component while preserving the existing timing semantics. (Pending.)
+22. **TimeState** — move the simulation clock/time-scale state into a dedicated runtime-only ECS Component while preserving the existing timing semantics. (Implemented: scaled/unscaled delta, elapsed time, frame count, 0–4 time-scale compatibility, 0.1-second delta cap and Play/Stop lifecycle.)
 23. **Gameplay Map compatibility cleanup** — parity-test legacy Scene Object/ps gameplay paths and remove duplicate fallback stores only after compatibility is proven. (Pending.)
 24. **Scene Object / ECS synchronization audit** — verify editor, preview, Play, Stop and object-destruction synchronization has one runtime source of truth. (Pending.)
 25. **Persistence compatibility audit** — test old projects, current schemas, unknown Components, future schemas and backup round-trips end-to-end. (Pending.)
