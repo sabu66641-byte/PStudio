@@ -1072,22 +1072,48 @@
         if(!uniform?.value?.set||!Array.isArray(direction)||direction.length<3||!direction.slice(0,3).every(Number.isFinite))return;
         uniform.value.set(direction[0],direction[1],direction[2]).normalize();
       };
-      const applyColor=(uniform,value)=>{if(value&&uniform?.value?.set)uniform.value.set(value);};
+      const applyColor=(uniform,value)=>{if(value!==undefined&&value!==null&&uniform?.value?.set)uniform.value.set(value);};
+      const applyScalar=(uniform,value,min,max)=>{
+        if(uniform&&Object.prototype.hasOwnProperty.call(uniform,'value')&&Number.isFinite(Number(value))){
+          uniform.value=Math.max(min,Math.min(max,Number(value)));
+        }
+      };
+      for(const material of water){
+        const u=material?.userData?.pstudioWaterHQ;if(!u)continue;
+        applyColor(u.reflection,settings.waterReflectionTint);
+        applyColor(u.shallow,settings.waterShallow);
+        applyColor(u.deep,settings.waterDeep);
+        applyColor(u.foam,settings.waterFoam);
+        applyScalar(u.absorption,settings.waterAbsorption,0,2);
+      }
       for(const pass of cloudPasses){
         const u=pass?.uniforms;if(!u)continue;
-        applyDirection(u.uSunDirection);applyColor(u.uSunColor,settings.sunColor);applyColor(u.uFogColor,settings.fogColor);
+        applyDirection(u.uSunDirection);
+        applyColor(u.uSunColor,settings.sunColor);
+        applyColor(u.uFogColor,settings.fogColor);
+        applyScalar(u.uCloudDensity,settings.cloudDensity,0,2);
+        applyScalar(u.uCloudCoverage,settings.cloudCoverage,0,1);
+        applyScalar(u.uCloudDetail,settings.cloudDetail,0,1);
+        applyScalar(u.uCloudBase,settings.cloudBase,-500,10000);
+        if(u.uCloudTop&&Number.isFinite(Number(settings.cloudTop))){
+          u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,Math.min(12000,Number(settings.cloudTop)));
+        }
+        applyScalar(u.uCloudSteps,settings.cloudSteps,8,64);
+        applyScalar(u.uAtmosphereStrength,settings.atmosphereStrength,0,1);
       }
-      for(const pass of contactShadowPasses){const u=pass?.uniforms;if(u)applyDirection(u.uLightDirectionWorld);}
+      for(const pass of contactShadowPasses){
+        const u=pass?.uniforms;if(u)applyDirection(u.uLightDirectionWorld);
+      }
       for(const pass of fogPasses){
         const u=pass?.uniforms;if(!u)continue;
         applyDirection(u.uSunDirection);
         applyColor(u.uSunColor,settings.sunColor);
         applyColor(u.uFogColor,settings.fogColor);
         applyColor(u.uFogAmbientColor,settings.fogAmbientColor);
-        if(Number.isFinite(Number(settings.fogDensity)))u.uFogDensity.value=Math.max(0,Math.min(.08,Number(settings.fogDensity)));
-        if(Number.isFinite(Number(settings.fogHeightFalloff)))u.uHeightFalloff.value=Math.max(0,Math.min(.2,Number(settings.fogHeightFalloff)));
-        if(Number.isFinite(Number(settings.fogBaseHeight)))u.uBaseHeight.value=Number(settings.fogBaseHeight);
-        if(Number.isFinite(Number(settings.fogAnisotropy)))u.uFogAnisotropy.value=Math.max(0,Math.min(.88,Number(settings.fogAnisotropy)));
+        applyScalar(u.uFogDensity,settings.fogDensity,0,.08);
+        applyScalar(u.uHeightFalloff,settings.fogHeightFalloff,0,.2);
+        applyScalar(u.uBaseHeight,settings.fogBaseHeight,-10000,10000);
+        applyScalar(u.uFogAnisotropy,settings.fogAnisotropy,0,.88);
       }
       return true;
     },
