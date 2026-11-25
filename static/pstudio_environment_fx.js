@@ -8,12 +8,17 @@
   function markTSLPortable(material,feature){
     if(!material)return;
     const data=material.userData||(material.userData={});
-    if(!Object.prototype.hasOwnProperty.call(data,'pstudioTSLPortHasForeignHook')){
+    const alreadyTagged=data.pstudioTSLPortVersion===1&&Array.isArray(data.pstudioTSLFeatures);
+    if(!alreadyTagged){
       const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function';
       const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function';
-      data.pstudioTSLPortHasForeignHook=ownCompile||ownCacheKey;
+      const knownCSM= data.pstudioCSMOnlyHook===true
+        && data.pstudioProbeShaderSetup!==true
+        && data.pstudioCSMHook===material.onBeforeCompile
+        && !ownCacheKey;
+      data.pstudioTSLPortHasForeignHook=(ownCompile&&!knownCSM)||(ownCacheKey&&!knownCSM);
+      data.pstudioTSLPortVersion=1;
     }
-    data.pstudioTSLPortVersion=1;
     const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
     if(!features.includes(feature))features.push(feature);
     data.pstudioTSLFeatures=features;
