@@ -110,21 +110,23 @@ test('water uses a physical transmission material and animated vertex displaceme
   assert.ok(renderer.includes('pstudioWaterHQ') || renderer.includes('pstudioWaveA'));
 });
 
-test('Mirror Water adds an isolated planar reflection path with bounded adaptive targets',()=>{
+test('Mirror Water uses bounded reflection targets coordinated by the shared frame budget',()=>{
   for(const token of [
     'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
     'pstudio-planar-mirror-water-v2','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
-    'return 1.0',
-    'return 0.86',
+    'const base=memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0',
+    'return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
     'renderer.capabilities?.maxTextureSize',
     'Math.floor(size.x*scale)',
     'Math.floor(size.y*scale)',
     'cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars]',
     'scene.background retains the active day/dusk/night equirectangular panorama',
     'renderer.render(scene,reflectionCamera)',
-    'const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1'
+    'const updateInterval=renderingFrameBudgetController',
+    'renderingFrameBudget.mirrorIntervalFrames',
+    ':touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(engine.includes("case 'draw_mirror_water'"));
   assert.ok(engine.includes("type:'mirror_water'"));
