@@ -23,7 +23,7 @@ test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the prod
   assert.doesNotMatch(worker,/three@0\.160\.0/);
   assert.ok(html.includes('"three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"'));
   assert.ok(html.includes('"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"'));
-  assert.ok(html.includes('"three-mesh-bvh": "0.9.18"')||html.includes('"three-mesh-bvh": "0.9.18"'));
+  assert.ok(html.includes('three-mesh-bvh@0.9.18'));
 });
 
 test('advanced Three.js rendering add-ons are optional and version-aligned', () => {
