@@ -324,9 +324,9 @@ async function serializeGLTF(gltf,assetKey='') {
       sheenRoughness: material.sheenRoughness, iridescence: material.iridescence,
       iridescenceIOR: material.iridescenceIOR,
       iridescenceThicknessMinimum: Number.isFinite(material.iridescenceThicknessMinimum) ? material.iridescenceThicknessMinimum : null,
-    iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum) ? material.iridescenceThicknessMaximum : null,
-    iridescenceThicknessRange: Number.isFinite(material.iridescenceThicknessMinimum) && Number.isFinite(material.iridescenceThicknessMaximum)
-      ? [material.iridescenceThicknessMinimum, material.iridescenceThicknessMaximum] : null,
+      iridescenceThicknessMaximum: Number.isFinite(material.iridescenceThicknessMaximum) ? material.iridescenceThicknessMaximum : null,
+      iridescenceThicknessRange: Number.isFinite(material.iridescenceThicknessMinimum) && Number.isFinite(material.iridescenceThicknessMaximum)
+        ? [material.iridescenceThicknessMinimum, material.iridescenceThicknessMaximum] : null,
       anisotropy: material.anisotropy, specularIntensity: material.specularIntensity,
       specularColor: colorArray(material.specularColor),
       textureSlots, userData: safeJSON(material.userData)
