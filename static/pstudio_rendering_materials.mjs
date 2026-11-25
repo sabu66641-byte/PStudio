@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { isPStudioTSLSurfaceFeatureMaterial } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v5';
+import { isPStudioTSLSurfaceFeatureMaterial } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v6';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
   ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial', THREE.MeshPhysicalNodeMaterial],
