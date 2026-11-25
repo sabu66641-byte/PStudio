@@ -24,7 +24,7 @@ function readSettings(material) {
   return Object.freeze({
     waterfall: settings.waterfall === true,
     mirrorOnly: settings.mirrorOnly === true,
-    waveStrength: Math.max(0, Math.min(1, finite(settings.waveStrength, 0.05)),
+    waveStrength: Math.max(0, Math.min(1, finite(settings.waveStrength, 0.05))),
     amplitude: Math.max(0, Math.min(0.5, finite(settings.amplitude, 0.105))),
     minX: finite(bounds.minX, -50),
     minZ: finite(bounds.minZ, -50),
