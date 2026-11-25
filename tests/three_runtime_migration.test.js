@@ -37,6 +37,9 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
   const addonModules = await Promise.all(addonPaths.map((specifier) => import(specifier)));
   const { GLTFLoader } = addonModules[0];
   assert.equal(typeof GLTFLoader, 'function');
+  const { SimplifyModifier } = await import('three/addons/modifiers/SimplifyModifier.js');
+  assert.equal(typeof SimplifyModifier, 'function');
+  assert.equal(SimplifyModifier.prototype.modify.constructor.name, 'AsyncFunction');
   const tsl = await import('three/tsl');
   assert.equal(typeof tsl.vec3, 'function');
   assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'undefined');
