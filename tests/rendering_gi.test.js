@@ -74,7 +74,7 @@ test('GI module is wired into the shared runtime and dynamic probe capture path'
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
   const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
-  assert.match(html, /PStudioRenderingGI\\s*=\\s*await import\\('\\/static\\/pstudio_rendering_gi\\.mjs/);
+  assert.match(html, /PStudioRenderingGI\s*=\s*await import\('\/static\/pstudio_rendering_gi\.mjs/);
   assert.match(engine, /findChangedProbeIndices/);
   assert.match(engine, /blendSHCoefficients/);
   assert.match(engine, /decaySHCoefficients/);
