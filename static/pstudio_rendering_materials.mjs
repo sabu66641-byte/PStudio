@@ -80,19 +80,27 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
     return converted.get(source);
   };
 
-  root.traverse((object) => {
-    if (!object?.isMesh || !object.material) return;
-    const oldMaterial = object.material;
-    const nextMaterial = Array.isArray(oldMaterial) ? oldMaterial.map(convertOne) : convertOne(oldMaterial);
-    const changed = Array.isArray(oldMaterial)
-      ? nextMaterial.some((material, index) => material !== oldMaterial[index])
-      : nextMaterial !== oldMaterial;
-    if (changed) {
-      originalAssignments.push([object, oldMaterial]);
-      object.material = nextMaterial;
-      convertedMeshes += 1;
+  try {
+    root.traverse((object) => {
+      if (!object?.isMesh || !object.material) return;
+      const oldMaterial = object.material;
+      const nextMaterial = Array.isArray(oldMaterial) ? oldMaterial.map(convertOne) : convertOne(oldMaterial);
+      const changed = Array.isArray(oldMaterial)
+        ? nextMaterial.some((material, index) => material !== oldMaterial[index])
+        : nextMaterial !== oldMaterial;
+      if (changed) {
+        originalAssignments.push([object, oldMaterial]);
+        object.material = nextMaterial;
+        convertedMeshes += 1;
+      }
+    });
+  } catch (error) {
+    for (const [object, original] of originalAssignments) object.material = original;
+    for (const material of converted.values()) {
+      try { material.dispose?.(); } catch (_) {}
     }
-  });
+    throw new Error('PStudio rolled back a partial scene PBR-to-TSL material conversion.', { cause: error });
+  }
 
   let released = false;
   return Object.freeze({
@@ -108,6 +116,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       return true;
     },
     restore() {
+      if (released) return false;
       for (const [object, original] of originalAssignments) object.material = original;
       for (const material of converted.values()) {
         try { material.dispose?.(); } catch (_) {}
@@ -115,6 +124,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       originalAssignments.length = 0;
       converted.clear();
       released = true;
+      return true;
     }
   });
 }
