@@ -1392,7 +1392,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs'",
+    "from './pstudio_rendering_migration.mjs?v=20261125-tsl-ibl-session-v2'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
