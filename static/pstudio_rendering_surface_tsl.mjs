@@ -53,10 +53,13 @@ function requiredNodeFunctions() {
   return names.filter((name) => TSL[name] === undefined);
 }
 
-function makeTriplanarSample(texture, position, normal, scale, sharpness) {
+function makeTriplanarWeights(normal, sharpness) {
   const weightsRaw = normal.abs().normalize().pow(TSL.vec3(sharpness));
   const weightSum = weightsRaw.x.add(weightsRaw.y).add(weightsRaw.z).max(EPSILON);
-  const weights = weightsRaw.div(weightSum);
+  return weightsRaw.div(weightSum);
+}
+
+function makeTriplanarSample(texture, position, scale, weights) {
   const sampleX = TSL.texture(texture, position.yz.mul(scale)).setUpdateMatrix(true).mul(weights.x);
   const sampleY = TSL.texture(texture, position.zx.mul(scale)).setUpdateMatrix(true).mul(weights.y);
   const sampleZ = TSL.texture(texture, position.xy.mul(scale)).setUpdateMatrix(true).mul(weights.z);
@@ -73,7 +76,8 @@ function applyTriplanar(material, metadata) {
   const sharpness = Math.max(1, Math.min(12, recordValue(settings, 'sharpness', 4)));
   const position = TSL.positionWorld;
   const normal = TSL.normalWorldGeometry.normalize();
-  const albedo = makeTriplanarSample(material.map, position, normal, scale, sharpness).rgb;
+  const weights = makeTriplanarWeights(normal, sharpness);
+  const albedo = makeTriplanarSample(material.map, position, scale, weights).rgb;
   let colorNode = TSL.color(material.color).mul(albedo);
 
   if (material.vertexColors === true) {
@@ -83,12 +87,12 @@ function applyTriplanar(material, metadata) {
 
   if (material.roughnessMap?.isTexture) {
     material.roughnessNode = TSL.float(material.roughness)
-      .mul(makeTriplanarSample(material.roughnessMap, position, normal, scale, sharpness).g)
+      .mul(makeTriplanarSample(material.roughnessMap, position, scale, weights).g)
       .clamp(0.045, 1);
   }
   if (material.metalnessMap?.isTexture) {
     material.metalnessNode = TSL.float(material.metalness)
-      .mul(makeTriplanarSample(material.metalnessMap, position, normal, scale, sharpness).b)
+      .mul(makeTriplanarSample(material.metalnessMap, position, scale, weights).b)
       .clamp(0, 1);
   }
 
