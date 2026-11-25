@@ -77,7 +77,7 @@ test('constrained touch Maximum protects the frame budget by disabling full-scre
   assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.8,1.0,1.2][level]:Infinity"));
   assert.ok(renderer.includes("adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)"));
   assert.ok(renderer.includes("mobilePostFxBudget:adaptiveTouchPostFxBudget"));
-  assert.ok(renderer.includes("setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget"));
+  assert.match(renderer,/setVolumetricClouds:\(enabled,options=\{\}\)=>\{(?:resetPostProcessingFailure\(\);)?volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget/);
 });
 
 test('quality presets configure render resolution and shadow filtering', () => {
@@ -1142,7 +1142,7 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
   assert.ok(renderer.includes('qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
-  assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;'));
+  assert.match(renderer,/setPostProcessing:\(bloom,ssao,strength,ssr\)=>\{(?:resetPostProcessingFailure\(\);)?bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;/);
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
