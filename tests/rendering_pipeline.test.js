@@ -1748,6 +1748,8 @@ test('only explicitly marked PStudio terrain/foliage hooks are approved for TSL 
     pstudioTSLPortApprovedCacheKey:approvedCacheKey
   };
   assert.equal(isPStudioTSLSurfaceFeatureMaterial(approved),true);
+  const untrustedNodeMaterial={isNodeMaterial:true,userData:{...approved.userData}};
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(untrustedNodeMaterial),false);
   const replacedHook={...approved,onBeforeCompile:function unknownHook(){}};
   assert.equal(isPStudioTSLSurfaceFeatureMaterial(replacedHook),false);
   assert.equal(isPStudioTSLSurfaceFeatureMaterial({...approved,userData:{...approved.userData,pstudioTSLPortHasForeignHook:true}}),false);
@@ -1817,6 +1819,7 @@ test('TSL surface graphs build Triplanar, layered terrain, parallax and foliage 
     source.pstudioTSLPortApprovedCompileHook=source.onBeforeCompile;
     source.pstudioTSLPortApprovedCacheKey=source.customProgramCacheKey;
     const converted=createPStudioNodeMaterial(source);
+    assert.equal(converted.pstudioTSLSurfacePreflightApproved,true);
     nodeMaterials.push(converted);
     const mesh=new THREE.Mesh(geometry,converted);
     mesh.name=spec.name;
