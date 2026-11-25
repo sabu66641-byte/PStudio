@@ -79,7 +79,6 @@
       cloudDetail: clamp(profile.cloudDetail, 0, 1, 0.58),
       cloudBase,
       cloudTop,
-      cloudSteps: Math.round(clamp(profile.cloudSteps, 8, 64, 24)),
       atmosphereStrength: clamp(profile.atmosphereStrength, 0, 1, 0.96),
       waterReflectionTint: color(profile.waterReflectionTint, water.reflection),
       waterShallow: color(profile.waterShallow, water.shallow),
