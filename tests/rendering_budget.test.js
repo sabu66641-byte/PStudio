@@ -52,7 +52,7 @@ test('resource pressure caps optional rendering work even when GPU timing is fas
 test('static scenes reuse cached reflections while camera motion raises update priority', () => {
   const controller = budget.createPStudioFrameBudgetController();
   const state = controller.update(6,true,0,16.67,0,false,false,true,false);
-  assert.equal(state.mirrorIntervalFrames,4);
+  assert.equal(state.mirrorIntervalFrames,24);
   controller.update(6,true,0,16.67,0,true,false,true,false);
   assert.equal(state.mirrorIntervalFrames,1);
   assert.equal(state.giCaptureAllowed,false);
