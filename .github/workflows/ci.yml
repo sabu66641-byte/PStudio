@@ -48,6 +48,9 @@ jobs:
       - name: Check TSL terrain and foliage surface module syntax
         run: node --check static/pstudio_rendering_surface_tsl.mjs
 
+      - name: Check TSL water module syntax
+        run: node --check static/pstudio_rendering_water_tsl.mjs
+
       - name: Check production 3D engine syntax
         run: node --check static/pstudio_3d_engine.js
 
