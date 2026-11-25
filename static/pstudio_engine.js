@@ -401,8 +401,8 @@ function callBuiltin(c, name, a) {
       } break;
       case 'set_time_scale': if(a.length===1){
         if(!runtime)throw new PsRuntimeError('set_time_scale() はゲーム実行中のみ使用できます。');
-        runtime.timeScale=Math.max(0,Math.min(4,finite(a[0])));
-        return runtime.timeScale;
+        if(typeof window.PStudioECSTime?.setTimeScale!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+        return window.PStudioECSTime.setTimeScale(a[0]);
       } break;
       case 'draw_trail': if(a.length===4){
         if(runtime)runtime.requires3D=true;
@@ -688,8 +688,10 @@ function callBuiltin(c, name, a) {
   }
   function tick(time) {
     if(!runtime?.running)return;
-    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const timeScale=Math.max(0,Math.min(4,Number(runtime?.timeScale??1)));const dt=Math.min(0.1,raw*timeScale);
+    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;
     try {
+      if(typeof window.PStudioECSTime?.beginFrame!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+      const dt=window.PStudioECSTime.beginFrame(raw);
       window.PStudioECSCollision?.beginFrame?.();
       const commands=new Map();
       for(const object of sceneObjects||[]){
@@ -871,6 +873,7 @@ function callBuiltin(c, name, a) {
     runtime.ecsSystemIds=[];
     window.PStudioGameplay?.persistECS?.(sceneObjects || []);
     window.PStudioECSScript?.clear?.();
+    window.PStudioECSTime?.clear?.();
     ecs.clearSceneObjects?.();
     for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
       try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
@@ -1011,7 +1014,9 @@ function callBuiltin(c, name, a) {
       if(!window.PStudioECSScript)throw new PsRuntimeError('PStudio ECS Script Runtime bridge is unavailable.');
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
       window.syncEcsSceneMaterials?.();
-      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,timeScale:1,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
+      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
+      if(typeof window.PStudioECSTime?.start!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+      window.PStudioECSTime.start();
       window.PStudioECSScript.sync(sceneObjects || []);
       registerEcsRuntime(data.scripts);
       window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
