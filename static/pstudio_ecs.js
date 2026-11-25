@@ -20,13 +20,11 @@
   const listeners = new Map();
   const sceneEntityByObjectId = new Map();
   const sceneSnapshots = new Map();
-  const sceneComponentPayloadSnapshots = new Map();
   const deferred = [];
   let deferredHead = 0;
 
   let nextEntityId = 1;
   let systemSequence = 0;
-  let componentDefinitionRevision = 0;
   let iterationDepth = 0;
   let updating = false;
   let flushingDeferred = false;
@@ -269,7 +267,6 @@
       category: String(settings.category || 'General')
     });
     componentStores.set(key, new SparseSet());
-    componentDefinitionRevision++;
     emit('component-registered', { type: key });
     return key;
   }
@@ -319,7 +316,6 @@
       throw error;
     }
     for (const [entity, data] of normalizedValues) store.set(entity, data);
-    componentDefinitionRevision++;
     emit('component-definition-updated', { type: key });
     return key;
   }
@@ -638,7 +634,6 @@
     }
     componentStores.delete(key);
     componentDefinitions.delete(key);
-    componentDefinitionRevision++;
     emit('component-unregistered', { type: key });
     return true;
   }
@@ -846,49 +841,15 @@
 
   function restoreSceneObjectComponents(entity, object) {
     const entries = readSavedComponentEntries(object);
-    if (!entries) return true;
-    let complete = true;
+    if (!entries) return;
     for (const entry of entries) {
       const type = entry.type;
       if (!componentDefinitions.has(type)) continue;
       const definition = componentDefinitions.get(type);
       if (!definition.persistent || componentStores.get(type)?.has(entity)) continue;
       try { addComponent(entity, type, entry.data); }
-      catch (error) {
-        complete = false;
-        console.warn('[PStudio ECS] skipped invalid saved component:', type, error);
-      }
+      catch (error) { console.warn('[PStudio ECS] skipped invalid saved component:', type, error); }
     }
-    return complete;
-  }
-
-  function sceneComponentPayloadCount(object) {
-    const payload = object.ecsComponents;
-    if (Array.isArray(payload)) return payload.length;
-    if (!payload || typeof payload !== 'object') return 0;
-    let count = 0;
-    for (const key in payload) if (Object.prototype.hasOwnProperty.call(payload, key)) count++;
-    return count;
-  }
-
-  function restoreSceneObjectComponentsIfChanged(entity, object) {
-    const payload = object.ecsComponents;
-    const version = object.ecsComponentsVersion ?? 0;
-    const count = sceneComponentPayloadCount(object);
-    const cached = sceneComponentPayloadSnapshots.get(entity);
-    if (cached && cached.version === version && cached.payload === payload &&
-        cached.count === count && cached.definitionRevision === componentDefinitionRevision) return;
-
-    if (!restoreSceneObjectComponents(entity, object)) {
-      sceneComponentPayloadSnapshots.delete(entity);
-      return;
-    }
-    sceneComponentPayloadSnapshots.set(entity, {
-      version: object.ecsComponentsVersion ?? 0,
-      payload: object.ecsComponents,
-      count: sceneComponentPayloadCount(object),
-      definitionRevision: componentDefinitionRevision
-    });
   }
 
   function syncSceneObjects(sceneObjects) {
@@ -908,18 +869,13 @@
       const source = readSceneTransform(object);
       let entity = sceneEntityByObjectId.get(objectId);
       if (!entity || !entities.has(entity)) {
-        if (entity !== undefined) {
-          sceneEntityByObjectId.delete(objectId);
-          sceneSnapshots.delete(entity);
-          sceneComponentPayloadSnapshots.delete(entity);
-        }
         entity = createEntity({
           Transform: source,
           SceneObjectRef: { sceneObjectId: objectId, name: String(object.name || '') }
         });
         sceneEntityByObjectId.set(objectId, entity);
         sceneSnapshots.set(entity, Object.assign({}, source));
-        restoreSceneObjectComponentsIfChanged(entity, object);
+        restoreSceneObjectComponents(entity, object);
         continue;
       }
 
@@ -933,19 +889,17 @@
         copyTransform(object, transform);
       }
       const canonical = sceneChanged || !snapshot ? source : transform;
-      if (snapshot) copyTransform(snapshot, canonical);
-      else sceneSnapshots.set(entity, Object.assign({}, canonical));
+      sceneSnapshots.set(entity, Object.assign({}, canonical));
       const ref = getComponent(entity, 'SceneObjectRef');
       ref.name = String(object.name || '');
-      restoreSceneObjectComponentsIfChanged(entity, object);
+      restoreSceneObjectComponents(entity, object);
     }
 
-    for (const [objectId, entity] of sceneEntityByObjectId) {
+    for (const [objectId, entity] of Array.from(sceneEntityByObjectId.entries())) {
       if (seen.has(objectId)) continue;
       if (entities.has(entity)) destroyEntity(entity);
       sceneEntityByObjectId.delete(objectId);
       sceneSnapshots.delete(entity);
-      sceneComponentPayloadSnapshots.delete(entity);
     }
     return sceneEntityByObjectId.size;
   }
@@ -959,20 +913,17 @@
       if (!entity || !entities.has(entity) || entityActive.get(entity)===false) continue;
       const transform = getComponent(entity, 'Transform');
       copyTransform(object, transform);
-      const snapshot = sceneSnapshots.get(entity);
-      if (snapshot) copyTransform(snapshot, transform);
-      else sceneSnapshots.set(entity, Object.assign({}, transform));
+      sceneSnapshots.set(entity, Object.assign({}, transform));
       applied++;
     }
     return applied;
   }
 
   function clearSceneObjects() {
-    for (const [objectId, entity] of sceneEntityByObjectId) {
+    for (const [objectId, entity] of Array.from(sceneEntityByObjectId.entries())) {
       if (entities.has(entity)) destroyEntity(entity);
       sceneEntityByObjectId.delete(objectId);
       sceneSnapshots.delete(entity);
-      sceneComponentPayloadSnapshots.delete(entity);
     }
     return true;
   }
