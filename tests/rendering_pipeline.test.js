@@ -198,6 +198,18 @@ test('automatic LOD supports static imported and general meshes',()=>{
   assert.ok(html.includes('three/addons/modifiers/SimplifyModifier.js'));
   for(const x of ['scheduleAutoLOD','pstudioAutoLOD','pstudioAutoLODGenerating','render.lod.generated','applyAutoLOD'])assert.ok(renderer.includes(x),x);
 });
+
+test('r187 async SimplifyModifier results are awaited serially and discarded after source invalidation',()=>{
+  const start=renderer.indexOf('function scheduleAutoLODPump(){');
+  const end=renderer.indexOf('function scheduleAutoLOD(',start);
+  assert.ok(start>=0&&end>start,'automatic LOD scheduler boundaries');
+  const scheduler=renderer.slice(start,end);
+  assert.match(scheduler,/const pump=async deadline=>/);
+  assert.match(scheduler,/await modifier\.modify\(/);
+  assert.match(scheduler,/if\(!isCurrent\(\)\)\{[\s\S]*?lod\.dispose\?\.\(\)/);
+  assert.match(scheduler,/finally\{\s*autoLODPumpScheduled=false;\s*if\(autoLODQueue\.length\)scheduleAutoLODPump\(\);\s*\}/);
+  assert.doesNotMatch(scheduler,/const lod=modifier\.modify\(/);
+});
 test('occlusion culling checks scene meshes and instanced sources incrementally',()=>{
   for(const x of ['updateOcclusionVisibility','occlusionRaycaster','pstudioOccluded','setOcclusionCulling','instanceSources'])assert.ok(renderer.includes(x),x);
 });
