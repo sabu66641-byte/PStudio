@@ -85,7 +85,7 @@
   const CLUSTER_GRID_X=16,CLUSTER_GRID_Y=9,CLUSTER_GRID_Z=16;
   const CLUSTER_MAX_LIGHTS=96,CLUSTER_MAX_PER_CELL=24;
   let clusteredLightingEnabled=true,clusteredLightingActive=false,clusteredLightingResources=null;
-  let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0;
+  let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0,clusteredLightingSnapshotRevision=0;
   let clusteredLightSet=new Set();
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
@@ -627,6 +627,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     let hasLegacyMirrorWater=false;
     scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
     if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
+    const activeClusterLighting=clusteredLightingActive||clusteredLightSet.size>0;
+    const hasReflectorCamera=waterMaterials.size>0||Number(fx.waterMaterials)>0||hasLegacyMirrorWater;
+    if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','クラスタ照明のTSL／Storage Bufferアダプターが利用できません。');
+    else if(activeClusterLighting&&hasReflectorCamera)add('clustered-lighting-reflector-camera','反射カメラ別のクラスタ照明データ更新が未完了です。');
     if(Number(fx.causticMaterials)>0)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
@@ -636,7 +640,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(ssrEnabled)add('screen-space-reflections','SSRのTSL移植が未完了です。');
     if(godRaysEnabled||godRaysFallbackEnabled)add('god-rays','God RaysのTSL移植が未完了です。');
     if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
-    if(clusteredLightingActive||clusteredLightSet.size>0)add('clustered-lighting','クラスタ照明のTSL／Storage Buffer移植が未完了です。');
+    const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
     if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
     if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
@@ -732,6 +736,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             webgpuRenderer.setSize(width,height,false);
           },
           environmentProfile:window.PStudioSceneEnvironment?.getPreset?.(activeEnvironmentPreset)||undefined,
+          getClusteredLightingSnapshot:getPStudioClusteredLightingSnapshot,
+          clusteredLightingOptions:{grid:{x:CLUSTER_GRID_X,y:CLUSTER_GRID_Y,z:CLUSTER_GRID_Z},maxLights:CLUSTER_MAX_LIGHTS,maxPerCell:CLUSTER_MAX_PER_CELL},
           canPromote:()=>{
             const blockers=getProductionWebGPUFeatureBlockers();
             productionWebGPUBlockers=blockers;
@@ -1553,6 +1559,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       }
       const started=window.performance?.now?.()??Date.now();
       try{
+        const clusterSnapshot=getPStudioClusteredLightingSnapshot();
+        if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
@@ -2554,7 +2562,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!material||material.userData?.pstudioClusterLightingSetup)return false;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return false;
     const resources=ensureClusteredLightingResources();if(!resources)return false;
-    const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+    const previousCompile=material.onBeforeCompile,previousKeyIdentity=material.customProgramCacheKey,previousKey=previousKeyIdentity?.bind(material);
+    const data=material.userData||(material.userData={});
+    const approvedPrevious=data.pstudioTSLPortVersion===1
+      &&data.pstudioTSLPortHasForeignHook!==true
+      &&material.pstudioTSLPortApprovedCompileHook===previousCompile
+      &&material.pstudioTSLPortApprovedCacheKey===previousKeyIdentity;
+    const csmOnlyPrevious=data.pstudioCSMOnlyHook===true
+      &&data.pstudioProbeShaderSetup!==true
+      &&data.pstudioCSMHook===previousCompile
+      &&!Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+    const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof previousCompile==='function';
+    const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof previousKeyIdentity==='function';
+    const foreignPrevious=data.pstudioTSLPortHasForeignHook===true
+      ||(!approvedPrevious&&!csmOnlyPrevious&&(ownCompile||ownCacheKey));
     const uniforms={
       lights:resources.lightTexture,clusters:resources.clusterTexture,
       viewport:new window.THREE.Vector2(1,1),
@@ -2609,8 +2630,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>','#include <lights_fragment_begin>\n'+lighting);
     };
     material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-clustered-forward-v1';};
-    material.userData.pstudioClusterLightingSetup=true;
-    material.userData.pstudioClusterLightingUniforms=uniforms;
+    data.pstudioClusterLightingSetup=true;
+    data.pstudioClusterLightingUniforms=uniforms;
+    data.pstudioTSLPortVersion=1;
+    data.pstudioTSLPortHasForeignHook=foreignPrevious;
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes('clustered-lighting'))features.push('clustered-lighting');
+    data.pstudioTSLFeatures=features;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
     return true;
   }
   function clusteredDepthSlice(depth,near,far){
@@ -2639,6 +2667,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       );
       if(light.intensity>0&&lights.length<CLUSTER_MAX_LIGHTS)lights.push({light,position,range});
     }
+    signatureParts.push(clusteredLightingEnabled?1:0);
     const signature=signatureParts.join('|')+'|'+[
       Number(camera.position.x.toFixed(2)),Number(camera.position.y.toFixed(2)),Number(camera.position.z.toFixed(2)),
       Number(camera.quaternion.x.toFixed(3)),Number(camera.quaternion.y.toFixed(3)),
@@ -2706,7 +2735,25 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values())for(const material of instance.materialDefaults.keys())updateMaterial(material);
     for(const mesh of meshCache.values())updateMaterial(mesh.material);
     clusteredLightingUpdatedClusters=counts.reduce((sum,count)=>sum+(count>0?1:0),0);
+    clusteredLightingSnapshotRevision++;
     return active;
+  }
+
+  function getPStudioClusteredLightingSnapshot(){
+    const resources=clusteredLightingResources;
+    if(!resources||!camera)return null;
+    const near=Math.max(0.001,camera.near);
+    const far=Math.max(near*1.01,Math.min(camera.far||worldRenderConfig.maxDrawDistance,worldRenderConfig.maxDrawDistance*2));
+    return Object.freeze({
+      grid:Object.freeze({x:CLUSTER_GRID_X,y:CLUSTER_GRID_Y,z:CLUSTER_GRID_Z}),
+      lightData:resources.lightData,
+      clusterData:resources.clusterData,
+      lightCount:resources.lightCount,
+      clusteredLights:new Set(clusteredLightingEnabled?clusteredLightSet:[]),
+      near,far,
+      enabled:clusteredLightingEnabled===true,
+      revision:clusteredLightingSnapshotRevision
+    });
   }
 
   function updateWorldVisibility(){
