@@ -633,7 +633,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(clusteredLightingActive||clusteredLightSet.size>0)add('clustered-lighting','クラスタ照明のTSL／Storage Buffer移植が未完了です。');
     if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
     if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
-    if(csm)add('cascaded-shadow-maps','CSMのWebGPU向けカスケードシャドウ検証が未完了です。');
+    if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
       for(const list of commandsByObject.values()){
         for(const command of list||[]){
@@ -690,6 +690,24 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         const factory=window.PStudioProductionRenderingBridgeFactory;
         productionRendererBridge=factory({
           legacyCanvas:canvas,scene,camera,documentRef:document,navigatorRef:window.navigator,
+          csm:csm?{
+            enabled:true,
+            cascades:csm.cascades||3,
+            maxFar:csm.maxFar||worldRenderConfig.shadowDistance,
+            mode:csm.mode||'practical',
+            lightMargin:csm.lightMargin,
+            lightDirection:csm.lightDirection?.clone?.()||null,
+            lightIntensity:csm.lightIntensity,
+            fade:csm.fade===true,
+            shadowMapSize:csm.shadowMapSize||2048,
+            shadowBias:csm.shadowBias,
+            lightNear:csm.lightNear,
+            lightFar:csm.lightFar,
+            legacyLights:csm.lights,
+            lightColor:keyLight?.color?.clone?.()||null,
+            normalBias:keyLight?.shadow?.normalBias,
+            shadowRadius:keyLight?.shadow?.radius
+          }:null,
           pipelineOptions:{bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false},
           configureRenderer:webgpuRenderer=>{
             webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
@@ -4054,7 +4072,17 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function setupLightingMaterial(material){
     if(!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
-    if(csm&&!material.userData.pstudioCSMSetup){try{csm.setupMaterial(material);material.userData.pstudioCSMSetup=true;}catch(error){console.warn('[PStudio] CSM material setup failed:',error);}}
+    if(csm&&!material.userData.pstudioCSMSetup){
+      try{
+        const hadCustomShaderHook=
+          (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function')||
+          (Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function');
+        csm.setupMaterial(material);
+        material.userData.pstudioCSMSetup=true;
+        material.userData.pstudioCSMOnlyHook=!hadCustomShaderHook;
+        material.userData.pstudioCSMHook=material.onBeforeCompile;
+      }catch(error){console.warn('[PStudio] CSM material setup failed:',error);}
+    }
     // Keep native GLTF material shaders untouched until an SH probe volume is baked.
     if(!bakedLightProbeVolume?.length)return material;
     if(material.userData.pstudioProbeShaderSetup)return material;
