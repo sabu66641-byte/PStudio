@@ -1441,7 +1441,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'generatePStudioEnvironmentPixels',
     'MeshBasicNodeMaterial',
     'EquirectangularReflectionMapping',
-    'scene.environment = environmentTexture',
+    'scene.environment=environmentTexture',
     'TSL.equirectUV(direction)',
     'TSL.texture(environmentTexture,skyUV)',
     'periodicValueNoise(u,v',
