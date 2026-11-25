@@ -132,3 +132,44 @@ test('production runtime requires an isolated fallback canvas when fallback is e
     /separate fallbackCanvas is required/
   );
 });
+
+
+test('production runtime switches to the isolated WebGL canvas after WebGPU device loss', async () => {
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  const fallbackCanvas = {};
+  let notifyDeviceLost, fallbackCreates = 0, webgpuDisposals = 0;
+  let resolveFallbackReady;
+  const fallbackReady = new Promise(resolve => { resolveFallbackReady = resolve; });
+  const runtime = runtimeModule.createPStudioProductionRendererRuntime({
+    ...input,
+    fallbackCanvas,
+    onStateChange: snapshot => {
+      if (snapshot.state === 'ready' && snapshot.backend === 'webgl2') resolveFallbackReady();
+    },
+    createWebGPU: async ({ onDeviceLost }) => {
+      notifyDeviceLost = onDeviceLost;
+      return {
+        render: () => true,
+        dispose: () => { webgpuDisposals += 1; }
+      };
+    },
+    createFallback: async ({ canvas, webgpuCanvas, cause }) => {
+      fallbackCreates += 1;
+      assert.equal(canvas, fallbackCanvas);
+      assert.equal(webgpuCanvas, input.canvas);
+      assert.equal(cause.code, 'PSTUDIO_WEBGPU_DEVICE_LOST');
+      return { backend: 'webgl2', render: () => true, dispose() {} };
+    }
+  });
+
+  await runtime.initialize();
+  notifyDeviceLost({ reason: 'unknown', message: 'simulated device reset' });
+  await fallbackReady;
+  assert.equal(fallbackCreates, 1);
+  assert.equal(webgpuDisposals, 1);
+  assert.equal(runtime.getState().backend, 'webgl2');
+  assert.equal(runtime.getState().state, 'ready');
+  assert.equal(runtime.render(), true);
+  runtime.dispose();
+});
