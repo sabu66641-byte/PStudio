@@ -61,6 +61,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Legacy gameplay state | PStudioGameplay Maps retained as compatibility fallbacks | Import fallback snapshots once into ECS, then clear migrated scene/global duplicates; preserve the no-ECS compatibility path | Phase 23 implemented |
 | Editor/runtime synchronization | Scene Object serialization adapters and ECS runtime Components | Deterministic two-way Transform snapshots; import legacy ps writes before postUpdate; destroy stale Scene Entities while preserving standalone ECS Entities | Phase 24 implemented |
 | Durable compatibility | Versioned ECS payload plus project backup importer | Verify legacy array/map migration, current schema round-trips, future-schema opacity, backup restore, asset transaction rollback and old project shape | Phase 25 implemented |
+| Scene sync cost | ECS Scene Object synchronization adapter | Keep the two-way Transform/lifecycle contract; measure representative Scene sizes before changing allocation or cache behavior | Phase 26 audit complete; speculative changes rejected after no consistent gain |
 
 ## Safe implementation sequence
 
@@ -89,7 +90,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 23. **Gameplay Map compatibility cleanup** — import pre-ECS health, inventory, equipment, combat, AI, quest, dialogue, definition and navigation fallback state once; clear migrated duplicate Maps after ECS activation while retaining the standalone no-ECS compatibility path. Versioned Scene Components and standalone ECS Entities remain authoritative across Stop/Play. (Implemented with legacy-import, ECS round-trip and no-ECS fallback regression tests.)
 24. **Scene Object / ECS synchronization audit** — verify editor, preview, Play, Stop and object-destruction synchronization has one runtime source of truth. Scene Object changes win simultaneous-write conflicts; ECS-only changes flow back; legacy ps callback writes are imported before postUpdate Systems. Stale Scene Entities are destroyed without clearing standalone Quest/definition/navigation Entities. (Implemented with bidirectional Transform, phase-order and lifecycle tests.)
 25. **Persistence compatibility audit** — test old unversioned array/map payloads, current versioned Components, unknown Component preservation, future-schema opacity, real project backup import/export scene-object snapshots and asset/storage rollback on a late transaction failure. (Implemented with regression tests against the actual backup validator/import function and ECS serializer.)
-26. **Final migration audit and optimization** — remove proven redundant adapters and measure any remaining per-frame synchronization cost without reducing features. (Pending.)
+26. **Final migration audit and optimization** — review remaining adapters as explicit service boundaries, add 500-Scene Object synchronization/lifecycle stress coverage and a repeatable 100/500/1,000-object benchmark. Snapshot/Map/cache optimization candidates were compared against the stable implementation and reverted because they did not produce a consistent performance gain in the available runtime; no speculative per-frame change is retained. Browser/device profiling remains the final performance gate. (Implemented.)
 
 ## Required gates for every slice
 
