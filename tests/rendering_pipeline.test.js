@@ -16,6 +16,7 @@ const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs
 const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
+const webgpuSurface = fs.readFileSync(path.join(root, 'static/pstudio_rendering_surface_tsl.mjs'), 'utf8');
 const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
 const webgpuEnvironmentTSL = fs.readFileSync(path.join(root, 'static/pstudio_rendering_environment_tsl.mjs'), 'utf8');
 
@@ -48,7 +49,8 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v1'));
+  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
@@ -1387,12 +1389,12 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'
+    'pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1730,4 +1732,107 @@ test('TSL RenderPipeline continues to fail closed for a non-WebGPU backend',asyn
     ()=>createPStudioRenderPipeline({backend:{isWebGPUBackend:false}},{isScene:true},{isCamera:true}),
     /requires an initialized WebGPU backend/
   );
+});
+
+
+test('only explicitly marked PStudio terrain/foliage hooks are approved for TSL conversion',async()=>{
+  const { isPStudioTSLSurfaceFeatureMaterial } = await import('../static/pstudio_rendering_surface_tsl.mjs');
+  const approved={userData:{pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['terrain','triplanar']}};
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(approved),true);
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial({userData:{...approved.userData,pstudioTSLPortHasForeignHook:true}}),false);
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial({userData:{...approved.userData,pstudioTSLFeatures:['terrain','custom-glsl']}}),false);
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial({userData:{pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['terrain']}}),true);
+});
+
+test('TSL surface graphs build Triplanar, layered terrain, parallax and foliage deformation nodes',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  const {createPStudioNodeMaterial}=await import('../static/pstudio_rendering_materials.mjs');
+  const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
+  for(const name of ['texture','uv','positionWorld','positionLocal','normalWorld','normalWorldGeometry','positionView','positionViewDirection','modelWorldMatrixInverse','materialColor','materialRoughness','materialMetalness','materialEmissive','materialOpacity','materialAlphaTest','time','select','bool']) {
+    assert.ok(TSL[name]!==undefined,name);
+  }
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(12,12,8,8);
+  const texture=new THREE.Texture();
+  const normalTexture=new THREE.Texture();
+  const materialSpecs=[
+    {
+      name:'terrain-triplanar',
+      features:['triplanar','terrain'],
+      map:texture,
+      normalMap:normalTexture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['triplanar','terrain'],
+        pstudioTriplanarHQ:{scale:.08,sharpness:4},
+        pstudioTerrainHQ:{heightMin:{value:0},heightRange:{value:10},detailScale:{value:.16},snowLine:{value:1.08},wetness:{value:.035},rockThreshold:{value:.38}}
+      }
+    },
+    {
+      name:'parallax',
+      map:texture,normalMap:normalTexture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['parallax'],
+        pstudioParallaxHQ:{scale:.012,heightSource:'normalTexture alpha',steps:8}
+      }
+    },
+    {
+      name:'foliage',
+      map:texture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],
+        pstudioFoliageHQ:{role:'leaf',strength:{value:.88},speed:{value:1},height:6,base:0,direction:{x:.83,y:.56},translucency:.48,thickness:.52,scatteringPower:3.2,translucencyColor:'#d9edaa'}
+      }
+    }
+  ];
+  const nodeMaterials=[];
+  for(const spec of materialSpecs){
+    const source=new THREE.MeshStandardMaterial({map:spec.map,normalMap:spec.normalMap});
+    source.userData=spec.userData;
+    source.onBeforeCompile=function(){};
+    source.customProgramCacheKey=function(){return 'pstudio-legacy-surface';};
+    const converted=createPStudioNodeMaterial(source);
+    nodeMaterials.push(converted);
+    const mesh=new THREE.Mesh(geometry,converted);
+    mesh.name=spec.name;
+    scene.add(mesh);
+  }
+  const handle=applyPStudioTSLSurfaceFeatures(scene,{environmentProfile:{skySunX:.35,skySunY:.89,skySunZ:.28}});
+  assert.equal(handle.materialCount,3);
+  const terrain=nodeMaterials[0],parallax=nodeMaterials[1],foliage=nodeMaterials[2];
+  assert.ok(terrain.colorNode?.isNode);
+  assert.ok(terrain.roughnessNode?.isNode);
+  assert.ok(parallax.colorNode?.isNode);
+  assert.ok(foliage.positionNode?.isNode);
+  assert.ok(foliage.castShadowPositionNode?.isNode);
+  assert.ok(foliage.emissiveNode?.isNode);
+  assert.equal(foliage.side,THREE.DoubleSide);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(foliage.positionNode,null);
+  assert.equal(terrain.colorNode,null);
+  for(const material of nodeMaterials)material.dispose();
+  geometry.dispose();
+  texture.dispose();
+  normalTexture.dispose();
+});
+
+test('TSL migration converter accepts approved PStudio surface features but still rejects unrelated custom GLSL',async()=>{
+  const THREE=await import('three/webgpu');
+  const {inspectPStudioWebGPUSceneMaterials}=await import('../static/pstudio_rendering_migration.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.BufferGeometry();
+  const source=new THREE.MeshStandardMaterial();
+  source.userData={pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],pstudioFoliageHQ:{role:'leaf',strength:{value:.8},speed:{value:1},height:4,base:0,direction:{x:.83,y:.56},translucency:.4,thickness:.5,scatteringPower:3,translucencyColor:'#d9edaa'}};
+  source.onBeforeCompile=function(){};
+  source.customProgramCacheKey=function(){return 'pstudio-foliage';};
+  scene.add(new THREE.Mesh(geometry,source));
+  assert.equal(inspectPStudioWebGPUSceneMaterials(scene).compatible,true);
+  const unsupported=new THREE.MeshStandardMaterial();
+  unsupported.onBeforeCompile=function(){};
+  scene.add(new THREE.Mesh(geometry,unsupported));
+  assert.equal(inspectPStudioWebGPUSceneMaterials(scene).compatible,false);
+  geometry.dispose();
+  source.dispose();
+  unsupported.dispose();
 });
