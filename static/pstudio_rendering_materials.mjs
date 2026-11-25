@@ -1,13 +1,13 @@
 import * as THREE from 'three/webgpu';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
-  ['isMeshBasicMaterial', 'MeshBasicNodeMaterial'],
-  ['isMeshLambertMaterial', 'MeshLambertNodeMaterial'],
-  ['isMeshPhongMaterial', 'MeshPhongNodeMaterial'],
-  ['isMeshToonMaterial', 'MeshToonNodeMaterial'],
-  ['isMeshMatcapMaterial', 'MeshMatcapNodeMaterial'],
-  ['isMeshStandardMaterial', 'MeshStandardNodeMaterial'],
-  ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial']
+  ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial', THREE.MeshPhysicalNodeMaterial],
+  ['isMeshStandardMaterial', 'MeshStandardNodeMaterial', THREE.MeshStandardNodeMaterial],
+  ['isMeshBasicMaterial', 'MeshBasicNodeMaterial', THREE.MeshBasicNodeMaterial],
+  ['isMeshLambertMaterial', 'MeshLambertNodeMaterial', THREE.MeshLambertNodeMaterial],
+  ['isMeshPhongMaterial', 'MeshPhongNodeMaterial', THREE.MeshPhongNodeMaterial],
+  ['isMeshToonMaterial', 'MeshToonNodeMaterial', THREE.MeshToonNodeMaterial],
+  ['isMeshMatcapMaterial', 'MeshMatcapNodeMaterial', THREE.MeshMatcapNodeMaterial]
 ]);
 
 function cloneUserData(value) {
@@ -22,7 +22,7 @@ function cloneUserData(value) {
 function resolveNodeMaterialClass(source) {
   const entry = NODE_MATERIAL_TYPES.find(([flag]) => source?.[flag] === true);
   if (!entry) return null;
-  const MaterialClass = THREE[entry[1]];
+  const MaterialClass = entry[2];
   return typeof MaterialClass === 'function' ? { MaterialClass, nodeType: entry[1] } : null;
 }
 
