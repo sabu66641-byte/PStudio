@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const THREE = require('three/webgpu');
-const { createPStudioProductionRendererRuntime } = await import('../static/pstudio_rendering_runtime.mjs');
+const modules = Promise.all([
+  import('three/webgpu'),
+  import('../static/pstudio_rendering_runtime.mjs')
+]);
 
-function makeScene() {
+function makeScene(THREE) {
   return {
     canvas: {},
     scene: new THREE.Scene(),
@@ -12,7 +14,8 @@ function makeScene() {
 }
 
 test('production runtime initializes WebGPU once and delegates rendering/disposal', async () => {
-  const input = makeScene();
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
   let creates = 0;
   let renders = 0;
   let disposals = 0;
