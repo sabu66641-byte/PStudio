@@ -38,7 +38,7 @@ function requiredNodeFunctions() {
     'positionWorld', 'positionLocal', 'normalWorld', 'normalWorldGeometry',
     'positionView', 'positionViewDirection', 'modelWorldMatrixInverse',
     'materialColor', 'materialRoughness', 'materialMetalness', 'materialEmissive',
-    'materialOpacity', 'time', 'vertexColor'
+    'materialOpacity', 'materialAlphaTest', 'time', 'vertexColor', 'select', 'bool'
   ];
   return names.filter((name) => TSL[name] === undefined);
 }
@@ -80,6 +80,68 @@ function applyTriplanar(material, metadata) {
     material.metalnessNode = TSL.float(material.metalness)
       .mul(makeTriplanarSample(material.metalnessMap, position, normal, scale, sharpness).b)
       .clamp(0, 1);
+  }
+}
+
+function applyParallax(material) {
+  if (!material.map?.isTexture || !material.normalMap?.isTexture) {
+    throw new Error('TSL parallax requires both base-color and alpha-height textures.');
+  }
+
+  const settings = material.userData?.pstudioParallaxHQ || {};
+  const scale = Math.max(0, Math.min(0.035, finite(settings.scale, 0.012)));
+  const uv = TSL.uv(material.map.channel || 0);
+  const viewPosition = TSL.positionView;
+  const normal = TSL.normalView.normalize();
+
+  // Reconstruct a tangent frame from screen-space derivatives. This keeps
+  // parallax direction stable on rotated UV islands without requiring a
+  // tangent attribute on every legacy asset.
+  const dpdx = viewPosition.dFdx();
+  const dpdy = viewPosition.dFdy();
+  const duvdx = uv.dFdx();
+  const duvdy = uv.dFdy();
+  const tangentRaw = dpdy.cross(normal).mul(duvdx.x)
+    .add(normal.cross(dpdx).mul(duvdy.x));
+  const bitangentRaw = dpdy.cross(normal).mul(duvdx.y)
+    .add(normal.cross(dpdx).mul(duvdy.y));
+  const inverseScale = TSL.float(1).div(
+    tangentRaw.dot(tangentRaw).max(bitangentRaw.dot(bitangentRaw)).max(EPSILON).sqrt()
+  );
+  const tangent = tangentRaw.mul(inverseScale);
+  const bitangent = bitangentRaw.mul(inverseScale);
+  const viewDirection = TSL.positionViewDirection;
+  const viewTangent = TSL.vec3(
+    viewDirection.dot(tangent),
+    viewDirection.dot(bitangent),
+    viewDirection.dot(normal)
+  ).normalize();
+  const rayOffset = viewTangent.xy
+    .div(viewTangent.z.abs().max(0.18))
+    .mul(scale);
+
+  // Eight fixed, unrolled taps provide deterministic POM behavior without a
+  // divergent GPU loop. First-hit selection prevents later layers from
+  // overwriting the shallowest intersection.
+  let parallaxUV = uv;
+  let foundIntersection = TSL.bool(false);
+  for (let step = 1; step <= 8; step += 1) {
+    const layerDepth = step / 8;
+    const candidateUV = uv.sub(rayOffset.mul(layerDepth));
+    const height = TSL.float(1).sub(TSL.texture(material.normalMap, candidateUV).a);
+    const crossed = TSL.float(layerDepth).greaterThanEqual(height);
+    const firstHit = crossed.and(foundIntersection.not());
+    parallaxUV = TSL.select(firstHit, candidateUV, parallaxUV);
+    foundIntersection = foundIntersection.or(crossed);
+  }
+
+  const sampledColor = TSL.texture(material.map, parallaxUV).setUpdateMatrix(true);
+  let colorNode = TSL.color(material.color).mul(sampledColor.rgb);
+  if (material.vertexColors === true) colorNode = colorNode.mul(TSL.vertexColor);
+  material.colorNode = colorNode;
+  if (material.alphaTest > 0 || material.transparent === true || material.alphaHash === true) {
+    material.opacityNode = (material.opacityNode || TSL.materialOpacity).mul(sampledColor.a);
+    material.alphaTestNode = material.alphaTestNode || TSL.materialAlphaTest;
   }
 }
 
