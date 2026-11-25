@@ -414,10 +414,14 @@ test('native TSL CSM shadow node replaces legacy cascade lights and restores the
     legacyLights,
     lightColor: new THREE.Color(0xffffff),
     lightIntensity: 3,
+    lightNear: 2,
+    lightFar: 2500,
     shadowMapSize: 2048
   });
 
   assert.equal(handle.kind, 'pstudio-tsl-csm');
+  assert.equal(handle.light.shadow.camera.near, 2);
+  assert.equal(handle.light.shadow.camera.far, 2500);
   assert.equal(handle.enabled, true);
   assert.equal(handle.shadowNode instanceof (await import('three/addons/csm/CSMShadowNode.js')).CSMShadowNode, true);
   assert.equal(handle.light.shadow.shadowNode, handle.shadowNode);
