@@ -584,7 +584,7 @@ test('SH probe interpolation caches per-object coefficients and invalidates on m
 test('opt-in dynamic GI incrementally captures a rasterized one-bounce SH cache and explicitly does not claim ray tracing',()=>{
   for(const token of [
     'function serviceDynamicRadianceCache(now)',
-    'function dynamicLightCacheSignature()',
+    'function dynamicLightCacheSignature(snapshots=collectDynamicLightSnapshots())',
     'function resetDynamicProbeCache(signature)',
     'probeCaptureActive=true',
     'dynamicLights.values()',

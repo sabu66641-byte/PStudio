@@ -34,6 +34,7 @@
   let probeVolumeGeneration=0,probeRadianceCacheHits=0,probeRadianceCacheMisses=0,probeRadianceCacheRecomputes=0;
   const objectProbeRadianceCache=new WeakMap();
   let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
+  let dynamicProbeSnapshots=[],dynamicProbeFadeLastPublishAt=0;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
@@ -42,10 +43,8 @@
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh){
-    const ms=Number(renderMs);
-    if(!Number.isFinite(ms)||ms<0)return DYNAMIC_PROBE_UPDATE_INTERVAL_MS;
-    if(gpuFresh){if(ms<=6)return 300;if(ms<=9)return 550;if(ms<=12)return 900;return 1500;}
-    if(ms<=4)return 450;if(ms<=7)return 900;return 1500;
+    const helper=window.PStudioRenderingGI?.dynamicProbeCaptureIntervalMs;
+    return typeof helper==='function'?helper(renderMs,gpuFresh):DYNAMIC_PROBE_UPDATE_INTERVAL_MS;
   }
   const waterMaterials=new Set();
   let mirrorWaterFrameCounter=0;
@@ -1736,28 +1735,42 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
   function updateProbeVolumeBlend(){
     if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();
     probeVolumeGeneration++;
+    dynamicProbeSnapshots=[];dynamicProbeFadeLastPublishAt=0;
     if(bakedLightProbeVolume?.length){
-      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0}));
       dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;dynamicProbeSignature='';
       if(dynamicGIEnabled)dynamicGIStatus='waiting-for-dynamic-lights';
     }else{
       dynamicProbeCache=[];dynamicProbeDirty=null;dynamicGIStatus=dynamicGIEnabled?'requires-baked-probes':'disabled';
     }
   }
-  function dynamicLightCacheSignature(){
-    const T=window.THREE,parts=[];
+  function collectDynamicLightSnapshots(){
+    const T=window.THREE,snapshots=[];
     for(const [key,light] of [...dynamicLights.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])))){
-      const p=light.getWorldPosition?light.getWorldPosition(new T.Vector3()):light.position;
-      const q=value=>Number((Number(value)||0).toFixed(1));
-      parts.push(String(key)+':'+q(p?.x)+','+q(p?.y)+','+q(p?.z)+','+q(light.intensity)+','+q(light.distance)+','+(light.color?.getHexString?.()||'ffffff')+','+(light.isSpotLight?q(light.angle):0));
+      const p=light.getWorldPosition&&T?.Vector3?light.getWorldPosition(new T.Vector3()):light.position;
+      const x=Number(p?.x),y=Number(p?.y),z=Number(p?.z);
+      const q=(value,precision=2)=>Math.round((Number(value)||0)*precision)/precision;
+      const position=[Number.isFinite(x)?x:0,Number.isFinite(y)?y:0,Number.isFinite(z)?z:0];
+      const distance=Math.max(0,Number(light.distance)||0);
+      const color=light.color?.getHexString?.()||'ffffff';
+      const signature=[
+        q(position[0],2),q(position[1],2),q(position[2],2),
+        q(light.intensity,50),q(distance,10),color,
+        light.isSpotLight?q(light.angle,100):0,
+        light.isSpotLight?q(light.penumbra,100):0
+      ].join(',');
+      snapshots.push({key:String(key),signature,position,radius:distance});
     }
-    return parts.join('|');
+    return snapshots;
+  }
+  function dynamicLightCacheSignature(snapshots=collectDynamicLightSnapshots()){
+    return snapshots.map(item=>String(item.key)+':'+String(item.signature)).join('|');
   }
   function resetDynamicProbeCache(signature){
     if(!bakedLightProbeVolume?.length)return false;
     dynamicProbeSignature=signature;
     if(dynamicProbeCache.length!==bakedLightProbeVolume.length){
-      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0}));
     }
     dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;
     probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
@@ -1767,16 +1780,51 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene)return;
     if(now-lastDynamicProbeSignatureAt>=600){
       lastDynamicProbeSignatureAt=now;
-      const signature=dynamicLightCacheSignature();
+      const snapshots=collectDynamicLightSnapshots(),signature=dynamicLightCacheSignature(snapshots);
       if(signature!==dynamicProbeSignature){
-        if(!signature){
-          dynamicProbeSignature='';dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
-          dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);
-          dynamicProbeCursor=0;probeVolumeGeneration++;dynamicGIStatus='waiting-for-dynamic-lights';
-        }else resetDynamicProbeCache(signature);
+        const GI=window.PStudioRenderingGI;
+        const initial=!dynamicProbeSnapshots.length;
+        const affected=typeof GI?.findChangedProbeIndices==='function'
+          ?GI.findChangedProbeIndices(bakedLightProbeVolume,dynamicProbeSnapshots,snapshots,0.75)
+          :Array.from({length:bakedLightProbeVolume.length},(_,index)=>index);
+        dynamicProbeSignature=signature;
+        if(signature){
+          if(!dynamicProbeDirty||dynamicProbeDirty.length!==bakedLightProbeVolume.length){
+            dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);
+          }
+          if(initial){
+            dynamicProbeDirty.fill(1);
+          }else{
+            for(const index of affected)if(index>=0&&index<dynamicProbeDirty.length)dynamicProbeDirty[index]=1;
+          }
+          dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
+        }else{
+          dynamicGIStatus='fading-out';
+        }
+        dynamicProbeSnapshots=snapshots;
       }
     }
-    if(!dynamicLights.size){dynamicGIStatus='waiting-for-dynamic-lights';return;}
+    if(!dynamicLights.size){
+      const GI=window.PStudioRenderingGI;
+      let anyValid=false,changed=false;
+      for(const cached of dynamicProbeCache){
+        if(!cached?.valid)continue;
+        const elapsed=Math.max(0,now-(Number(cached.smoothedAt)||Number(cached.updatedAt)||now));
+        if(elapsed>0&&typeof GI?.decaySHCoefficients==='function'){
+          const result=GI.decaySHCoefficients(cached.coefficients,elapsed,320,1e-4);
+          if(result.changed)changed=true;
+          cached.smoothedAt=now;
+          if(result.finished){
+            cached.valid=false;cached.coefficients.fill(0);changed=true;
+          }else anyValid=true;
+        }else anyValid=true;
+      }
+      if(changed&&now-dynamicProbeFadeLastPublishAt>=100){
+        dynamicProbeFadeLastPublishAt=now;probeVolumeGeneration++;
+      }
+      dynamicGIStatus=anyValid?'fading-out':'waiting-for-dynamic-lights';
+      return;
+    }
     if(!dynamicProbeDirty||!dynamicProbeDirty.length)return;
     if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
@@ -1786,13 +1834,17 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(recentRenderMs>(gpuFresh?12:7))return;
     const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
     if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
-    let index=-1;
-    for(let offset=0;offset<dynamicProbeDirty.length;offset++){
-      const candidate=(dynamicProbeCursor+offset)%dynamicProbeDirty.length;
-      if(dynamicProbeDirty[candidate]){index=candidate;break;}
+    const nextProbe=window.PStudioRenderingGI?.nextDirtyProbeIndex;
+    let index=typeof nextProbe==='function'?nextProbe(dynamicProbeDirty,dynamicProbeCursor):-1;
+    if(index<0&&!window.PStudioRenderingGI){
+      for(let offset=0;offset<dynamicProbeDirty.length;offset++){
+        const candidate=(dynamicProbeCursor+offset)%dynamicProbeDirty.length;
+        if(dynamicProbeDirty[candidate]){index=candidate;break;}
+      }
     }
     if(index<0){dynamicGIStatus='ready';return;}
-    const resolution=qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64;
+    const resolveProbeResolution=window.PStudioRenderingGI?.dynamicProbeCaptureResolution;
+    const resolution=typeof resolveProbeResolution==='function'?resolveProbeResolution(qualityPreset):(qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64);
     const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
     const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
     const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
@@ -1822,14 +1874,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       cube.position.copy(position);scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
       const light=generator.fromCubeRenderTarget(renderer,target),coefficients=light?.sh?.coefficients;
       if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
-      const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0};
+      const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0};
+      const captured=new Float32Array(27);
       for(let i=0;i<9;i++){
         const coefficient=coefficients[i],offset=i*3;
-        cached.coefficients[offset]=Number(coefficient.x)||0;
-        cached.coefficients[offset+1]=Number(coefficient.y)||0;
-        cached.coefficients[offset+2]=Number(coefficient.z)||0;
+        captured[offset]=Number(coefficient.x)||0;
+        captured[offset+1]=Number(coefficient.y)||0;
+        captured[offset+2]=Number(coefficient.z)||0;
       }
-      cached.valid=true;cached.updatedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
+      const GI=window.PStudioRenderingGI;
+      if(cached.valid&&typeof GI?.blendSHCoefficients==='function'){
+        const elapsed=Math.max(1,now-(Number(cached.smoothedAt)||Number(cached.updatedAt)||now));
+        GI.blendSHCoefficients(cached.coefficients,captured,elapsed,240);
+      }else cached.coefficients.set(captured);
+      cached.valid=true;cached.updatedAt=now;cached.smoothedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
       dynamicProbeCursor=(index+1)%dynamicProbeDirty.length;dynamicProbeUpdates++;probeVolumeGeneration++;
       dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
       light.dispose?.();
@@ -6165,10 +6223,11 @@ void main(){
       if(next&&!bakedLightProbeVolume?.length)return{enabled:false,available:false,reason:'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'};
       dynamicGIEnabled=next;
       if(next){
-        const signature=dynamicLightCacheSignature();resetDynamicProbeCache(signature);
+        dynamicProbeSnapshots=collectDynamicLightSnapshots();
+        const signature=dynamicLightCacheSignature(dynamicProbeSnapshots);resetDynamicProbeCache(signature);
         dynamicGIStatus=dynamicLights.size?'updating':'waiting-for-dynamic-lights';
       }else{
-        dynamicProbeDirty=null;dynamicProbeCache=[];dynamicGIStatus='disabled';probeVolumeGeneration++;
+        dynamicProbeDirty=null;dynamicProbeCache=[];dynamicProbeSnapshots=[];dynamicGIStatus='disabled';probeVolumeGeneration++;
       }
       if(renderer&&scene&&camera)drawFrame();
       return{enabled:dynamicGIEnabled,available:!!bakedLightProbeVolume?.length,status:dynamicGIStatus,probeCount:dynamicProbeCache.length,updateIntervalMs:DYNAMIC_PROBE_UPDATE_INTERVAL_MS,kind:'raster-captured-one-bounce-dynamic-sh-probe-cache'};
