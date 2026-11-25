@@ -77,7 +77,7 @@ test('constrained touch Maximum protects the frame budget by disabling full-scre
   assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.8,1.0,1.2][level]:Infinity"));
   assert.ok(renderer.includes("adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)"));
   assert.ok(renderer.includes("mobilePostFxBudget:adaptiveTouchPostFxBudget"));
-  assert.ok(renderer.includes("setVolumetricClouds:(enabled,options={})=>{volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget"));
+  assert.match(renderer,/setVolumetricClouds:\(enabled,options=\{\}\)=>\{(?:resetPostProcessingFailure\(\);)?volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget/);
 });
 
 test('quality presets configure render resolution and shadow filtering', () => {
@@ -1142,7 +1142,7 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
   assert.ok(renderer.includes('qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
-  assert.ok(renderer.includes('setPostProcessing:(bloom,ssao,strength,ssr)=>{bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;'));
+  assert.match(renderer,/setPostProcessing:\(bloom,ssao,strength,ssr\)=>\{(?:resetPostProcessingFailure\(\);)?bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;/);
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
@@ -1469,6 +1469,29 @@ test('dynamic render resolution only reacts to fresh GPU timer samples and stays
   assert.match(renderer,/targetMs\*0\.78/);
   assert.match(renderer,/DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900/);
   assert.match(renderer,/applyEffectiveRenderScale\(\)/);
+});
+
+test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{
+  assert.ok(renderer.includes("let postProcessingFailed=false,postProcessingFailureReason=''"));
+  assert.ok(renderer.includes('function resetPostProcessingFailure(){'));
+  assert.ok(renderer.includes('if(!postProcessingFailed&&composer&&('));
+  const start=renderer.indexOf('  function drawFrame(){');
+  const end=renderer.indexOf('  function createGpuParticleSystem(',start);
+  assert.ok(start>=0&&end>start,'drawFrame boundaries');
+  const frame=renderer.slice(start,end);
+  const catchStart=frame.indexOf('try{composer.render();}catch(initialPostError){');
+  const catchEnd=frame.indexOf('\n      }else{',catchStart);
+  assert.ok(catchStart>=0&&catchEnd>catchStart,'composer failure handler');
+  const recovery=frame.slice(catchStart,catchEnd);
+  assert.ok(recovery.includes('postProcessingFailed=true'));
+  assert.ok(recovery.includes('postProcessingFailureReason='));
+  assert.ok(recovery.includes('renderer.setRenderTarget(null)'));
+  assert.ok(recovery.includes('renderer.render(scene,camera)'));
+  assert.ok(recovery.includes('composer.render();recovered=true;'));
+  assert.ok(renderer.includes('postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null}'));
+  const qualityStart=renderer.indexOf('function applyQualityPreset');
+  assert.ok(renderer.slice(qualityStart,qualityStart+180).includes('resetPostProcessingFailure()'));
+  for(const token of ['setGodRays:(enabled,intensity=1)=>{\n      resetPostProcessingFailure();','setPostProcessing:(bloom,ssao,strength,ssr)=>{resetPostProcessingFailure();','setContactShadows:(enabled,options={})=>{\n      resetPostProcessingFailure();'])assert.ok(renderer.includes(token),token);
 });
 
 test('dynamic GI probe captures are excluded from main render timings and per-frame counters',()=>{
