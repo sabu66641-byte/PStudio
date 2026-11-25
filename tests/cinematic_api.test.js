@@ -93,7 +93,7 @@ test('the Scene API help and technical docs describe all four cinematic calls', 
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261125-ecs-scene-sync-phase24-r1/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261122-step4-cinematic1/);
-  assert.match(html, /pstudio_environment_fx\.js\?v=20261122-step4-cinematic1/);
+  assert.match(html, /pstudio_engine\.js\?v=20261125-daylight-mirror-hq-r2/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261125-daylight-mirror-hq-r2/);
+  assert.match(html, /pstudio_environment_fx\.js\?v=20261124-daylight-hq-r1/);
 });

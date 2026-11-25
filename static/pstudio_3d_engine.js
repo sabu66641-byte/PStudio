@@ -1628,8 +1628,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     loadCandidates.sort((a,b)=>b.priority-a.priority||a.normalized-b.normalized||a.distance-b.distance||String(a.chunk.id).localeCompare(String(b.chunk.id)));
     const configuredLimit=Number(worldRenderConfig.maxConcurrentChunkLoads);
     const maxConcurrent=Math.max(1,Math.min(32,Number.isFinite(configuredLimit)?Math.floor(configuredLimit):4));
-    for(const candidate of loadCandidates){
-      if(loadingCount>=maxConcurrent)break;
+    const budget=Math.max(0,maxConcurrent-loadingCount);
+    for(let index=0;index<Math.min(budget,loadCandidates.length);index++){
+      const candidate=loadCandidates[index];
       beginWorldChunkLoad(candidate.chunk);
       if(candidate.chunk.loading)loadingCount++;
     }
