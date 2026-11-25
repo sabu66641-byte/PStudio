@@ -1427,6 +1427,13 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
   assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);
 });
 
+test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks += 1'));
+  assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks,'));
+});
+
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
   assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
