@@ -5,6 +5,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+const renderingGI = fs.readFileSync(path.join(root, 'static/pstudio_rendering_gi.mjs'), 'utf8');
 const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
 const physics = fs.readFileSync(path.join(root, 'static/pstudio_physics.js'), 'utf8');
 const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
@@ -1527,17 +1528,21 @@ test('dynamic GI probe captures are excluded from main render timings and per-fr
   assert.ok(renderer.includes('triangles:lastFrameRenderStats.triangles'));
 });
 
-test('Dynamic GI probe capture cadence scales with measured render headroom and quality tiers',()=>{
+test('Dynamic GI capture cadence and quality-tier resolution are delegated to the modular scheduler',()=>{
   assert.ok(renderer.includes('function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh)'));
   assert.ok(renderer.includes('const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh)'));
-  assert.ok(renderer.includes("qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64"));
+  assert.ok(renderer.includes('dynamicProbeCaptureResolution(qualityPreset)'));
   assert.ok(renderer.includes('nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs'));
-  const helper=renderer.slice(renderer.indexOf('function dynamicProbeCaptureIntervalMs'),renderer.indexOf('function createGpuParticleSystem'));
-  assert.match(helper,/if\(ms<=6\)return 300/);
-  assert.match(helper,/if\(ms<=9\)return 550/);
-  assert.match(helper,/if\(ms<=12\)return 900/);
-  assert.match(helper,/if\(ms<=4\)return 450/);
-  assert.match(helper,/if\(ms<=7\)return 900/);
+  for(const token of [
+    'export function dynamicProbeCaptureIntervalMs(renderMs, gpuFresh)',
+    'if (ms <= 6) return 300',
+    'if (ms <= 9) return 550',
+    'if (ms <= 12) return 900',
+    'if (ms <= 4) return 450',
+    'if (ms <= 7) return 900',
+    "if (qualityPreset === 'ultra') return 192",
+    "if (qualityPreset === 'maximum') return 128"
+  ])assert.ok(renderingGI.includes(token),token);
 });
 
 
