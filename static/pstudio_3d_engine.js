@@ -1242,7 +1242,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     const frameFresh=lastFrameIntervalSampleAt>0&&now-lastFrameIntervalSampleAt<250;
     const touch=Number(window.navigator?.maxTouchPoints||0)>0;
-    const dynamicScene=waterMaterials.size>0||dynamicLights.size>0||dynamicGIEnabled||
+    const dynamicScene=dynamicLights.size>0||dynamicGIEnabled||
       volumetricCloudsEnabled||activeEnvironmentPreset==='night'||!!window.PStudioEngine?.isRunning?.()||particleEmitters.size>0||trailEffects.size>0;
     const revision=renderingFrameBudget.revision;
     renderingFrameBudgetController.update(
