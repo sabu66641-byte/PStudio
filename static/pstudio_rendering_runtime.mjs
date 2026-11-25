@@ -67,6 +67,10 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           webgpu?.dispose?.();
           throw new Error('Renderer initialization was superseded.');
         }
+        if (!webgpu || typeof webgpu.render !== 'function') {
+          webgpu?.dispose?.();
+          throw new TypeError('WebGPU scene session must provide render().');
+        }
         active = Object.freeze({
           backend: 'webgpu',
           handle: webgpu,
@@ -83,28 +87,34 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           throw error;
         }
         publish('initializing-fallback', { previousError: error });
-        const fallback = await createFallback({
-          canvas,
-          scene,
-          camera,
-          signal: controller.signal,
-          cause: error
-        });
-        if (!isCurrent(ticket)) {
-          fallback?.dispose?.();
-          throw new Error('Fallback initialization was superseded.');
+        let fallback = null;
+        try {
+          fallback = await createFallback({
+            canvas,
+            scene,
+            camera,
+            signal: controller.signal,
+            cause: error
+          });
+          if (!isCurrent(ticket)) {
+            fallback?.dispose?.();
+            throw new Error('Fallback initialization was superseded.');
+          }
+          if (!fallback || typeof fallback.render !== 'function') {
+            throw new TypeError('Fallback adapter must provide render().');
+          }
+          active = Object.freeze({
+            backend: fallback.backend || 'webgl2',
+            handle: fallback,
+            render: () => fallback.render(),
+            dispose: () => fallback.dispose?.()
+          });
+          publish('ready', { backend: active.backend, fallback: true, previousError: error });
+          return active;
+        } catch (fallbackError) {
+          if (isCurrent(ticket)) publish('failed', { backend: null, error: fallbackError, previousError: error });
+          throw fallbackError;
         }
-        if (!fallback || typeof fallback.render !== 'function') {
-          throw new TypeError('Fallback adapter must provide render().');
-        }
-        active = Object.freeze({
-          backend: fallback.backend || 'webgl2',
-          handle: fallback,
-          render: () => fallback.render(),
-          dispose: () => fallback.dispose?.()
-        });
-        publish('ready', { backend: active.backend, fallback: true, previousError: error });
-        return active;
       }
     })().finally(() => {
       initialization = null;
