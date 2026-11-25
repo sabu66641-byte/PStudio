@@ -46,6 +46,9 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-production-session-v1'));
+  assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
+  assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
   assert.ok(html.includes('PStudioTSL'));
   assert.ok(renderer.includes('webgpuModuleAvailable'));
