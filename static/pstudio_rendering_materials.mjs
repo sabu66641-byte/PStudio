@@ -2,12 +2,17 @@ import * as THREE from 'three/webgpu';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
   ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial', THREE.MeshPhysicalNodeMaterial],
+  ['isMeshNormalMaterial', 'MeshNormalNodeMaterial', THREE.MeshNormalNodeMaterial],
   ['isMeshStandardMaterial', 'MeshStandardNodeMaterial', THREE.MeshStandardNodeMaterial],
   ['isMeshBasicMaterial', 'MeshBasicNodeMaterial', THREE.MeshBasicNodeMaterial],
   ['isMeshLambertMaterial', 'MeshLambertNodeMaterial', THREE.MeshLambertNodeMaterial],
   ['isMeshPhongMaterial', 'MeshPhongNodeMaterial', THREE.MeshPhongNodeMaterial],
   ['isMeshToonMaterial', 'MeshToonNodeMaterial', THREE.MeshToonNodeMaterial],
-  ['isMeshMatcapMaterial', 'MeshMatcapNodeMaterial', THREE.MeshMatcapNodeMaterial]
+  ['isMeshMatcapMaterial', 'MeshMatcapNodeMaterial', THREE.MeshMatcapNodeMaterial],
+  ['isLineDashedMaterial', 'LineDashedNodeMaterial', THREE.LineDashedNodeMaterial],
+  ['isLineBasicMaterial', 'LineBasicNodeMaterial', THREE.LineBasicNodeMaterial],
+  ['isPointsMaterial', 'PointsNodeMaterial', THREE.PointsNodeMaterial],
+  ['isSpriteMaterial', 'SpriteNodeMaterial', THREE.SpriteNodeMaterial]
 ]);
 
 function cloneUserData(value) {
@@ -99,6 +104,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
   const originalAssignments = [];
   const convertedByType = Object.create(null);
   let convertedMeshes = 0;
+  let convertedObjects = 0;
   let skippedMaterials = 0;
   let skippedLegacyShaderHooks = 0;
 
@@ -130,7 +136,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
 
   try {
     root.traverse((object) => {
-      if (!object?.isMesh || !object.material) return;
+      if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
       const oldMaterial = object.material;
       const nextMaterial = Array.isArray(oldMaterial) ? oldMaterial.map(convertOne) : convertOne(oldMaterial);
       const changed = Array.isArray(oldMaterial)
@@ -139,7 +145,8 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       if (changed) {
         originalAssignments.push([object, oldMaterial]);
         object.material = nextMaterial;
-        convertedMeshes += 1;
+        convertedObjects += 1;
+        if (object.isMesh) convertedMeshes += 1;
       }
     });
   } catch (error) {
@@ -154,6 +161,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
   return Object.freeze({
     convertedMaterials: converted.size,
     convertedMeshes,
+    convertedObjects,
     convertedByType: Object.freeze({ ...convertedByType }),
     skippedMaterials,
     skippedLegacyShaderHooks,

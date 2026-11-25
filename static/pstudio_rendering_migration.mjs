@@ -24,9 +24,11 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
   if (!scene?.traverse) throw new TypeError('A Three.js Object3D or Scene is required.');
   const materials = new Set();
   let meshCount = 0;
+  let renderableCount = 0;
   scene.traverse((object) => {
-    if (!object?.isMesh || !object.material) return;
-    meshCount += 1;
+    if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
+    if (object.isMesh) meshCount += 1;
+    renderableCount += 1;
     const assigned = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of assigned) if (material) materials.add(material);
   });
@@ -71,6 +73,7 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
 
   return Object.freeze({
     meshCount,
+    renderableCount,
     materialCount: materials.size,
     standardPBR,
     physicalPBR,

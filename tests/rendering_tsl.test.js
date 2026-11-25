@@ -77,6 +77,38 @@ test('built-in Basic, Lambert, Phong, Toon and Matcap materials convert to match
   }
 });
 
+test('normal, line, point and sprite renderables convert to their matching TSL NodeMaterials', async () => {
+  const [THREE, , materials] = await modules;
+  const cases = [
+    ['MeshNormalMaterial', 'MeshNormalNodeMaterial', () => new THREE.MeshNormalMaterial(), g => new THREE.Mesh(g, new THREE.MeshNormalMaterial())],
+    ['LineBasicMaterial', 'LineBasicNodeMaterial', () => new THREE.LineBasicMaterial(), g => new THREE.Line(g, new THREE.LineBasicMaterial())],
+    ['LineDashedMaterial', 'LineDashedNodeMaterial', () => new THREE.LineDashedMaterial({ dashSize: 2, gapSize: 1 }), g => new THREE.LineSegments(g, new THREE.LineDashedMaterial())],
+    ['PointsMaterial', 'PointsNodeMaterial', () => new THREE.PointsMaterial({ size: 0.2 }), g => new THREE.Points(g, new THREE.PointsMaterial({ size: 0.2 }))],
+    ['SpriteMaterial', 'SpriteNodeMaterial', () => new THREE.SpriteMaterial(), () => new THREE.Sprite(new THREE.SpriteMaterial())]
+  ];
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0,1,0,0,0,1,0], 3));
+  const sources = [];
+  for (const [sourceType, nodeType, create, makeObject] of cases) {
+    assert.equal(typeof THREE[nodeType], 'function', nodeType + ' export');
+    const source = create();
+    sources.push(source);
+    const direct = materials.createPStudioNodeMaterial(source);
+    assert.equal(direct.type, nodeType, sourceType);
+    direct.dispose();
+    const object = makeObject(geometry);
+    scene.add(object);
+  }
+  const result = materials.convertPStudioScenePBRMaterials(scene);
+  assert.equal(result.convertedObjects, 5);
+  assert.equal(result.convertedMeshes, 1);
+  assert.equal(result.convertedMaterials, 5);
+  assert.equal(result.restore(), true);
+  for (const source of sources) source.dispose();
+  geometry.dispose();
+});
+
 test('direct TSL conversion refuses to silently discard custom GLSL hooks', async () => {
   const [THREE, , materials] = await modules;
   const source = new THREE.MeshStandardMaterial();
