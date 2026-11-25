@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createPStudioRendererCanvasHost } = await import('../static/pstudio_rendering_canvas_host.mjs');
+const hostModule = import('../static/pstudio_rendering_canvas_host.mjs');
 
 function makeElement(tagName, documentRef) {
   const attributes = new Map();
@@ -56,7 +56,8 @@ function makeDOM() {
   return { documentRef, parent, primary, children };
 }
 
-test('canvas host creates two aligned surfaces and switches visibility without sharing contexts', () => {
+test('canvas host creates two aligned surfaces and switches visibility without sharing contexts', async () => {
+  const { createPStudioRendererCanvasHost } = await hostModule;
   const { parent, primary, children } = makeDOM();
   const host = createPStudioRendererCanvasHost({ primaryCanvas: primary });
   const fallback = host.fallbackCanvas;
@@ -84,14 +85,16 @@ test('canvas host creates two aligned surfaces and switches visibility without s
   assert.equal(parent.style.isolation, '');
 });
 
-test('canvas host validates both canvas types and does not accept a shared element', () => {
+test('canvas host validates both canvas types and does not accept a shared element', async () => {
+  const { createPStudioRendererCanvasHost } = await hostModule;
   const { primary } = makeDOM();
   assert.throws(() => createPStudioRendererCanvasHost({ primaryCanvas: {} }), /HTMLCanvasElement/);
   assert.throws(() => createPStudioRendererCanvasHost({ primaryCanvas: primary, fallbackCanvas: primary }), /different elements/);
   assert.throws(() => createPStudioRendererCanvasHost({ primaryCanvas: primary, fallbackCanvas: { tagName: 'DIV' } }), /HTMLCanvasElement/);
 });
 
-test('canvas host can adopt a caller-provided detached fallback and removes it on disposal', () => {
+test('canvas host can adopt a caller-provided detached fallback and removes it on disposal', async () => {
+  const { createPStudioRendererCanvasHost } = await hostModule;
   const { parent, primary, children } = makeDOM();
   const fallback = makeElement('canvas', primary.ownerDocument);
   const host = createPStudioRendererCanvasHost({ primaryCanvas: primary, fallbackCanvas: fallback });
