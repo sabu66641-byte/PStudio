@@ -99,7 +99,7 @@ function applyTriplanar(material, metadata) {
   if (material.normalMap?.isTexture && material.normalMapType === THREE.TangentSpaceNormalMap) {
     const normalScale = material.normalScale || { x: 1, y: 1 };
     const readNormal = (coordinates) => {
-      const sample = TSL.texture(material.normalMap, coordinates).xyz.mul(2).sub(1);
+      const sample = TSL.texture(material.normalMap, coordinates).setUpdateMatrix(true).xyz.mul(2).sub(1);
       return TSL.vec3(
         sample.x.mul(finite(normalScale.x, 1)),
         sample.y.mul(finite(normalScale.y, 1)),
