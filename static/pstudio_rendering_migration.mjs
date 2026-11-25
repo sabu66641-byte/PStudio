@@ -1,6 +1,6 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
 import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-csm-hook-safe-tsl-v1';
-import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
+import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs?v=20261126-shared-frame-resources-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 
@@ -129,7 +129,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'production dual-canvas bridge with compatibility-gated WebGPU promotion and WebGL2 recovery',
       'production scene frame-loop, resize and staged material-conversion handoff',
       'standard/physical PBR NodeMaterial conversion',
-      'TSL RenderPipeline with Bloom',
+      'TSL RenderPipeline with shared beauty/depth/packed-view-normal frame resources and Bloom',
       'TSL atmospheric sky and shared equirectangular PBR IBL',
       'shared frame-budget and environment-state modules'
     ]),
