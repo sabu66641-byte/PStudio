@@ -358,9 +358,11 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
   function updateLights(clusteredSet) {
     const membership=[];
     for(const entry of entries){
-      const retained=entry.baseLights.filter(light=>!light?.isLight||(
-        light.visible!==false&&!clusteredSet.has(light)
-      ));
+      // The legacy clusterer suppresses clustered lights by toggling
+      // Object3D.visible. Membership is authoritative here; a light that has
+      // left the cluster set must return to the native path even if it was
+      // invisible in the preceding frame.
+      const retained=entry.baseLights.filter(light=>!light?.isLight||!clusteredSet.has(light));
       const signature=retained.map(light=>light?.uuid||light?.id||String(light)).join('|');
       membership.push(signature);
       entry.lightsNode.setLights([...retained,clusteredNode]);
