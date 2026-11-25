@@ -56,6 +56,70 @@ test('legacy MeshStandardMaterial is copied into a TSL NodeMaterial with PBR map
   texture.dispose();
 });
 
+test('built-in Basic, Lambert, Phong, Toon and Matcap materials convert to matching TSL NodeMaterials', async () => {
+  const [THREE, , materials] = await modules;
+  const cases = [
+    ['MeshBasicMaterial', 'MeshBasicNodeMaterial', () => new THREE.MeshBasicMaterial({ color: 0x8aaacc })],
+    ['MeshLambertMaterial', 'MeshLambertNodeMaterial', () => new THREE.MeshLambertMaterial({ color: 0x8aaacc })],
+    ['MeshPhongMaterial', 'MeshPhongNodeMaterial', () => new THREE.MeshPhongMaterial({ color: 0x8aaacc, shininess: 42 })],
+    ['MeshToonMaterial', 'MeshToonNodeMaterial', () => new THREE.MeshToonMaterial({ color: 0x8aaacc })],
+    ['MeshMatcapMaterial', 'MeshMatcapNodeMaterial', () => new THREE.MeshMatcapMaterial({ color: 0x8aaacc })]
+  ];
+  for (const [sourceType, nodeType, create] of cases) {
+    assert.equal(typeof THREE[nodeType], 'function', nodeType + ' export');
+    const source = create();
+    const target = materials.createPStudioNodeMaterial(source);
+    assert.equal(target.type, nodeType);
+    assert.equal(target.userData.pstudioNodeMaterialType, nodeType);
+    assert.equal(target.color.getHex(), source.color.getHex());
+    target.dispose();
+    source.dispose();
+  }
+});
+
+test('direct TSL conversion refuses to silently discard custom GLSL hooks', async () => {
+  const [THREE, , materials] = await modules;
+  const source = new THREE.MeshStandardMaterial();
+  source.onBeforeCompile = () => {};
+  assert.throws(
+    () => materials.createPStudioNodeMaterial(source),
+    /custom GLSL hooks/
+  );
+  source.dispose();
+});
+
+test('scene converter handles shared built-in material families and preserves unsupported materials', async () => {
+  const [THREE, , materials] = await modules;
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BoxGeometry();
+  const basic = new THREE.MeshBasicMaterial({ color: 0x123456 });
+  const phong = new THREE.MeshPhongMaterial({ shininess: 24 });
+  const shader = new THREE.ShaderMaterial();
+  const first = new THREE.Mesh(geometry, basic);
+  const second = new THREE.Mesh(geometry, basic);
+  const third = new THREE.Mesh(geometry, phong);
+  const fourth = new THREE.Mesh(geometry, shader);
+  scene.add(first, second, third, fourth);
+
+  const result = materials.convertPStudioScenePBRMaterials(scene);
+  assert.equal(result.convertedMeshes, 3);
+  assert.equal(result.convertedMaterials, 2);
+  assert.equal(result.convertedByType.MeshBasicNodeMaterial, 1);
+  assert.equal(result.convertedByType.MeshPhongNodeMaterial, 1);
+  assert.equal(result.skippedMaterials, 1);
+  assert.equal(first.material, second.material);
+  assert.equal(fourth.material, shader);
+  assert.equal(result.restore(), true);
+  assert.equal(first.material, basic);
+  assert.equal(third.material, phong);
+  assert.equal(fourth.material, shader);
+
+  basic.dispose();
+  phong.dispose();
+  shader.dispose();
+  geometry.dispose();
+});
+
 test('legacy MeshPhysicalMaterial retains r187 extended PBR values and texture bindings', async () => {
   const [THREE, , materials] = await modules;
   const diffuseRoughnessMap = new THREE.Texture();

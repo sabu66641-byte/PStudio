@@ -1,5 +1,5 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs';
+import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261125-node-material-families-v1';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 
@@ -34,27 +34,32 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
   const unsupported = [];
   let standardPBR = 0;
   let physicalPBR = 0;
+  let builtInMeshMaterials = 0;
   let nodeMaterials = 0;
   let legacyShaderHooks = 0;
+  const builtInMaterialTypes = Object.create(null);
   for (const material of materials) {
     const name = String(material.name || material.type || 'Unnamed material');
     if (material.isNodeMaterial === true || material.isMeshStandardNodeMaterial === true || material.isMeshPhysicalNodeMaterial === true) {
       nodeMaterials += 1;
       continue;
     }
-    if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
-      if (hasCustomShaderHooks(material)) {
+    if (isPStudioLegacyNodeConvertibleMaterial(material)) {
+      const hasCustomHook = hasCustomShaderHooks(material);
+      if (hasCustomHook) {
         legacyShaderHooks += 1;
         unsupported.push(Object.freeze({
           name,
           type: String(material.type || 'Material'),
           reason: 'custom-glsl-hook-requires-tsl-port'
         }));
-      } else if (material.isMeshPhysicalMaterial) {
-        physicalPBR += 1;
-      } else {
-        standardPBR += 1;
+        continue;
       }
+      builtInMeshMaterials += 1;
+      const type = String(material.type || 'MeshMaterial');
+      builtInMaterialTypes[type] = (builtInMaterialTypes[type] || 0) + 1;
+      if (material.isMeshPhysicalMaterial) physicalPBR += 1;
+      else if (material.isMeshStandardMaterial) standardPBR += 1;
       continue;
     }
     unsupported.push(Object.freeze({
@@ -69,6 +74,8 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
     materialCount: materials.size,
     standardPBR,
     physicalPBR,
+    builtInMeshMaterials,
+    builtInMaterialTypes: Object.freeze({ ...builtInMaterialTypes }),
     nodeMaterials,
     legacyShaderHooks,
     unsupportedMaterials: unsupported.length,
