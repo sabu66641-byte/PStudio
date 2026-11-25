@@ -23,6 +23,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for subsystem ownership, execut
 - `static/pstudio_resources.js` — shared CPU/GPU resource cache, reference leases and memory-budget eviction.
 - `static/pstudio_modules.js` — dependency-aware module registry.
 - `static/pstudio_ecs.js` — entity-component-system storage and scheduler.
+- `static/pstudio_ecs_rendering.js` — Camera, Light, Renderable and Animation Components bridged to the existing renderer.
+- `static/pstudio_ecs_streaming.js` — persistent WorldPartition and StreamingInterest Components bridged to PStudio3D chunk management.
 - `static/pstudio_physics.js` — fixed-step capsule character physics, static triangle/box/plane collision and moving-platform carry.
 - `static/pstudio_gameplay.js` — generic combat, enemy state, inventory, quests, dialogue and navigation helpers.
 - `static/pstudio_game_ui.js` — DOM-based in-game HUD and panels.
@@ -181,40 +183,82 @@ Resource manager regression tests can be run with `node --test tests/resource_ma
 
 **Current boundary:** This stage manages cached binary assets and decoded 3D model lifetimes. It does not yet intercept every Three.js allocation, track browser-wide memory, measure actual GPU usage, or manage all image/audio/animation resources. Those integrations will be added incrementally rather than pretending the current counters represent total process memory.
 
-## Entity Component System (ECS) 1.0
+## Entity Component System (ECS) 1.2
 
-The ECS core is exposed as `window.PStudioECS`. It separates entity identity, component data and update systems. Component storage uses dense arrays with sparse entity-index maps, so systems can iterate only the entities that contain the components they need instead of scanning every Scene Object for every behavior.
+The ECS core is exposed as `window.PStudioECS`. It separates Entity identity, Component data and System scheduling. Component storage uses dense arrays with sparse entity-index maps; Systems query only the Components they require.
 
-- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`.
-- **Components:** `registerComponent(type, options?)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
-- **Systems:** `registerSystem({ id, components, priority, update })`, `setSystemEnabled`, `unregisterSystem`. Lower priority values run first; equal priorities preserve registration order.
-- **Iteration:** `forEach(componentTypes, callback)` iterates matching entities without allocating a query result array. `query(componentTypes)` returns matching entity IDs in ascending order.
-- **Deferred structure changes:** creating/destroying entities or adding/removing components during `forEach` is rejected to avoid corrupting an active iteration. Queue these changes with `ecs.defer(() => { ... })`; deferred actions run after the current system update.
-- **Lifecycle and diagnostics:** `on(event, callback)`, `stats()`, `setEnabled(boolean)`, `clearEntities()`.
+- **Entities:** `createEntity(components?)`, `destroyEntity(entity)`, `query(componentTypes)`, `getEntities(includeInactive?)`.
+- **Typed Components:** `registerComponent(type, options?)`, `updateComponentDefinition(type, options)`, `getComponentDefinition(s)`, `getEntityComponents(entity)`, `addComponent`, `setComponent`, `getComponent`, `hasComponent`, `removeComponent`.
+- **System scheduler:** `registerSystem({ id, components, priority, phase, update })`, `getSystems()`, `setSystemEnabled`, `setSystemPriority`, `setSystemPhase`, `unregisterSystem`.
+- **System phases:** `update`, `prePhysics`, `postUpdate`, and `postPhysics`. `postUpdate` runs after per-object ps callbacks and before the Physics step, allowing ECS gameplay Systems to resolve movement intent for the current simulation tick. Priorities run from lower to higher; equal priorities retain registration order.
+- **Iteration and safety:** `forEach(componentTypes, callback)` avoids allocating a query-result array. Structural mutations during iteration must use `ecs.defer(() => { ... })`.
+- **Diagnostics:** `on(event, callback)`, `stats()`, `hasActiveSystems()`, `setEnabled(boolean)`, `clearEntities()`.
 
-The built-in `Transform` component contains position (`x/y/z`), rotation (`rotationX/Y/Z`) and scale (`scaleX/Y/Z). `SceneObjectRef` identifies a linked editor object. During Play, the runtime mirrors existing Scene Objects into ECS entities, runs enabled ECS systems before the legacy per-object ps update callbacks, then applies ECS Transform changes back to Scene Objects. Changes made by existing ps scripts are synchronized back into ECS on the following frame. When no ECS system is enabled, the per-frame mirror and apply passes are skipped to avoid unnecessary runtime work. Stop removes only the Scene Object mirror entities; separately-created ECS entities and registered systems remain available.
+### Component schemas and Inspector
 
-**Physics boundary:** ECS Transform currently mirrors the editor-side Scene Object fields. Physics body state and simulation remain owned by the existing `PStudioPhysics` subsystem; a dedicated physics component and full ECS ownership migration are not part of this stage. The renderer also continues to use its established width/height and `modelScale` fields; the new ECS scale values are available to systems but are not yet applied as general non-uniform visual scaling. This separation avoids silently changing the physics engine's world-space state or the existing ps APIs.
+A Component definition can provide a `schema` describing field types, defaults and validation constraints. Supported field types are `number`, `integer`, `boolean`, `string`, `enum`, `color`, `vector3`, `array`, `json` and `entity`. Required fields, numeric ranges, enum options and unknown-field rejection are checked by the ECS core when a Component is added or updated. Definitions can be updated safely; existing instance data is revalidated before the new schema is committed.
 
-Example: a generic movement system that does not depend on any specific game:
+The ECS Inspector now:
+- shows typed field controls for Component schemas and JSON editing for unstructured Components;
+- discovers `component` / `system` declarations from project `.ps` files using the same `/game/prepare` validator used by Play;
+- lets the user register a custom schema, attach/remove Components on a selected Scene Object and persist those values with the Scene;
+- lists declared and currently registered Systems, opens their source `.ps` file, and manages enabled state, priority and runtime phase.
 
-```js
-PStudioECS.registerSystem({
-  id: 'game.motion',
-  components: ['Transform'],
-  priority: 0,
-  update(dt, ecs) {
-    ecs.forEach(['Transform'], (entity, transform) => {
-      transform.x += 2 * dt;
-    });
-  }
-});
+New Scene Objects start with an explicit empty `ecsComponents` list, so custom Components can be assigned selectively. Older projects that do not yet contain this field keep the legacy behavior: their declared `.ps` Components are attached to all Scene Objects at Play. A saved empty list `[]` means that the object has no custom Components assigned.
+
+### Transform and Physics ownership
+
+`Transform` remains the Scene/IDE transform bridge. It mirrors the existing Scene Object coordinates and therefore retains the current editor and renderer coordinate conventions.
+
+Physics uses a separate world-space data path:
+
+- `PhysicsBody` is persistent configuration: world position, capsule size, mass, gravity and optional character-controller settings.
+- `PhysicsState` is a read-only, runtime-only snapshot of velocity, grounded state, controller state, landing flags and world position.
+- `PhysicsTransform` is the read-only world-space position produced by the fixed-step Physics solver.
+- `Velocity` is a lightweight per-second velocity Component for non-Physics entities; its built-in System integrates it into `Transform`. Physics-driven entities are excluded to avoid competing transform owners.
+
+The runtime order is: ECS `update` Systems → ECS `prePhysics` Systems → legacy per-object ps callbacks and render-command generation → ECS `postUpdate` Systems → `PStudioPhysics.step()` → ECS `postPhysics` Systems → rendering. The Physics bridge creates/configures bodies before the simulation and copies the solver snapshot back to `PhysicsState` / `PhysicsTransform` afterward. It deliberately does not copy Physics world units directly into the editor `Transform`; the renderer and legacy runtime still use their established coordinate conversion. This prevents a 2D pixel coordinate from being mistaken for a 3D Physics world coordinate and avoids two subsystems writing the same position.
+
+### Runtime clock and timing ownership
+
+`window.PStudioECSTime` owns runtime simulation time as a non-persistent ECS `TimeState` Component: scaled/unscaled delta time, elapsed time, frame count and the existing 0–4 time-scale contract. The browser `requestAnimationFrame` scheduler remains platform-owned.
+
+### Navigation graph ownership
+
+The runtime Navigation graph is stored in standalone ECS Entities carrying the internal, runtime-only `NavigationNode` Component. Each node owns its world-space position, neighboring node IDs and blocked state. The `PStudioECSGameplay` bridge provides node lookup, nearest-node queries and A* next-node lookup; the existing `nav_*` ps built-ins remain the compatibility surface. Grid and triangle-derived graph builders create/update these Components. Navigation Entities are intentionally not attached to Scene Objects or serialized as editor Scene Components; the graph retains its existing in-memory Play/Stop lifetime. The ID-to-Entity Map in the bridge is only a lookup cache, not a second owner of graph data.
+
+### ps-native ECS declarations
+
+The browser game-script language can declare reusable data Components and update Systems directly:
+
+```ps
+component EnemyAI
+    speed = 3.0
+    health = 100
+
+system MoveEnemy(Transform, EnemyAI)
+    transform.x += enemy_ai.speed * dt
+    if enemy_ai.health <= 0
+        transform.y = 0
 ```
 
-**Current boundary:** ECS now participates in the runtime update loop and can drive generic Transform changes, but it does not yet replace the existing physics, rendering, collision, gameplay-state or ps-script ownership systems. Those systems will be migrated incrementally after the foundation is validated. `PStudioECS` is currently a JavaScript-side engine API; direct Entity/Component/System declarations from the ps language and Inspector controls are a later integration step. The existing ps API remains unchanged. ECS scheduling is single-threaded; parallel job execution is a separate planned subsystem.
+- `component Name` declares typed fields using literal or literal-array defaults. The Inspector reads these declarations and presents the matching type-aware fields.
+- `system Name(ComponentA, ComponentB)` registers a System. Its body receives `entity`, `dt` and lower_snake_case Component bindings (for example `EnemyAI` becomes `enemy_ai`).
+- Component member reads and writes are validated against the declared Component fields. Project-wide Component references across multiple `.ps` files are supported.
+- The initial phase for a declared `.ps` System is `update`; its runtime priority, enabled state and phase can be adjusted in the Inspector while the game is running.
+- These declarations remain browser-game-only. They do not enter the normal `ps -> C++17` console-program pipeline.
 
-Run ECS regression tests with `node --test tests/ecs.test.js`. The test file uses Node.js built-ins only.
+Attach `examples/ecs_systems.ps` to a Scene Object. In the ECS Inspector, add `EnemyAI` to the specific objects that should participate in `MoveEnemy` / `Regenerate`, then press Play. The previous all-objects attachment behavior remains only for older Scene Objects that have no explicit `ecsComponents` property.
 
+### Native-build boundary
+
+The Backup menu also exports a **Native C++17 ECS project (.zip)** with Component structs, supported System callbacks, a portable C++17 ECS runtime and a CMake sample project. That export is a native ECS module/sample executable, not a complete PStudio game build. The browser Three.js renderer, GLB pipeline, browser input/audio, JavaScript Physics bridge and broader gameplay systems have not yet been ported to native C++. A complete native game `.exe`, `.app` or APK remains a separate backend/packaging project.
+
+Run the focused JavaScript regression suites with `node --test tests/ecs.test.js tests/ecs_physics.test.js tests/physics.test.js`. The full JavaScript suite is `node --test tests/*.test.js`; Python tests are `python -m unittest discover -s tests -p "test_*.py" -v`. The informational Scene synchronization benchmark is `node benchmarks/ecs_scene_sync.js` (100/500/1,000 Scene Objects; no hardware-dependent pass/fail threshold).
+
+### Time State 1.0
+
+`window.PStudioECSTime` stores the runtime simulation clock in a non-persistent, internal `TimeState` Component. `start()` resets the clock on Play, `setTimeScale(value)` preserves the `set_time_scale()` ps API and its 0–4 clamp, `beginFrame(rawDeltaTime)` applies the existing 0.1-second scaled-delta cap while tracking scaled/unscaled elapsed time, and `clear()` removes the singleton Entity on Stop or startup failure. The browser `requestAnimationFrame` scheduler remains a platform service; TimeState owns simulation timing data, not frame scheduling.
 
 ## Project Backup and Restore
 
@@ -380,11 +424,59 @@ func update(dt)
 
 The browser game runtime provides opt-in per-object gameplay state. Attach a script to an object and use `set_max_hp(value)`, `set_hp(value)`, `get_hp()`, `get_max_hp()`, `damage(amount)`, `heal(amount)` and `is_alive()`. `apply_damage(target_name, amount)` applies damage to a scene object resolved by its name or ID. `attack_hitbox(radius, damage)` performs a simple radial attack query against other scene objects with physics bodies; it applies a short per-target repeat interval and is not a directional weapon hitbox. `enemy_follow(target_name, speed, stop_distance)` steers a configured character controller toward a named target. Configure the follower with `physics_body()` and `character_controller()` first.
 
-Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory_remove(item, count)` and `inventory_count(item)`. Quest flags are shared by quest ID: `quest_start(id)`, `quest_complete(id)` and `quest_is_complete(id)`. A graph-based navigation helper is available through `nav_add_node(id, x, y, z)`, `nav_connect(a, b)`, `nav_build_grid(x, z, width, depth, cell_size)`, `nav_build_from_terrain(x, y, z, width, depth, segments, height, max_slope)`, `nav_build_from_triangles(flat_vertex_array, max_slope)`, `nav_build_from_model(model_name, x, y, z, scale, max_slope)`, `nav_block_node(id, blocked)`, `nav_next_node(start, goal)` and `nav_clear()`. Triangle navigation generation filters out slopes steeper than the configured walkable angle and connects triangles sharing edges. This is a sampled triangle-graph NavMesh approximation, not a hierarchical tiled navigation system. `quest_set_progress(id, value, target)` and `quest_get_progress(id)` provide a minimal objective counter. `use_skill(radius, damage, cooldown)` performs a cooldown-limited radial skill query; `enemy_attack(target, range, damage, cooldown)` performs a range-checked single-target enemy attack. The grid builder creates a capped 2D navigation graph and supports manually blocked nodes; it is not a polygonal NavMesh baked from scene geometry and does not perform obstacle sampling or path smoothing. HUD drawing supports `draw_hud_text(text, x, y, size, color)` and `draw_hud_bar(value, max, x, y, width, height, color)`.
+Each object has an in-memory inventory: `inventory_add(item, count)`, `inventory_remove(item, count)` and `inventory_count(item)`. While Play is active, Health, Inventory, Equipment, CombatState, AIController and MovementIntent are owned by internal ECS Components; QuestProgress is stored on standalone quest Entities and DialogueSession stores conversation content and the selected choice. The existing ps built-ins remain the compatibility API. At Stop, the ECS bridge snapshots the values so the next Play can restore them. These runtime Components are not serialized into editor Scene Objects. Item/weapon/quest definitions remain configuration/service state; Navigation nodes, links, blocked state and A* next-node queries are ECS-owned through `NavigationNode` Components. PStudioUI still owns DOM presentation. Quest flags are shared by quest ID: `quest_start(id)`, `quest_complete(id)` and `quest_is_complete(id)`. A graph-based navigation helper is available through `nav_add_node(id, x, y, z)`, `nav_connect(a, b)`, `nav_build_grid(x, z, width, depth, cell_size)`, `nav_build_from_terrain(x, y, z, width, depth, segments, height, max_slope)`, `nav_build_from_triangles(flat_vertex_array, max_slope)`, `nav_build_from_model(model_name, x, y, z, scale, max_slope)`, `nav_block_node(id, blocked)`, `nav_next_node(start, goal)` and `nav_clear()`. When the ECS bridge is active, node coordinates, edges and blocked state are stored in internal `NavigationNode` Components, and `nav_next_node` runs the ECS-backed A* query; the legacy API remains unchanged. Triangle navigation generation filters out slopes steeper than the configured walkable angle and connects triangles sharing edges. This is a sampled triangle-graph NavMesh approximation, not a hierarchical tiled navigation system. `quest_set_progress(id, value, target)` and `quest_get_progress(id)` provide a minimal objective counter. `use_skill(radius, damage, cooldown)` performs a cooldown-limited radial skill query; `enemy_attack(target, range, damage, cooldown)` performs a range-checked single-target enemy attack. The grid builder creates a capped 2D navigation graph and supports manually blocked nodes; it is not a polygonal NavMesh baked from scene geometry and does not perform obstacle sampling or path smoothing. HUD drawing supports `draw_hud_text(text, x, y, size, color)` and `draw_hud_bar(value, max, x, y, width, height, color)`.
 
 
 `emit_particles(x, y, z, count, color, speed, lifetime)` emits a short 3D particle burst. Particle count is capped at 400 per burst and the effect is simulated in the browser renderer. Avoid calling it unconditionally every frame; trigger it from an input or gameplay event.
 
+
+### Stylized NPR toon materials and GPU foliage wind (PStudio 3.0 Step 2)
+
+The renderer now provides an opt-in hybrid PBR/NPR material path. It keeps the Three.js standard/physical BRDF, clustered lighting, image-based lighting and shadow integration, then applies three-color toon ramps, a view-dependent rim response, outline ink and a lightweight pseudo-subsurface term. The pseudo-SSS term is an art-directed lighting approximation, not physical subsurface transport. PBR remains the default; use `set_shader("toon")` or `set_toon_material(...)` only on objects that need the stylized treatment.
+
+The browser game-script API is:
+
+```ps
+set_shader("toon")
+set_toon_material(
+    "#46516f", "#9eafd0", "#ffffff",
+    0.32, 0.68,
+    "#b8dcff", 0.42, 2.6,
+    "#182235", 0.12,
+    "#f0a5a0", 0.12,
+    0.35, 1.0
+)
+```
+
+Arguments, in order: shadow, midtone and highlight colors; shadow and highlight thresholds; rim color, intensity and power; outline color and width; pseudo-SSS color and intensity; GPU wind strength and speed. Colors use `#RRGGBB`. Numeric values are bounded by the runtime before reaching shader uniforms. `set_toon_material` also selects the toon path for subsequent primitives and imported models owned by the script.
+
+The shared Object Inspector exposes the toon/rim/outline/pseudo-SSS controls plus foliage wind controls for both script-owned 3D primitives and GLB models. GLB material-specific overrides expose the same controls per named material; the shared Object Inspector applies its settings across the selected object's 3D materials. Overrides are applied to per-instance material clones; the imported asset data and other instances are not rewritten. Foliage deformation is evaluated in the vertex shader and supports both the automatic name/role-based foliage path and explicit material wind settings. Outlines use expanded back-face shell passes for regular, skinned and instanced meshes. Multi-material GLBs retain each material slot's alpha-test/transparent texture masking; shells use depth testing, no depth writes, and do not participate in raycasts or shadow passes. Verify the actual WebGL shader compile and visual result on each target GPU.
+
+## Cinematic gameplay APIs
+
+The browser-only game runtime includes a small set of time and presentation controls for action-game feedback. These calls are available in attached `.ps` Game Object scripts validated by `/game/prepare`; they are not normal `ps -> C++17` built-ins.
+
+```ps
+func start()
+    set_time_scale(1)
+    set_god_rays(true, 0.7)
+
+func update(dt)
+    if was_key_pressed("space")
+        camera_shake(0.9, 0.24)
+        set_time_scale(0.2)
+    if not is_key_down("space")
+        set_time_scale(1)
+    # Call every frame to record the moving target's path.
+    draw_trail("Weapon", "#8fe6ff", 0.08, 0.3)
+```
+
+- `camera_shake(intensity, duration)`: triggers a decaying 3D camera impulse. Intensity is bounded to 0–2; duration is seconds, bounded to 0–8. Its envelope uses wall-clock time, so it is not frozen by `set_time_scale(0)`.
+- `set_time_scale(scale)`: sets the scene simulation multiplier, bounded to 0–4. Zero freezes the runtime delta time; values below/above 1 slow down/speed up script `update(dt)`, ECS, physics and runtime-clock effects. Browser audio playback and wall-clock timers are not time-scaled. The value resets to 1 on the next Play session.
+- `draw_trail(target_id, color, width, duration)`: records the world-space position of a Scene Game Object resolved by its id or name. Call it repeatedly from `update(dt)` to form a moving ribbon; a one-off call cannot infer a path. Width is in world units (0.001–1) and lifetime is seconds (0.05–10). The renderer retains up to 64 simultaneous trails, each with up to 48 sampled points; the oldest trail is disposed when that budget is reached.
+- `set_god_rays(enabled, intensity)`: enables a screen-space radial light-shaft pass that samples bright regions (20 taps per pixel); intensity is bounded to 0–2. If the shader pass is unavailable or fails to render, PStudio disables it and falls back to the existing Bloom pass when available. If neither pass is available, the call reports the effect as disabled.
+
+These are screen-space/art-directed effects, not physically simulated volumetric light transport. The God Rays pass is inserted before the final output/tonemapping pass to preserve the compositing color pipeline. The mobile GPU shader compile and visual-quality gate still requires testing on real target devices.
 
 ## Rendering Engine 1.5 — HDR, Lighting, Water and GPU Optimization
 
@@ -452,7 +544,7 @@ Select a non-model Scene object and use the **Shader Editor** graph or GLSL edit
 - **Enemy state AI:** `enemy_ai(target, sight_range, attack_range, speed)` switches among idle, chase, attack, retreat and dead. It can follow the generated triangle graph when one exists; it does not perform tactical squad planning or dynamic cover analysis.
 - **Inventory:** `define_item(item, kind, slot, value)`, `inventory_add`, `equip_item` and `use_item` define equipment and consumables. `open_inventory()` and `open_quest_log()` open the built-in DOM panels.
 - **Quests and dialogue:** `quest_define(id, prerequisite, reward_item, reward_count)` defines a simple dependency and reward. Use `quest_start`, `quest_set_progress`, and `quest_complete`. `show_dialogue(speaker, text, choice1, choice2, choice3)` displays choices; `dialogue_choice()` reads the player's latest selection.
-- **Navigation:** `nav_build_from_terrain(x, y, z, width, depth, segments, height, max_slope)`, `nav_build_from_triangles(flat_vertices, max_slope)` and `nav_build_from_model(...)` build an edge-connected walkable triangle graph. This is an approximate static NavMesh; dynamic obstacle re-baking, off-mesh links and hierarchical streaming are not included.
+- **Navigation:** `nav_build_from_terrain(x, y, z, width, depth, segments, height, max_slope)`, `nav_build_from_triangles(flat_vertices, max_slope)` and `nav_build_from_model(...)` build an edge-connected walkable triangle graph. Runtime nodes/edges/blocking and A* next-node queries are ECS-owned by `NavigationNode` Components. This remains an approximate static NavMesh; dynamic obstacle re-baking, off-mesh links and hierarchical streaming are not included.
 
 
 ## Rendering Engine 1.6 — Spatial Irradiance and Large-World Rendering
@@ -474,6 +566,9 @@ Large-world controls:
 - `PStudio3D.registerWorldChunk(id, { x, y, z, loadDistance, unloadDistance })` defines a render/asset activation region with hysteresis.
 - `PStudio3D.assignObjectToChunk(ownerId, id)` associates a Scene Object with a chunk. Inactive chunks stop issuing render commands while cached geometry/model instances are retained.
 - `PStudio3D.unregisterWorldChunk(id)` removes a chunk and owner assignments.
+- `PStudio3D.setWorldStreamingInterests([{ id, x, y, z, priority, loadMultiplier, unloadMultiplier }])` supplies multiple player/camera interest points. Active chunks remain resident while any interest stays within its unload radius.
+- `PStudio3D.setWorldRenderConfig({ maxConcurrentChunkLoads })` bounds concurrent chunk asset loads (1–32; default 4).
+- Scene authoring can use persistent `WorldPartition` Components for region membership and `StreamingInterest` Components for moving/static interest points; the ECS bridge synchronizes them before Physics and rendering. The renderer remains responsible for async asset loading and GPU resource lifetime.
 - Three.js frustum culling remains enabled for ordinary meshes and model submeshes. Instanced batches compact visible instances and refresh selection mappings.
 
 Directional shadow coverage follows the camera target and snaps its center to shadow-map texels to reduce shimmering. This describes the earlier single-camera baseline; the later Rendering Engine 1.7 section documents the optional three-cascade CSM path and single-camera fallback. Chunk streaming was subsequently extended in Rendering Engine 1.8 to suspend owner scripts, physics, ECS iteration and owner audio while preserving runtime state.

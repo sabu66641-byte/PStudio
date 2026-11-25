@@ -159,3 +159,292 @@ test('clears scene bindings without removing registered systems', () => {
   assert.equal(ecs.stats().systemCount, 1);
   ecs.update(0.016);
 });
+
+
+test('Component schemas apply defaults and reject invalid fields and types', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Vitals', {
+    schema: {
+      health: { type: 'integer', default: 100, min: 0, max: 100 },
+      active: { type: 'boolean', default: true },
+      speed: { type: 'number', default: 2.5, min: 0 }
+    },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ Vitals: {} });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Vitals'))),
+    { health: 100, active: true, speed: 2.5 }
+  );
+  ecs.setComponent(entity, 'Vitals', { health: 80, active: false, speed: 4 });
+  assert.equal(ecs.getComponent(entity, 'Vitals').health, 80);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 101, active: true, speed: 1 }), /exceeds max/);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 'high', active: true, speed: 1 }), /must be integer/);
+  assert.throws(() => ecs.setComponent(entity, 'Vitals', { health: 50, active: true, speed: 1, unknown: 1 }), /Unknown Component field/);
+  const definition = ecs.getComponentDefinition('Vitals');
+  assert.equal(definition.schema.health.type, 'integer');
+  assert.equal(definition.category, 'General');
+});
+
+test('Systems run in update, prePhysics, postUpdate and postPhysics phases with mutable priority', () => {
+  const ecs = createECS();
+  const order = [];
+  ecs.registerSystem({ id: 'test.main', priority: 10, phase: 'update', update() { order.push('update'); } });
+  ecs.registerSystem({ id: 'test.pre', priority: -10, phase: 'prePhysics', update() { order.push('pre'); } });
+  ecs.registerSystem({ id: 'test.after-scripts', priority: 0, phase: 'postUpdate', update() { order.push('postUpdate'); } });
+  ecs.registerSystem({ id: 'test.post', priority: 0, phase: 'postPhysics', update() { order.push('postPhysics'); } });
+  ecs.update(0.016);
+  ecs.updatePhase('prePhysics', 0.016);
+  ecs.updatePhase('postUpdate', 0.016);
+  ecs.updatePhase('postPhysics', 0.016);
+  assert.deepEqual(order, ['update', 'pre', 'postUpdate', 'postPhysics']);
+  assert.equal(ecs.setSystemPhase('test.main', 'postPhysics'), 'postPhysics');
+  assert.equal(ecs.setSystemPriority('test.main', -20), -20);
+  ecs.updatePhase('postPhysics', 0.016);
+  assert.deepEqual(order.slice(4), ['update', 'postPhysics']);
+  assert.throws(() => ecs.setSystemPhase('test.main', 'render'), /Invalid ECS System phase/);
+});
+
+test('Scene Object synchronization restores persistent typed Components but skips runtime-only Components', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Health', {
+    schema: { current: { type: 'integer', default: 50, min: 0 } },
+    additionalProperties: false,
+    source: 'components.ps'
+  });
+  ecs.registerComponent('RuntimeCache', {
+    schema: { hits: { type: 'integer', default: 0 } },
+    persistent: false
+  });
+  const sceneObject = {
+    id: 'restored',
+    ecsComponents: [
+      { type: 'Health', data: { current: 75 } },
+      { type: 'RuntimeCache', data: { hits: 9 } }
+    ]
+  };
+  ecs.syncSceneObjects([sceneObject]);
+  const entity = ecs.getEntityForSceneObject('restored');
+  assert.equal(ecs.getComponent(entity, 'Health').current, 75);
+  assert.equal(ecs.hasComponent(entity, 'RuntimeCache'), false);
+  const entries = ecs.getEntityComponents(entity);
+  assert.equal(entries.find(item => item.type === 'Health').persistent, true);
+  assert.equal(ecs.getComponentDefinition('Health').source, 'components.ps');
+});
+
+test('hasActiveSystems avoids scheduling systems without their required Component stores', () => {
+  const ecs = createECS();
+  ecs.registerComponent('UnusedData');
+  ecs.registerSystem({ id: 'test.only-unused', components: ['UnusedData'], update() {} });
+  assert.equal(ecs.hasActiveSystems(), false);
+  const entity = ecs.createEntity({ UnusedData: {} });
+  assert.equal(ecs.hasActiveSystems(), true);
+  ecs.destroyEntity(entity);
+  assert.equal(ecs.hasActiveSystems(), false);
+});
+
+
+test('Component definitions can be safely refreshed with new defaults and are rolled back on incompatible schemas', () => {
+  const ecs = createECS();
+  ecs.registerComponent('Movement', {
+    schema: { speed: { type: 'number', default: 2, min: 0 } },
+    additionalProperties: false,
+    create: () => ({ speed: 2 })
+  });
+  const entity = ecs.createEntity({ Movement: {} });
+  ecs.setComponent(entity, 'Movement', { speed: 2.5 });
+  ecs.updateComponentDefinition('Movement', {
+    schema: {
+      speed: { type: 'number', default: 5, min: 0 },
+      enabled: { type: 'boolean', default: true }
+    },
+    additionalProperties: false,
+    create: () => ({ speed: 5, enabled: true })
+  });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(entity, 'Movement'))),
+    { speed: 2.5, enabled: true }
+  );
+  const next = ecs.createEntity({ Movement: {} });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(ecs.getComponent(next, 'Movement'))),
+    { speed: 5, enabled: true }
+  );
+  assert.throws(
+    () => ecs.updateComponentDefinition('Movement', {
+      schema: {
+        speed: { type: 'integer', required: true },
+        enabled: { type: 'boolean', default: true }
+      },
+      additionalProperties: false
+    }),
+    /must be integer/
+  );
+  assert.equal(ecs.getComponentDefinition('Movement').schema.speed.type, 'number');
+});
+
+test('nullable schema fields retain their flag and accept null defaults and values', () => {
+  const ecs = createECS();
+  ecs.registerComponent('NullableReference', {
+    schema: {
+      target: { type: 'entity', nullable: true, default: null }
+    },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ NullableReference: {} });
+  assert.equal(ecs.getComponent(entity, 'NullableReference').target, null);
+  assert.equal(ecs.getComponentDefinition('NullableReference').schema.target.nullable, true);
+  ecs.setComponent(entity, 'NullableReference', { target: null });
+  assert.equal(ecs.getComponent(entity, 'NullableReference').target, null);
+  assert.throws(
+    () => ecs.setComponent(entity, 'NullableReference', { target: 'not-an-entity' }),
+    /must be entity/
+  );
+});
+
+test('serializes only persistent non-core Components with a versioned envelope', () => {
+  const ecs = createECS();
+  ecs.registerComponent('SavedSettings', {
+    schema: { quality: { type: 'integer', default: 2 }, enabled: { type: 'boolean', default: true } },
+    additionalProperties: false
+  });
+  ecs.registerComponent('RuntimeCache', {
+    persistent: false,
+    schema: { count: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({
+    SavedSettings: { quality: 4 },
+    RuntimeCache: { count: 9 }
+  });
+  const serialized = ecs.serializeEntityComponents(entity, ['Transform', 'SceneObjectRef']);
+  assert.deepEqual(JSON.parse(JSON.stringify(serialized)), {
+    version: 1,
+    components: [{ type: 'SavedSettings', data: { quality: 4, enabled: true } }]
+  });
+  const copy = ecs.serializeEntityComponents(entity);
+  copy.components[0].data.quality = 100;
+  assert.equal(ecs.getComponent(entity, 'SavedSettings').quality, 4);
+});
+
+test('restores legacy unversioned Component arrays and upgrades their scene schema to version 1', () => {
+  const ecs = createECS();
+  ecs.registerComponent('LegacySettings', {
+    schema: { quality: { type: 'integer', default: 2 } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'legacy-array', x: 0, y: 0,
+    ecsComponents: [{ type: 'LegacySettings', data: { quality: 7 } }]
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'LegacySettings').quality, 7);
+  assert.equal(object.ecsComponentsVersion, 1);
+  assert.deepEqual(object.ecsComponents, [{ type: 'LegacySettings', data: { quality: 7 } }]);
+});
+
+test('migrates legacy type-keyed Component maps without losing saved values', () => {
+  const ecs = createECS();
+  ecs.registerComponent('MappedSettings', {
+    schema: { enabled: { type: 'boolean', default: false } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'legacy-map', x: 0, y: 0,
+    ecsComponents: { MappedSettings: { enabled: true } }
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'MappedSettings').enabled, true);
+  assert.equal(object.ecsComponentsVersion, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(object.ecsComponents)), [{ type: 'MappedSettings', data: { enabled: true } }]);
+});
+
+test('does not overwrite or restore Component data from a newer unknown schema version', () => {
+  const ecs = createECS();
+  ecs.registerComponent('FutureSettings', {
+    schema: { value: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const futureData = [{ type: 'FutureSettings', data: { value: 99 } }];
+  const object = {
+    id: 'future-schema', x: 0, y: 0,
+    ecsComponentsVersion: 99,
+    ecsComponents: futureData
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.hasComponent(entity, 'FutureSettings'), false);
+  assert.equal(object.ecsComponentsVersion, 99);
+  assert.deepEqual(object.ecsComponents, futureData);
+});
+
+test('scene Component migration skips duplicate and invalid entries deterministically', () => {
+  const ecs = createECS();
+  ecs.registerComponent('UniqueSettings', {
+    schema: { value: { type: 'integer', default: 0 } },
+    additionalProperties: false
+  });
+  const object = {
+    id: 'duplicate-schema', x: 0, y: 0,
+    ecsComponents: [
+      { type: 'UniqueSettings', data: { value: 5 } },
+      { type: 'UniqueSettings', data: { value: 8 } },
+      { type: 17, data: {} },
+      null
+    ]
+  };
+  ecs.syncSceneObjects([object]);
+  const entity = ecs.getEntityForSceneObject(object.id);
+  assert.equal(ecs.getComponent(entity, 'UniqueSettings').value, 5);
+  assert.equal(object.ecsComponentsVersion, 1);
+});
+
+test('versioned serializer preserves unregistered saved Components alongside current ECS Components', () => {
+  const ecs = createECS();
+  ecs.registerComponent('KnownSettings', {
+    schema: { quality: { type: 'integer', default: 1 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ KnownSettings: { quality: 4 } });
+  const object = {
+    id: 'unknown-component-owner', x: 0, y: 0, ecsComponentsVersion: 1,
+    ecsComponents: [
+      { type: 'PluginOwnedSettings', data: { enabled: true, tags: ['kept'] } }
+    ]
+  };
+  const serialized = ecs.serializeEntityComponents(entity, [], object);
+  assert.deepEqual(JSON.parse(JSON.stringify(serialized)), {
+    version: 1,
+    components: [
+      { type: 'KnownSettings', data: { quality: 4 } },
+      { type: 'PluginOwnedSettings', data: { enabled: true, tags: ['kept'] } }
+    ]
+  });
+});
+
+test('versioned serializer refuses to write over newer or invalid saved Component schemas', () => {
+  const ecs = createECS();
+  ecs.registerComponent('CurrentSettings', {
+    schema: { value: { type: 'integer', default: 1 } },
+    additionalProperties: false
+  });
+  const entity = ecs.createEntity({ CurrentSettings: { value: 5 } });
+  const future = {
+    id: 'future-owner', ecsComponentsVersion: 99,
+    ecsComponents: [{ type: 'FutureSettings', data: { value: 99 } }]
+  };
+  const beforeFuture = JSON.stringify(future);
+  assert.equal(ecs.serializeEntityComponents(entity, [], future), null);
+  assert.equal(JSON.stringify(future), beforeFuture);
+
+  const malformed = {
+    id: 'malformed-owner', ecsComponentsVersion: 'unknown',
+    ecsComponents: [{ type: 'FutureSettings', data: { value: 99 } }]
+  };
+  const beforeMalformed = JSON.stringify(malformed);
+  assert.equal(ecs.serializeEntityComponents(entity, [], malformed), null);
+  assert.equal(JSON.stringify(malformed), beforeMalformed);
+  assert.equal(ecs.sceneComponentSchemaVersion, 1);
+});

@@ -243,7 +243,7 @@ test('BVH occlusion state persists between bounded candidate checks',()=>{
 });
 test('inactive script owners retain prior render commands for seamless resume',()=>{
   assert.ok(engine.includes('runtime.contexts.get(o.id)'));
-  assert.ok(engine.includes('runtime.started.has(o.id)'));
+  assert.ok(engine.includes('window.PStudioECSScript?.getLifecycle?.(o.id)'));
   assert.ok(engine.includes('physicsCommands'));
 });
 
@@ -433,6 +433,32 @@ test('streaming chunks are constructed from top-level world children for this GL
 });
 
 
+test('world chunk registry preserves in-flight state and invalidates asset changes safely',()=>{
+  const start=renderer.indexOf('function registerWorldChunk');
+  const end=renderer.indexOf('function assignObjectToChunk',start);
+  assert.ok(start>=0&&end>start);
+  const block=renderer.slice(start,end);
+  assert.ok(block.includes('const chunk=old||'));
+  assert.ok(block.includes('assetsChanged&&(old.active||old.loading)'));
+  assert.ok(block.includes('const retainedAssets=new Set(old.assets.filter(name=>assets.includes(name)))'));
+  assert.ok(block.includes('endWorldChunkLoad(old,retainedAssets)'));
+  assert.ok(block.includes('worldChunks.set(key,chunk)'));
+  assert.ok(block.includes('loading:chunk.loading'));
+  assert.ok(renderer.includes('const requestedAssets=chunk.assets.slice()'));
+  assert.ok(renderer.includes('if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}'));
+  assert.ok(renderer.includes('const retained=(chunk.active||chunk.loading)?new Set(chunk.assets||[]):new Set()'));
+  assert.ok(renderer.includes('const stale=(requestedAssets||[]).filter(name=>!retained.has(name))'));
+  assert.ok(renderer.includes('releaseChunkAssetCache(chunk,requestedAssets)'));
+});
+test('world chunk streaming supports multiple interest positions and bounded prioritized loading',()=>{
+  for(const token of [
+    'setWorldStreamingInterests','clearWorldStreamingInterests',
+    'worldStreamingInterests=[]','const interests=worldStreamingInterests',
+    'Math.hypot(dx,dy,dz)','maxConcurrentChunkLoads',
+    'loadCandidates.sort((a,b)=>b.priority-a.priority',
+    'for(let index=0;index<Math.min(budget,loadCandidates.length);index++)'
+  ])assert.ok(renderer.includes(token),token);
+});
 test('triplanar projection honors scale and normal blend values authored in GLB material extras',()=>{
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   assert.ok(fx.includes('material.userData?.pstudioTriplanarScale'));
@@ -729,6 +755,221 @@ test('GPU preparation failures release the hidden-model gate and redraw the edit
   assert.ok(catchStart>=0);
   const fallback=block.slice(catchStart);
   for(const token of ['instance.preparing=false',"stage:'gpu-preparation-fallback'","window.requestAnimationFrame(()=>",'if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}'])assert.ok(fallback.includes(token),token);
+});
+
+test('ECS VisualFX configuration is bridged before Physics and preserves renderer ownership', () => {
+  const visualFx = fs.readFileSync(path.join(root, 'static/pstudio_ecs_visualfx.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const type of ['Environment', 'Fog', 'Water', 'PostFX', 'ParticleEmitter', 'Trail']) {
+    assert.ok(app.includes('"' + type + '"'), type + ' must be reserved');
+    assert.ok(visualFx.includes(type), type + ' must be registered by the VisualFX bridge');
+  }
+  assert.ok(html.indexOf('pstudio_ecs_rendering.js') < html.indexOf('pstudio_ecs_visualfx.js'));
+  assert.ok(html.indexOf('pstudio_ecs_visualfx.js') < html.indexOf('pstudio_ecs_inspector.js'));
+  assert.ok(engine.indexOf('window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt)') <
+    engine.indexOf('const physicsCommands'));
+  assert.ok(engine.includes('window.PStudioECSVisualFX?.clear?.()'));
+  assert.ok(engine.includes("'Environment','Fog','Water','PostFX','ParticleEmitter','Trail'"));
+  assert.doesNotThrow(() => new Function(visualFx));
+});
+
+test('legacy and ECS water rendering honor the configured opacity', () => {
+  assert.ok(renderer.includes('const waterOpacity=Math.max(0.05,Math.min(1,Number.isFinite(Number(d.opacity))?Number(d.opacity):1))'));
+  assert.ok(renderer.includes('material.opacity=waterOpacity'));
+  assert.ok(renderer.includes('material.transparent=waterOpacity<0.999'));
+  assert.ok(renderer.includes('material.depthWrite=waterOpacity>=0.999'));
+});
+
+test('gameplay UI overlay intent is owned by a transient ECS Component while PStudioUI remains the renderer', () => {
+  const ui = fs.readFileSync(path.join(root, 'static/pstudio_ecs_ui.js'), 'utf8');
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const token of ['openInventory', 'openQuestLog', 'showDialogue', 'chooseDialogue', 'getUIState', 'uiAction']) {
+    assert.ok(gameplay.includes(token), token);
+  }
+  assert.ok(gameplay.includes('window.PStudioECSUI'));
+  assert.ok(ui.includes("const TYPE = 'UIOverlay'"));
+  assert.ok(ui.includes('persistent: false'));
+  assert.ok(ui.includes('internal: true'));
+  assert.ok(app.includes('"UIOverlay"'));
+  assert.ok(engine.includes('window.PStudioECSUI?.clear?.()'));
+  assert.ok(engine.includes('window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null)'));
+  assert.ok(html.includes('pstudio_ecs_ui.js'));
+  assert.doesNotThrow(() => new Function(ui));
+  assert.doesNotThrow(() => new Function(gameplay));
+  assert.doesNotThrow(() => new Function(engine));
+});
+
+test('module lifecycle state is mirrored into transient ECS entities without moving activation ownership', () => {
+  const modules = fs.readFileSync(path.join(root, 'static/pstudio_modules.js'), 'utf8');
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_ecs_modules.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  assert.ok(modules.includes("emit('state-changed'"));
+  for (const state of ['activating', 'enabled', 'deactivating', 'registered', 'error']) assert.ok(bridge.includes("'" + state + "'"));
+  assert.ok(bridge.includes("const TYPE = 'ModuleState'"));
+  assert.ok(bridge.includes('persistent: false'));
+  assert.ok(bridge.includes('internal: true'));
+  assert.ok(app.includes('"ModuleState"'));
+  assert.ok(html.indexOf('pstudio_modules.js') < html.indexOf('pstudio_ecs.js'));
+  assert.ok(html.indexOf('pstudio_ecs.js') < html.indexOf('pstudio_ecs_modules.js'));
+  assert.doesNotThrow(() => new Function(modules));
+  assert.doesNotThrow(() => new Function(bridge));
+});
+
+test('ECS Inspector persists versioned Component payloads through the ECS serializer', () => {
+  const core = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
+  const inspector = fs.readFileSync(path.join(root, 'static/pstudio_ecs_inspector.js'), 'utf8');
+  assert.ok(core.includes('const SCENE_COMPONENTS_VERSION = 1'));
+  assert.ok(core.includes('function serializeEntityComponents'));
+  assert.ok(core.includes('function readSavedComponentEntries'));
+  assert.ok(inspector.includes('api.serializeEntityComponents(entityId, [...CORE_COMPONENTS], object)'));
+  assert.ok(inspector.includes('if (!serialized)'));
+  assert.ok(inspector.includes('newer ECS Component schema'));
+
+  assert.ok(inspector.includes('object.ecsComponentsVersion = serialized.version'));
+  assert.ok(inspector.includes('object.ecsComponents = serialized.components'));
+  assert.doesNotThrow(() => new Function(core));
+  assert.doesNotThrow(() => new Function(inspector));
+});
+
+test('gameplay definitions are ECS-owned standalone Components behind legacy ps APIs', () => {
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_ecs_gameplay.js'), 'utf8');
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  for (const name of ['ItemDefinition', 'QuestDefinition', 'WeaponDefinition']) {
+    assert.ok(bridge.includes(name));
+    assert.ok(app.includes('"' + name + '"'));
+  }
+  for (const method of ['setItemDefinition', 'getItemDefinition', 'setQuestDefinition', 'getQuestDefinition', 'setWeaponDefinition', 'getWeaponDefinition']) {
+    assert.ok(bridge.includes(method));
+  }
+  for (const method of ['defineItem', 'questDefine', 'defineWeapon']) assert.ok(gameplay.includes(method));
+  assert.ok(gameplay.includes('bridge?.setItemDefinition'));
+  assert.ok(gameplay.includes('bridge?.setQuestDefinition'));
+  assert.ok(gameplay.includes('bridge?.setWeaponDefinition'));
+  assert.doesNotThrow(() => new Function(bridge));
+  assert.doesNotThrow(() => new Function(gameplay));
+});
+
+test('gameplay state uses versioned Scene Object ECS persistence and leaves Quest/Dialogue in ECS between Plays', () => {
+  const gameplay = fs.readFileSync(path.join(root, 'static/pstudio_ecs_gameplay.js'), 'utf8');
+  const wrapper = fs.readFileSync(path.join(root, 'static/pstudio_gameplay.js'), 'utf8');
+  const input = fs.readFileSync(path.join(root, 'static/pstudio_ecs_input.js'), 'utf8');
+  const core = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
+  for (const fragment of [
+    "label: 'Health', persistent: true",
+    "label: 'Inventory', persistent: true",
+    "label: 'Equipment', persistent: true",
+    "label: 'Combat State', persistent: true",
+    "label: 'AI Controller', persistent: true"
+  ]) assert.ok(gameplay.includes(fragment), fragment);
+  assert.ok(gameplay.includes("ecs.serializeEntityComponents("));
+  assert.ok(!gameplay.includes('clearStandaloneEntities();'));
+  assert.ok(wrapper.includes('return bridge.persist(sceneObjects||[],legacy)'));
+  assert.ok(input.includes('persistent: true'));
+  assert.ok(input.includes("onAdd(entity, value, api)"));
+  assert.ok(core.includes('sceneComponentSchemaVersion: SCENE_COMPONENTS_VERSION'));
+  assert.ok(core.includes('sceneObject = null'));
+  assert.doesNotThrow(() => new Function(gameplay));
+  assert.doesNotThrow(() => new Function(wrapper));
+  assert.doesNotThrow(() => new Function(input));
+});
+
+test('render authoring configuration is ECS-owned and Inspector writes Components rather than legacy Scene Object fields', () => {
+  const materials = fs.readFileSync(path.join(root, 'static/pstudio_ecs_materials.js'), 'utf8');
+  const rendering = fs.readFileSync(path.join(root, 'static/pstudio_ecs_rendering.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
+  const visual = html.indexOf('pstudio_ecs_visualfx.js');
+  const authoring = html.indexOf('pstudio_ecs_materials.js');
+  const inspector = html.indexOf('pstudio_ecs_inspector.js');
+  assert.ok(visual >= 0 && authoring > visual && inspector > authoring);
+  for (const type of ['ToonMaterial', 'MaterialOverrides', 'ShaderMaterial', 'MeshCollider']) {
+    assert.ok(materials.includes(type), type);
+    assert.ok(app.includes('"' + type + '"'), type + ' must be reserved');
+  }
+  assert.ok(engine.includes('window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || [])'));
+  assert.ok(engine.includes("ecs?.hasComponent?.(entity,'MeshCollider')"));
+  assert.ok(engine.includes('window.syncEcsSceneMaterials?.()'));
+  const uiStart = html.indexOf('function selectSceneObject');
+  const uiEnd = html.indexOf('function serializeScene', uiStart);
+  const inspectorRegion = html.slice(uiStart, uiEnd);
+  for (const legacy of [
+    'o.toonMaterialSettings', 'o.modelMaterialOverrides', 'o.postProcessing',
+    'o.particleEmitter', 'o.shaderFragment', 'o.modelScale'
+  ]) assert.equal(inspectorRegion.includes(legacy), false, legacy);
+  assert.ok(inspectorRegion.includes('setSceneToonMaterial'));
+  assert.ok(inspectorRegion.includes('setSceneMaterialOverrides'));
+  assert.ok(inspectorRegion.includes('setScenePostFX'));
+  assert.ok(inspectorRegion.includes('setSceneParticleEmitter'));
+  assert.ok(inspectorRegion.includes('setSceneShaderFragment'));
+  assert.ok(inspectorRegion.includes('setSceneMeshCollider'));
+  assert.doesNotThrow(() => new Function(materials));
+  assert.doesNotThrow(() => new Function(rendering));
+  assert.doesNotThrow(() => new Function(engine));
+});
+
+test('legacy and ECS render-authoring data both trigger 3D initialization before migration', () => {
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  assert.ok(engine.includes('!!sceneRenderableAsset(object)'));
+  assert.ok(engine.includes('!!object.model'), 'legacy model references remain readable during migration');
+  assert.ok(engine.includes("['Camera','Light','Renderable','Animation'"));
+  assert.ok(engine.includes("'ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'"));
+  assert.ok(engine.includes('window.syncEcsSceneMaterials?.()'));
+});
+
+test('render authoring Inspector handlers write ECS Components, not legacy fields', () => {
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const start = html.indexOf('function selectSceneObject');
+  const end = html.indexOf('function serializeScene', start);
+  assert.ok(start >= 0 && end > start);
+  const region = html.slice(start, end);
+  for (const legacy of ['o.toonMaterialSettings=', 'o.modelMaterialOverrides=', 'o.postProcessing=', 'o.particleEmitter=', 'o.shaderFragment=', 'o.modelScale=']) {
+    assert.equal(region.includes(legacy), false, legacy);
+  }
+  for (const method of ['setSceneToonMaterial','setSceneMaterialOverrides','setScenePostFX','setSceneParticleEmitter','setSceneShaderFragment','setSceneMeshCollider']) {
+    assert.ok(region.includes(method), method);
+  }
+});
+
+test('runtime and Editor preview use ECS Scene Components for scripts, sprite bounds, color and colliders', () => {
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_engine.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const scene = fs.readFileSync(path.join(root, 'static/pstudio_ecs_scene.js'), 'utf8');
+  const materials = fs.readFileSync(path.join(root, 'static/pstudio_ecs_materials.js'), 'utf8');
+  assert.ok(engine.includes('astForScript(sceneScriptFile(object))'));
+  assert.ok(engine.includes('astForScript(sceneScriptFile(o))'));
+  assert.ok(engine.includes('sceneSpriteConfig(object)'));
+  assert.ok(engine.includes('sceneObjectBounds2D(a)'));
+  assert.ok(engine.includes('sceneCollider2DEnabled(o)'));
+  assert.ok(engine.includes('sceneRenderableAsset(object)'));
+  assert.ok(engine.includes('window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || [])'));
+  assert.ok(html.includes('getSceneSpriteRenderer(object)'));
+  assert.ok(html.includes('getSceneScriptFile(object)'));
+  assert.ok(html.includes('setSceneScriptFile(object,fileName)'));
+  assert.ok(html.includes('setSceneRenderableAsset(object,asset)'));
+  assert.ok(html.includes('window.PStudioECSScene?.renameScriptFile'));
+  assert.ok(html.includes('window.PStudioECSScene?.renameSpriteAsset'));
+  assert.ok(materials.includes('function renameRenderableAsset'));
+  assert.doesNotThrow(() => new Function(scene));
+  assert.doesNotThrow(() => new Function(engine));
+});
+
+test('ps script runtime variables, lifecycle and System locals are ECS-owned',()=>{
+  assert.ok(engine.includes('window.PStudioECSScript?.getVariables?.(object.id)'));
+  assert.ok(engine.includes('window.PStudioECSScript?.getLifecycle?.(o.id)'));
+  assert.ok(engine.includes('getSystemStateByEntity'));
+  assert.ok(engine.includes('setSystemStateByEntity'));
+  for(const field of ['states','initialized','started','landSequences','ecsStates']){
+    assert.equal(engine.includes('runtime.'+field),false,'legacy runtime state remains: '+field);
+  }
+  assert.ok(html.indexOf('/static/pstudio_ecs.js') < html.indexOf('/static/pstudio_ecs_script.js'));
+  assert.ok(html.includes('/static/pstudio_ecs_script.js'));
 });
 
 

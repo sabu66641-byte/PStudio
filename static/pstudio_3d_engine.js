@@ -6,8 +6,8 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
-  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null;
-  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false;
+  let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null,godRaysPass=null;
+  let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false,godRaysEnabled=false,godRaysFallbackEnabled=false,godRaysIntensity=0;
   function readSavedQualityPreset(){
     try{
       const saved=window.localStorage?.getItem('pstudio-render-quality')||'auto';
@@ -34,7 +34,8 @@
   let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
-  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4};
+  const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
+  let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
@@ -87,6 +88,7 @@
   const dynamicLights = new Map();
   const particleBursts = new Map();
   const particleEmitters = new Map();
+  const trailEffects = new Map();
   const modelCollisionCache = new Map();
   const transformedCollisionCache = new Map();
   let environmentTexture = null;
@@ -107,6 +109,7 @@
   let pinchDistance = 0;
   let pinchGestureStart = null;
   let pinchGestureMode = null;
+  let cameraShakeState=null;
   let cameraTarget = [0, 0, 0];
   let cameraBase = [6, 5, 8];
   let activeCameraOwnerId = null;
@@ -517,6 +520,7 @@
       contactShadowPass=window.PStudioEnvironmentFX?.createContactShadowPass?.(FX,T)||null;if(contactShadowPass){contactShadowPass.enabled=false;composer.addPass(contactShadowPass);}
       if(FX.UnrealBloomPass){bloomPass=new FX.UnrealBloomPass(new T.Vector2(Math.max(1,canvas.clientWidth),Math.max(1,canvas.clientHeight)),bloomStrength,0.35,0.84);bloomPass.enabled=false;composer.addPass(bloomPass);}
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
+godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godRaysPass){godRaysPass.enabled=false;composer.addPass(godRaysPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();editorHelperGroup=new T.Group();
@@ -1148,6 +1152,8 @@
   }
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
+    applyCameraShake();camera.updateMatrixWorld(true);
     const frameStarted=window.performance?.now?.()??Date.now();
     if(lastDrawFrameStartedAt){
       const interval=frameStarted-lastDrawFrameStartedAt;
@@ -1173,8 +1179,8 @@
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
       const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
-      if(composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
-        if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,celestialGlare*.72);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
+      if(composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+        if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive||godRaysFallbackEnabled;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,celestialGlare*.72,godRaysFallbackEnabled?0.14+0.18*godRaysIntensity:0);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
         const syncPostFXUniforms=(pass,required,update)=>{
@@ -1207,13 +1213,33 @@
             u.uInverseProjection.value.copy(camera.projectionMatrixInverse);u.uCameraWorld.value.copy(camera.matrixWorld);u.uTime.value=particleClock;u.tDepth.value=waterDepthTarget?.depthTexture||null;
           });
         }
-        composer.render();
+        if(godRaysPass){
+          godRaysPass.enabled=godRaysEnabled;
+          syncPostFXUniforms(godRaysPass,['uLightPosition','uIntensity'],u=>{
+            camera.updateMatrixWorld(true);
+            const Three=window.THREE;const sunDirection=keyLight?.position?.clone?.()||new Three.Vector3(5,9,6);
+            if(sunDirection.lengthSq()<1e-8)sunDirection.set(5,9,6);else sunDirection.normalize();
+            const sunWorld=camera.position.clone().addScaledVector(sunDirection,1000);
+            const sunScreen=sunWorld.project(camera);
+            u.uLightPosition.value.set(sunScreen.x*0.5+0.5,sunScreen.y*0.5+0.5);
+            u.uIntensity.value=godRaysIntensity;
+          });
+        }
+        try{composer.render();}catch(postError){
+          if(!godRaysEnabled||!godRaysPass?.enabled)throw postError;
+          godRaysEnabled=false;godRaysPass.enabled=false;
+          godRaysFallbackEnabled=!!bloomPass;
+          if(bloomPass){bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive||godRaysFallbackEnabled;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,Math.max(sunGlareStrength,moonGlareStrength*.72)*.72,godRaysFallbackEnabled?0.14+0.18*godRaysIntensity:0);}
+          console.warn('[PStudio] God Rays shader is unsupported; switching to bloom fallback.',postError);
+          composer.render();
+        }
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
         if(ssrPass)ssrPass.enabled=false;if(contactShadowPass)contactShadowPass.enabled=false;
         renderer.render(scene,camera);
       }
     }finally{
+      camera.position.copy(cameraPositionBefore);camera.quaternion.copy(cameraQuaternionBefore);camera.updateMatrixWorld(true);
       restoreStaticSky(hiddenStaticSky);
       lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
       pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
@@ -1256,6 +1282,116 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     a.aOrigin.needsUpdate=true;a.aVelocity.needsUpdate=true;a.aBirth.needsUpdate=true;a.aLife.needsUpdate=true;
   }
   function disposeGpuParticleSystem(system){if(!system)return;if(system.points.parent)system.points.parent.remove(system.points);system.geometry.dispose();system.material.dispose();}
+  const MAX_TRAIL_POINTS=48;
+  const MAX_TRAIL_EFFECTS=64;
+  function disposeTrailEffect(trail){
+    if(!trail)return;
+    if(trail.mesh?.parent)trail.mesh.parent.remove(trail.mesh);
+    trail.geometry?.dispose?.();
+    trail.material?.dispose?.();
+  }
+  function updateTrailGeometry(trail){
+    const T=window.THREE,points=trail.points;
+    if(!T||!trail.geometry||points.length<2){trail.geometry?.setDrawRange?.(0,0);return;}
+    const positions=trail.geometry.attributes.position;
+    const births=trail.geometry.attributes.aBirth;
+    const worldUp=new T.Vector3(0,1,0),fallbackAxis=new T.Vector3(1,0,0);
+    for(let i=0;i<points.length;i++){
+      const previous=points[Math.max(0,i-1)].position;
+      const following=points[Math.min(points.length-1,i+1)].position;
+      const tangent=following.clone().sub(previous);
+      if(tangent.lengthSq()<1e-10)tangent.set(0,0,1);
+      else tangent.normalize();
+      const view=camera?camera.position.clone().sub(points[i].position).normalize():worldUp.clone();
+      let side=tangent.clone().cross(view);
+      if(side.lengthSq()<1e-8)side=tangent.clone().cross(worldUp);
+      if(side.lengthSq()<1e-8)side=tangent.clone().cross(fallbackAxis);
+      side.normalize().multiplyScalar(trail.width*0.5);
+      const center=points[i].position;
+      const left=center.clone().add(side),right=center.clone().sub(side);
+      positions.setXYZ(i*2,left.x,left.y,left.z);
+      positions.setXYZ(i*2+1,right.x,right.y,right.z);
+      births.setX(i*2,points[i].time);
+      births.setX(i*2+1,points[i].time);
+    }
+    positions.needsUpdate=true;births.needsUpdate=true;
+    trail.geometry.setDrawRange(0,(points.length-1)*6);
+  }
+  function updateTrailEffect(key,command){
+    const T=window.THREE;
+    if(!T||!scene)return;
+    const duration=Math.max(0.05,Math.min(10,Number(command.duration)||0.25));
+    const width=Math.max(0.001,Math.min(1,Number(command.width)||0.05));
+    let trail=trailEffects.get(key);
+    if(!trail){
+      if(trailEffects.size>=MAX_TRAIL_EFFECTS){
+        const oldestKey=trailEffects.keys().next().value;
+        const oldest=trailEffects.get(oldestKey);
+        disposeTrailEffect(oldest);trailEffects.delete(oldestKey);
+      }
+      const geometry=new T.BufferGeometry();
+      const position=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2*3),3);
+      const birth=new T.BufferAttribute(new Float32Array(MAX_TRAIL_POINTS*2),1);
+      position.setUsage?.(T.DynamicDrawUsage);birth.setUsage?.(T.DynamicDrawUsage);
+      geometry.setAttribute('position',position);geometry.setAttribute('aBirth',birth);
+      const indices=[];
+      for(let i=0;i<MAX_TRAIL_POINTS-1;i++){const a=i*2,b=a+1,c=a+2,d=a+3;indices.push(a,b,c,b,d,c);}
+      geometry.setIndex(indices);
+      const material=new T.ShaderMaterial({
+        uniforms:{uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}},
+        vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+        fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
+        transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
+      });
+      const mesh=new T.Mesh(geometry,material);mesh.frustumCulled=false;mesh.renderOrder=5;scene.add(mesh);
+      trail={geometry,material,mesh,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
+      trailEffects.set(key,trail);
+    }
+    trail.width=width;trail.duration=duration;trail.lastCalledAt=particleClock;
+    trail.material.uniforms.uDuration.value=duration;
+    try{trail.material.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.material.uniforms.uColor.value.set('#ffffff');}
+    const position=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0);
+    const last=trail.points[trail.points.length-1];
+    if(!last||last.position.distanceToSquared(position)>0.000025||particleClock-trail.lastSampleAt>=0.025){
+      trail.points.push({position,time:particleClock});trail.lastSampleAt=particleClock;
+      if(trail.points.length>MAX_TRAIL_POINTS)trail.points.shift();
+      updateTrailGeometry(trail);
+    }
+  }
+  function updateTrailEffects(){
+    for(const [key,trail] of trailEffects){
+      if(particleClock-trail.lastCalledAt>trail.duration){
+        disposeTrailEffect(trail);trailEffects.delete(key);continue;
+      }
+      const time=trail.material?.uniforms?.uTime;
+      if(time&&Object.prototype.hasOwnProperty.call(time,'value'))time.value=particleClock;
+    }
+  }
+  function triggerCameraShake(intensity,duration){
+    const strength=Math.max(0,Math.min(2,Number(intensity)||0));
+    const seconds=Math.max(0,Math.min(8,Number(duration)||0));
+    if(!strength||!seconds){cameraShakeState=null;return false;}
+    const now=window.performance?.now?.()??Date.now();
+    cameraShakeState={startedAt:now,intensity:strength,duration:seconds};
+    if(renderer&&scene&&camera)drawFrame();
+    return true;
+  }
+  function applyCameraShake(){
+    if(!cameraShakeState||!camera||!window.THREE)return;
+    const now=window.performance?.now?.()??Date.now();
+    const elapsed=Math.max(0,(now-cameraShakeState.startedAt)/1000);
+    const progress=elapsed/cameraShakeState.duration;
+    if(progress>=1){cameraShakeState=null;return;}
+    const envelope=(1-progress)*(1-progress),amplitude=0.12*cameraShakeState.intensity*envelope;
+    const right=new window.THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    const up=new window.THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+    const t=elapsed;
+    camera.position.addScaledVector(right,(Math.sin(t*59.3)+0.38*Math.sin(t*91.7+1.4))*amplitude*0.5);
+    camera.position.addScaledVector(up,(Math.cos(t*67.1+0.6)+0.32*Math.sin(t*107.3))*amplitude*0.38);
+    camera.rotateX(Math.sin(t*43.7)*0.0035*cameraShakeState.intensity*envelope);
+    camera.rotateY(Math.cos(t*51.9)*0.003*cameraShakeState.intensity*envelope);
+    camera.updateMatrixWorld(true);
+  }
   function updateGpuParticleSystems(){
     const ratio=renderer?.getPixelRatio?.()||1;
     const update=system=>{const uniforms=system?.uniforms;if(!uniforms?.uTime||!uniforms?.uPixelRatio)return false;uniforms.uTime.value=particleClock;uniforms.uPixelRatio.value=ratio;return true;};
@@ -1341,16 +1477,43 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const [key,mesh] of [...meshCache])if(owners.has(String(mesh.userData.ownerId))){disposeMesh(mesh);meshCache.delete(key);}
     for(const [key,instance] of [...modelInstances])if(owners.has(String(instance.ownerId)))removeModelInstance(key);
   }
-  function beginWorldChunkLoad(chunk){
-    if(chunk.loading||chunk.active)return;const token=++chunk.generation;chunk.loading=true;chunk.error=null;
-    Promise.all(chunk.assets.map(name=>requestModelAsset(name))).then(async()=>{if(token!==chunk.generation){if(!chunk.active&&!chunk.loading)releaseChunkAssetCache(chunk);return;}if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:chunk.assets.slice()});if(token!==chunk.generation){if(!chunk.active&&!chunk.loading)releaseChunkAssetCache(chunk);return;}
-      chunk.loading=false;chunk.active=true;chunk.lastLoadedAt=Date.now();try{window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:chunk.assets.length});window.PStudioEvents?.emit('world.chunk.resumed',{id:chunk.id});}catch(_){}
-    }).catch(error=>{if(token===chunk.generation){chunk.loading=false;chunk.active=false;chunk.error=String(error?.message||error);try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}}});
+  function releaseStaleChunkAssets(chunk,requestedAssets){
+    // If a newer generation is already active/loading, retain names it currently uses;
+    // release only resources that belonged exclusively to the obsolete request.
+    const retained=(chunk.active||chunk.loading)?new Set(chunk.assets||[]):new Set();
+    const stale=(requestedAssets||[]).filter(name=>!retained.has(name));
+    if(stale.length)releaseChunkAssetCache(chunk,stale);
   }
-  function releaseChunkAssetCache(chunk){
+  function beginWorldChunkLoad(chunk){
+    if(chunk.loading||chunk.active)return;
+    const token=++chunk.generation;
+    const requestedAssets=chunk.assets.slice();
+    chunk.loading=true;
+    chunk.error=null;
+    Promise.all(requestedAssets.map(name=>requestModelAsset(name))).then(async()=>{
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
+      if(typeof chunk.onLoad==='function')await chunk.onLoad({id:chunk.id,assets:requestedAssets.slice()});
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
+      chunk.loading=false;
+      chunk.active=true;
+      chunk.lastLoadedAt=Date.now();
+      try{
+        window.PStudioEvents?.emit('world.chunk.loaded',{id:chunk.id,assetCount:requestedAssets.length});
+        window.PStudioEvents?.emit('world.chunk.resumed',{id:chunk.id});
+      }catch(_){}
+    }).catch(error=>{
+      if(token!==chunk.generation){releaseStaleChunkAssets(chunk,requestedAssets);return;}
+      chunk.loading=false;
+      chunk.active=false;
+      chunk.error=String(error?.message||error);
+      releaseChunkAssetCache(chunk,requestedAssets);
+      try{window.PStudioEvents?.emit('world.chunk.loadFailed',{id:chunk.id,error:chunk.error});}catch(_){}
+    });
+  }
+  function releaseChunkAssetCache(chunk,assetNames=chunk.assets){
     const protectedAssets=new Set();
     for(const other of worldChunks.values())if(other.id!==chunk.id&&(other.active||other.loading))for(const name of other.assets||[])protectedAssets.add(name);
-    for(const name of chunk.assets||[]){
+    for(const name of assetNames||[]){
       if(protectedAssets.has(name))continue;
       let removed=false;
       try{removed=window.PStudioResources?.remove?.('model-gpu',name,{reason:'chunk-unloaded'})||false;}catch(_){continue;}
@@ -1359,24 +1522,133 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     }
   }
-  function endWorldChunkLoad(chunk){
-    chunk.generation++;chunk.loading=false;chunk.active=false;try{window.PStudioEvents?.emit('world.chunk.suspended',{id:chunk.id,reason:'distance'});}catch(_){}purgeWorldChunkRuntime(chunk.id);releaseChunkAssetCache(chunk);
+  function endWorldChunkLoad(chunk,preserveAssets=null){
+    chunk.generation++;chunk.loading=false;chunk.active=false;try{window.PStudioEvents?.emit('world.chunk.suspended',{id:chunk.id,reason:'distance'});}catch(_){}purgeWorldChunkRuntime(chunk.id);releaseChunkAssetCache(chunk,preserveAssets?chunk.assets.filter(name=>!preserveAssets.has(name)):chunk.assets);
     try{const result=chunk.onUnload?.({id:chunk.id,assets:chunk.assets.slice()});if(result?.catch)result.catch(error=>console.warn('[PStudio] Chunk unload callback failed:',error));}catch(error){console.warn('[PStudio] Chunk unload callback failed:',error);}
     window.PStudioResources?.trim?.('gpu');try{window.PStudioEvents?.emit('world.chunk.unloaded',{id:chunk.id});}catch(_){}
   }
   function registerWorldChunk(id,o={}){
-    const key=String(id||'').trim();if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
-    const loadDistance=Math.max(1,Number(o.loadDistance)||800),unloadDistance=Math.max(loadDistance,Number(o.unloadDistance)||loadDistance*1.2),coordinate=v=>Number.isFinite(Number(v))?Number(v):0,old=worldChunks.get(key);
-    const chunk={id:key,x:coordinate(o.x),y:coordinate(o.y),z:coordinate(o.z),loadDistance,unloadDistance,active:old?.active??(o.active===true),loading:false,generation:old?.generation||0,assets:Array.isArray(o.assets)?[...new Set(o.assets.map(String))]:[],onLoad:typeof o.onLoad==='function'?o.onLoad:old?.onLoad,onUnload:typeof o.onUnload==='function'?o.onUnload:old?.onUnload,error:null,lastLoadedAt:old?.lastLoadedAt||0};
-    worldChunks.set(key,chunk);return{id:key,loadDistance,unloadDistance,active:chunk.active,assetCount:chunk.assets.length};
+    const key=String(id||'').trim();
+    if(!key||key.length>128)throw new TypeError('Invalid world chunk id.');
+    const coordinate=v=>Number.isFinite(Number(v))?Number(v):0;
+    const loadDistance=Math.max(1,Math.min(200000,Number(o.loadDistance)||800));
+    const unloadDistance=Math.max(loadDistance,Math.min(200000,Number(o.unloadDistance)||loadDistance*1.2));
+    const assets=Array.isArray(o.assets)?[...new Set(o.assets.map(value=>String(value||'').trim()).filter(Boolean))]:[];
+    const old=worldChunks.get(key);
+    const assetsChanged=!!old&&(old.assets.length!==assets.length||old.assets.some(value=>!assets.includes(value)));
+    // Keep the registry record stable so in-flight promises retain the same object.
+    // Asset-set changes invalidate the old generation before the new configuration is assigned.
+    if(old&&assetsChanged&&(old.active||old.loading)){const retainedAssets=new Set(old.assets.filter(name=>assets.includes(name)));endWorldChunkLoad(old,retainedAssets);}
+    const chunk=old||{id:key,active:o.active===true,loading:false,generation:0,error:null,lastLoadedAt:0,onLoad:null,onUnload:null};
+    chunk.x=coordinate(o.x);chunk.y=coordinate(o.y);chunk.z=coordinate(o.z);
+    chunk.loadDistance=loadDistance;chunk.unloadDistance=unloadDistance;
+    chunk.assets=assets;
+    if(typeof o.onLoad==='function')chunk.onLoad=o.onLoad;
+    if(typeof o.onUnload==='function')chunk.onUnload=o.onUnload;
+    if(assetsChanged)chunk.error=null;
+    worldChunks.set(key,chunk);
+    return{id:key,loadDistance,unloadDistance,active:chunk.active,loading:chunk.loading,assetCount:chunk.assets.length,generation:chunk.generation};
   }
-  function assignObjectToChunk(ownerId,chunkId){const id=String(chunkId);if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);objectChunkAssignments.set(String(ownerId),id);return true;}
-  function unregisterWorldChunk(id){const key=String(id),chunk=worldChunks.get(key);if(!chunk)return false;if(chunk.active||chunk.loading)endWorldChunkLoad(chunk);worldChunks.delete(key);for(const [owner,chunkId] of objectChunkAssignments)if(chunkId===key)objectChunkAssignments.delete(owner);return true;}
-  function isOwnerChunkActive(ownerId){const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));return !chunk||chunk.active;}
+  function assignObjectToChunk(ownerId,chunkId){
+    const owner=String(ownerId||''),id=String(chunkId||'');
+    if(!owner)throw new TypeError('World chunk owner ID is required.');
+    if(!worldChunks.has(id))throw new Error('World chunk is not registered: '+id);
+    objectChunkAssignments.set(owner,id);
+    return true;
+  }
+  function unassignObjectFromChunk(ownerId){
+    return objectChunkAssignments.delete(String(ownerId));
+  }
+  function unregisterWorldChunk(id){
+    const key=String(id),chunk=worldChunks.get(key);
+    if(!chunk)return false;
+    if(chunk.active||chunk.loading)endWorldChunkLoad(chunk);
+    worldChunks.delete(key);
+    for(const [owner,chunkId] of objectChunkAssignments)if(chunkId===key)objectChunkAssignments.delete(owner);
+    return true;
+  }
+  function isOwnerChunkActive(ownerId){
+    const chunk=worldChunks.get(objectChunkAssignments.get(String(ownerId)));
+    return !chunk||chunk.active;
+  }
+  function setWorldStreamingInterests(interests){
+    const source=Array.isArray(interests)?interests:[];
+    worldStreamingInterests=source.slice(0,128).filter(value=>value&&[value.x,value.y,value.z].every(axis=>Number.isFinite(Number(axis)))).map(value=>({
+      id:String(value.id||''),
+      x:Number(value.x),y:Number(value.y),z:Number(value.z),
+      loadMultiplier:Math.max(0.1,Math.min(4,Number(value.loadMultiplier)||1)),
+      unloadMultiplier:Math.max(0.1,Math.min(4,Number(value.unloadMultiplier)||1)),
+      priority:Math.max(-1000,Math.min(1000,Math.trunc(Number(value.priority)||0)))
+    }));
+    worldStreamingInterests.sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id));
+    return worldStreamingInterests.length;
+  }
+  function clearWorldStreamingInterests(){worldStreamingInterests=[];return true;}
   function updateWorldChunkStates(){
-    if(!camera)return;for(const chunk of worldChunks.values()){const d=camera.position.distanceTo(new window.THREE.Vector3(chunk.x,chunk.y,chunk.z));if((chunk.active||chunk.loading)&&d>chunk.unloadDistance)endWorldChunkLoad(chunk);else if(!chunk.active&&!chunk.loading&&d<chunk.loadDistance)beginWorldChunkLoad(chunk);}
+    const interests=worldStreamingInterests;
+    const useCameraFallback=interests.length===0&&!!camera;
+    const loadCandidates=[];
+    let loadingCount=0;
+    for(const chunk of worldChunks.values()){
+      if(chunk.loading)loadingCount++;
+      let shouldStay=false,bestPriority=-Infinity,bestDistance=Infinity,bestNormalized=Infinity;
+      if(interests.length){
+        for(const interest of interests){
+          const dx=chunk.x-interest.x,dy=chunk.y-interest.y,dz=chunk.z-interest.z;
+          const distance=Math.hypot(dx,dy,dz);
+          const loadRadius=chunk.loadDistance*interest.loadMultiplier;
+          const unloadRadius=chunk.unloadDistance*interest.unloadMultiplier;
+          if(distance<=unloadRadius)shouldStay=true;
+          if(distance<loadRadius){
+            const normalized=distance/Math.max(1,loadRadius);
+            if(interest.priority>bestPriority||(interest.priority===bestPriority&&normalized<bestNormalized)){
+              bestPriority=interest.priority;
+              bestDistance=distance;
+              bestNormalized=normalized;
+            }
+          }
+        }
+      }else if(useCameraFallback){
+        const dx=chunk.x-camera.position.x;
+        const dy=chunk.y-camera.position.y;
+        const dz=chunk.z-camera.position.z;
+        const distance=Math.hypot(dx,dy,dz);
+        if(distance<=chunk.unloadDistance)shouldStay=true;
+        if(distance<chunk.loadDistance){
+          bestPriority=0;
+          bestDistance=distance;
+          bestNormalized=distance/Math.max(1,chunk.loadDistance);
+        }
+      }
+      if((chunk.active||chunk.loading)&&!shouldStay)endWorldChunkLoad(chunk);
+      if(!chunk.active&&!chunk.loading&&bestPriority>-Infinity){
+        loadCandidates.push({chunk,priority:bestPriority,distance:bestDistance,normalized:bestNormalized});
+      }
+    }
+    loadCandidates.sort((a,b)=>b.priority-a.priority||a.normalized-b.normalized||a.distance-b.distance||String(a.chunk.id).localeCompare(String(b.chunk.id)));
+    const configuredLimit=Number(worldRenderConfig.maxConcurrentChunkLoads);
+    const maxConcurrent=Math.max(1,Math.min(32,Number.isFinite(configuredLimit)?Math.floor(configuredLimit):4));
+    const budget=Math.max(0,maxConcurrent-loadingCount);
+    for(let index=0;index<Math.min(budget,loadCandidates.length);index++){
+      const candidate=loadCandidates[index];
+      beginWorldChunkLoad(candidate.chunk);
+      if(candidate.chunk.loading)loadingCount++;
+    }
   }
-  function setWorldRenderConfig(o={}){if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));if(Number.isFinite(Number(o.shadowDistance))){worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}}if(Array.isArray(o.lodDistances)&&o.lodDistances.length){const a=o.lodDistances.slice(0,8).map(Number);if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;}if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};}
+  function setWorldRenderConfig(o={}){
+    if(Number.isFinite(Number(o.maxDrawDistance)))worldRenderConfig.maxDrawDistance=Math.max(50,Math.min(20000,Number(o.maxDrawDistance)));
+    if(Number.isFinite(Number(o.shadowDistance))){
+      worldRenderConfig.shadowDistance=Math.max(64,Math.min(4000,Number(o.shadowDistance)));
+      if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
+    }
+    if(Array.isArray(o.lodDistances)&&o.lodDistances.length){
+      const a=o.lodDistances.slice(0,8).map(Number);
+      if(a.every(Number.isFinite)&&a.every((v,i)=>v>0&&(i===0||v>a[i-1])))worldRenderConfig.lodDistances=a;
+    }
+    if(Number.isFinite(Number(o.probeBlendCount)))worldRenderConfig.probeBlendCount=Math.max(1,Math.min(8,Math.floor(Number(o.probeBlendCount))));
+    if(Number.isFinite(Number(o.maxConcurrentChunkLoads)))worldRenderConfig.maxConcurrentChunkLoads=Math.max(1,Math.min(32,Math.floor(Number(o.maxConcurrentChunkLoads))));
+    return{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()};
+  }
   function updateProbeVolumeBlend(){
     if(bakedLightProbeVolume&&camera)lastProbeCameraPosition=camera.position.clone();
     probeVolumeGeneration++;
@@ -2340,6 +2612,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function disposeMesh(mesh) {
     if (!mesh) return;
+    window.PStudioEnvironmentFX?.releaseObject?.(mesh);
     mesh.userData?.pstudioMirrorWater?.target?.dispose?.();
     mesh.userData?.pstudioMirrorWater?.cloudTarget?.dispose?.();
     mesh.userData?.pstudioLightmapTexture?.dispose?.();
@@ -5104,6 +5377,7 @@ void main(){
     const signature=JSON.stringify(state?{
       roughness:state.roughness??null,
       metalness:state.metalness??null,
+      toon:state.toon??null,
       modelOverrides:overrides.map(item=>[
         item.name,item.roughness??null,item.metalness??null,item.color??null,
         item.doubleSide??null,item.recomputeNormals??null,item.emissive??null,item.emissiveIntensity??null
@@ -5169,6 +5443,13 @@ void main(){
         if(Number.isFinite(defaults.emissiveIntensity))material.emissiveIntensity=defaults.emissiveIntensity;
         material.side=defaults.side;
         const override=overrides.find(item=>item.name===object.name||item.name===material.name)||overrides.find(item=>item.name==='*');
+        const toonSettings=override?.toon||state?.toon||null;
+        if(toonSettings&&toonSettings.enabled!==false){
+          window.PStudioEnvironmentFX?.configureToon?.(material,toonSettings,object);
+          if(Object.prototype.hasOwnProperty.call(toonSettings,'windStrength')){
+            window.PStudioEnvironmentFX?.configureFoliage?.(material,object,{windStrength:toonSettings.windStrength,windSpeed:toonSettings.windSpeed});
+          }
+        }
         if(!override)continue;
         if(Number.isFinite(override.roughness))material.roughness=Math.max(0,Math.min(1,override.roughness));
         if(Number.isFinite(override.metalness))material.metalness=Math.max(0,Math.min(1,override.metalness));
@@ -5281,6 +5562,7 @@ void main(){
     if(instance.root.parent) instance.root.parent.remove(instance.root);
     const disposedMaterials=new Set();
     instance.root.traverse(object=>{
+      window.PStudioEnvironmentFX?.releaseObject?.(object);
       if(!object.isMesh)return;
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials)if(material)disposedMaterials.add(material);
@@ -5302,8 +5584,8 @@ void main(){
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
     let frameDelta=1/60;
-    for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){frameDelta=Math.max(0,Math.min(0.1,Number(timing.dt)||1/60));break;}}
-    particleClock+=frameDelta;
+    for(const commandList of commandsByObject.values()){const timing=commandList.find(item=>Number.isFinite(item.dt));if(timing){const value=Number(timing.dt);frameDelta=Number.isFinite(value)?Math.max(0,Math.min(0.1,value)):1/60;break;}}
+    particleClock+=frameDelta;updateTrailEffects();
     for(const material of waterMaterials){const u=material.userData?.pstudioWaterUniforms;if(u?.uPStudioTime&&Object.prototype.hasOwnProperty.call(u.uPStudioTime,'value'))u.uPStudioTime.value=particleClock;}window.PStudioEnvironmentFX?.update?.(particleClock);
     const usedMeshes=new Set(),usedGrids=new Set(),usedModels=new Set(),usedLights=new Set(),usedEmitters=new Set(),stoppedEmitters=new Set(),preservedOwners=new Set();
     const pendingFrameInstances=[];
@@ -5311,7 +5593,7 @@ void main(){
     for (const [ownerId,list] of commandsByObject.entries()) {
       if(!isOwnerChunkActive(ownerId)){preservedOwners.add(ownerId);continue;}
       let ownerMaterial=null;
-      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined}));
+      const modelOverrides=list.filter(command=>command.type==='model_material').map(d=>({name:String(d.name),roughness:Number(d.roughness),metalness:Number(d.metalness),color:d.color?String(d.color):null,doubleSide:typeof d.doubleSide==='boolean'?d.doubleSide:undefined,recomputeNormals:typeof d.recomputeNormals==='boolean'?d.recomputeNormals:undefined,emissive:d.emissive?String(d.emissive):null,emissiveIntensity:Number.isFinite(Number(d.emissiveIntensity))?Math.max(0,Math.min(8,Number(d.emissiveIntensity))):undefined,toon:d.toon&&typeof d.toon==='object'?d.toon:null}));
       if(modelOverrides.length)ownerMaterial={modelOverrides};
       for (let commandIndex=0;commandIndex<list.length;commandIndex++) {
         const d=list[commandIndex];
@@ -5319,7 +5601,10 @@ void main(){
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
       if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||(!adaptiveTouchPostFxBudget&&!!d.ssao);const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
+      if(d.type==='trail'){updateTrailEffect(String(ownerId)+':'+String(d.targetId),d);continue;}
+      if(d.type==='camera_shake'||d.type==='camera_fx')continue;
       if(d.type==='model_material')continue;
+      if(d.type==='toon_material'){const toon=d.toon&&typeof d.toon==='object'?d.toon:{};ownerMaterial=Object.assign(ownerMaterial||{},{shader:toon.enabled===false?(ownerMaterial?.shader==='toon'?'standard':ownerMaterial?.shader||'standard'):'toon',toon});continue;}
         if(d.type==='particle_emitter_stop'){stoppedEmitters.add(String(ownerId)+':'+String(d.emitterId));continue;}
         if(d.type==='particle_emitter'){
           const emitterKey=String(ownerId)+':'+String(d.emitterId);
@@ -5541,11 +5826,13 @@ void main(){
             });
             setupLightingMaterial(material);
             material=configureWaterMaterial(material);
+            const waterOpacity=Math.max(0.05,Math.min(1,Number.isFinite(Number(d.opacity))?Number(d.opacity):1));
+            material.opacity=waterOpacity;material.transparent=waterOpacity<0.999;material.depthWrite=waterOpacity>=0.999;
           }else if(d.type==='mirror_water'){
             material=configureMirrorWaterMaterial(new T.MeshPhysicalMaterial({color:'#0b3d52',roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008,ior:1.333,side:T.DoubleSide,depthWrite:true}));
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
-          }else if(shaderMode==='toon')material=new T.MeshToonMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
+          }else if(shaderMode==='toon')material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:ownerMaterial?.roughness??0.72,metalness:ownerMaterial?.metalness??0.04,side:T.DoubleSide});
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
           else material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:d.type==='terrain'?0.92:0.72,metalness:0.04,wireframe:shaderMode==='wireframe',side:d.type==='terrain'?T.DoubleSide:T.FrontSide});
@@ -5565,6 +5852,10 @@ void main(){
           }
           meshCache.set(key,mesh);primitiveGroup.add(mesh);
         }
+        const primitiveToon=ownerMaterial?.toon;
+        if(shaderMode==='toon'||(primitiveToon&&primitiveToon.enabled!==false))window.PStudioEnvironmentFX?.configureToon?.(mesh.material,Object.assign({},primitiveToon||{},{enabled:true}),mesh);
+        else if(mesh.material.userData?.pstudioToonHQ)window.PStudioEnvironmentFX?.configureToon?.(mesh.material,{enabled:false},mesh);
+        if(primitiveToon&&Object.prototype.hasOwnProperty.call(primitiveToon,'windStrength'))window.PStudioEnvironmentFX?.configureFoliage?.(mesh.material,mesh,{windStrength:primitiveToon.windStrength,windSpeed:primitiveToon.windSpeed});
         if(d.color&&mesh.material.color&&mesh.material.color.getStyle()!==new T.Color(d.color).getStyle())mesh.material.color.set(d.color);
         if(mesh.material.uniforms?.uColor&&d.color)mesh.material.uniforms.uColor.value.set(d.color);
         if(d.type!=='water'&&d.type!=='mirror_water'){
@@ -5642,6 +5933,8 @@ void main(){
     disposeGroup(selectionGroup);
     for(const emitter of particleEmitters.values())disposeGpuParticleSystem(emitter.system);particleEmitters.clear();
     for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
+    for(const trail of trailEffects.values())disposeTrailEffect(trail);trailEffects.clear();
+    cameraShakeState=null;godRaysEnabled=false;godRaysFallbackEnabled=false;godRaysIntensity=0;
     particleClock=0;
     selectionSignature='';
     if(renderer)drawFrame();
@@ -5714,6 +6007,17 @@ void main(){
     clear,
     frameObject,
     adjustZoom:adjustCameraZoom,
+    cameraShake:triggerCameraShake,
+    setGodRays:(enabled,intensity=1)=>{
+      const requested=!!enabled;
+      godRaysIntensity=Math.max(0,Math.min(2,Number.isFinite(Number(intensity))?Number(intensity):1));
+      if(requested&&!renderer&&window.THREE)ensureRenderer();
+      godRaysEnabled=requested&&!!godRaysPass;
+      godRaysFallbackEnabled=requested&&!godRaysPass&&!!bloomPass;
+      if(!requested){godRaysEnabled=false;godRaysFallbackEnabled=false;}
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
+    },
     getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
     getModelStatus,
@@ -5790,6 +6094,9 @@ void main(){
       gpuInstanceFrustumCulling:{enabled:gpuInstanceFrustumCullingEnabled,mode:'vertex-shader-sphere-test',primitiveBatches:[...instancedBatches.values()].filter(batch=>batch.userData?.pstudioGPUFrustumConfigured).length,modelBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).filter(entry=>entry.mesh.userData?.pstudioGPUFrustumConfigured).length,0)},
       instancedInstances:[...instancedBatches.values()].reduce((sum,batch)=>sum+batch.count,0),foliageInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>entry.isTree).length||0),0),modelInstancedBatches:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches?.filter(entry=>!entry.isTree).length||0),0),modelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.length||0),0),activeModelStreamChunks:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.streamChunks?.filter(chunk=>chunk.userData.pstudioStreamActive!==false).length||0),0),foliageInstancedInstances:[...modelInstances.values()].reduce((sum,instance)=>sum+(instance.foliageBatches||[]).reduce((n,entry)=>n+entry.sources.length,0),0),
       gpuParticleSystems:particleEmitters.size+particleBursts.size,
+      trails:{active:trailEffects.size,maxEffects:MAX_TRAIL_EFFECTS,maxPoints:MAX_TRAIL_POINTS},
+      cameraShake:{active:!!cameraShakeState},
+      godRays:{available:!!godRaysPass,enabled:godRaysEnabled,fallback:godRaysFallbackEnabled},
       models:modelInstances.size,
       modelPreparationPending,
       stagedTextureUploads,
@@ -5815,12 +6122,13 @@ void main(){
         throw error;
       }
     },
-    bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unregisterWorldChunk,
+    bakeUVLightmaps,saveLightmaps,loadLightmaps,clearLightmaps,setWorldRenderConfig,registerWorldChunk,assignObjectToChunk,unassignObjectFromChunk,unregisterWorldChunk,
+    setWorldStreamingInterests,clearWorldStreamingInterests,
     isOwnerChunkActive,
     setGPUInstanceFrustumCulling:enabled=>{gpuInstanceFrustumCullingEnabled=!!enabled;updateGPUInstanceFrustumPlanes();return gpuInstanceFrustumCullingEnabled;},
     setClusteredLighting:enabled=>{clusteredLightingEnabled=!!enabled;updateClusteredLighting(true);return{enabled:clusteredLightingEnabled,available:!!clusteredLightingResources,active:clusteredLightingActive};},
     setOcclusionCulling:enabled=>{occlusionEnabled=!!enabled;for(const mesh of meshCache.values()){mesh.userData.pstudioOccluded=false;mesh.visible=true;}for(const instance of modelInstances.values()){instance.root.userData.pstudioOccluded=false;instance.root.visible=true;}for(const batch of instancedBatches.values())for(const source of batch.userData.instanceSources||[])source.mesh.userData.pstudioOccluded=false;return occlusionEnabled;},
-    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
+    getWorldStats:()=>({chunks:worldChunks.size,activeChunks:[...worldChunks.values()].filter(c=>c.active).length,loadingChunks:[...worldChunks.values()].filter(c=>c.loading).length,chunkErrors:[...worldChunks.values()].filter(c=>c.error).map(c=>({id:c.id,error:c.error})),assignedObjects:objectChunkAssignments.size,streamingInterests:worldStreamingInterests.length,config:{...worldRenderConfig,lodDistances:worldRenderConfig.lodDistances.slice()}}),
     isAvailable: () => !!window.THREE,
     getModelError: name => modelLoadErrors.get(name) || null,
     invalidateAsset

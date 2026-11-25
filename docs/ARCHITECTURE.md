@@ -188,3 +188,137 @@ For future modifications:
 The asset UI stores GLB and bundled JSON glTF data in IndexedDB under the original asset name. GLB is decoded by `static/pstudio_gltf_worker.js`; JSON glTF is loaded by the renderer-compatible Three.js GLTFLoader using a Blob URL because the worker parser intentionally validates the GLB 2.0 binary header. The renderer then reconstructs/instances the scene, prepares textures, and renders it.
 
 Worker hydration failures can use the main-thread GLTFLoader fallback when the input is not structurally invalid and the failure does not indicate memory exhaustion. Model errors are surfaced as `pstudio-model-error` events, with retry/status APIs owned by `PStudio3D`. The editor's “added to scene” message confirms scene registration only; it does not claim that asynchronous model loading or GPU preparation has completed.
+
+## ECS Migration Reference
+
+### Cinematic game-script APIs
+
+The four Step 4 APIs remain browser-game-runtime-only and are registered in `GAME_FUNCTIONS` for `validate_ast(..., allow_game=True)`. They do not enter the regular C++17 built-in table:
+
+- `camera_shake(intensity, duration)` delegates a bounded transient impulse to `PStudio3D.cameraShake()`; the renderer applies it only while drawing and restores the authored camera transform after the frame.
+- `set_time_scale(scale)` sets the browser runtime's simulation multiplier. The scaled `dt` is shared by script callbacks, ECS, physics and render-command clocks; wall-clock browser APIs and audio playback are deliberately unaffected.
+- `draw_trail(target_id, color, width, duration)` resolves a scene object by id or name and emits a world-space trail sample. The renderer owns bounded ribbon geometry and disposes expired/evicted effects.
+- `set_god_rays(enabled, intensity)` toggles a screen-space ShaderPass before OutputPass. Missing or failed God Rays rendering falls back to the existing Bloom pass where available.
+
+The trail pool is capped at 64 effects × 48 samples. The screen-space God Rays shader uses 20 texture samples per output pixel; desktop/mobile GPU compile, frame-time and visual equivalence checks remain real-device quality gates. A failed optional God Rays pass must not prevent the base renderer or other post-processing from running.
+
+### ps ECS declarations and runtime bridge
+
+The parser recognizes contextual top-level `component Name` and `system Name(ComponentA, ComponentB)` declarations without reserving those words as lexer keywords. Thus existing variables named `component` and `system` remain valid. Member access/assignment is represented by explicit AST nodes and validated against the declared Component fields. The browser runtime registers project Components and Systems with `PStudioECS`, then uses the existing scheduler and sparse-set iteration API.
+
+The initial bridge policy attaches every declared custom Component to every Scene Game Object at Play start. System IDs are deterministically namespaced by source filename and declared system name. Component definitions and system references are validated across all .ps files in `/game/prepare`. Stop and failed-start paths unregister dynamic Systems, clear scene mirrors, then unregister custom Component types in dependency-safe order.
+
+This stage does not replace legacy object scripts, PStudioPhysics ownership, renderer state, collision or gameplay systems. The built-in Transform is still synchronized between ECS and Scene Object fields. Native code generation must preserve the same Component schemas and System ordering without implying that JavaScript renderer/physics backends have been ported.
+
+### Native build boundary
+
+The normal `/compile` path continues to generate C++17 for the existing console-program subset. Browser game ASTs also contain renderer, input, asset and physics calls whose semantics currently live in JavaScript/Three.js, so they are not passed wholesale to `generate_cpp()`. `/native/ecs/export` is a separate project-level generator: it validates Component/System declarations across `.ps` files and packages a constrained C++17 ECS runtime, generated Component structs/System callbacks, a sample `main.cpp` and CMake build files. The current native System subset supports member data access/assignment, local scalar values, arithmetic/logical expressions, conditional/while/range loops, `len` and `range`. Unsupported game APIs or helper calls are rejected during export. The generated CMake package can be built with a local Windows/macOS C++17 toolchain or Android NDK CMake toolchain, but it is an ECS module/sample executable rather than a complete game. Native rendering, GLB loading, input/audio, physics and broader gameplay backends remain necessary before complete `.exe`, `.app` or APK game exports can be claimed.
+
+## ECS and Physics frame contract
+
+For each runtime frame:
+1. Run ECS Systems in the `update` phase.
+2. Run `prePhysics` Systems to create/configure bodies from ECS PhysicsBody Components.
+3. Run the existing per-Scene-Object ps callbacks and generate render/Physics commands.
+4. Run ECS `postUpdate` Systems. The gameplay AI Controller evaluates AI state and writes MovementIntent; the Movement Intent Resolver applies it to Physics before simulation.
+5. Run the fixed-step `PStudioPhysics.step()` solver.
+6. Run ECS `postPhysics` Systems to copy PhysicsState and PhysicsTransform snapshots from the solver.
+7. Update collision events and render.
+
+`Transform` is synchronized with existing Scene Object fields, which include the editor's 2D pixel coordinate convention. Physics body positions are world units and are exposed through `PhysicsTransform` instead. This split is intentional until a single explicit world-transform conversion layer is adopted. Do not write Physics world-space positions directly into Scene Object Transform fields.
+
+The built-in `Velocity` System integrates non-Physics entities into ECS Transform. Entities with a PhysicsBody are excluded so the generic velocity integrator cannot compete with the fixed-step solver. PhysicsState and PhysicsTransform are runtime-only/read-only Components and are not serialized into the project.
+
+## Incremental gameplay-state migration
+
+The legacy `PStudioGameplay` API remains the compatibility surface for existing ps built-ins. While Play is active, the per-Scene-Object `Health`, `Inventory`, `Equipment`, `CombatState`, `AIController` and `MovementIntent` data are stored in runtime-only ECS Components. Quest progress is stored in standalone ECS entities with `QuestProgress`; the active conversation is stored in a singleton `DialogueSession`. These Components are not serialized into editor scene objects.
+
+The existing API names and their result types remain in place. It routes HP, inventory, equipment, cooldown, combo, quest and dialogue reads/writes to ECS when a matching Scene Object/runtime is active. At Stop, the bridge snapshots state into a compatibility store and removes standalone quest/dialogue entities before Scene Object ECS teardown; the next Play restores those snapshots. The compatibility store is not an active second writer during a Play session.
+
+AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `postUpdate` phase. It writes `MovementIntent`; `gameplay.movement-intent` then applies the intent to the existing Physics controller before the fixed-step solver. The `gameplay.combat-state-maintenance` System expires old per-target cooldown records. Physics still owns its solver, item/weapon/quest definitions remain configuration data in the Gameplay service, and `PStudioUI` continues to own DOM presentation. Navigation node coordinates, links, blocked state and A* next-node queries are ECS-owned by standalone `NavigationNode` Entities; the Gameplay API only provides compatibility wrappers and graph-building helpers. This is an incremental state/runtime migration, not a claim that every gameplay subsystem or infrastructure service has become ECS.
+
+## ECS World Streaming Bridge
+
+- `WorldPartition` is a persistent Scene Object Component describing a region center, load/unload radii, explicit member Scene Object IDs and model assets to preload.
+- `StreamingInterest` is a persistent Component for a moving or fixed world position. Multiple interests are supported, with per-interest priority and independent load/unload multipliers.
+- ECS snapshot Systems run in `postUpdate`; `PStudioECSStreaming.sync()` updates region registration, member assignments and the interest list before Physics and rendering consume owner activation state.
+- `PStudio3D` remains the owner of asynchronous model requests, generation tokens, chunk activation/suspension, GPU resource leases, cache eviction and mesh/model disposal. ECS never owns promises or renderer resources.
+- Chunk re-registration updates a stable record rather than replacing it. Asset-set changes invalidate the prior generation, preserve assets shared with the replacement configuration and ignore stale async completions. Load scheduling combines multiple interest points and respects a bounded concurrent-load budget.
+- Stop clears ECS streaming registrations and interest points before renderer teardown. Persistent Component data remains stored on Scene Objects and is restored on the next Play.
+
+
+## ECS Visual FX Configuration Bridge
+
+- Persistent `Environment`, `Fog`, `Water`, and `PostFX` Components describe scene-level rendering configuration; `ParticleEmitter` and `Trail` Components describe per-Scene Object effects.
+- `PStudioECSVisualFX` snapshots these values through ECS Systems and translates them into the existing renderer command stream before Physics.
+- `PStudio3D` remains the exclusive owner of water materials/shaders, environment textures, post-processing passes, particle simulation/buffers and trail geometry/disposal. ECS stores no Three.js objects or GPU handles.
+- Legacy ps rendering built-ins remain supported. Global Environment/Fog and PostFX Component commands are inserted before script-authored commands so existing ps script overrides retain precedence.
+- One-shot `emit_particles` remains a transient command, not a persistent Component; `PStudioUI` continues to own DOM presentation.
+
+
+## ECS UI Intent Bridge
+
+- A singleton `UIOverlay` Component stores which gameplay overlay is currently active (inventory, quests or dialogue) and its optional Scene Object owner.
+- `PStudioGameplay` reads/writes overlay intent through `PStudioECSUI`; Game Stop clears the transient Component.
+- `UIOverlay` is internal and non-persistent: it is not written into project backups or scene files.
+- `PStudioUI` continues to own DOM elements, buttons, layout, accessibility and actual display. ECS does not create or retain DOM nodes.
+
+
+## ECS Module Lifecycle Mirror
+
+- Each registered `PStudioModules` entry is mirrored by a standalone runtime-only `ModuleState` Entity.
+- The bridge listens to registration, state-change, enabled, disabled and unregistration events; it also rebuilds the mirror from the registry on synchronization.
+- `PStudioModules` remains authoritative for dependency resolution, conflict checks, async activate/deactivate callbacks, rollback and unregister guards. ECS does not run module hooks or own module resources.
+- Module state Components are internal and non-persistent; they are not written into scenes or project backups.
+
+
+## Versioned ECS Scene Component Persistence
+
+- Scene Objects store persistent ECS data as `ecsComponentsVersion` plus an `ecsComponents` list.
+- The current Component payload schema is version 1. Unversioned v0 arrays and type-keyed maps are migrated on load.
+- Only persistent Components are serialized; transient runtime state such as `UIOverlay`, `ModuleState`, `PhysicsState`, `PhysicsTransform` and `AudioCommand` is excluded.
+- Unknown future schema versions are left untouched and skipped by older runtimes rather than being silently downgraded.
+- Scene Object position/rotation/scale remain in the existing project format; the core `Transform` and `SceneObjectRef` bridge Components are excluded from the Component payload to avoid duplicate persistence.
+
+
+## ECS Gameplay Definition Entities
+
+- `ItemDefinition`, `WeaponDefinition` and `QuestDefinition` are standalone ECS definition Entities, separate from per-Scene Object Inventory/Equipment/CombatState/QuestProgress state.
+- Existing `PStudioGameplay.defineItem`, `defineWeapon` and `questDefine` APIs remain supported and write through to the ECS definition Components.
+- Definition ID-to-Entity Maps are lookup caches only; definition records live in ECS.
+- Definitions are runtime project configuration rebuilt by the existing ps definition calls. They are not automatically serialized into Scene Object data; project-authored data assets remain a separate content-authoring concern.
+
+
+## Gameplay State and Session Persistence
+
+- `Health`, `Inventory`, `Equipment`, `CombatState` and `AIController` are persistent Scene Object Components. On Game Stop, `PStudioECSGameplay` writes them through the same versioned `ecsComponentsVersion` serializer used by the Inspector; the legacy Map snapshot is no longer the normal persistence path.
+- `QuestProgress` and `DialogueSession` are standalone, non-project-persistent ECS Entities. They remain in ECS across Game Stop/Play instead of being copied into `PStudioGameplay` Maps and reconstructed on the next start.
+- `PlayerInput` stores durable per-entity key bindings and is serialized with its Scene Object. Its `ControlIntent` remains transient and is recreated by the PlayerInput Component lifecycle hook.
+- A saved Scene Object with a newer unsupported Component schema is never overwritten by an older runtime. Unregistered Component records in the current supported schema are preserved for modules/plugins that are not loaded in the current session.
+
+
+## Project Backup ECS Component Preservation
+
+- Project backup import reconstructs a sanitized Scene Object model; it must explicitly copy `ecsComponentsVersion` and `ecsComponents`, otherwise all ECS-only gameplay/rendering/physics data would be silently lost.
+- Legacy v0 array and type-keyed Component payloads are retained for the ECS core's migration path.
+- Current supported Component payloads are copied with bounded per-object size/count limits.
+- Newer future schema payloads are treated as opaque JSON and preserved without normalization or downgrade; older runtime restoration will skip them.
+
+
+## ECS Rendering Authoring Configuration
+
+- `ToonMaterial`, `MaterialOverrides`, `ShaderMaterial` and `MeshCollider` are persistent Inspector-facing Scene Object Components.
+- Existing legacy Scene Object fields (`toonMaterialSettings`, `modelMaterialOverrides`, `shaderFragment`, `modelScale`, `collider`, `postProcessing`, `particleEmitter`) are migrated once into the same versioned `ecsComponents` payload and removed from the active Scene Object model.
+- Inspector reads and writes ECS Components. The engine converts them to the existing `toon_material`, `model_material`, `material`, PostFX, particle-emitter and mesh-collider command paths.
+- Three.js materials, shader programs/uniform buffers, GLB material instances, model triangle caches and Physics solver collision structures remain owned by PStudio3D/PStudioPhysics; ECS stores only JSON-safe authoring configuration and references.
+- If a Scene Object has an unsupported future Component schema, migration and Inspector writes are blocked without mutating the saved data.
+
+
+## ECS Scene Behavior and 2D Presentation
+
+- `ScriptAttachment` stores a safe relative `.ps` project path and enabled state. The Runtime still compiles/executes ASTs and owns per-script locals/functions.
+- `SpriteRenderer` stores an image asset reference, enabled flag, dimensions, tint, primitive shape, layer and sort order. AssetStore owns image bytes/decoding; Canvas/Three.js own drawing.
+- `Collider2D` stores overlap/trigger intent. The Engine collision service still computes bounds/pairs and emits events.
+- `Renderable.assetName` is authoritative for 3D model references; AssetStore/Renderer continue to own GLB bytes and loaded model resources.
+- `EditorObjectSettings` stores persistent manipulation permission; pointer/DOM interaction remains editor-service logic.
+- Legacy Scene Object fields `script`, `sprite`, `color`, `shape`, `w/h`, `model`, `modelScale`, `collider` and `manipulationEnabled` are migrated once into the versioned ECS Component payload and removed from the active Scene Object object. Future-version payloads are not modified.

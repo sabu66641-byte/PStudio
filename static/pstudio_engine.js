@@ -124,7 +124,7 @@
       jumpButton.addEventListener('lostpointercapture',releaseJump);
     }
   })();
-  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); resetVirtualControls(); });
+  window.addEventListener('blur', () => { keys.clear(); justPressed.clear(); resetVirtualControls(); touchActive=false; activePointerId=null; window.PStudioECSInput?.reset?.(); });
   window.addEventListener('pstudio-model-error', e => {
     const detail=e.detail||{};
     setOutput?.('3D model load failed: '+(detail.name||'unknown')+' — '+(detail.error||'unknown error'),'error');
@@ -155,14 +155,14 @@
   function makeContext(object, dt) {
     return {
       object, dt, draw: [], steps: 0, callDepth: 0,
-      env: runtime.states.get(object.id) || Object.create(null),
+      env: window.PStudioECSScript?.getVariables?.(object.id) || Object.create(null),
       funcs: Object.create(null),
       output: []
     };
   }
   function setupContext(object, dt=0) {
     const c = makeContext(object, dt);
-    const ast = astForScript(object.script);
+    const ast = astForScript(sceneScriptFile(object));
     if (!ast) return c;
     for (const node of ast.body || []) if (node.type === 'FunctionDef') c.funcs[node.name] = node;
     return c;
@@ -177,6 +177,12 @@
     if (target.type === 'Variable') env[target.value] = value;
     else if (target.type === 'IndexExpr') {
       const a = getVar(c, env, target.name); a[evalExpr(c, env, target.index)] = value;
+    } else if (target.type === 'MemberExpr') {
+      const owner=evalExpr(c,env,target.object),property=String(target.property||'');
+      if(!owner||typeof owner!=='object'||Array.isArray(owner)||['__proto__','prototype','constructor'].includes(property)||!Object.prototype.hasOwnProperty.call(owner,property)) {
+        throw new PsRuntimeError('Component Fieldへの代入先が不正です: '+property);
+      }
+      owner[property]=value;
     } else throw new PsRuntimeError('代入先が不正です。');
   }
   function callFunction(c, name, args) {
@@ -191,8 +197,34 @@
     finally { fn.params.forEach(p => { if (old[p] === undefined) delete c.env[p]; else c.env[p] = old[p]; }); c.callDepth--; }
     return null;
   }
-  function callBuiltin(c, name, a) {
+  function sceneSpriteConfig(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'SpriteRenderer'))return window.PStudioECS.getComponent(entity,'SpriteRenderer');
+ return {enabled:true,spriteAsset:String(object?.sprite||''),width:Math.max(1,Number(object?.w)||64),height:Math.max(1,Number(object?.h)||64),color:object?.color||'#d1d5db',shape:object?.shape==='circle'?'circle':'rect',layer:0,sortOrder:0};
+}
+function sceneScriptFile(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'ScriptAttachment')){
+  const config=window.PStudioECS.getComponent(entity,'ScriptAttachment');
+  return config.enabled===false?'':String(config.scriptFile||'');
+ }
+ return String(object?.script||'');
+}
+function sceneRenderableAsset(object){
+ return String(window.PStudioECSMaterials?.getRenderableAsset?.(object?.id,sceneObjects)||object?.model||'');
+}
+function sceneCollider2DEnabled(object){
+ const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object?.id));
+ if(entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'Collider2D'))return window.PStudioECS.getComponent(entity,'Collider2D').enabled===true;
+ return object?.collider===true;
+}
+function sceneObjectBounds2D(object){
+ const sprite=sceneSpriteConfig(object);
+ return {...object,w:sprite.width,h:sprite.height,shape:sprite.shape};
+}
+function callBuiltin(c, name, a) {
     const o = c.object;
+    const sprite = sceneSpriteConfig(o);
     const physics = window.PStudioPhysics;
     const physicsPosition = () => physics?.getPosition?.(o.id);
     const readPosition = axis => physicsPosition()?.[['x','y','z'][axis]] ?? (Number(o[['x','y','z'][axis]])||0);
@@ -215,9 +247,11 @@
       case 'rotate_y': if (a.length===1) { o.rotationY=(Number(o.rotationY)||0)+finite(a[0]); return o.rotationY; } break;
       case 'rotate_z': if (a.length===1) { o.rotationZ=(Number(o.rotationZ)||0)+finite(a[0]); return o.rotationZ; } break;
       case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]);return keys.has(k)||virtualKeys.has(k);} break;
-      case 'was_key_pressed': if (a.length===1) return justPressed.has(normalizeKey(a[0])); break;
+      case 'is_key_down': if (a.length===1) {const k=normalizeKey(a[0]),input=window.PStudioECSInput;return input?input.isKeyDown(k):keys.has(k)||virtualKeys.has(k);} break;
+      case 'was_key_pressed': if (a.length===1) {const k=normalizeKey(a[0]),input=window.PStudioECSInput;return input?input.wasKeyPressed(k):justPressed.has(k);} break;
       case 'get_axis': if (a.length===1) {
-        const axis=String(a[0]).toLowerCase();
+        const axis=String(a[0]).toLowerCase(),input=window.PStudioECSInput;
+        if(input){const value=input.getAxis(axis);if(value!==null)return value;}
         if(axis==='horizontal'||axis==='x')return clampAxis((keys.has('d')||keys.has('arrowright')?1:0)-(keys.has('a')||keys.has('arrowleft')?1:0)+virtualAxis.x);
         if(axis==='vertical'||axis==='z')return clampAxis((keys.has('s')||keys.has('arrowdown')?1:0)-(keys.has('w')||keys.has('arrowup')?1:0)+virtualAxis.z);
         break;
@@ -227,37 +261,49 @@
       case 'get_touch_y': if (!a.length) return pointerPosition.y; break;
       case 'play_sound': if(a.length===3)return playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
       case 'stop_sound': if(a.length===1)return stopOwnerSound(o.id,String(a[0])); break;
-      case 'set_sound_volume': if(a.length===2)return setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
+      case 'is_touched': if (!a.length) return window.PStudioECSInput?.isTouched?.()??touchActive; break;
+      case 'get_touch_x': if (!a.length) return window.PStudioECSInput?.getTouchX?.()??pointerPosition.x; break;
+      case 'get_touch_y': if (!a.length) return window.PStudioECSInput?.getTouchY?.()??pointerPosition.y; break;
+      case 'play_sound': if(a.length===3)return window.PStudioECSAudio?window.PStudioECSAudio.play(o.id,String(a[0]),a[1],a[2]):playOwnerSound(o.id,String(a[0]),a[1],a[2]); break;
+      case 'stop_sound': if(a.length===1)return window.PStudioECSAudio?window.PStudioECSAudio.stop(o.id,String(a[0])):stopOwnerSound(o.id,String(a[0])); break;
+      case 'set_sound_volume': if(a.length===2)return window.PStudioECSAudio?window.PStudioECSAudio.setVolume(o.id,String(a[0]),a[1]):setOwnerSoundVolume(o.id,String(a[0]),a[1]); break;
       case 'get_delta_time': if (!a.length) return c.dt; break;
       case 'get_width': if (!a.length) return Number(o.w)||0; break;
       case 'get_height': if (!a.length) return Number(o.h)||0; break;
-      case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:o.color||'#d1d5db'}); return null; } break;
+      case 'get_width': if (!a.length) return Number(sprite.width)||0; break;
+      case 'get_height': if (!a.length) return Number(sprite.height)||0; break;
+      case 'draw_rect': if (a.length===4) { c.draw.push({type:'rect',x:finite(a[0]),y:finite(a[1]),w:finite(a[2]),h:finite(a[3]),color:sprite.color||'#d1d5db'}); return null; } break;
       case 'draw_hud_text': if(a.length===5){c.draw.push({type:'hud_text',text:String(a[0]),x:finite(a[1]),y:finite(a[2]),size:Math.max(8,Math.min(96,finite(a[3]))),color:String(a[4])});return null;} break;
       case 'draw_hud_bar': if(a.length===7){c.draw.push({type:'hud_bar',value:finite(a[0]),max:Math.max(0.001,finite(a[1])),x:finite(a[2]),y:finite(a[3]),w:Math.max(1,finite(a[4])),h:Math.max(1,finite(a[5])),color:String(a[6])});return null;} break;
-      case 'draw_circle': if (a.length===3) { c.draw.push({type:'circle',x:finite(a[0]),y:finite(a[1]),r:Math.max(0,finite(a[2])),color:o.color||'#d1d5db'}); return null; } break;
+      case 'draw_circle': if (a.length===3) { c.draw.push({type:'circle',x:finite(a[0]),y:finite(a[1]),r:Math.max(0,finite(a[2])),color:sprite.color||'#d1d5db'}); return null; } break;
       case 'draw_sprite': if (a.length===3) { c.draw.push({type:'sprite',name:String(a[0]),x:finite(a[1]),y:finite(a[2])}); return null; } break;
       case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
       case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:o.color||'#a1a1aa'}); return null; } break;
       case 'draw_box': if (a.length===6) { c.draw.push({type:'box',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),depth:Math.max(0.001,finite(a[5])),color:o.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
-      case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:o.color||'#64748b'}); return null; } break;
+      case 'draw_cube': if (a.length===4) { c.draw.push({type:'cube',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),size:Math.max(0.001,finite(a[3])),color:sprite.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
+      case 'draw_sphere': if (a.length===4) { c.draw.push({type:'sphere',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),color:sprite.color||'#a1a1aa'}); return null; } break;
+      case 'draw_box': if (a.length===6) { c.draw.push({type:'box',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),depth:Math.max(0.001,finite(a[5])),color:sprite.color||'#d1d5db',rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180}); return null; } break;
+      case 'draw_plane': if (a.length===5) { c.draw.push({type:'plane',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.001,finite(a[3])),depth:Math.max(0.001,finite(a[4])),color:sprite.color||'#64748b'}); return null; } break;
       case 'add_triangle_collider': if(a.length===9){c.draw.push({type:'triangle_collider',points:a.map(finite)});return null;} break;
       case 'draw_cylinder': if (a.length===5) { c.draw.push({type:'cylinder',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
       case 'draw_cone': if (a.length===5) { c.draw.push({type:'cone',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:o.color||'#d1d5db'}); return null; } break;
-      case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:o.color||'#93c5fd'}); return null; } break;
+      case 'draw_cylinder': if (a.length===5) { c.draw.push({type:'cylinder',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:sprite.color||'#d1d5db'}); return null; } break;
+      case 'draw_cone': if (a.length===5) { c.draw.push({type:'cone',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(0.001,finite(a[4])),color:sprite.color||'#d1d5db'}); return null; } break;
+      case 'draw_capsule': if (a.length===5) { c.draw.push({type:'capsule',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),radius:Math.max(0.001,finite(a[3])),height:Math.max(finite(a[4]),Math.max(0.001,finite(a[3]))*2),color:sprite.color||'#93c5fd'}); return null; } break;
       case 'set_background': if (a.length===1) { c.draw.push({type:'environment',background:String(a[0])}); return null; } break;
       case 'set_fog': if (a.length===3) { c.draw.push({type:'environment',fogColor:String(a[0]),fogNear:Math.max(0,finite(a[1])),fogFar:Math.max(0.001,finite(a[2]))}); return null; } break;
       case 'set_light': if (a.length===4) { c.draw.push({type:'environment',lightX:finite(a[0]),lightY:finite(a[1]),lightZ:finite(a[2]),lightIntensity:Math.max(0,finite(a[3]))}); return null; } break;
       case 'set_point_light': if(a.length===6){c.draw.push({type:'light',kind:'point',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),intensity:Math.max(0,finite(a[3])),color:String(a[4]),distance:Math.max(0,finite(a[5]))});return null;} break;
       case 'set_spot_light': if(a.length===9){c.draw.push({type:'light',kind:'spot',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),intensity:Math.max(0,finite(a[6])),color:String(a[7]),angle:Math.max(0.01,Math.min(1.55,finite(a[8])))});return null;} break;
       case 'set_environment': if(a.length===3){c.draw.push({type:'environment',environmentSky:String(a[0]),environmentGround:String(a[1]),environmentIntensity:Math.max(0,finite(a[2]))});return null;} break;
-      case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:o.color||'#66835a'});return null;} break;
+      case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:sprite.color||'#66835a'});return null;} break;
       case 'draw_water': if(a.length===7){c.draw.push({type:'water',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),color:String(a[5]),opacity:Math.max(0.05,Math.min(1,finite(a[6])))});return null;} break;
       case 'draw_mirror_water': if(a.length>=5&&a.length<=7){c.draw.push({type:'mirror_water',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(0.1,finite(a[3])),depth:Math.max(0.1,finite(a[4])),reflectivity:a.length>=6?Math.max(0,Math.min(1,finite(a[5]))):1.0,waveStrength:a.length>=7?Math.max(0,Math.min(1,finite(a[6]))):0.05});return null;} break;
       case 'emit_particles': if(a.length===7){c.draw.push({type:'particles',burstId:++particleSequence,x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),count:Math.max(1,Math.min(400,Math.floor(finite(a[3])))),color:String(a[4]),speed:Math.max(0,finite(a[5])),lifetime:Math.max(0.05,Math.min(10,finite(a[6]))),dt:c.dt});return null;} break;
       case 'set_point_light': if(a.length===6){c.draw.push({type:'light',kind:'point',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),intensity:Math.max(0,finite(a[3])),color:String(a[4]),distance:Math.max(0,finite(a[5]))});return null;} break;
       case 'set_spot_light': if(a.length===9){c.draw.push({type:'light',kind:'spot',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),intensity:Math.max(0,finite(a[6])),color:String(a[7]),angle:Math.max(0.01,Math.min(1.55,finite(a[8])))});return null;} break;
       case 'set_environment': if(a.length===3){c.draw.push({type:'environment',environmentSky:String(a[0]),environmentGround:String(a[1]),environmentIntensity:Math.max(0,finite(a[2]))});return null;} break;
-      case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:o.color||'#66835a'});return null;} break;
+      case 'draw_terrain': if(a.length===7){c.draw.push({type:'terrain',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),segments:Math.max(2,Math.min(96,Math.floor(finite(a[5])))),height:Math.max(0,finite(a[6])),color:sprite.color||'#66835a'});return null;} break;
       case 'draw_water': if(a.length===7){c.draw.push({type:'water',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),width:Math.max(1,finite(a[3])),depth:Math.max(1,finite(a[4])),color:String(a[5]),opacity:Math.max(0.05,Math.min(1,finite(a[6])))});return null;} break;
       case 'physics_body': if (a.length===6) { if(!physics)throw new PsRuntimeError('Physics module is unavailable.'); physics.createBody(o.id,finite(a[0]),finite(a[1]),finite(a[2]),Math.max(0.05,finite(a[3])),Math.max(0.1,finite(a[4])),Math.max(0.001,finite(a[5]))); return null; } break;
       case 'set_gravity': if (a.length===3) { physics?.setGravity(o.id,finite(a[0]),finite(a[1]),finite(a[2])); return null; } break;
@@ -342,12 +388,56 @@
       case 'draw_grid': if (a.length===2) { c.draw.push({type:'grid',size:Math.max(1,finite(a[0])),divisions:Math.max(1,Math.min(200,Math.floor(finite(a[1]))))}); return null; } break;
       case 'set_material': if (a.length===2) { c.draw.push({type:'material',roughness:Math.max(0,Math.min(1,finite(a[0]))),metalness:Math.max(0,Math.min(1,finite(a[1])))}); return null; } break;
       case 'set_shader': if(a.length===1){const mode=String(a[0]).toLowerCase();if(!['standard','toon','unlit','normal','wireframe'].includes(mode))throw new PsRuntimeError('Shader preset must be standard, toon, unlit, normal or wireframe.');c.draw.push({type:'material',shader:mode});return null;} break;
+      case 'set_toon_material': if(a.length===14){
+        const color=(value,fallback)=>/^#[0-9a-f]{6}$/i.test(String(value))?String(value):fallback;
+        const bounded=(value,min,max)=>Math.max(min,Math.min(max,finite(value)));
+        c.draw.push({type:'toon_material',toon:{
+          enabled:true,shadowColor:color(a[0],'#46516f'),midColor:color(a[1],'#9eafd0'),highlightColor:color(a[2],'#ffffff'),
+          shadowThreshold:bounded(a[3],0.02,0.95),highlightThreshold:bounded(a[4],0.05,0.99),
+          rimColor:color(a[5],'#b8dcff'),rimIntensity:bounded(a[6],0,4),rimPower:bounded(a[7],0.5,8),
+          outlineColor:color(a[8],'#182235'),outlineWidth:bounded(a[9],0.005,0.45),
+          sssColor:color(a[10],'#f0a5a0'),sssIntensity:bounded(a[11],0,1.5),
+          windStrength:bounded(a[12],0,2.5),windSpeed:bounded(a[13],0,4)
+        }});return null;
+      } break;
       case 'set_model_material': if(a.length===4){c.draw.push({type:'model_material',name:String(a[0]),roughness:Math.max(0,Math.min(1,finite(a[1]))),metalness:Math.max(0,Math.min(1,finite(a[2]))),color:String(a[3])});return null;} break;
       case 'set_postprocessing': if(a.length===3){c.draw.push({type:'postfx',bloom:truthy(a[0]),ssao:truthy(a[1]),strength:finite(a[2])});return null;} break;
       case 'particle_emitter': if(a.length===6){c.draw.push({type:'particle_emitter',emitterId:String(a[0]),x:readPosition(0),y:readPosition(1),z:readPosition(2),rate:Math.max(0,finite(a[1])),color:String(a[2]),speed:Math.max(0,finite(a[3])),lifetime:Math.max(0.05,Math.min(20,finite(a[4]))),maxCount:Math.max(1,Math.min(1200,Math.floor(finite(a[5])))),dt:c.dt});return null;} break;
       case 'stop_particle_emitter': if(a.length===1){c.draw.push({type:'particle_emitter_stop',emitterId:String(a[0])});return null;} break;
       case 'solve_ik': if(a.length===7){c.draw.push({type:'ik',rootBone:String(a[0]),endBone:String(a[1]),target:[finite(a[2]),finite(a[3]),finite(a[4])],iterations:Math.max(1,Math.min(20,Math.floor(finite(a[5])))),weight:Math.max(0,Math.min(1,finite(a[6])))});return null;} break;
       case 'animation_layer': if(a.length===3){c.draw.push({type:'animation_layer',clip:String(a[0]),weight:Math.max(0,Math.min(1,finite(a[1]))),additive:truthy(a[2])});return null;} break;
+      case 'camera_shake': if(a.length===2){
+        const intensity=Math.max(0,Math.min(2,finite(a[0])));
+        const duration=Math.max(0,Math.min(8,finite(a[1])));
+        if(runtime)runtime.requires3D=true;
+        const triggered=window.PStudio3D?.cameraShake?.(intensity,duration)??false;
+        c.draw.push({type:'camera_shake'});
+        return triggered;
+      } break;
+      case 'set_time_scale': if(a.length===1){
+        if(!runtime)throw new PsRuntimeError('set_time_scale() はゲーム実行中のみ使用できます。');
+        if(typeof window.PStudioECSTime?.setTimeScale!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+        return window.PStudioECSTime.setTimeScale(a[0]);
+      } break;
+      case 'draw_trail': if(a.length===4){
+        if(runtime)runtime.requires3D=true;
+        const targetKey=String(a[0]);
+        const target=(sceneObjects||[]).find(item=>String(item.id)===targetKey||String(item.name)===targetKey);
+        if(!target)throw new PsRuntimeError('draw_trail(): 対象の Game Object が見つかりません: '+targetKey);
+        const targetPhysicsPosition=window.PStudioPhysics?.getPosition?.(target.id);
+        const x=Number.isFinite(Number(targetPhysicsPosition?.x))?Number(targetPhysicsPosition.x):((Number(target.x)||0)+(Number(target.w)||64)/2-480)/100;
+        const y=Number.isFinite(Number(targetPhysicsPosition?.y))?Number(targetPhysicsPosition.y):(270-((Number(target.y)||0)+(Number(target.h)||64)/2))/100;
+        const z=Number.isFinite(Number(targetPhysicsPosition?.z))?Number(targetPhysicsPosition.z):(Number(target.z)||0)/100;
+        c.draw.push({type:'trail',targetId:String(target.id),x,y,z,color:String(a[1]),width:Math.max(0.001,Math.min(1,finite(a[2]))),duration:Math.max(0.05,Math.min(10,finite(a[3]))),dt:c.dt});
+        return true;
+      } break;
+      case 'set_god_rays': if(a.length===2){
+        if(runtime)runtime.requires3D=true;
+        const enabled=truthy(a[0]),intensity=Math.max(0,Math.min(2,finite(a[1])));
+        const result=window.PStudio3D?.setGodRays?.(enabled,intensity)??null;
+        c.draw.push({type:'camera_fx'});
+        return result;
+      } break;
       case 'set_camera': if (a.length===6) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:0,dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'set_camera_follow': if (a.length===7) { c.draw.push({type:'camera',x:finite(a[0]),y:finite(a[1]),z:finite(a[2]),targetX:finite(a[3]),targetY:finite(a[4]),targetZ:finite(a[5]),smoothing:Math.max(0,Math.min(30,finite(a[6]))),dt:c.dt,cameraOwnerId:o.id}); return null; } break;
       case 'ps': c.output.push(String(a[0] ?? '')); return null;
@@ -368,6 +458,13 @@
       case 'Variable': return getVar(c,env,n.value);
       case 'ArrayLiteral': return (n.elements||[]).map(x=>evalExpr(c,env,x));
       case 'IndexExpr': return getVar(c,env,n.name)[evalExpr(c,env,n.index)];
+      case 'MemberExpr': {
+        const owner=evalExpr(c,env,n.object),property=String(n.property||'');
+        if(!owner||typeof owner!=='object'||Array.isArray(owner)||['__proto__','prototype','constructor'].includes(property)||!Object.prototype.hasOwnProperty.call(owner,property)) {
+          throw new PsRuntimeError('Component Fieldを読み取れません: '+property);
+        }
+        return owner[property];
+      }
       case 'UnaryExpr': { const v=evalExpr(c,env,n.right); if(n.op==='!')return !truthy(v);if(n.op==='+')return +v;if(n.op==='-')return -v;if(n.op==='~')return ~v;if(n.op==='++'||n.op==='--'){const nv=v+(n.op==='++'?1:-1);setTarget(c,env,n.right,nv);return nv;}break; }
       case 'PostfixExpr': {const v=evalExpr(c,env,n.value);setTarget(c,env,n.value,v+(n.op==='++'?1:-1));return v;}
       case 'BinaryExpr': {const l=evalExpr(c,env,n.left);if(n.op==='&&')return truthy(l)&&truthy(evalExpr(c,env,n.right));if(n.op==='||')return truthy(l)||truthy(evalExpr(c,env,n.right));const r=evalExpr(c,env,n.right);switch(n.op){case '+':return l+r;case '-':return l-r;case '*':return l*r;case '/':if(r===0)throw new PsRuntimeError('0で割ることはできません。');return l/r;case '%':return l%r;case '**':return l**r;case '&':return l&r;case '|':return l|r;case '^':return l^r;case '<<':return l<<r;case '>>':return l>>r;case '==':return l===r;case '!=':return l!==r;case '<':return l<r;case '>':return l>r;case '<=':return l<=r;case '>=':return l>=r;}break;}
@@ -387,6 +484,9 @@
         case 'CompoundAssignment': {const v=getVar(c,env,n.variable),r=evalExpr(c,env,n.value),op=n.op.slice(0,-1);env[n.variable]=binary(op,v,r);break;}
         case 'ArrayAssignStatement': {getVar(c,env,n.name)[evalExpr(c,env,n.index)]=evalExpr(c,env,n.value);break;}
         case 'ArrayCompoundAssignStatement': {const a=getVar(c,env,n.name),k=evalExpr(c,env,n.index);a[k]=binary(n.op.slice(0,-1),a[k],evalExpr(c,env,n.value));break;}
+        case 'MemberAssignment': setTarget(c,env,n.target,evalExpr(c,env,n.value));break;
+        case 'MemberCompoundAssignment': {const current=evalExpr(c,env,n.target),value=evalExpr(c,env,n.value);setTarget(c,env,n.target,binary(n.op.slice(0,-1),current,value));break;}
+        case 'ComponentDef': case 'SystemDef': case 'FunctionDef': break;
         case 'PrintStatement': c.output.push(String(evalExpr(c,env,n.value)));break;
         case 'ExpressionStatement': evalExpr(c,env,n.value);break;
         case 'WhileStatement': {let guard=0;while(truthy(evalExpr(c,env,n.condition))){if(++guard>1000)throw new PsRuntimeError('while の反復回数が上限を超えました。');try{execBlock(c,n.body||[],env)}catch(s){if(s===BREAK)break;if(s===CONTINUE)continue;throw s;}}break;}
@@ -406,26 +506,63 @@
     let img=imageCache.get(name);if(!img){img=new Image();img.src=asset.data;img.onload=()=>renderFrame();imageCache.set(name,img);}return img.complete&&img.naturalWidth?img:null;
   }
   function drawScene(commandsByObject) {
-    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
-    for(const o of sceneObjects||[]){const img=o.sprite?imageByName(o.sprite):null;if(img)ctx.drawImage(img,o.x,o.y,o.w,o.h);else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h);}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name||'',o.x,o.y-8);}
-    for(const list of commandsByObject.values())for(const d of list){if(d.type==='rect'){ctx.fillStyle=d.color;ctx.fillRect(d.x,d.y,d.w,d.h)}else if(d.type==='circle'){ctx.fillStyle=d.color;ctx.beginPath();ctx.arc(d.x,d.y,d.r,0,Math.PI*2);ctx.fill()}else if(d.type==='sprite'){const im=imageByName(d.name);if(im)ctx.drawImage(im,d.x,d.y);}}
-    const selected=(sceneObjects||[]).find(o=>o.id===selectedObjectId);if(selected){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(selected.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+selected.w/2,selected.y+selected.h/2,Math.max(selected.w,selected.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(selected.x-4,selected.y-4,selected.w+8,selected.h+8)}ctx.setLineDash([])}
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle='#28313d';ctx.lineWidth=1;
+    for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+    for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+    for(const object of sceneObjects||[]){
+      const sprite=sceneSpriteConfig(object);
+      if(sprite.enabled!==false){
+        const img=sprite.spriteAsset?imageByName(sprite.spriteAsset):null;
+        if(img)ctx.drawImage(img,object.x,object.y,sprite.width,sprite.height);
+        else{
+          ctx.fillStyle=sprite.color||'#d1d5db';
+          if(sprite.shape==='circle'){
+            ctx.beginPath();ctx.arc(object.x+sprite.width/2,object.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2,0,Math.PI*2);ctx.fill();
+          }else ctx.fillRect(object.x,object.y,sprite.width,sprite.height);
+        }
+      }
+      ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(object.name||'',object.x,object.y-8);
+    }
+    for(const list of commandsByObject.values())for(const draw of list){
+      if(draw.type==='rect'){ctx.fillStyle=draw.color;ctx.fillRect(draw.x,draw.y,draw.w,draw.h);}
+      else if(draw.type==='circle'){ctx.fillStyle=draw.color;ctx.beginPath();ctx.arc(draw.x,draw.y,draw.r,0,Math.PI*2);ctx.fill();}
+      else if(draw.type==='sprite'){const image=imageByName(draw.name);if(image)ctx.drawImage(image,draw.x,draw.y);}
+    }
+    const selected=(sceneObjects||[]).find(object=>object.id===selectedObjectId);
+    if(selected){
+      const sprite=sceneSpriteConfig(selected);
+      ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+      if(sprite.shape==='circle'){ctx.beginPath();ctx.arc(selected.x+sprite.width/2,selected.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2+4,0,Math.PI*2);ctx.stroke();}
+      else ctx.strokeRect(selected.x-4,selected.y-4,sprite.width+8,sprite.height+8);
+      ctx.setLineDash([]);
+    }
   }
   function collides(a,b) {
-    if(a.shape==='circle'&&b.shape==='circle'){const ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2;const r=(Math.max(a.w,a.h)+Math.max(b.w,b.h))/2;return (ax-bx)**2+(ay-by)**2<=r*r;}
-    if(a.shape==='circle'||b.shape==='circle'){const c=a.shape==='circle'?a:b,r=a.shape==='circle'?b:a;const cx=c.x+c.w/2,cy=c.y+c.h/2,nx=Math.max(r.x,Math.min(cx,r.x+r.w)),ny=Math.max(r.y,Math.min(cy,r.y+r.h));return (cx-nx)**2+(cy-ny)**2<=(Math.max(c.w,c.h)/2)**2;}
-    return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+    const left=sceneObjectBounds2D(a),right=sceneObjectBounds2D(b);
+    if(left.shape==='circle'&&right.shape==='circle'){
+      const ax=left.x+left.w/2,ay=left.y+left.h/2,bx=right.x+right.w/2,by=right.y+right.h/2;
+      const radius=(Math.max(left.w,left.h)+Math.max(right.w,right.h))/2;
+      return (ax-bx)**2+(ay-by)**2<=radius*radius;
+    }
+    if(left.shape==='circle'||right.shape==='circle'){
+      const circle=left.shape==='circle'?left:right,rect=left.shape==='circle'?right:left;
+      const cx=circle.x+circle.w/2,cy=circle.y+circle.h/2;
+      const nx=Math.max(rect.x,Math.min(cx,rect.x+rect.w)),ny=Math.max(rect.y,Math.min(cy,rect.y+rect.h));
+      return (cx-nx)**2+(cy-ny)**2<=(Math.max(circle.w,circle.h)/2)**2;
+    }
+    return left.x<right.x+right.w&&left.x+left.w>right.x&&left.y<right.y+right.h&&left.y+left.h>right.y;
   }
   function dispatchCollision(object, other) {
-    const state=runtime.states.get(object.id);if(!state)return;
+    const state=window.PStudioECSScript?.getVariables?.(object.id);if(!state)return;
     const c=setupContext(object,0);c.steps=0;
-    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);runtime.states.set(object.id,c.env);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
+    if(c.funcs.on_collision){callFunction(c,'on_collision',[other.name||other.id]);if(c.output.length)setOutput?.(c.output.join('\n'),'normal');}
   }
   function updateCollisions() {
-    const objs=(sceneObjects||[]).filter(o=>o.collider&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
+    const objs=(sceneObjects||[]).filter(o=>sceneCollider2DEnabled(o)&&window.PStudio3D?.isOwnerChunkActive?.(o.id)!==false);
     const now=new Set();
-    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
+    for(let i=0;i<objs.length;i++)for(let j=i+1;j<objs.length;j++){const a=objs[i],b=objs[j];if(collides(a,b)){const key=[a.id,b.id].sort().join('|');now.add(key);window.PStudioECSCollision?.observePair?.('2d',a,b);if(!collisionPairs.has(key)){dispatchCollision(a,b);dispatchCollision(b,a);}}}
     collisionPairs=now;
   }
 
@@ -473,6 +610,7 @@
       const key=[a.owner.id,b.owner.id].sort().join('|');
       if(now.has(key)) continue;
       now.add(key);
+      window.PStudioECSCollision?.observePair?.('3d',a.owner,b.owner);
       if(!collision3DPairs.has(key)) {
         dispatchCollision(a.owner,b.owner);
         dispatchCollision(b.owner,a.owner);
@@ -494,29 +632,36 @@
     }
   }
   function buildScenePreview3D() {
+    window.syncEcsSceneMaterials?.();
     const commands = new Map();
     commands.set('__scene__',[{type:'grid',size:SCENE_PREVIEW_GRID_SIZE,divisions:100},{type:'environment',preset:sceneEnvironment?.preset||'day'},{type:'camera',x:6,y:5,z:8,targetX:0,targetY:0,targetZ:0}]);
     for (const o of sceneObjects || []) {
-      const x = ((Number(o.x)||0) + (Number(o.w)||64)/2 - 480) / 100;
-      const y = (270 - ((Number(o.y)||0) + (Number(o.h)||64)/2)) / 100;
-      const z = (Number(o.z)||0) / 100;
-      const w = Math.max(0.05,(Number(o.w)||64)/100);
-      const h = Math.max(0.05,(Number(o.h)||64)/100);
-      const color = o.color || '#d1d5db';
-      const draw = o.mirrorWater
-        ? {type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||SCENE_PREVIEW_GRID_SIZE),depth:Math.max(0.5,Number(o.mirrorDepth)||SCENE_PREVIEW_GRID_SIZE),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):1.0)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
-        : o.model
-        ? {type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0}
-        : o.shape === 'circle'
-          ? {type:'sphere',x,y,z,radius:Math.max(w,h)/2,color}
-          : {type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
+      const sprite=sceneSpriteConfig(o);
+      const x=((Number(o.x)||0)+sprite.width/2-480)/100;
+      const y=(270-((Number(o.y)||0)+sprite.height/2))/100;
+      const z=(Number(o.z)||0)/100;
+      const w=Math.max(0.05,sprite.width/100),h=Math.max(0.05,sprite.height/100);
+      const asset=sceneRenderableAsset(o);
+      const entity=window.PStudioECS?.getEntityForSceneObject?.(String(o.id));
+      const renderable=entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,'Renderable')
+        ?window.PStudioECS.getComponent(entity,'Renderable'):null;
+      const draw=o.mirrorWater
+        ?{type:'mirror_water',x,y,z,width:Math.max(0.5,Number(o.mirrorWidth)||SCENE_PREVIEW_GRID_SIZE),depth:Math.max(0.5,Number(o.mirrorDepth)||SCENE_PREVIEW_GRID_SIZE),reflectivity:Math.max(0,Math.min(1,Number.isFinite(Number(o.mirrorReflectivity))?Number(o.mirrorReflectivity):1.0)),waveStrength:Math.max(0,Math.min(1,Number.isFinite(Number(o.waveStrength))?Number(o.waveStrength):0.05))}
+        :asset
+          ?{type:'model',name:asset,x,y,z,scale:Math.max(0.001,Number(renderable?.scale)||Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt:0,ecsRenderableFallback:true}
+          :sprite.shape==='circle'
+            ?{type:'sphere',x,y,z,radius:Math.max(w,h)/2,color:sprite.color}
+            :{type:'box',x,y,z,width:w,height:h,depth:Math.max(0.12,Math.min(w,h)*0.35),color:sprite.color,rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180};
       const objectCommands=[];
       if(o.postProcessing)objectCommands.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity});
+      for(const override of o.modelMaterialOverrides||[])objectCommands.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color,doubleSide:override.doubleSide,recomputeNormals:override.recomputeNormals,emissive:override.emissive,emissiveIntensity:override.emissiveIntensity,toon:override.toon});
       if(o.shaderFragment)objectCommands.push({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
       if(o.particleEmitter?.enabled)objectCommands.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt:0.016});
       objectCommands.push(draw);commands.set(o.id,objectCommands);
     }
+    window.PStudioECSMaterials?.collectCommands?.(commands,sceneObjects||[]);
+    window.PStudioECSRendering?.collectCommands?.(commands,sceneObjects||[],0);
+    window.PStudioECSVisualFX?.collectCommands?.(commands,sceneObjects||[],0);
     return commands;
   }
   function setViewMode(mode) {
@@ -530,7 +675,7 @@
       try{
         window.PStudio3D.render(buildScenePreview3D());
         window.syncSceneOverlayButtons?.();
-        const modelNames=new Set((sceneObjects||[]).map(object=>object.model).filter(Boolean).map(String));
+        const modelNames=new Set((sceneObjects||[]).map(object=>sceneRenderableAsset(object)).filter(Boolean).map(String));
         for(const name of modelNames)window.PStudio3D.retryModelAsset?.(name);
       }catch(err){
         const message='3D view error: '+String(err?.message||err);
@@ -556,8 +701,8 @@
     const draws=[...drawCommands.values()].flat();
     const hudDraws=draws.filter(d=>d.type==='hud_text'||d.type==='hud_bar');
     const allDraws=draws;
-    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx'].includes(d.type));
-    const use3D=renderMode==='3d'||(renderMode==='auto'&&has3D);
+    const has3D=allDraws.some(d=>['cube','box','sphere','plane','cylinder','cone','capsule','grid','camera','environment','model','terrain','water','light','particles','particle_emitter','particle_emitter_stop','postfx','trail','camera_shake','camera_fx'].includes(d.type));
+    const use3D=renderMode==='3d'||(renderMode==='auto'&&(!!runtime?.requires3D||has3D));
     const c2=$('game-canvas'),c3=$('game-3d-canvas');
     if(use3D){if(c2)c2.style.display='none';if(c3)c3.style.display='block';if(!window.PStudio3D)throw new PsRuntimeError('3D renderer is unavailable. Check the Three.js connection.');window.PStudio3D.render(commands);}
     else{if(c3)c3.style.display='none';if(c2)c2.style.display='block';drawScene(drawCommands);}
@@ -566,8 +711,11 @@
   }
   function tick(time) {
     if(!runtime?.running)return;
-    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;const dt=Math.min(raw,0.1);
+    const raw=lastTime?Math.max(0,(time-lastTime)/1000):0;lastTime=time;
     try {
+      if(typeof window.PStudioECSTime?.beginFrame!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+      const dt=window.PStudioECSTime.beginFrame(raw);
+      window.PStudioECSCollision?.beginFrame?.();
       const commands=new Map();
       for(const object of sceneObjects||[]){
         const active=window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false;
@@ -576,63 +724,82 @@
         if(!active&&!chunkAudioSuspended.has(String(object.id))){pauseOwnerAudio(object.id);chunkAudioSuspended.add(String(object.id));}
         else if(active&&chunkAudioSuspended.has(String(object.id))){resumeOwnerAudio(object.id);chunkAudioSuspended.delete(String(object.id));}
       }
+      window.PStudioECSInput?.captureFrame?.({keys,pressed:justPressed,virtualKeys,axisX:virtualAxis.x,axisZ:virtualAxis.z,touched:touchActive,touchX:pointerPosition.x,touchY:pointerPosition.y});
       window.PStudioPhysics?.beginFrame?.();
       const ecs = window.PStudioECS;
       if (ecs?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime };
         ecs.syncSceneObjects(sceneObjects || []);
         for(const object of sceneObjects||[])ecs.setSceneObjectActive?.(object.id,window.PStudio3D?.isOwnerChunkActive?.(object.id)!==false);
-        ecs.update(dt, { sceneObjects: sceneObjects || [], runtime });
+        ecs.update(dt, ecsContext);
+        ecs.updatePhase?.('prePhysics', dt, ecsContext);
         ecs.applySceneObjectTransforms(sceneObjects || []);
       }
       for(const o of sceneObjects||[]){
         if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false){const previous=runtime.contexts.get(o.id);if(previous)commands.set(o.id,previous);continue;}
-        const script=astForScript(o.script);if(!script)continue;
+        const script=astForScript(sceneScriptFile(o));if(!script)continue;
         const c=setupContext(o,dt);c.steps=0;
-        if(!runtime.initialized.has(o.id)){
-          runtime.initialized.add(o.id);
+        const lifecycle=window.PStudioECSScript?.getLifecycle?.(o.id);
+        if(!lifecycle)throw new PsRuntimeError('ECS Script Runtime state is unavailable for Scene Object: '+o.id);
+        if(!lifecycle.initialized){
+          lifecycle.initialized=true;
           const topLevel=(script.body||[]).filter(n=>n.type!=='FunctionDef');
           if(topLevel.length)execBlock(c,topLevel,c.env);
         }
-        if(!runtime.started.has(o.id)){
-          runtime.started.add(o.id);
+        if(!lifecycle.started){
+          lifecycle.started=true;
           if(c.funcs.start)callFunction(c,'start',[]);
         }
         c.dt=dt;
         if(c.funcs.update)callFunction(c,'update',[dt]);
-        runtime.states.set(o.id,c.env);
         const objectDraws=c.draw.slice();
-        if(o.postProcessing)objectDraws.unshift({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        if(o.particleEmitter?.enabled)objectDraws.push({type:'particle_emitter',emitterId:'inspector',x:((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100,y:(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100,z:(Number(o.z)||0)/100,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.modelMaterialOverrides?.length)for(const override of o.modelMaterialOverrides)objectDraws.unshift({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
-        if(o.shaderFragment)objectDraws.unshift({type:'material',shader:'custom',fragmentShader:o.shaderFragment});
-        if(o.model&&!objectDraws.some(d=>d.type==='model')){
-          const mx=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-          const my=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-          objectDraws.unshift({type:'model',name:String(o.model),x:mx,y:my,z:(Number(o.z)||0)/100,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
-        }
         commands.set(o.id,objectDraws);
         if(c.output.length)setOutput?.(c.output.join('\n'),'normal');
       }
 
-      // Scene-only render settings (models and particle emitters) remain active without scripts.
-      for(const o of sceneObjects||[]){
-        if(window.PStudio3D?.isOwnerChunkActive?.(o.id)===false)continue;
-        if(o.script||(!o.model&&!o.postProcessing&&!o.particleEmitter?.enabled))continue;
-        const x=((Number(o.x)||0)+(Number(o.w)||64)/2-480)/100;
-        const y=(270-((Number(o.y)||0)+(Number(o.h)||64)/2))/100;
-        const z=(Number(o.z)||0)/100;
-        const list=[];
-        if(o.postProcessing)list.push({type:'postfx',bloom:!!o.postProcessing.bloom,ssao:!!o.postProcessing.ssao,strength:Number.isFinite(Number(o.postProcessing.strength))?Number(o.postProcessing.strength):0.45});
-        for(const override of o.modelMaterialOverrides||[])list.push({type:'model_material',name:override.name,roughness:override.roughness,metalness:override.metalness,color:override.color});
-        if(o.particleEmitter?.enabled)list.push({type:'particle_emitter',emitterId:'inspector',x,y,z,rate:Number(o.particleEmitter.rate)||12,color:o.particleEmitter.color||'#ffffff',speed:Number(o.particleEmitter.speed)||2,lifetime:Number(o.particleEmitter.lifetime)||1,maxCount:Number(o.particleEmitter.maxCount)||200,dt});
-        if(o.model)list.push({type:'model',name:String(o.model),x,y,z,scale:Math.max(0.001,Number(o.modelScale)||1),rotationX:(Number(o.rotationX)||0)*Math.PI/180,rotationY:(Number(o.rotationY)||0)*Math.PI/180,rotationZ:(Number(o.rotationZ)||0)*Math.PI/180,dt});
-        if(list.length)commands.set(o.id,list);
+      // Persistent Renderable/Visual FX Components are collected for every Entity below.
+      const ecsAfterScripts = window.PStudioECS;
+      if (ecsAfterScripts?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime };
+        // Import direct ps callback/editor-coordinate writes before postUpdate Systems read Transform.
+        ecsAfterScripts.syncSceneObjects(sceneObjects || []);
+        ecsAfterScripts.updatePhase?.('postUpdate', dt, ecsContext);
+        ecsAfterScripts.applySceneObjectTransforms(sceneObjects || []);
       }
-
-      for(const [ownerId,draws] of commands){const owner=(sceneObjects||[]).find(item=>item.id===ownerId);if(owner?.model&&owner.collider){const modelDraw=draws.find(d=>d.type==='model');if(modelDraw){const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});}}}
+      window.PStudioECSStreaming?.sync?.(sceneObjects || []);
+      window.PStudioECSRendering?.collectCommands?.(commands, sceneObjects || [], dt);
+      window.PStudioECSVisualFX?.collectCommands?.(commands, sceneObjects || [], dt);
+      window.PStudioECSMaterials?.collectCommands?.(commands, sceneObjects || []);
+      for(const [ownerId,draws] of commands){
+        const owner=(sceneObjects||[]).find(item=>String(item.id)===String(ownerId));
+        const ecs=window.PStudioECS;
+        const entity=ecs?.getEntityForSceneObject?.(String(ownerId));
+        const meshCollider=entity!==null&&entity!==undefined&&ecs?.hasComponent?.(entity,'MeshCollider')
+          ? ecs.getComponent(entity,'MeshCollider') : null;
+        const colliderEnabled=meshCollider ? meshCollider.enabled===true : owner?.collider===true;
+        if(colliderEnabled){
+          const modelDraw=draws.find(d=>d.type==='model');
+          if(modelDraw&&!draws.some(d=>d.type==='model_mesh_collider')){
+            const triangles=window.PStudio3D?.getModelCollisionTriangles?.(modelDraw);
+            if(triangles?.length)draws.push({type:'model_mesh_collider',triangles});
+          }
+        }
+      }
       const physicsCommands=new Map([...commands].filter(([id])=>window.PStudio3D?.isOwnerChunkActive?.(id)!==false));
       const transforms=window.PStudioPhysics?.step?.(dt,physicsCommands)||new Map();
-      const ownersById=new Map((sceneObjects||[]).map(item=>[item.id,item]));
+      const ownersById=new Map((sceneObjects||[]).map(item=>[String(item.id),item]));
+      for(const pair of window.PStudioPhysics?.getContactPairs?.()||[]){
+        const [aId,bId]=pair;
+        const a=ownersById.get(String(aId))||{id:String(aId),name:String(aId)};
+        const b=ownersById.get(String(bId))||{id:String(bId),name:String(bId)};
+        window.PStudioECSCollision?.observePair?.('physics',a,b);
+      }
+      const ecsAfterPhysics = window.PStudioECS;
+      if (ecsAfterPhysics?.hasActiveSystems?.()) {
+        const ecsContext = { sceneObjects: sceneObjects || [], runtime, physicsTransforms: transforms };
+        ecsAfterPhysics.updatePhase?.('postPhysics', dt, ecsContext);
+        ecsAfterPhysics.applySceneObjectTransforms(sceneObjects || []);
+      }
       for(const [id,transform] of transforms){
         const owner=ownersById.get(id);
         const draws=commands.get(id)||[];
@@ -648,11 +815,20 @@
 
         if(transform.landed){
           runtime.nextLandSequence=(runtime.nextLandSequence||0)+1;
-          runtime.landSequences.set(id,runtime.nextLandSequence);
+          window.PStudioECSScript?.setLifecycleByEntity?.(window.PStudioECS?.getEntityForSceneObject?.(String(id)),{landSequence:runtime.nextLandSequence});
         }
 
         for(const draw of draws){
           if(draw.type==='camera'){
+            draw.x=finite(draw.x)+transform.dx;
+            draw.y=finite(draw.y)+transform.dy;
+            draw.z=finite(draw.z)+transform.dz;
+            draw.targetX=finite(draw.targetX)+transform.dx;
+            draw.targetY=finite(draw.targetY)+transform.dy;
+            draw.targetZ=finite(draw.targetZ)+transform.dz;
+            continue;
+          }
+          if(draw.type==='light'){
             draw.x=finite(draw.x)+transform.dx;
             draw.y=finite(draw.y)+transform.dy;
             draw.z=finite(draw.z)+transform.dz;
@@ -673,14 +849,16 @@
             draw.grounded=transform.grounded;
             draw.speed=transform.horizontalSpeed;
             draw.velocityY=transform.velocityY;
-            draw.landSequence=runtime.landSequences.get(id)||0;
+            draw.landSequence=window.PStudioECSScript?.getLifecycle?.(id)?.landSequence||0;
           }
         }
       }
       runtime.contexts=commands;
       updateCollisions();
       update3DCollisions(commands);
+      window.PStudioECSCollision?.commitContacts?.();
       renderFrame();
+      window.PStudioECSCollision?.endFrame?.();
       window.PStudioUI?.render?.(window.PStudioGameplay?.getUIState?.()||null);
       justPressed.clear();
       raf=requestFrame(tick);
@@ -689,40 +867,203 @@
       setOutput?.(`Game runtime error: ${err.message}`,'error');
     }
   }
+  function ecsBindingName(name){
+    return String(name).replace(/([A-Z]+)([A-Z][a-z])/g,'$1_$2').replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase();
+  }
+  function ecsSystemRuntimeId(filename,systemName){
+    const source=String(filename)+'\\0'+String(systemName);
+    let hash=2166136261;
+    for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619);
+    return 'ps.'+(hash>>>0).toString(36);
+  }
+  function cloneEcsDefault(value){return Array.isArray(value)?value.map(cloneEcsDefault):value;}
+  function ecsLiteralValue(node){
+    if(!node||typeof node!=='object')throw new PsRuntimeError('ECS Component初期値が不正です。');
+    if(node.type==='Literal'){
+      const raw=String(node.value??'');
+      if(raw==='true')return true;
+      if(raw==='false')return false;
+      if(raw.startsWith('"')){try{return JSON.parse(raw);}catch(_){throw new PsRuntimeError('ECS文字列初期値が不正です。');}}
+      const number=Number(raw);
+      if(!Number.isFinite(number))throw new PsRuntimeError('ECS数値初期値が不正です。');
+      return number;
+    }
+    if(node.type==='ArrayLiteral')return (node.elements||[]).map(ecsLiteralValue);
+    throw new PsRuntimeError('ECS Component初期値はリテラルまたは配列のみ対応しています。');
+  }
+  function cleanupEcsRuntime(){
+    const ecs=window.PStudioECS;
+    if(!runtime||!ecs)return;
+    for(const id of runtime.ecsSystemIds||[]){try{ecs.unregisterSystem(id);}catch(error){console.warn('[PStudio ECS] System cleanup failed:',id,error);}}
+    runtime.ecsSystemIds=[];
+    window.PStudioGameplay?.persistECS?.(sceneObjects || []);
+    window.PStudioECSScript?.clear?.();
+    window.PStudioECSTime?.clear?.();
+    ecs.clearSceneObjects?.();
+    for(const type of [...(runtime.ecsComponentTypes||[])].reverse()){
+      try{ecs.unregisterComponent?.(type);}catch(error){console.warn('[PStudio ECS] Component cleanup failed:',type,error);}
+    }
+    runtime.ecsComponentTypes=[];
+  }
+  function registerEcsRuntime(asts){
+    const ecs=window.PStudioECS;
+    const componentDefs=[],systemDefs=[];
+    for(const [filename,ast] of Object.entries(asts||{})){
+      for(const node of ast?.body||[]){
+        if(node.type==='ComponentDef')componentDefs.push({filename,node});
+        else if(node.type==='SystemDef')systemDefs.push({filename,node});
+      }
+    }
+    if(!componentDefs.length&&!systemDefs.length)return;
+    if(!ecs)throw new PsRuntimeError('PStudioECSが初期化されていません。');
+    const definitions=new Map();
+    for(const item of componentDefs){
+      const name=String(item.node.name);
+      if(definitions.has(name))throw new PsRuntimeError('Componentが複数回定義されています: '+name);
+      const existingDefinition=ecs.getComponentDefinition?.(name);
+      if(existingDefinition && existingDefinition.source!==item.filename)throw new PsRuntimeError('Component名が既存ECS型と衝突しています: '+name);
+      const defaults=Object.create(null);
+      const schema=Object.create(null);
+      for(const field of item.node.body||[]){
+        const value=ecsLiteralValue(field.value);
+        defaults[field.variable]=value;
+        const rawLiteral=String(field.value?.value??'');
+        const type=typeof value==='boolean'?'boolean':typeof value==='string'?'string':Array.isArray(value)?'array':Number.isInteger(value)&&!/[.eE]/.test(rawLiteral)?'integer':'number';
+        schema[field.variable]={type,default:cloneEcsDefault(value),label:field.variable};
+      }
+      definitions.set(name,{defaults,schema,source:item.filename});
+    }
+    runtime.ecsComponentTypes=[];
+    runtime.ecsSystemIds=[];
+    try{
+      for(const [name,definition] of definitions){
+        const create=()=>Object.fromEntries(Object.entries(definition.defaults).map(([key,value])=>[key,cloneEcsDefault(value)]));
+        if(!ecs.hasComponentType?.(name)){
+          ecs.registerComponent(name,{
+            create,
+            schema:definition.schema,
+            additionalProperties:false,
+            source:definition.source
+          });
+          runtime.ecsComponentTypes.push(name);
+        }else{
+          const existing=ecs.getComponentDefinition?.(name);
+          if(existing?.source!==definition.source){
+            throw new PsRuntimeError('Component定義の所有元が一致しません: '+name);
+          }
+          ecs.updateComponentDefinition?.(name,{
+            create,
+            schema:definition.schema,
+            additionalProperties:false,
+            source:definition.source
+          });
+        }
+      }
+      // Restore Component values after all declarations have been registered.
+      ecs.syncSceneObjects?.(sceneObjects || []);
+      // Backward compatibility: scenes without an explicit ECS assignment list keep
+      // the first-bridge behavior. An explicit [] means no custom Component is attached.
+      for(const object of sceneObjects||[]){
+        const entity=ecs.getEntityForSceneObject?.(object.id);
+        if(!entity)continue;
+        if(!Array.isArray(object.ecsComponents)){
+          for(const name of definitions.keys()){
+            if(!ecs.hasComponent(entity,name))ecs.addComponent(entity,name);
+          }
+        }
+      }
+      window.PStudioECSScript?.setSystemDefinitions?.(systemDefs.map(({filename,node})=>({
+        id:ecsSystemRuntimeId(filename,node.name),
+        components:(node.components||[]).map(String)
+      })));
+      for(const {filename,node} of systemDefs){
+        const systemId=ecsSystemRuntimeId(filename,node.name);
+        const componentNames=(node.components||[]).map(String);
+        const registered=ecs.registerSystem({
+          id:systemId,
+          name:String(node.name),
+          source:filename,
+          components:componentNames,
+          phase:'update',
+          update:(dt,api)=>{
+            api.forEach(componentNames,(entity,...values)=>{
+              const sceneRef=api.hasComponent(entity,'SceneObjectRef')?api.getComponent(entity,'SceneObjectRef'):null;
+              const object=(sceneObjects||[]).find(item=>sceneRef&&String(item.id)===String(sceneRef.sceneObjectId))||{id:'ecs-'+entity,name:'ECS Entity '+entity};
+              const stateKey=systemId+':'+entity;
+              const c=makeContext(object,dt);
+              c.env=window.PStudioECSScript?.getSystemStateByEntity?.(entity,systemId)||Object.create(null);
+              c.env.entity=entity;c.env.dt=dt;
+              componentNames.forEach((component,index)=>{c.env[ecsBindingName(component)]=values[index];});
+              c.funcs=Object.create(null);
+              for(const fn of asts[filename]?.body||[])if(fn.type==='FunctionDef')c.funcs[fn.name]=fn;
+              c.steps=0;
+              try{execBlock(c,node.body||[],c.env);}
+              catch(signal){if(!(signal&&signal.kind===RETURN))throw signal;}
+              if(!window.PStudioECSScript?.setSystemStateByEntity?.(entity,systemId,c.env))throw new PsRuntimeError('ScriptSystemState is unavailable for Entity '+entity+' / '+systemId);
+              if(c.output.length)setOutput?.(c.output.join('\\n'),'normal');
+            });
+          }
+        });
+        runtime.ecsSystemIds.push(registered);
+      }
+    }catch(error){
+      for(const id of runtime.ecsSystemIds||[])try{ecs.unregisterSystem(id);}catch(_){}
+      runtime.ecsSystemIds=[];
+      ecs.clearSceneObjects?.();
+      for(const type of [...(runtime.ecsComponentTypes||[])].reverse())try{ecs.unregisterComponent?.(type);}catch(_){}
+      runtime.ecsComponentTypes=[];
+      throw error;
+    }
+  }
+
   async function startGame() {
     if(runtime?.running)return;
+    window.syncEcsSceneMaterials?.();
     if(projectFiles[activeProjectFile]?.type==='ps' && typeof codeEditor!=='undefined') projectFiles[activeProjectFile].content=codeEditor.value;
     if(typeof persistProject==='function')persistProject();
     const scripts={};for(const [name,file] of Object.entries(projectFiles||{}))if(file.type==='ps')scripts[name]=file.content;
     if(!Object.keys(scripts).length){setOutput?.('No .ps scripts found in this project.','error');return;}
-    const attached=(sceneObjects||[]).filter(o=>o.script);
+    const attached=(sceneObjects||[]).filter(o=>sceneScriptFile(o));
     if(!attached.length){setOutput?.('Inspector で Game Object に ps script を割り当ててください。','error');return;}
     try {
-      const needs3D=Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation)\s*\(/.test(source));
+      const hasECS3D=(sceneObjects||[]).some(object=>!!sceneRenderableAsset(object)||!!object.model||['Camera','Light','Renderable','Animation','WorldPartition','StreamingInterest','Environment','Fog','Water','PostFX','ParticleEmitter','Trail','ToonMaterial','MaterialOverrides','ShaderMaterial','MeshCollider'].some(type=>{const entity=window.PStudioECS?.getEntityForSceneObject?.(String(object.id));return entity!==null&&entity!==undefined&&window.PStudioECS?.hasComponent?.(entity,type)&&window.PStudioECS.getComponent(entity,type).enabled!==false;}));
+      const needs3D=hasECS3D||Object.values(scripts).some(source=>/\b(draw_cube|draw_box|draw_sphere|draw_plane|draw_cylinder|draw_cone|draw_capsule|draw_grid|set_camera|set_camera_follow|set_material|set_toon_material|set_background|set_fog|set_light|load_model|physics_body|character_controller|move_character|character_animation|camera_shake|draw_trail|set_god_rays)\s*\(/.test(source));
       if(needs3D&&window.PStudio3DReady){
         const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
         if(!ready)throw new Error('3D renderer could not initialize. Check the connection to Three.js / GLTFLoader.');
       }
       const res=await fetch('/game/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scripts})});const data=await res.json();if(!data.success)throw new Error(data.error||'Script validation failed');
+      keys.clear();justPressed.clear();resetVirtualControls();touchActive=false;activePointerId=null;window.PStudioECSInput?.reset?.();
       window.PStudioPhysics?.clear?.();
       window.PStudioECS?.clearSceneObjects?.();
+      if(!window.PStudioECSScript)throw new PsRuntimeError('PStudio ECS Script Runtime bridge is unavailable.');
       window.PStudioECS?.syncSceneObjects?.(sceneObjects || []);
-      runtime={running:true,asts:data.scripts,states:new Map(),initialized:new Set(),started:new Set(),contexts:new Map(),landSequences:new Map(),nextLandSequence:0};collisionPairs=new Set();collision3DPairs=new Set();lastTime=0;
-      for(const o of sceneObjects||[])runtime.states.set(o.id,Object.create(null));
+      window.syncEcsSceneMaterials?.();
+      runtime={running:true,asts:data.scripts,contexts:new Map(),nextLandSequence:0,requires3D:needs3D,ecsSystemIds:[],ecsComponentTypes:[]};collisionPairs=new Set();collision3DPairs=new Set();window.PStudioECSCollision?.clear?.();window.PStudioECSAudio?.clear?.();lastTime=0;
+      if(typeof window.PStudioECSTime?.start!=='function')throw new PsRuntimeError('PStudio ECS Time bridge is unavailable.');
+      window.PStudioECSTime.start();
+      window.PStudioECSScript.sync(sceneObjects || []);
+      registerEcsRuntime(data.scripts);
+      window.PStudioGameplay?.initializeECS?.(sceneObjects || []);
+      window.PStudioECSInspector?.refresh?.();
       if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
       $('game-status').textContent='STARTING · PStudio Runtime 3.0.0';
       setTouchControlsEnabled(needs3D);
       $('engine-play')?.setAttribute('disabled','disabled');$('engine-stop')?.removeAttribute('disabled');
       raf=requestFrame(tick);
-    } catch(err) {window.PStudioECS?.clearSceneObjects?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
+    } catch(err) {cleanupEcsRuntime();window.PStudioECS?.clearSceneObjects?.();window.PStudioECSInspector?.refresh?.();setOutput?.(`Game start failed: ${err.message}`,'error');}
   }
   function stopGame() {
-    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;runtime=null;stopAllOwnerAudio();collisionPairs.clear();collision3DPairs.clear();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
+    if(raf)cancelFrame(raf);raf=0;if(runtime)runtime.running=false;cleanupEcsRuntime();runtime=null;stopAllOwnerAudio();window.PStudioECSAudio?.clear?.();collisionPairs.clear();collision3DPairs.clear();window.PStudioECSCollision?.clear?.();keys.clear();touchActive=false;activePointerId=null;resetVirtualControls();setTouchControlsEnabled(false);
     $('engine-play')?.removeAttribute('disabled');$('engine-stop')?.setAttribute('disabled','disabled');
+    window.PStudioECSStreaming?.clear?.();
+    window.PStudioECSVisualFX?.clear?.();
+    window.PStudioECSUI?.clear?.();
     if(typeof window.PStudio3D?.clear==='function')window.PStudio3D.clear();
     window.PStudioPhysics?.clear?.();
     window.PStudioECS?.clearSceneObjects?.();
-    justPressed.clear();
+    window.PStudioECSInspector?.refresh?.();
+    justPressed.clear();window.PStudioECSInput?.reset?.();
     if(typeof renderGamePreview==='function')renderGamePreview();
     setViewMode(renderMode);
     const status=$('game-status');if(status)status.textContent='STOPPED · Scene preview · 960 × 540 · VIEW '+(renderMode==='3d'?'3D':'2D');
@@ -851,6 +1192,17 @@
     return result||{preset:requested,available:false};
   };
   window.addEventListener('pstudio-quality-state-changed',updatePStudioQualityControl);
+    window.PStudioAudioService=Object.freeze({
+      play:playOwnerSound,
+      stop:stopOwnerSound,
+      setVolume:setOwnerSoundVolume,
+      hasSound:(ownerId,name)=>!!ownerAudio.get(String(ownerId))?.has(String(name)),
+      hasAsset:name=>{
+        const assets=typeof projectAssets!=='undefined'&&Array.isArray(projectAssets)?projectAssets:[];
+        return assets.some(item=>item?.kind==='audio'&&String(item.name)===String(name)&&typeof (item.data||item.url)==='string');
+      },
+      getStats:()=>({owners:ownerAudio.size,instances:[...ownerAudio.values()].reduce((count,sounds)=>count+sounds.size,0)})
+    });
   window.PStudioEngine={start:startGame,stop:stopGame,isRunning:()=>!!runtime?.running,setViewMode,refreshSceneView,version:'3.1.0'};
   window.setPStudioViewMode=setViewMode;
   window.startPStudioGame=startGame;window.stopPStudioGame=stopGame;
