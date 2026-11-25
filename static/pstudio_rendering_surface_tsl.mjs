@@ -38,7 +38,7 @@ function requiredNodeFunctions() {
     'positionWorld', 'positionLocal', 'normalWorld', 'normalWorldGeometry',
     'positionView', 'positionViewDirection', 'modelWorldMatrixInverse',
     'materialColor', 'materialRoughness', 'materialMetalness', 'materialEmissive',
-    'materialOpacity', 'materialAlphaTest', 'time', 'vertexColor', 'select', 'bool'
+    'materialOpacity', 'materialAlphaTest', 'time', 'vertexColor', 'select', 'bool', 'cameraViewMatrix'
   ];
   return names.filter((name) => TSL[name] === undefined);
 }
@@ -81,6 +81,31 @@ function applyTriplanar(material, metadata) {
       .mul(makeTriplanarSample(material.metalnessMap, position, normal, scale, sharpness).b)
       .clamp(0, 1);
   }
+
+  if (material.normalMap?.isTexture && material.normalMapType === THREE.TangentSpaceNormalMap) {
+    const normalScale = material.normalScale || { x: 1, y: 1 };
+    const readNormal = (coordinates) => {
+      const sample = TSL.texture(material.normalMap, coordinates).xyz.mul(2).sub(1);
+      return TSL.vec3(
+        sample.x.mul(finite(normalScale.x, 1)),
+        sample.y.mul(finite(normalScale.y, 1)),
+        sample.z
+      );
+    };
+    const normalX = readNormal(position.yz.mul(scale));
+    const normalY = readNormal(position.zx.mul(scale));
+    const normalZ = readNormal(position.xy.mul(scale));
+    const worldX = TSL.vec3(normal.x.sign().mul(normalX.z), normalX.x, normalX.y);
+    const worldY = TSL.vec3(normalY.x, normal.y.sign().mul(normalY.z), normalY.y);
+    const worldZ = TSL.vec3(normalZ.x, normalZ.y, normal.z.sign().mul(normalZ.z));
+    const blendedWorldNormal = worldX.mul(weights.x)
+      .add(worldY.mul(weights.y))
+      .add(worldZ.mul(weights.z))
+      .normalize();
+    material.normalNode = blendedWorldNormal
+      .transformNormalByViewMatrix(TSL.cameraViewMatrix)
+      .normalize();
+  }
 }
 
 function applyParallax(material) {
@@ -91,6 +116,7 @@ function applyParallax(material) {
   const settings = material.userData?.pstudioParallaxHQ || {};
   const scale = Math.max(0, Math.min(0.035, finite(settings.scale, 0.012)));
   const uv = TSL.uv(material.map.channel || 0);
+  const normalUV = TSL.uv(material.normalMap.channel || 0);
   const viewPosition = TSL.positionView;
   const normal = TSL.normalView.normalize();
 
@@ -128,7 +154,8 @@ function applyParallax(material) {
   for (let step = 1; step <= 8; step += 1) {
     const layerDepth = step / 8;
     const candidateUV = uv.sub(rayOffset.mul(layerDepth));
-    const height = TSL.float(1).sub(TSL.texture(material.normalMap, candidateUV).a);
+    const heightUV = normalUV.add(candidateUV.sub(uv));
+    const height = TSL.float(1).sub(TSL.texture(material.normalMap, heightUV).a);
     const crossed = TSL.float(layerDepth).greaterThanEqual(height);
     const firstHit = crossed.and(foundIntersection.not());
     parallaxUV = TSL.select(firstHit, candidateUV, parallaxUV);
@@ -331,7 +358,15 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
       applied.push({ material, previous });
     } catch (error) {
       for (const [key, value] of Object.entries(previous)) material[key] = value;
-      throw new Error('PStudio failed to build a TSL surface material graph.', { cause: error });
+      for (const entry of applied) {
+        for (const [key, value] of Object.entries(entry.previous)) entry.material[key] = value;
+        if (entry.material.userData) {
+          delete entry.material.userData.pstudioTSLFeaturesApplied;
+          delete entry.material.userData.pstudioTSLFoliageRole;
+        }
+        entry.material.needsUpdate = true;
+      }
+      throw new Error('PStudio rolled back all partial TSL surface material graphs.', { cause: error });
     }
   }
 
