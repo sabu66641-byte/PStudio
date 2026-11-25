@@ -13,7 +13,7 @@ function createMaterialsRuntime(objects = [{
     outlineWidth: 0.18, windStrength: 0.5, windSpeed: 1.4
   },
   modelMaterialOverrides: [{
-    name: 'Bark', roughness: 0.32, metalness: 0.08,
+    name: 'Bark', roughness: 0.32, diffuseRoughness: 0.44, metalness: 0.08,
     color: '#986543', doubleSide: true, emissive: '#110500',
     emissiveIntensity: 0.4
   }],
@@ -75,6 +75,7 @@ test('legacy Scene Object rendering settings migrate into persistent ECS Compone
   assert.equal(toon.rimIntensity, 1.2);
   assert.equal(toon.windStrength, 0.5);
   assert.equal(ecs.getComponent(entity, 'MaterialOverrides').overrides[0].name, 'Bark');
+  assert.equal(ecs.getComponent(entity, 'MaterialOverrides').overrides[0].diffuseRoughness, 0.44);
   assert.equal(ecs.getComponent(entity, 'ShaderMaterial').fragmentShader.startsWith('uniform vec3'), true);
   assert.equal(ecs.getComponent(entity, 'MeshCollider').enabled, true);
   assert.equal(ecs.getComponent(entity, 'PostFX').bloom, true);
@@ -137,7 +138,7 @@ test('ECS render settings feed the renderer in deterministic Toon, override, sha
   ecs.addComponent(entity, 'Renderable', { kind: 'model', assetName: 'tree.glb', scale: 2.5 });
   assert.equal(materials.setToonMaterial('tree', { enabled: true, rimIntensity: 1.4 }, objects), true);
   assert.equal(materials.setMaterialOverrides('tree', [{
-    name: 'Bark', roughness: 0.25, metalness: 0.15, color: '#997755'
+    name: 'Bark', roughness: 0.25, diffuseRoughness: 0.68, metalness: 0.15, color: '#997755'
   }], objects), true);
   assert.equal(materials.setShaderMaterial('tree', 'uniform vec3 uColor; void main(){gl_FragColor=vec4(uColor,1.0);}', objects), true);
 
@@ -153,6 +154,7 @@ test('ECS render settings feed the renderer in deterministic Toon, override, sha
   assert.equal(list[0].toon.rimIntensity, 1.4);
   assert.equal(list[1].name, 'Bark');
   assert.equal(list[1].roughness, 0.25);
+  assert.equal(list[1].diffuseRoughness, 0.68);
   assert.equal(list[2].shader, 'custom');
   assert.equal(list[3].scale, 2.5);
   assert.equal(list[3].ecsRenderableFallback, undefined);
