@@ -42,6 +42,9 @@ jobs:
       - name: Check standalone WebGPU lab module syntax
         run: node --check static/pstudio_webgpu_lab.mjs
 
+      - name: Check TSL CSM shadow module syntax
+        run: node --check static/pstudio_rendering_csm_tsl.mjs
+
       - name: Check production 3D engine syntax
         run: node --check static/pstudio_3d_engine.js
 
