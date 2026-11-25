@@ -83,7 +83,7 @@ The normal `/compile` path continues to generate C++17 for the existing console-
 - `static/pstudio_ecs.js`: typed Entity/Component/System storage, schema validation, Scene Object synchronization and phased System scheduling.
 - `static/pstudio_ecs_time.js`: runtime-only simulation clock and time-scale Component; browser frame scheduling remains platform-owned.
 - `static/pstudio_ecs_physics.js`: built-in Velocity/PhysicsBody/PhysicsState/PhysicsTransform Components and the pre-/post-Physics bridge. The fixed-step solver remains owned by `static/pstudio_physics.js`.
-- `static/pstudio_gameplay.js`: compatibility-facing gameplay API for combat, health, inventory, quests, dialogue and navigation.
+- `static/pstudio_gameplay.js`: compatibility-facing ps API façade. Its Maps remain a cold-path fallback when ECS is unavailable; successful ECS activation imports legacy snapshots and retires the migrated duplicate state.
 - `static/pstudio_ecs_gameplay.js`: ECS-owned gameplay state Components and Systems for Health, Inventory, Equipment, CombatState, AIController, MovementIntent, QuestProgress, DialogueSession and NavigationNode. The bridge snapshots per-Scene-Object gameplay state at Stop; standalone Navigation graph Entities retain their existing in-memory lifetime.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
