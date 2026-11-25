@@ -18,8 +18,11 @@ test('shared environment state normalizes all four scene presets without mutatin
     assert.ok(Math.abs(Math.hypot(...state.sunDirection) - 1) < 1e-9);
     assert.ok(Math.abs(Math.hypot(...state.lightDirection) - 1) < 1e-9);
     assert.ok(state.cloudTop >= state.cloudBase + 1);
-    for (const key of ['sunColor','skyTop','skyMid','skyHorizon','skyGround','environmentIntensity','sunIntensity','sunAngularRadius','starBrightness','moonColor','moonIntensity','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
+    for (const key of ['sunColor','skyTop','skyMid','skyHorizon','skyGround','moonColor','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
       assert.ok(state[key], name + ':' + key);
+    }
+    for (const key of ['environmentIntensity','sunIntensity','sunAngularRadius','starBrightness','moonIntensity']) {
+      assert.ok(Number.isFinite(state[key]), name + ':' + key);
     }
   }
 });
