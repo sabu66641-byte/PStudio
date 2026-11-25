@@ -107,5 +107,5 @@ test('application bootstraps the production renderer host factory without changi
   assert.ok(html.includes('/static/pstudio_rendering_production_host.mjs?v=20261125-webgpu-canvas-host-phase2-v1'));
   assert.ok(html.includes('window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost'));
   assert.ok(html.includes('window.PStudioProductionRendererHostFactory = null'));
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-tsl-water-gates-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-tsl-water-gates-v2'));
 });
