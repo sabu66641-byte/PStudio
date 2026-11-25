@@ -18,8 +18,11 @@ test('shared environment state normalizes all four scene presets without mutatin
     assert.ok(Math.abs(Math.hypot(...state.sunDirection) - 1) < 1e-9);
     assert.ok(Math.abs(Math.hypot(...state.lightDirection) - 1) < 1e-9);
     assert.ok(state.cloudTop >= state.cloudBase + 1);
-    for (const key of ['sunColor','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
+    for (const key of ['sunColor','skyTop','skyMid','skyHorizon','skyGround','moonColor','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
       assert.ok(state[key], name + ':' + key);
+    }
+    for (const key of ['environmentIntensity','sunIntensity','sunAngularRadius','starBrightness','moonIntensity']) {
+      assert.ok(Number.isFinite(state[key]), name + ':' + key);
     }
   }
 });
@@ -46,6 +49,9 @@ test('environment state clamps invalid values and uses deterministic water color
   assert.equal(state.cloudTop, 101);
   // Volumetric march steps are owned by the pass quality controller, not environment state.
   assert.equal(state.waterAbsorption, 0);
+  assert.equal(state.environmentIntensity, 0.56);
+  assert.equal(state.skyTop, presets.getPreset('dusk').skyTop);
+  assert.ok(Math.abs(Math.hypot(...state.moonDirection)-1)<1e-9);
   assert.equal(state.waterReflectionTint, environment.waterDefaults.dusk.reflection);
   assert.ok(Object.isFrozen(state));
   assert.ok(Object.isFrozen(state.sunDirection));
@@ -80,5 +86,21 @@ test('environment module loads before FX and the renderer consumes it through gl
   const fxIndex=html.indexOf('pstudio_environment_fx.js');
   const rendererIndex=html.indexOf('pstudio_3d_engine.js');
   assert.ok(envIndex>=0&&fxIndex>envIndex&&rendererIndex>fxIndex);
-  assert.ok(html.includes('pstudio_rendering_environment.js?v=20261125-environment-state-v1'));
+  assert.ok(html.includes('pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2'));
+});
+
+
+test('shared environment state keeps visual sky, sun, moon and PBR IBL parameters coherent', () => {
+  for (const name of ['day','dusk','night','studio']) {
+    const profile = presets.getPreset(name);
+    const state = environment.resolvePStudioEnvironmentState(profile);
+    assert.equal(state.skyTop,profile.skyTop);
+    assert.equal(state.skyMid,profile.skyMid);
+    assert.equal(state.skyHorizon,profile.horizon);
+    assert.equal(state.skyGround,profile.ground);
+    assert.equal(state.environmentIntensity,profile.environmentIntensity);
+    assert.equal(state.sunIntensity,profile.sunIntensity);
+    assert.equal(state.sunAngularRadius,profile.sunAngularRadius);
+    assert.ok(Math.abs(Math.hypot(...state.moonDirection)-1)<1e-9);
+  }
 });

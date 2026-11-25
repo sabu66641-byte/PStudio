@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
-import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs';
+import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261125-tsl-ibl-session-v2';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
 const canvas = document.getElementById('webgpu-lab-canvas');
@@ -243,6 +243,7 @@ async function runLab(ticket) {
       antialias: memoryGiB >= 4,
       alpha: false,
       powerPreference: 'low-power',
+      environmentProfile: window.PStudioSceneEnvironment?.getPreset?.('day') || { name: 'day' },
       configureRenderer: (nextRenderer) => {
         nextRenderer.setPixelRatio(Math.min(Number(window.devicePixelRatio) || 1, pixelRatioCap));
         nextRenderer.outputColorSpace = THREE.SRGBColorSpace;
