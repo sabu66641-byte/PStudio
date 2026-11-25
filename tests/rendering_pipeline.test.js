@@ -1387,7 +1387,7 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
     "from './pstudio_rendering_backend.mjs'",
-    "from './pstudio_rendering_materials.mjs'",
+    "from './pstudio_rendering_materials.mjs?v=20261125-safe-pbr1'",
     "from './pstudio_rendering_pipeline.mjs'",
     'createPStudioWebGPUBackend({',
     'convertPStudioScenePBRMaterials(scene)',
