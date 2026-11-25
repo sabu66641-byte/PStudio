@@ -2989,15 +2989,15 @@ try {
   }
 
   try {
-    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-gi-tsl-v1');
+    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-cluster-live-v1');
   } catch (error) {
     window.PStudioRenderingMigration = null;
     console.warn('[PStudio] Shared WebGPU migration session unavailable; the production WebGL2 path remains active.', error);
   }
   try {
-    const productionRendererHost = await import('/static/pstudio_rendering_production_host.mjs?v=20261125-webgpu-canvas-host-phase2-v1');
+    const productionRendererHost = await import('/static/pstudio_rendering_production_host.mjs?v=20261126-cluster-live-v1');
     window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost;
-    const productionBridge = await import('/static/pstudio_rendering_production_bridge.mjs?v=20261125-production-scene-bridge-v1');
+    const productionBridge = await import('/static/pstudio_rendering_production_bridge.mjs?v=20261126-cluster-live-v1');
     window.PStudioProductionRenderingBridgeFactory = productionBridge.createPStudioProductionRenderingBridge;
   } catch (error) {
     window.PStudioProductionRendererHostFactory = null;
@@ -3039,7 +3039,7 @@ try {
 <script src="/static/pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2"></script>
 <script src="/static/pstudio_environment_fx.js?v=20261126-tsl-water-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261126-tsl-water-gates-v2"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261126-cluster-live-v1"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
@@ -3060,7 +3060,7 @@ try {
 <script src="/static/pstudio_ecs_inspector.js"></script>
 <script src="/static/pstudio_selects.js?v=20261124-custom-selects1"></script>
 <script type="module">
-import('/static/pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1')
+import('/static/pstudio_webgpu_lab.mjs?v=20261126-cluster-live-v1')
   .then(module => module.initialize())
   .catch(error => {
     const button = document.getElementById('webgpu-lab-open');
