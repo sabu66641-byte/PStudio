@@ -59,7 +59,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | ps ECS System locals | Runtime `ecsStates` Map keyed by System and Entity | Runtime-only `ScriptSystemState` Component keyed by System ID on each matching Entity | Phase 21 implemented |
 | Simulation time | Runtime `timeScale` field and frame-clock calculation | Dedicated runtime-only `TimeState` Component; frame scheduling remains a service boundary | Phase 22 implemented |
 | Legacy gameplay state | PStudioGameplay Maps retained as compatibility fallbacks | Import fallback snapshots once into ECS, then clear migrated scene/global duplicates; preserve the no-ECS compatibility path | Phase 23 implemented |
-| Editor/runtime synchronization | Scene Object serialization adapters and ECS runtime Components | Audit deterministic ownership and eliminate redundant synchronization only where proven safe | Pending Phase 24 |
+| Editor/runtime synchronization | Scene Object serialization adapters and ECS runtime Components | Deterministic two-way Transform snapshots; import legacy ps writes before postUpdate; destroy stale Scene Entities while preserving standalone ECS Entities | Phase 24 implemented |
 | Durable compatibility | Versioned ECS payload plus project backup importer | End-to-end old/new project, future-schema and backup round-trip validation | Pending Phase 25 |
 
 ## Safe implementation sequence
@@ -87,7 +87,7 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 21. **ps Script Runtime State** — move per-Scene Object script variables, initialization/start lifecycle, per-Entity ps System locals and landing sequence state into runtime-only ECS Components. (Phase 21 implemented.)
 22. **TimeState** — move the simulation clock/time-scale state into a dedicated runtime-only ECS Component while preserving the existing timing semantics. (Implemented: scaled/unscaled delta, elapsed time, frame count, 0–4 time-scale compatibility, 0.1-second delta cap and Play/Stop lifecycle.)
 23. **Gameplay Map compatibility cleanup** — import pre-ECS health, inventory, equipment, combat, AI, quest, dialogue, definition and navigation fallback state once; clear migrated duplicate Maps after ECS activation while retaining the standalone no-ECS compatibility path. Versioned Scene Components and standalone ECS Entities remain authoritative across Stop/Play. (Implemented with legacy-import, ECS round-trip and no-ECS fallback regression tests.)
-24. **Scene Object / ECS synchronization audit** — verify editor, preview, Play, Stop and object-destruction synchronization has one runtime source of truth. (Pending.)
+24. **Scene Object / ECS synchronization audit** — verify editor, preview, Play, Stop and object-destruction synchronization has one runtime source of truth. Scene Object changes win simultaneous-write conflicts; ECS-only changes flow back; legacy ps callback writes are imported before postUpdate Systems. Stale Scene Entities are destroyed without clearing standalone Quest/definition/navigation Entities. (Implemented with bidirectional Transform, phase-order and lifecycle tests.)
 25. **Persistence compatibility audit** — test old projects, current schemas, unknown Components, future schemas and backup round-trips end-to-end. (Pending.)
 26. **Final migration audit and optimization** — remove proven redundant adapters and measure any remaining per-frame synchronization cost without reducing features. (Pending.)
 
