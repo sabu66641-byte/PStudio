@@ -147,6 +147,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
         return active;
       } catch (error) {
         if (!isCurrent(ticket) || error?.name === 'AbortError') throw error;
+        if (state === 'failed' && lastError) throw lastError;
         lastError = error;
         if (!allowFallback || typeof createFallback !== 'function') {
           publish('failed', { backend: null, error });
