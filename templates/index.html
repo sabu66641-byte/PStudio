@@ -2989,7 +2989,7 @@ try {
   }
 
   try {
-    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v1');
+    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v2');
   } catch (error) {
     window.PStudioRenderingMigration = null;
     console.warn('[PStudio] Shared WebGPU migration session unavailable; the production WebGL2 path remains active.', error);
@@ -3037,7 +3037,7 @@ try {
 <script src="/static/pstudio_game_ui.js"></script>
 <script src="/static/pstudio_rendering_budget.js?v=20261125-frame-budget-v1"></script>
 <script src="/static/pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2"></script>
-<script src="/static/pstudio_environment_fx.js?v=20261126-tsl-surface-markers-v1"></script>
+<script src="/static/pstudio_environment_fx.js?v=20261126-tsl-surface-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
 <script src="/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
