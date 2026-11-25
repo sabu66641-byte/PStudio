@@ -48,7 +48,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
@@ -1387,12 +1387,12 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'
+    'pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-tsl-csm-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1457,8 +1457,10 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
-  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')"));
-  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes("function hasCustomShaderHook(material)"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile')"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes("userData.pstudioCSMOnlyHook === true"));
   assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks += 1'));
   assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks,'));
 });
