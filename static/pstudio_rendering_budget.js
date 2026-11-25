@@ -34,7 +34,7 @@
         ? (scale >= 0.82 ? 1 : scale >= 0.60 ? 2 : 3)
         : dynamicScene
           ? (scale >= 0.82 ? 2 : scale >= 0.60 ? 3 : 4)
-          : 4;
+          : 24;
       const mirrorResolution = clamp(0.62 + scale * 0.38,0.62,1,1);
       const giAllowed = Boolean(giEnabled && scale >= 0.45 && pressure < 0.93);
       const giCadence = scale >= 0.84 ? 1 : scale >= 0.70 ? 1.5 : scale >= 0.55 ? 2.5 : 4;
