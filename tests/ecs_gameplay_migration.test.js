@@ -57,7 +57,7 @@ test('legacy Gameplay fallback snapshots are imported once, then ECS becomes aut
   ecs.clearSceneObjects();
   assert.equal(gameplay.getHP('hero'), 100);
   assert.equal(gameplay.inventoryCount('hero', 'potion'), 0);
-  assert.deepEqual(gameplay.getEquipment('hero'), []);
+  assert.deepEqual(Array.from(gameplay.getEquipment('hero')), []);
 
   // Play again from the versioned Scene payload; standalone ECS state remains intact.
   ecs.syncSceneObjects(objects);
