@@ -5,9 +5,11 @@ import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v6';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
+import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-tsl-v1';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
+export const supportsPStudioTSLClusteredLighting = typeof createPStudioTSLClusterStorage === 'function' && typeof applyPStudioTSLClusteredLighting === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
@@ -172,6 +174,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let surfaceHandle = null;
   let waterDepthHandle = null;
   let waterSurfaceHandle = null;
+  let clusterStorageHandle = null;
+  let clusteredLightingHandle = null;
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
@@ -241,6 +245,21 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     const environmentProfile = options.environmentProfile || globalThis.PStudioSceneEnvironment?.getPreset?.('day');
     reportStage('porting-surface-features', { materialCount: materialConversion.convertedMaterials || 0 });
     surfaceHandle = applyPStudioTSLSurfaceFeatures(scene, { environmentProfile });
+
+    const initialClusterSnapshot = typeof options.getClusteredLightingSnapshot === 'function'
+      ? options.getClusteredLightingSnapshot()
+      : options.clusteredLightingSnapshot || null;
+    if (initialClusterSnapshot) {
+      reportStage('porting-clustered-lighting', {
+        lights: initialClusterSnapshot.lightCount || 0,
+        revision: initialClusterSnapshot.revision ?? null
+      });
+      clusterStorageHandle = createPStudioTSLClusterStorage(renderer, options.clusteredLightingOptions || {});
+      clusteredLightingHandle = applyPStudioTSLClusteredLighting(scene, {
+        storage: clusterStorageHandle,
+        snapshot: initialClusterSnapshot
+      });
+    }
 
     let hasWaterMaterials = false;
     scene.traverse((object) => {
@@ -320,6 +339,10 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         if (disposed) return false;
         return pipelineHandle.setBloom(settings);
       },
+      setClusteredLightingSnapshot(snapshot) {
+        if (disposed || !clusteredLightingHandle) return false;
+        return clusteredLightingHandle.update(snapshot);
+      },
       getState() {
         return Object.freeze({
           disposed,
@@ -329,6 +352,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           pipeline: pipelineHandle?.getState?.() || null,
           environment: environmentHandle?.getState?.() || null,
           csm: csmHandle?.getState?.() || null,
+          clusteredLighting: clusteredLightingHandle?.getState?.() || null,
           surfaceFeatures: Object.freeze({
             materialCount: surfaceHandle?.materialCount || 0,
             features: surfaceHandle?.features || Object.freeze([])
@@ -352,6 +376,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { pipelineHandle?.dispose?.(); } catch (_) {}
         try { environmentHandle?.dispose?.(); } catch (_) {}
         try { csmHandle?.dispose?.(); } catch (_) {}
+        try { clusteredLightingHandle?.dispose?.(); } catch (_) {}
+        try { clusterStorageHandle?.dispose?.(); } catch (_) {}
         try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
         try { waterDepthHandle?.dispose?.(); } catch (_) {}
         try { surfaceHandle?.dispose?.(); } catch (_) {}
@@ -366,6 +392,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { pipelineHandle?.dispose?.(); } catch (_) {}
     try { environmentHandle?.dispose?.(); } catch (_) {}
     try { csmHandle?.dispose?.(); } catch (_) {}
+    try { clusteredLightingHandle?.dispose?.(); } catch (_) {}
+    try { clusterStorageHandle?.dispose?.(); } catch (_) {}
     try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
     try { waterDepthHandle?.dispose?.(); } catch (_) {}
     try { surfaceHandle?.dispose?.(); } catch (_) {}
