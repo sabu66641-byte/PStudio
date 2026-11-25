@@ -46,6 +46,7 @@
     const role=String(object?.userData?.pstudioWaterDetail||'micro-ripple');
     const type=role==='spray-particles'?2:role==='shoreline-foam'?1:0;
     const u={time:{value:0},type:{value:type},strength:{value:type === 0 ? 0.72 : type === 1 ? 0.54 : 0.38}};
+    markTSLPortable(material,'water-detail');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -83,7 +84,11 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-water-detail-hq-v1-'+role+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioWaterDetailHQ=u;
+    material.userData.pstudioWaterDetailTSLSettings={
+      role,type,strength:type===0?0.72:type===1?0.54:0.38
+    };
     material.transparent=true;
     material.depthWrite=false;
     material.side=T()?.DoubleSide??material.side;
