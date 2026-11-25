@@ -1770,7 +1770,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!bakedLightProbeVolume?.length)return false;
     dynamicProbeSignature=signature;
     if(dynamicProbeCache.length!==bakedLightProbeVolume.length){
-      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0}));
+      dynamicProbeCache=bakedLightProbeVolume.map(()=>({coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0}));
     }
     dynamicProbeDirty=new Uint8Array(bakedLightProbeVolume.length);dynamicProbeDirty.fill(1);dynamicProbeCursor=0;
     probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
@@ -1784,7 +1784,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(signature!==dynamicProbeSignature){
         const GI=window.PStudioRenderingGI;
         const initial=!dynamicProbeSnapshots.length;
-        const affected=GI?.findChangedProbeIndices?.(bakedLightProbeVolume,dynamicProbeSnapshots,snapshots,0.75)||[];
+        const affected=typeof GI?.findChangedProbeIndices==='function'
+          ?GI.findChangedProbeIndices(bakedLightProbeVolume,dynamicProbeSnapshots,snapshots,0.75)
+          :Array.from({length:bakedLightProbeVolume.length},(_,index)=>index);
         dynamicProbeSignature=signature;
         if(signature){
           if(!dynamicProbeDirty||dynamicProbeDirty.length!==bakedLightProbeVolume.length){
@@ -1841,7 +1843,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       }
     }
     if(index<0){dynamicGIStatus='ready';return;}
-    const resolution=qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64;
+    const resolveProbeResolution=window.PStudioRenderingGI?.dynamicProbeCaptureResolution;
+    const resolution=typeof resolveProbeResolution==='function'?resolveProbeResolution(qualityPreset):(qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64);
     const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
     const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
     const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
