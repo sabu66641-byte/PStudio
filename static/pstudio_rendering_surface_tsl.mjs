@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 
-const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water']);
+const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail']);
 const EPSILON = 1e-5;
 
 function finite(value, fallback) {
@@ -248,6 +248,45 @@ function applyTerrain(material, metadata) {
   }
 }
 
+function applyWaterDetail(material, metadata) {
+  const settings = metadata.pstudioWaterDetailTSLSettings || {};
+  const role = String(settings.role || 'micro-ripple');
+  const type = Math.max(0, Math.min(2, finite(settings.type, role === 'spray-particles' ? 2 : role === 'shoreline-foam' ? 1 : 0)));
+  const strength = Math.max(0, Math.min(1, finite(settings.strength, 0.72)));
+  const local = TSL.positionLocal;
+  const world = TSL.positionWorld;
+  const time = TSL.time;
+
+  const waveA = local.x.mul(1.7).add(local.z.mul(1.13)).add(time.mul(1.7)).sin();
+  const waveB = local.x.mul(0.71).sub(local.z.mul(1.91)).sub(time.mul(1.13)).sin();
+  const move = TSL.mix(TSL.float(0.009), TSL.float(0.002), TSL.float(type));
+  const deformed = (material.positionNode || local).add(
+    TSL.vec3(0, move.mul(waveA.mul(0.65).add(waveB.mul(0.35))), 0)
+  );
+  material.positionNode = deformed;
+  material.castShadowPositionNode = deformed;
+
+  const phase = world.x.mul(0.47).add(world.z.mul(0.39))
+    .add(time.mul(1.1 + type * 0.35));
+  const glint = TSL.max(TSL.float(0), phase.sin().mul(0.5).add(0.5))
+    .pow(type < 0.5 ? 8 : 4);
+  const pulse = TSL.float(0.82).add(
+    TSL.float(0.18).mul(TSL.float(0.5).add(TSL.float(0.5).mul(phase.mul(1.37).sin())))
+  );
+  const opacityPattern = type > 0.5
+    ? TSL.mix(pulse, TSL.float(0.72).add(glint.mul(0.28)), 1)
+    : pulse;
+
+  const baseColor = material.colorNode || TSL.materialColor;
+  material.colorNode = baseColor.add(
+    TSL.vec3(0.035, 0.105, 0.12).mul(glint.mul(strength))
+  );
+  material.opacityNode = (material.opacityNode || TSL.materialOpacity).mul(opacityPattern);
+  material.transparent = true;
+  material.depthWrite = false;
+  material.side = THREE.DoubleSide;
+}
+
 function resolveSunDirection(profile = {}) {
   const x = finite(profile.skySunX ?? profile.sunDirection?.[0], 0.35);
   const y = finite(profile.skySunY ?? profile.sunDirection?.[1], 0.89);
@@ -361,7 +400,7 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
 
     const previous = Object.fromEntries([
       'colorNode', 'roughnessNode', 'metalnessNode', 'emissiveNode',
-      'positionNode', 'castShadowPositionNode', 'alphaTestNode'
+      'positionNode', 'castShadowPositionNode', 'alphaTestNode', 'opacityNode'
     ].map((key) => [key, material[key]]));
     let foliageRole = null;
     try {
@@ -369,6 +408,7 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
       if (hasParallax) applyParallax(material);
       if (features.includes('terrain')) applyTerrain(material, material.userData);
       if (features.includes('foliage')) foliageRole = applyFoliage(material, material.userData, options);
+      if (features.includes('water-detail')) applyWaterDetail(material, material.userData);
       material.userData = {
         ...material.userData,
         pstudioTSLFeaturesApplied: features.slice(),
