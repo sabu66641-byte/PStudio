@@ -111,6 +111,7 @@
       foam:{value:new Three.Color('#e3fff6')},
       mode:{value:waterfall?1:0},reflection:{value:new Three.Color('#b8d9e8')},absorption:{value:0.19}
     };
+    markTSLPortable(material,'water');
     const old = material.onBeforeCompile, oldKey = material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile = function(shader, renderer) {
       if (old) old.call(this,shader,renderer);
@@ -191,7 +192,15 @@
         'roughnessFactor=clamp(roughnessFactor+.035*(.5+.5*sin(vPStudioWaterWorld.x*2.0+vPStudioWaterWorld.z*1.7+uPStudioWaterTime)),.035,.34);');
     };
     material.customProgramCacheKey = () => 'pstudio-water-hq-v3-'+(waterfall?'fall':'surface')+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioWaterHQ = u;
+    material.userData.pstudioWaterTSLSettings = {
+      waterfall:!!waterfall,
+      amplitude:waterfall?0.018:0.105,
+      bounds:{minX,minZ,width,depth},
+      shallow:'#65d9bf',deep:'#08727d',foam:'#e3fff6',
+      reflectivity:0.92,reflectionResolutionScale:0.5,absorption:0.19
+    };
     if(object?.userData)object.userData.pstudioWaterSurface=true;
     material.roughness = waterfall ? 0.12 : 0.075;
     material.metalness = 0.015;
