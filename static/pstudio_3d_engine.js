@@ -6,6 +6,7 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
+  let rendererInitializationFailed=false;
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null,godRaysPass=null;
   let bloomEnabled=false,ssaoEnabled=false,bloomStrength=0.45,volumetricFogEnabled=false,volumetricCloudsEnabled=false,contactShadowsEnabled=false,contactShadowsRequested=null,temporalAAEnabled=false,godRaysEnabled=false,godRaysFallbackEnabled=false,godRaysIntensity=0;
   function readSavedQualityPreset(){
@@ -459,12 +460,46 @@
 
   function ensureRenderer(){
     if(renderer)return true;
+    if(rendererInitializationFailed)return false;
     if(!window.THREE||!window.THREE.WebGLRenderer)return false;
     const T=window.THREE;
-    const deviceGiB=deviceMemoryGiB();
-    renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
     const webgpuModuleAvailable=typeof window.PStudioWebGPURenderer==='function';
     const tslModuleAvailable=!!window.PStudioTSL;
+    const failRendererInitialization=error=>{
+      rendererInitializationFailed=true;
+      window.PStudio3DError=error;
+      window.PStudioRenderingRuntime=Object.freeze({
+        threeRevision:String(T.REVISION||'unknown'),
+        productionBackend:'webgl2',
+        webgl2:false,
+        webgpuModuleAvailable,
+        tslModuleAvailable,
+        tslNodesEnabled:false,
+        error:String(error?.message||error)
+      });
+      console.error('[PStudio] Three.js r187 WebGL2 renderer initialization failed:',error);
+      try{window.dispatchEvent(new CustomEvent('pstudio-renderer-failed',{detail:{message:String(error?.message||error)}}));}catch(_){}
+      return false;
+    };
+    // r187 uses WeakRef and FinalizationRegistry inside WebGL resource tracking.
+    // Do not polyfill FinalizationRegistry: a retaining fallback would undermine
+    // renderer resource lifetime and can turn model imports into memory leaks.
+    if(typeof WeakRef!=='function'||typeof FinalizationRegistry!=='function'){
+      return failRendererInitialization(new Error('Three.js r187 requires WeakRef and FinalizationRegistry. Update the browser/WebView to use the WebGL 2 renderer.'));
+    }
+    const deviceGiB=deviceMemoryGiB();
+    try{
+      renderer=new T.WebGLRenderer({canvas,antialias:deviceGiB>=6,alpha:false,powerPreference:deviceGiB>=4?'high-performance':'low-power',preserveDrawingBuffer:false});
+      if(renderer.capabilities?.isWebGL2!==true){
+        renderer.dispose?.();
+        renderer=null;
+        throw new Error('Three.js r187 requires WebGL 2. This browser or GPU does not expose a compatible WebGL 2 context.');
+      }
+    }catch(error){
+      renderer?.dispose?.();
+      renderer=null;
+      return failRendererInitialization(error);
+    }
     window.PStudioRenderingRuntime=Object.freeze({
       threeRevision:String(T.REVISION||'unknown'),
       productionBackend:'webgl2',
