@@ -37,7 +37,7 @@ When Play is pressed, `static/pstudio_engine.js` sends the project's ps scripts 
 - `start()` runs once per attached Game Object when a game starts.
 - `update(dt)` runs from the browser animation loop.
 - `on_collision(other)` is dispatched on collision-enter.
-- Game state is kept per object in the runtime maps.
+- ECS `ScriptLifecycle` and `ScriptState` Components own per-object script lifecycle and global variables; `ScriptSystemState` owns per-Entity `.ps` System locals. The runtime service continues to execute ASTs and schedule browser callbacks.
 
 Do not send a server request every frame. Preserve the division between server-side parsing/validation and client-side game execution.
 
@@ -57,8 +57,9 @@ Do not send a server request every frame. Preserve the division between server-s
 - `static/pstudio_engine.js`: 2D preview, browser game-script interpreter, game lifecycle, input, render-command generation and game-loop scheduling.
 - `static/pstudio_3d_engine.js`: Three.js renderer, GLTF/GLB loading, model instances, materials, camera controls, shadows, HDR/IBL, preset-driven solar elevation, moonlight, Rayleigh/Mie physical sky, twilight enhancement and procedural fallback, adaptive height-aware volumetric fog/clouds, depth-aware PBR water plus an isolated, downscaled planar Mirror Water reflection pass, SH probes, UV lightmaps, LOD, BVH-accelerated CPU raycasts, occlusion, GPU particle rendering, instancing and world chunks.
 - `static/pstudio_physics.js`: fixed-step physics, capsule character controller, static collision geometry and moving-platform state.
-- `static/pstudio_ecs.js`: entity/component/system storage and scheduling; not yet the owner of all existing gameplay/physics/render state.
-- `static/pstudio_gameplay.js`: generic combat helpers, simple enemy state AI, inventory, quests, dialogue and navigation helpers.
+- `static/pstudio_ecs.js`: ECS Entity/Component storage, typed schemas, persistent Scene Component serialization, lifecycle bridging and deterministic System scheduling.
+- `static/pstudio_ecs_*.js`: domain bridges for Input, Audio, Collision, Gameplay, Physics, Rendering, Streaming, Time, UI, VFX, Materials, Scene, Script, Modules and Inspector; these adapt ECS state to the existing platform, renderer and editor services.
+- `static/pstudio_gameplay.js`: retains the public ps gameplay API and no-ECS fallback; while ECS is available, the compatibility surface delegates migrated state and definitions to `PStudioECSGameplay`.
 - `static/pstudio_game_ui.js`: in-game HUD and DOM panels.
 - `static/pstudio_assets.js`: IndexedDB-backed binary model-asset storage.
 
@@ -83,8 +84,8 @@ Do not send a server request every frame. Preserve the division between server-s
 - The game runtime owns ps callback state and emits frame render commands.
 - `draw_mirror_water` is a browser game-script API (5–7 arguments) and remains separate from the legacy `draw_water` command; the IDE's persistent Mirror Water object uses the same renderer command path. The scene viewport exposes independently persisted Grid, Axes and Origin overlays; editor helpers are hidden during Play and excluded from planar water reflections.
 - The 3D renderer owns Three.js resources and rendering caches.
-- The physics module owns fixed-step body state and collision calculations.
-- ECS is integrated with scene entities and system iteration but is not yet a full migration of every legacy subsystem.
+- `PStudioPhysics` retains fixed-step integration, contact generation and collision resolution; ECS `PhysicsBody` owns persistent body configuration while `PhysicsState` / `PhysicsTransform` expose gameplay-facing runtime snapshots.
+- ECS is authoritative for migrated game-world Entity/Component state and deterministic gameplay Systems. Scene Object/project adapters and public ps APIs remain compatibility surfaces; the no-ECS fallback remains available when the bridge is unavailable. GPU/Three.js resources, DOM, asset storage, async jobs and browser frame scheduling remain service-owned.
 - The resource manager can coordinate registered resources, but it does not intercept every Three.js allocation or track total device memory.
 
 Keep these boundaries explicit. Avoid silently duplicating ownership of transforms, physics bodies, model resources, or game state.

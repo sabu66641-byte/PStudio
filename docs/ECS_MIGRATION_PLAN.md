@@ -47,8 +47,8 @@ This is a staged migration. Existing ps built-ins and project files remain compa
 | Jobs | PStudioJobs cooperative queue | Jobs remain async infrastructure; ECS stores task state only where gameplay needs it | Keep service |
 | Modules | PStudioModules registry | ModuleState mirror Components track registration, activation/deactivation, errors and enabled state; PStudioModules remains authoritative for dependencies, async hooks and rollback | Phase 13 implemented; ECS mirror is runtime-only |
 | Assets/storage | PStudioAssetStore / IndexedDB | ECS stores stable asset IDs, never binary asset payloads | Keep service |
-| Editor/Inspector | templates/index.html | Inspector reads/writes ECS definitions and selected-entity Components | Existing partial integration |
-| Scene/project persistence | editor serializer and project backup | Versioned `ecsComponentsVersion` envelope, persistent-only Component serialization and v0 array/map migration; future schema versions are preserved and not overwritten | Phase 14 implemented for Component payloads; broader project migrations and legacy API retirement remain pending |
+| Editor/Inspector | templates/index.html | ECS Inspector exposes typed Component schemas, selected-Scene Components and registered `.ps` Systems | Phase 19/20 integrated; schema validation, selected-object editing, runtime System controls and rollback-safe updates have regression coverage |
+| Scene/project persistence | editor serializer and project backup | Versioned `ecsComponentsVersion` envelope, persistent-only Component serialization and v0 array/map migration; future schema versions are preserved and not overwritten | Phases 14, 18 and 25 cover ECS payload serialization and backup compatibility; full project/asset persistence remains editor/service-owned, and legacy public ps APIs are intentionally retained as compatibility surfaces |
 
 ## Prioritized follow-up migration inventory
 
