@@ -391,3 +391,117 @@ test('TSL environment owns a sky NodeMaterial and matching PBR IBL texture with 
   assert.equal(scene.environmentIntensity,0.37);
   originalEnvironment.dispose();
 });
+
+
+test('native TSL CSM shadow node replaces legacy cascade lights and restores them on disposal', async () => {
+  const [THREE] = await modules;
+  const csmModule = await import('../static/pstudio_rendering_csm_tsl.mjs');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 1600);
+  const legacyLights = [0, 1, 2].map(() => {
+    const light = new THREE.DirectionalLight(0xffffff, 3);
+    light.castShadow = true;
+    light.shadow.autoUpdate = true;
+    scene.add(light);
+    return light;
+  });
+
+  const handle = csmModule.createPStudioTSLCascadeShadows(scene, camera, {
+    cascades: 3,
+    maxFar: 900,
+    mode: 'practical',
+    lightDirection: new THREE.Vector3(-5, -9, -6).normalize(),
+    legacyLights,
+    lightColor: new THREE.Color(0xffffff),
+    lightIntensity: 3,
+    shadowMapSize: 2048
+  });
+
+  assert.equal(handle.kind, 'pstudio-tsl-csm');
+  assert.equal(handle.enabled, true);
+  assert.equal(handle.shadowNode instanceof (await import('three/addons/csm/CSMShadowNode.js')).CSMShadowNode, true);
+  assert.equal(handle.light.shadow.shadowNode, handle.shadowNode);
+  assert.equal(handle.getState().cascades, 3);
+  assert.equal(handle.getState().maxFar, 900);
+  assert.deepEqual(handle.getState().shadowMapSize, [2048, 2048]);
+  for (const light of legacyLights) {
+    assert.equal(light.intensity, 0);
+    assert.equal(light.castShadow, false);
+    assert.equal(light.shadow.autoUpdate, false);
+  }
+  assert.equal(scene.children.includes(handle.light), true);
+
+  assert.equal(handle.dispose(), true);
+  assert.equal(handle.dispose(), false);
+  for (const light of legacyLights) {
+    assert.equal(light.intensity, 3);
+    assert.equal(light.castShadow, true);
+    assert.equal(light.shadow.autoUpdate, true);
+  }
+  assert.equal(scene.children.includes(handle.light), false);
+  for (const light of legacyLights) {
+    scene.remove(light);
+    light.dispose?.();
+  }
+});
+
+test('TSL CSM validates scene, camera and light direction before mutating legacy state', async () => {
+  const [THREE] = await modules;
+  const csmModule = await import('../static/pstudio_rendering_csm_tsl.mjs');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  const legacy = new THREE.DirectionalLight(0xffffff, 2);
+  scene.add(legacy);
+  assert.throws(() => csmModule.createPStudioTSLCascadeShadows({}, camera), /Scene and Camera/);
+  assert.throws(() => csmModule.createPStudioTSLCascadeShadows(scene, camera, {
+    legacyLights: [legacy],
+    lightDirection: [0, 0, 0]
+  }), /non-zero light direction/);
+  assert.equal(legacy.intensity, 2);
+  scene.remove(legacy);
+});
+
+test('TSL material conversion accepts a known CSM-only hook but still rejects unrelated GLSL hooks', async () => {
+  const [THREE, , materials] = await modules;
+  const source = new THREE.MeshStandardMaterial();
+  source.defines = { USE_CSM: 1, CSM_CASCADES: 3, CSM_FADE: '' };
+  const csmHook = () => {};
+  source.onBeforeCompile = csmHook;
+  source.userData.pstudioCSMOnlyHook = true;
+  source.userData.pstudioCSMHook = csmHook;
+  source.userData.pstudioCSMSetup = true;
+
+  const converted = materials.createPStudioNodeMaterial(source);
+  assert.equal(converted.isMeshStandardNodeMaterial, true);
+  assert.equal(converted.defines?.USE_CSM, undefined);
+  assert.equal(converted.defines?.CSM_CASCADES, undefined);
+  assert.equal(converted.userData.pstudioCSMOnlyHook, undefined);
+  converted.dispose();
+
+  source.onBeforeCompile = () => {};
+  assert.throws(() => materials.createPStudioNodeMaterial(source), /custom GLSL hooks/);
+  source.dispose();
+});
+
+test('WebGPU scene preflight accepts CSM-only hooks and rejects a layered custom shader hook', async () => {
+  const [THREE, , , , , , migration] = await modules;
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BoxGeometry();
+  const csmMaterial = new THREE.MeshStandardMaterial();
+  const csmHook = () => {};
+  csmMaterial.onBeforeCompile = csmHook;
+  csmMaterial.userData.pstudioCSMOnlyHook = true;
+  csmMaterial.userData.pstudioCSMHook = csmHook;
+  scene.add(new THREE.Mesh(geometry, csmMaterial));
+  const safe = migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(safe.compatible, true);
+  assert.equal(safe.legacyShaderHooks, 0);
+
+  csmMaterial.userData.pstudioProbeShaderSetup = true;
+  const blocked = migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(blocked.compatible, false);
+  assert.equal(blocked.legacyShaderHooks, 1);
+
+  csmMaterial.dispose();
+  geometry.dispose();
+});
