@@ -67,9 +67,13 @@ test('canvas host creates two aligned surfaces and switches visibility without s
   assert.equal(host.getCanvas('webgpu'), primary);
   assert.equal(host.getCanvas('webgl2'), fallback);
   assert.equal(host.getState().separateContexts, true);
+  assert.equal(primary.style.getPropertyValue('visibility'), 'hidden');
+  assert.equal(fallback.style.getPropertyValue('visibility'), 'hidden');
+  assert.equal(host.getState().activeBackend, null);
+
+  assert.equal(host.activate('webgpu'), true);
   assert.equal(primary.style.getPropertyValue('visibility'), 'visible');
   assert.equal(fallback.style.getPropertyValue('visibility'), 'hidden');
-
   assert.equal(host.activate('webgl2'), true);
   assert.equal(primary.style.getPropertyValue('visibility'), 'hidden');
   assert.equal(fallback.style.getPropertyValue('visibility'), 'visible');
