@@ -26,6 +26,7 @@ export function createPStudioRendererCanvasHost(options = {}) {
   }
 
   const createdFallback = !options.fallbackCanvas;
+  const insertedByHost = !fallbackCanvas.parentElement;
   const elements = [primaryCanvas, fallbackCanvas];
   const originalStyles = elements.map((canvas) => ({
     style: canvas.getAttribute?.('style'),
@@ -33,7 +34,9 @@ export function createPStudioRendererCanvasHost(options = {}) {
     hidden: canvas.hidden,
     ariaHidden: canvas.getAttribute?.('aria-hidden')
   }));
-  const parentOriginalStyle = parent.getAttribute?.('style');
+  const parentOriginalPosition = parent.style?.position || '';
+  const parentOriginalIsolation = parent.style?.isolation || '';
+  let changedParentPosition = false;
   let disposed = false;
   let activeBackend = 'webgpu';
 
@@ -44,7 +47,7 @@ export function createPStudioRendererCanvasHost(options = {}) {
 
   function applyLayout() {
     const parentStyle = documentRef.defaultView?.getComputedStyle?.(parent);
-    if (parentStyle?.position === 'static') setStyle(parent, 'position', 'relative');
+    if (parentStyle?.position === 'static') { setStyle(parent, 'position', 'relative'); changedParentPosition = true; }
     setStyle(parent, 'isolation', 'isolate');
 
     for (const [index, canvas] of elements.entries()) {
@@ -65,8 +68,8 @@ export function createPStudioRendererCanvasHost(options = {}) {
     if (createdFallback) {
       fallbackCanvas.className = primaryCanvas.className || 'game-canvas game-canvas-3d';
       fallbackCanvas.setAttribute?.('aria-label', 'PStudio WebGL compatibility renderer');
-      parent.insertBefore(fallbackCanvas, primaryCanvas.nextSibling);
     }
+    if (insertedByHost) parent.insertBefore(fallbackCanvas, primaryCanvas.nextSibling);
     activate(activeBackend);
   }
 
@@ -112,7 +115,7 @@ export function createPStudioRendererCanvasHost(options = {}) {
     dispose() {
       if (disposed) return false;
       disposed = true;
-      if (createdFallback) fallbackCanvas.remove?.();
+      if (insertedByHost) fallbackCanvas.remove?.();
       for (let index = 0; index < elements.length; index += 1) {
         const canvas = elements[index];
         const original = originalStyles[index];
@@ -123,8 +126,8 @@ export function createPStudioRendererCanvasHost(options = {}) {
         if (original.ariaHidden === null || original.ariaHidden === undefined) canvas.removeAttribute?.('aria-hidden');
         else canvas.setAttribute?.('aria-hidden', original.ariaHidden);
       }
-      if (parentOriginalStyle === null || parentOriginalStyle === undefined) parent.removeAttribute?.('style');
-      else parent.setAttribute?.('style', parentOriginalStyle);
+      if (changedParentPosition) setStyle(parent, 'position', parentOriginalPosition);
+      setStyle(parent, 'isolation', parentOriginalIsolation);
       return true;
     }
   });
