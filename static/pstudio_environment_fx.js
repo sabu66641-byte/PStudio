@@ -5,6 +5,19 @@
   const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), toonMaterials = new Set(), outlineMaterialCache = new Map(), foliageTranslucencyMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set(), contactShadowPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
+  function markTSLPortable(material,feature){
+    if(!material)return;
+    const data=material.userData||(material.userData={});
+    if(!Object.prototype.hasOwnProperty.call(data,'pstudioTSLPortHasForeignHook')){
+      const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function';
+      const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function';
+      data.pstudioTSLPortHasForeignHook=ownCompile||ownCacheKey;
+    }
+    data.pstudioTSLPortVersion=1;
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes(feature))features.push(feature);
+    data.pstudioTSLFeatures=features;
+  };
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
   const LEAF = /tree|foliage|leaf|leaves|canopy|grass|meadow|wildflower|pine|bush|shrub/i;
   const UNDER = /submerged|underwater|reef|riverbed|seabed|waterbed/i;
@@ -203,6 +216,7 @@
       translucency:{value:translucency},thickness:{value:thickness},scatteringPower:{value:scatteringPower},
       translucencyColor:{value:new (T().Color)(tint)}
     };
+    markTSLPortable(material,'foliage');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -305,6 +319,7 @@
   function configureParallax(material) {
     if(!material || material.userData.pstudioParallaxHQ || !material.normalMap || !material.map)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    markTSLPortable(material,'parallax');
     const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
     const scale={value:Math.max(0,Math.min(.035,Number(material.userData.pstudioParallaxScale)||.012))};
     material.onBeforeCompile=function(shader,renderer){
@@ -367,6 +382,7 @@
     const authoredSharpness=Number(material.userData?.pstudioTriplanarSharpness);
     const authoredNormalWeight=Number(material.userData?.pstudioTriplanarNormalWeight);
     const u={scale:{value:scaleValue},sharpness:{value:Number.isFinite(authoredSharpness)?Math.max(1,Math.min(12,authoredSharpness)):4.0},normalWeight:{value:Number.isFinite(authoredNormalWeight)?Math.max(0,Math.min(1,authoredNormalWeight)):.72}};
+    markTSLPortable(material,'triplanar');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -461,6 +477,7 @@
       wetness:{value:read('wetness',.035,0,.8)},
       rockThreshold:{value:read('rockThreshold',.38,.08,.92)}
     };
+    markTSLPortable(material,'terrain');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -723,7 +740,7 @@
       else if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
       else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk'){configureFoliage(m,object);out.push(m);}
-      else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);out.push(c);}
+      else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);if(m.userData?.pstudioRole==='terrain'||/terrain|groundcover|meadow|terraced_emerald/i.test(tag))configureTerrain(c,object);out.push(c);}
       else if(/leaf|foliage|canopy|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
         const c=m.clone();
