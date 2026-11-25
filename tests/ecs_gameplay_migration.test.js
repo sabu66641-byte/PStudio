@@ -43,8 +43,8 @@ test('legacy Gameplay fallback snapshots are imported once, then ECS becomes aut
   assert.equal(ecs.getComponent(hero, 'Health').hp, 73);
   assert.deepEqual({ ...ecs.getComponent(hero, 'Inventory').items }, { potion: 3, sword: 1 });
   assert.deepEqual({ ...ecs.getComponent(hero, 'Equipment').slots }, { main: 'sword' });
-  assert.deepEqual(bridge.getItemDefinition('potion'), { kind: 'consumable', slot: 'heal', value: 5 });
-  assert.deepEqual(bridge.getWeaponDefinition('blade'), { range: 4, arc: 120, multiplier: 1.5 });
+  assert.deepEqual({ ...bridge.getItemDefinition('potion') }, { kind: 'consumable', slot: 'heal', value: 5 });
+  assert.deepEqual({ ...bridge.getWeaponDefinition('blade') }, { range: 4, arc: 120, multiplier: 1.5 });
   assert.equal(bridge.getQuestDefinition('prologue').rewardItem, 'potion');
   assert.equal(gameplay.questIsComplete('prologue'), true);
   assert.equal(bridge.getNavigationNodeCount(), 2);
