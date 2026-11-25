@@ -26,8 +26,16 @@
     let dx = Number(x), dy = Number(y), dz = Number(z);
     if (![dx, dy, dz].every(Number.isFinite)) [dx, dy, dz] = fallback;
     const length = Math.hypot(dx, dy, dz);
-    if (length < 1e-6) [dx, dy, dz] = fallback, dx = dx / Math.hypot(...fallback), dy = dy / Math.hypot(...fallback), dz = dz / Math.hypot(...fallback);
-    else dx /= length, dy /= length, dz /= length;
+    if (length < 1e-6) {
+      const fallbackLength = Math.hypot(...fallback) || 1;
+      dx = fallback[0] / fallbackLength;
+      dy = fallback[1] / fallbackLength;
+      dz = fallback[2] / fallbackLength;
+    } else {
+      dx /= length;
+      dy /= length;
+      dz /= length;
+    }
     return Object.freeze([dx, dy, dz]);
   }
 
