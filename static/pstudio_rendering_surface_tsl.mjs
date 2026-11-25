@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-tsl-sh-gi-v1';
 
-const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail', 'sh-gi']);
+const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail', 'sh-gi', 'clustered-lighting']);
 const EPSILON = 1e-5;
 
 function finite(value, fallback) {
