@@ -1,11 +1,12 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
 import { convertPStudioScenePBRMaterials } from './pstudio_rendering_materials.mjs';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
-import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs';
+import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-tsl-ibl-v2';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-lifecycle', label: '非同期WebGPU初期化と本番フレームループの統合' }),
-  Object.freeze({ id: 'legacy-materials', label: '地形・水面・植生・空・VFXのカスタムGLSLをTSLへ移植' }),
+  Object.freeze({ id: 'legacy-materials', label: '地形・水面・植生・VFXのカスタムGLSLをTSLへ移植' }),
+  Object.freeze({ id: 'environment-effects', label: '物理大気散乱・体積雲・高度フォグ・水面反射の環境表現を移植' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・SH GI・CSM・水面反射のTSL／WebGPU移植' }),
   Object.freeze({ id: 'post-processing', label: 'EffectComposer依存のGTAO・SSR・霧・雲・AA等をRenderPipelineへ移植' }),
   Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
@@ -107,6 +108,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'strict WebGPU backend initialization',
       'standard/physical PBR NodeMaterial conversion',
       'TSL RenderPipeline with Bloom',
+      'TSL atmospheric sky and shared equirectangular PBR IBL',
       'shared frame-budget and environment-state modules'
     ]),
     blockers: Object.freeze(blockers)
