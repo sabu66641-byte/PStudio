@@ -96,8 +96,8 @@ export function createPStudioTSLCascadeShadows(scene, camera, options = {}) {
     light.shadow.bias = clamp(config.shadowBias ?? sourceLight?.shadow?.bias, -0.02, 0.02, 0.000001);
     light.shadow.normalBias = clamp(config.normalBias ?? sourceLight?.shadow?.normalBias, 0, 0.5, 0.018);
     light.shadow.radius = clamp(config.shadowRadius ?? sourceLight?.shadow?.radius, 0, 12, 1);
-    light.shadow.camera.near = clamp(config.shadowNear ?? sourceLight?.shadow?.camera?.near, 0.01, 1000, 1);
-    light.shadow.camera.far = clamp(config.shadowFar ?? sourceLight?.shadow?.camera?.far, light.shadow.camera.near + 0.01, 10000, 2000);
+    light.shadow.camera.near = clamp(config.shadowNear ?? config.lightNear ?? sourceLight?.shadow?.camera?.near, 0.01, 1000, 1);
+    light.shadow.camera.far = clamp(config.shadowFar ?? config.lightFar ?? sourceLight?.shadow?.camera?.far, light.shadow.camera.near + 0.01, 10000, 2000);
     light.shadow.camera.updateProjectionMatrix();
 
     shadowNode = new CSMShadowNode(light, {
