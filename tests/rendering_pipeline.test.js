@@ -1433,7 +1433,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'environmentHandle.updateCamera(camera)',
     'environmentHandle?.setProfile?.(profile)',
     'pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1',
-    'radianceSource: \'shared-sky-and-pbr-ibl\'',
+    'radianceSource:\'shared-sky-and-pbr-ibl\'',
     'device.lost',
     'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE'
   ])assert.ok(webgpuMigration.includes(token),token);
