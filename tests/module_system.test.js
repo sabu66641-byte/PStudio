@@ -87,3 +87,28 @@ test('supports lifecycle event subscriptions and unregister guards', async () =>
   await api.disable('test.tool');
   assert.equal(api.unregister('test.tool'), true);
 });
+
+test('emits explicit state changes for activating, enabled, deactivating and registered transitions', async () => {
+  const api = createManager();
+  const states = [];
+  api.on('state-changed', event => states.push(event.detail.state));
+  api.register({ id: 'test.transitions' });
+  await api.enable('test.transitions');
+  await api.disable('test.transitions');
+  assert.deepEqual(states, ['activating', 'enabled', 'deactivating', 'registered']);
+});
+test('publishes failed activation and rollback states to lifecycle observers', async () => {
+  const api = createManager();
+  const states = [];
+  api.on('state-changed', event => states.push([event.detail.id, event.detail.state]));
+  api.register({ id: 'test.base' });
+  api.register({ id: 'test.fail', dependencies: ['test.base'], activate: () => { throw new Error('activation error'); } });
+  await assert.rejects(api.enable('test.fail'), /activation error/);
+  assert.deepEqual(states, [
+    ['test.base', 'activating'],
+    ['test.base', 'enabled'],
+    ['test.fail', 'activating'],
+    ['test.base', 'registered'],
+    ['test.fail', 'error']
+  ]);
+});

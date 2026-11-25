@@ -253,7 +253,26 @@ body.scene-editor-expanded{overflow:hidden}
    <div class="editor-footer"><span id="editor-help">ps source · UTF-8 · Spaces: 4</span><span id="cursor-position">Ln 1, Col 1</span></div></div>
    <div class="game-surface" id="game-surface"><div class="game-toolbar"><span>SCENE VIEW</span><span id="scene-name-label">main.scene</span><span class="toolbar-spacer"></span><span class="view-mode-label">VIEW</span><button class="tool-btn view-mode-btn active" id="view-mode-auto" data-mode="auto" aria-pressed="true" aria-label="AUTO view mode active" onclick="setPStudioViewMode(this.dataset.mode)">AUTO</button><button class="tool-btn view-mode-btn" id="view-mode-2d" data-mode="2d" aria-pressed="false" aria-label="2D view mode inactive" onclick="setPStudioViewMode(this.dataset.mode)">2D</button><button class="tool-btn view-mode-btn" id="view-mode-3d" data-mode="3d" aria-pressed="false" aria-label="3D view mode inactive" onclick="setPStudioViewMode(this.dataset.mode)">3D</button><label class="render-quality-control"><span class="render-quality-label">QUALITY</span><select id="render-quality-select" class="tool-btn render-quality-select" aria-label="Rendering quality" title="Rendering quality" onchange="setPStudioQualityPreset(this.value)"><option value="auto">AUTO</option><option value="mobile">LIGHT</option><option value="balanced">STANDARD</option><option value="high">HIGH QUALITY</option><option value="maximum">MAXIMUM QUALITY</option><option value="ultra">ULTRA</option></select><output id="render-quality-active" class="render-quality-active" aria-live="polite">→ HIGH QUALITY</output></label><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="grid" aria-pressed="true" title="グリッド表示" onclick="toggleSceneOverlay('grid')">Grid</button><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="axes" aria-pressed="false" title="座標軸表示" onclick="toggleSceneOverlay('axes')">Axes</button><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="origin" aria-pressed="true" title="原点マーカー表示" onclick="toggleSceneOverlay('origin')">Origin</button><select class="tool-btn scene-object-add-select" id="scene-object-add-select" aria-label="オブジェクトを追加" title="オブジェクトを追加" onchange="addSceneObjectFromMenu(this.value)"><option value="" selected>＋ オブジェクト</option><option value="basic">基本オブジェクト</option><option value="mirror-water">水鏡（平面）</option></select><button class="tool-btn mobile-scene-inspector" type="button" onclick="toggleWorkspacePanel('inspector')" aria-label="Inspectorを開く">Inspector</button><button class="tool-btn" type="button" id="scene-editor-expand" aria-pressed="false" onclick="toggleSceneEditorExpanded()">拡大</button><button class="tool-btn" type="button" onclick="frameSelectedModel()">Frame</button><button class="tool-btn" onclick="window.PStudioEngine?.refreshSceneView?.()">Refresh</button><button class="tool-btn" type="button" id="gi-bake-button" title="Bake static diffuse SH probes" onclick="window.PStudio3D?.bakeEnvironmentGI?.()?.catch?.(error=>console.error(&quot;GI bake failed&quot;,error))">Bake GI</button><output class="gi-bake-status" id="gi-bake-status" aria-live="polite">GI: not baked</output><button class="tool-btn" type="button" id="render-stats-toggle" aria-pressed="false" title="Performance metrics" onclick="window.PStudio3D?.togglePerformanceMonitor?.()">Stats</button><button class="tool-btn" type="button" id="webgpu-lab-open" aria-expanded="false" aria-controls="webgpu-lab-overlay" title="Experimental WebGPU PBR and TSL compatibility lab">WebGPU Lab</button><button class="tool-btn" type="button" id="dynamic-gi-toggle" aria-pressed="false" title="Toggle dynamic SH probe cache" onclick="window.PStudio3D?.toggleDynamicGI?.()">Live GI</button><button class="tool-btn run" id="engine-play" onclick="startPStudioGame()">▶ Play</button><button class="tool-btn" id="engine-stop" onclick="stopPStudioGame()" disabled>■ Stop</button></div><div class="game-stage"><pre class="render-stats-overlay" id="render-stats-overlay" hidden aria-live="polite"></pre><div class="camera-zoom-controls" id="camera-zoom-controls" aria-label="Camera zoom controls"><button type="button" class="camera-zoom-button" aria-label="Zoom out" title="Zoom out" onclick="window.PStudio3D?.adjustZoom?.(1.25)">−</button><output id="camera-zoom-level" aria-live="polite">100%</output><button type="button" class="camera-zoom-button" aria-label="Zoom in" title="Zoom in" onclick="window.PStudio3D?.adjustZoom?.(0.8)">＋</button></div><canvas class="game-canvas" id="game-canvas" width="960" height="540" aria-label="Game preview canvas"></canvas><canvas class="game-canvas game-canvas-3d" id="game-3d-canvas" width="960" height="540" aria-label="3D game preview canvas" style="display:none"></canvas><canvas id="game-hud-canvas" width="960" height="540" aria-hidden="true" style="position:absolute;inset:0;margin:auto;width:min(100%,800px);height:auto;aspect-ratio:16/9;pointer-events:none;z-index:4"></canvas><div id="game-ui-overlay" aria-live="polite"></div><div class="touch-controls" id="touch-controls" aria-hidden="true"><div class="touch-joystick" id="touch-joystick" aria-label="Movement joystick"><div class="touch-joystick-knob" id="touch-joystick-knob"></div></div><button class="touch-jump" id="touch-jump" type="button">JUMP</button></div></div><div class="game-status" id="game-status">Ready · 960 × 540</div></div>
   </section>
-  <aside class="panel inspector" id="workspace-inspector" aria-label="Editor settings"><div class="panel-heading"><span>INSPECTOR</span><span class="muted">SETTINGS</span></div><div class="inspector-content"><div class="inspector-section" id="scene-environment-inspector"><div class="inspector-title">SCENE ENVIRONMENT</div><div class="environment-preset-grid"><button type="button" class="tool-btn environment-preset-btn active" id="scene-environment-day" data-label="昼" aria-pressed="true" onclick="setSceneEnvironmentPreset('day')">昼</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-dusk" data-label="夕方" aria-pressed="false" onclick="setSceneEnvironmentPreset('dusk')">夕方</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-night" data-label="夜" aria-pressed="false" onclick="setSceneEnvironmentPreset('night')">夜</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-studio" data-label="スタジオ" aria-pressed="false" onclick="setSceneEnvironmentPreset('studio')">スタジオ</button></div><div class="info-card" style="margin-top:8px">青空・環境光・太陽光・フォグをシーン単位で切り替えます。設定は .scene に保存されます。</div></div><div class="inspector-section" id="object-inspector"><div class="inspector-title">GAME OBJECT</div><div class="object-empty" id="object-empty">Select an object in the Scene view or Project tree to edit its properties.</div><div id="object-fields" hidden><div class="object-grid"><div class="object-field full"><label for="obj-name">Name</label><input id="obj-name" type="text" value="Player" oninput="updateSelectedObject('name',this.value)"></div><div class="object-field full" id="obj-model-settings" hidden><label for="obj-model-name">3D Model</label><input id="obj-model-name" type="text" readonly><label for="obj-model-scale">Model Scale</label><input id="obj-model-scale" type="number" min="0.001" step="0.1" value="1" oninput="updateSelectedObject('modelScale',this.value)"><label for="obj-model-material-name">Material name (* = all)</label><input id="obj-model-material-name" type="text" value="*" placeholder="Material name or *"><label for="obj-model-material-roughness">Roughness</label><input id="obj-model-material-roughness" type="range" min="0" max="1" step="0.01" value="0.7"><label for="obj-model-material-metalness">Metalness</label><input id="obj-model-material-metalness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-color">Material color</label><input id="obj-model-material-color" type="color" value="#d1d5db"><label class="check-row"><input id="obj-model-double-side" type="checkbox"><span>Double-sided rendering</span></label><label class="check-row"><input id="obj-model-recompute-normals" type="checkbox"><span>Recalculate normals</span></label><label for="obj-model-material-emissive">Emissive color</label><input id="obj-model-material-emissive" type="color" value="#000000"><label for="obj-model-material-emissive-intensity">Emissive intensity</label><input id="obj-model-material-emissive-intensity" type="range" min="0" max="8" step="0.05" value="0"><button type="button" class="tool-btn" onclick="applySelectedModelMaterial()">Apply GLB Material</button></div><div class="object-field full" id="obj-mirror-water-settings" hidden>
+  <aside class="panel inspector" id="workspace-inspector" aria-label="Editor settings"><div class="panel-heading"><span>INSPECTOR</span><span class="muted">SETTINGS</span></div><div class="inspector-content"><div class="inspector-section" id="scene-environment-inspector"><div class="inspector-title">SCENE ENVIRONMENT</div><div class="environment-preset-grid"><button type="button" class="tool-btn environment-preset-btn active" id="scene-environment-day" data-label="昼" aria-pressed="true" onclick="setSceneEnvironmentPreset('day')">昼</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-dusk" data-label="夕方" aria-pressed="false" onclick="setSceneEnvironmentPreset('dusk')">夕方</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-night" data-label="夜" aria-pressed="false" onclick="setSceneEnvironmentPreset('night')">夜</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-studio" data-label="スタジオ" aria-pressed="false" onclick="setSceneEnvironmentPreset('studio')">スタジオ</button></div><div class="info-card" style="margin-top:8px">青空・環境光・太陽光・フォグをシーン単位で切り替えます。設定は .scene に保存されます。</div></div><div class="inspector-section" id="object-inspector"><div class="inspector-title">GAME OBJECT</div><div class="object-empty" id="object-empty">Select an object in the Scene view or Project tree to edit its properties.</div><div id="object-fields" hidden><div class="object-grid"><div class="object-field full"><label for="obj-name">Name</label><input id="obj-name" type="text" value="Player" oninput="updateSelectedObject('name',this.value)"></div><div class="object-field full" id="obj-model-settings" hidden><label for="obj-model-name">3D Model</label><input id="obj-model-name" type="text" readonly><label for="obj-model-scale">Model Scale</label><input id="obj-model-scale" type="number" min="0.001" step="0.1" value="1" oninput="updateSelectedObject('modelScale',this.value)"><label for="obj-model-material-name">Material name (* = all)</label><input id="obj-model-material-name" type="text" value="*" placeholder="Material name or *"><label for="obj-model-material-roughness">Roughness</label><input id="obj-model-material-roughness" type="range" min="0" max="1" step="0.01" value="0.7"><label for="obj-model-material-metalness">Metalness</label><input id="obj-model-material-metalness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-color">Material color</label><input id="obj-model-material-color" type="color" value="#d1d5db"><label class="check-row"><input id="obj-model-double-side" type="checkbox"><span>Double-sided rendering</span></label><label class="check-row"><input id="obj-model-recompute-normals" type="checkbox"><span>Recalculate normals</span></label><label for="obj-model-material-emissive">Emissive color</label><input id="obj-model-material-emissive" type="color" value="#000000"><label for="obj-model-material-emissive-intensity">Emissive intensity</label><input id="obj-model-material-emissive-intensity" type="range" min="0" max="8" step="0.05" value="0"><button type="button" class="tool-btn" onclick="applySelectedModelMaterial()">Apply GLB Material</button></div><div class="object-field full" id="obj-toon-controls">
+<label class="check-row"><input id="obj-model-toon-enabled" type="checkbox"><span>Enable NPR Toon Shading</span></label>
+<div class="object-grid">
+<div class="object-field"><label for="obj-model-toon-shadow">Shadow color</label><input id="obj-model-toon-shadow" type="color" value="#46516f"></div>
+<div class="object-field"><label for="obj-model-toon-mid">Midtone color</label><input id="obj-model-toon-mid" type="color" value="#9eafd0"></div>
+<div class="object-field"><label for="obj-model-toon-highlight">Highlight color</label><input id="obj-model-toon-highlight" type="color" value="#ffffff"></div>
+<div class="object-field"><label for="obj-model-toon-shadow-threshold">Shadow threshold</label><input id="obj-model-toon-shadow-threshold" type="range" min="0.02" max="0.95" step="0.01" value="0.32"></div>
+<div class="object-field"><label for="obj-model-toon-highlight-threshold">Highlight threshold</label><input id="obj-model-toon-highlight-threshold" type="range" min="0.05" max="0.99" step="0.01" value="0.68"></div>
+<div class="object-field"><label for="obj-model-toon-rim-color">Rim light color</label><input id="obj-model-toon-rim-color" type="color" value="#b8dcff"></div>
+<div class="object-field"><label for="obj-model-toon-rim-intensity">Rim intensity</label><input id="obj-model-toon-rim-intensity" type="range" min="0" max="4" step="0.01" value="0.42"></div>
+<div class="object-field"><label for="obj-model-toon-rim-power">Rim falloff</label><input id="obj-model-toon-rim-power" type="range" min="0.5" max="8" step="0.05" value="2.6"></div>
+<div class="object-field"><label for="obj-model-toon-outline-color">Outline color</label><input id="obj-model-toon-outline-color" type="color" value="#182235"></div>
+<div class="object-field"><label for="obj-model-toon-outline-width">Outline width</label><input id="obj-model-toon-outline-width" type="range" min="0.005" max="0.45" step="0.005" value="0.12"></div>
+<div class="object-field"><label for="obj-model-toon-sss-color">Pseudo-SSS color</label><input id="obj-model-toon-sss-color" type="color" value="#f0a5a0"></div>
+<div class="object-field"><label for="obj-model-toon-sss-intensity">Pseudo-SSS intensity</label><input id="obj-model-toon-sss-intensity" type="range" min="0" max="1.5" step="0.01" value="0.12"></div>
+<div class="object-field"><label for="obj-model-wind-strength">GPU wind strength</label><input id="obj-model-wind-strength" type="range" min="0" max="2.5" step="0.01" value="0"></div>
+<div class="object-field"><label for="obj-model-wind-speed">GPU wind speed</label><input id="obj-model-wind-speed" type="range" min="0" max="4" step="0.01" value="1"></div>
+</div>
+<div class="info-card">NPR controls are non-destructive instance overrides. Wind deformation is evaluated in the vertex shader; pseudo-SSS is a real-time lighting approximation.</div>
+<button type="button" class="tool-btn" onclick="applySelectedToonMaterial()">Apply NPR to selected object</button></div><div class="object-field full" id="obj-mirror-water-settings" hidden>
 <label for="obj-mirror-width">水鏡の幅 (m)</label><input id="obj-mirror-width" type="number" min="1" step="1" value="500" oninput="updateSelectedObject('mirrorWidth',this.value)">
 <label for="obj-mirror-depth">水鏡の奥行き (m)</label><input id="obj-mirror-depth" type="number" min="1" step="1" value="500" oninput="updateSelectedObject('mirrorDepth',this.value)">
 <label for="obj-mirror-reflectivity">反射率</label><input id="obj-mirror-reflectivity" type="range" min="0" max="1" step="0.01" value="1" oninput="updateSelectedObject('mirrorReflectivity',this.value)">
@@ -933,6 +952,7 @@ function setSceneEnvironmentPreset(preset){
 }
 function persistProject(){
  try{
+  syncEcsSceneMaterials();
   if(projectFiles['main.scene'])projectFiles['main.scene'].content=serializeScene();
   localStorage.setItem(PROJECT_KEY,JSON.stringify({files:projectFiles,assets:projectAssets,objects:sceneObjects,environment:sceneEnvironment,active:activeProjectFile}));
  }catch(e){toast('Project storage is full. Remove large assets and retry.')}
@@ -949,11 +969,52 @@ function decodeBackupBase64(value,type,expectedSize){if(typeof value!=='string'|
 function validateBackupDataUrl(value,kind){if(typeof value!=='string'||value.length>3*1024*1024)throw new Error('画像・音声アセットのデータが不正、または大きすぎます。');const match=value.match(/^data:(image|audio)\/[A-Za-z0-9.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/);if(!match||match[1]!==kind)throw new Error('画像・音声アセットの形式が不正です。');const decoded=atob(match[2]);if(decoded.length>2*1024*1024)throw new Error('画像・音声アセットは2 MB以下にしてください。');return decoded.length;}
 function safeProjectName(name,extension){return typeof name==='string'&&name.length>0&&name.length<=160&&!['__proto__','prototype','constructor'].includes(name)&&!/[\\\/:\u0000-\u001f]/.test(name)&&name.toLowerCase().endsWith(extension);}
 async function exportProjectBackup(){if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してからバックアップしてください');return;}try{saveActiveProjectFile(false);const files=JSON.parse(JSON.stringify(projectFiles));const assets=JSON.parse(JSON.stringify(projectAssets));const objects=JSON.parse(JSON.stringify(sceneObjects));const binaryAssets=[];let totalBinaryBytes=0;for(const asset of assets){if(asset.kind!=='model')continue;const blob=await window.PStudioAssetStore?.get?.(asset.name);if(!blob)throw new Error('モデル「'+asset.name+'」の保存データが見つかりません。');totalBinaryBytes+=blob.size;if(totalBinaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('モデルデータの合計が64 MBを超えています。');binaryAssets.push({name:asset.name,type:blob.type||asset.mime||'application/octet-stream',size:blob.size,data:await blobToBase64(blob)});}const archive={format:PSTUDIO_BACKUP_FORMAT,version:PSTUDIO_BACKUP_VERSION,createdAt:new Date().toISOString(),project:{files,assets,objects,environment:normalizeSceneEnvironment(sceneEnvironment),active:activeProjectFile},binaryAssets};const json=JSON.stringify(archive);const blob=new Blob([json],{type:'application/vnd.pstudio.project+json'});if(blob.size>PSTUDIO_BACKUP_LIMIT)throw new Error('バックアップが64 MBを超えています。アセットを整理してください。');const url=URL.createObjectURL(blob);const link=document.createElement('a');const stamp=new Date().toISOString().replace(/[:.]/g,'-');link.href=url;link.download='PStudio-Project-'+stamp+'.pstudio';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('プロジェクトのバックアップを書き出しました');}catch(error){setOutput('Backup export failed: '+(error?.message||String(error)),'error');toast('バックアップの書き出しに失敗しました');}}
+function copySavedEcsComponentPayload(source,target,currentSchemaVersion=Number(window.PStudioECS?.sceneComponentSchemaVersion??1)){
+ const hasVersion=Object.prototype.hasOwnProperty.call(source,'ecsComponentsVersion');
+ const hasComponents=Object.prototype.hasOwnProperty.call(source,'ecsComponents');
+ if(!hasVersion&&!hasComponents)return target;
+ const version=hasVersion?Number(source.ecsComponentsVersion):0;
+ if(!Number.isSafeInteger(version)||version<0)throw new Error('ECS Component schema version is invalid.');
+ if(!Number.isSafeInteger(currentSchemaVersion)||currentSchemaVersion<0)throw new Error('Runtime ECS Component schema version is invalid.');
+ const payload=hasComponents?source.ecsComponents:[];
+ let encoded;
+ try{encoded=JSON.stringify(payload);}catch(_){throw new Error('ECS Component payload is not JSON serializable.');}
+ if(typeof encoded!=='string'||encoded.length>1024*1024)throw new Error('ECS Component payload exceeds the 1 MB per-object backup limit.');
+ if(version===0){
+  const isRecord=payload&&typeof payload==='object'&&!Array.isArray(payload);
+  if(!Array.isArray(payload)&&!isRecord)throw new Error('Legacy ECS Component payload must be an array or type-keyed object.');
+  const count=Array.isArray(payload)?payload.length:Object.keys(payload).length;
+  if(count>128)throw new Error('A Scene Object may contain at most 128 saved ECS Components.');
+ }else if(version<=currentSchemaVersion){
+  if(!Array.isArray(payload))throw new Error('Versioned ECS Component payload must be an array.');
+  if(payload.length>128)throw new Error('A Scene Object may contain at most 128 saved ECS Components.');
+ }
+ // Future versions are intentionally opaque: preserve their JSON without interpreting,
+ // normalizing or downgrading them. The older runtime will skip restoration safely.
+ target.ecsComponentsVersion=version;
+ target.ecsComponents=JSON.parse(encoded);
+ return target;
+}
 function validateAndBuildBackup(archive){if(!archive||archive.format!==PSTUDIO_BACKUP_FORMAT||archive.version!==PSTUDIO_BACKUP_VERSION||!archive.project||typeof archive.project!=='object')throw new Error('PStudio形式のバックアップではないか、バージョンが対応していません。');const sourceFiles=archive.project.files;if(!sourceFiles||typeof sourceFiles!=='object'||Array.isArray(sourceFiles))throw new Error('プロジェクトファイル一覧が不正です。');const files={};let sourceBytes=0;for(const [name,file] of Object.entries(sourceFiles)){if(!safeProjectName(name,name.toLowerCase().endsWith('.scene')?'.scene':'.ps')||!file||!['ps','scene'].includes(file.type)||typeof file.content!=='string'||(file.type==='ps'?!name.toLowerCase().endsWith('.ps'):!name.toLowerCase().endsWith('.scene')))throw new Error('不正なプロジェクトファイルがあります: '+name);sourceBytes+=new TextEncoder().encode(file.content).length;if(sourceBytes>10*1024*1024)throw new Error('スクリプトとシーンの合計が10 MBを超えています。');files[name]={type:file.type,content:file.content,locked:file.locked===true};if(Object.keys(files).length>256)throw new Error('プロジェクトファイルは256個までです。');}if(!Object.keys(files).some(name=>files[name].type==='ps'))throw new Error('プロジェクト内に .ps スクリプトがありません。');if(!files['main.scene'])files['main.scene']={type:'scene',content:'',locked:false};const sourceAssets=archive.project.assets;if(!Array.isArray(sourceAssets)||sourceAssets.length>512)throw new Error('アセット一覧が不正です。');const names=new Set();const assets=[];let inlineAssetBytes=0;for(const asset of sourceAssets){if(!asset||!safeProjectName(asset.name,'.'+String(asset.name||'').split('.').pop().toLowerCase())||names.has(asset.name)||!['image','audio','model'].includes(asset.kind))throw new Error('不正または重複したアセット名があります。');names.add(asset.name);const clean={name:asset.name,kind:asset.kind,locked:asset.locked===true};if(asset.kind==='image'||asset.kind==='audio'){clean.mime=String(asset.mime||'');clean.data=asset.data;inlineAssetBytes+=validateBackupDataUrl(clean.data,asset.kind);}else{clean.format=String(asset.format||'glb');clean.mime=String(asset.mime||'application/octet-stream');clean.size=Math.max(0,Number(asset.size)||0);clean.storage='indexeddb';if(typeof asset.scriptName==='string'&&files[asset.scriptName]?.type==='ps')clean.scriptName=asset.scriptName;}assets.push(clean);}const sourceBinaries=archive.binaryAssets;if(!Array.isArray(sourceBinaries)||sourceBinaries.length>512)throw new Error('モデルデータ一覧が不正です。');const binaries=[];const binaryNames=new Set();let binaryBytes=0;for(const item of sourceBinaries){if(!item||typeof item.name!=='string'||!names.has(item.name)||binaryNames.has(item.name)||!assets.some(asset=>asset.name===item.name&&asset.kind==='model'))throw new Error('バックアップ内のモデル対応関係が不正です。');const blob=decodeBackupBase64(item.data,item.type,item.size);binaryBytes+=blob.size;if(binaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('モデルデータの合計が64 MBを超えています。');binaryNames.add(item.name);binaries.push({name:item.name,blob});}for(const asset of assets){if(asset.kind==='model'&&!binaryNames.has(asset.name))throw new Error('モデル「'+asset.name+'」のデータがバックアップに含まれていません。');}if(inlineAssetBytes+binaryBytes>PSTUDIO_BACKUP_LIMIT)throw new Error('アセットの合計が64 MBを超えています。');let sourceEnvironment=archive.project.environment||null;
 if(!sourceEnvironment){try{sourceEnvironment=JSON.parse(files['main.scene']?.content||'null')?.environment||null;}catch(_){}}
 const sourcePreset=String(sourceEnvironment?.preset||'day').toLowerCase();
 const environment={preset:['day','dusk','night','studio'].includes(sourcePreset)?sourcePreset:'day'};
 const sourceObjects=archive.project.objects;if(!Array.isArray(sourceObjects)||sourceObjects.length>5000)throw new Error('シーンオブジェクト一覧が不正です。');const objectIds=new Set();const assetByName=new Map(assets.map(asset=>[asset.name,asset]));const objects=sourceObjects.map((item,index)=>{if(!item||typeof item!=='object')throw new Error('シーンオブジェクトが不正です。');const id=String(item.id||'object-'+index).slice(0,128);if(objectIds.has(id))throw new Error('シーンオブジェクトIDが重複しています: '+id);objectIds.add(id);const numeric=(key,fallback)=>Number.isFinite(Number(item[key]))?Number(item[key]):fallback;const script=typeof item.script==='string'&&files[item.script]?.type==='ps'?item.script:'';const sprite=typeof item.sprite==='string'&&assetByName.get(item.sprite)?.kind==='image'?item.sprite:'';const model=typeof item.model==='string'&&assetByName.get(item.model)?.kind==='model'?item.model:'';if(item.model&&!model)throw new Error('モデル「'+item.model+'」がアセット一覧にありません。');const restored={id,name:String(item.name||'Object '+(index+1)).slice(0,128),x:numeric('x',0),y:numeric('y',0),z:numeric('z',0),rotationX:numeric('rotationX',0),rotationY:numeric('rotationY',0),rotationZ:numeric('rotationZ',0),w:Math.max(1,numeric('w',64)),h:Math.max(1,numeric('h',64)),sprite,script,color:String(item.color||'#d1d5db').slice(0,64),shape:item.shape==='circle'?'circle':'rect',collider:!!item.collider,model,modelScale:Math.max(0.001,numeric('modelScale',1)),manipulationEnabled:item.manipulationEnabled!==false};
+copySavedEcsComponentPayload(item,restored);
+const sourceObjectToon=item.toonMaterialSettings&&typeof item.toonMaterialSettings==='object'?item.toonMaterialSettings:null;
+if(sourceObjectToon){
+ const toonColor=value=>typeof value==='string'&&/^#[0-9a-fA-F]{6}$/.test(value)?value:'#d1d5db';
+ const toonBounded=(value,fallback,min,max)=>Number.isFinite(Number(value))?Math.max(min,Math.min(max,Number(value))):fallback;
+ restored.toonMaterialSettings={
+  enabled:sourceObjectToon.enabled===true,
+  shadowColor:toonColor(sourceObjectToon.shadowColor),midColor:toonColor(sourceObjectToon.midColor),highlightColor:toonColor(sourceObjectToon.highlightColor),
+  shadowThreshold:toonBounded(sourceObjectToon.shadowThreshold,0.32,0.02,0.95),highlightThreshold:toonBounded(sourceObjectToon.highlightThreshold,0.68,0.05,0.99),
+  rimColor:toonColor(sourceObjectToon.rimColor),rimIntensity:toonBounded(sourceObjectToon.rimIntensity,0.42,0,4),rimPower:toonBounded(sourceObjectToon.rimPower,2.6,0.5,8),
+  outlineColor:toonColor(sourceObjectToon.outlineColor),outlineWidth:toonBounded(sourceObjectToon.outlineWidth,0.12,0.005,0.45),
+  sssColor:toonColor(sourceObjectToon.sssColor),sssIntensity:toonBounded(sourceObjectToon.sssIntensity,0.12,0,1.5),
+  windStrength:toonBounded(sourceObjectToon.windStrength,0,0,2.5),windSpeed:toonBounded(sourceObjectToon.windSpeed,1,0,4)
+ };
+}
 const sourceOverrides=Array.isArray(item.modelMaterialOverrides)?item.modelMaterialOverrides:null;
 if(sourceOverrides&&sourceOverrides.length>64)throw new Error('GLB material overrideは1オブジェクトにつき64個までです。');
 if(sourceOverrides){
@@ -962,7 +1023,8 @@ if(sourceOverrides){
   const rawName=String(override.name||'*').slice(0,128);
   const colorValue=value=>typeof value==='string'&&/^#[0-9a-fA-F]{6}$/.test(value)?value:'#d1d5db';
   const bounded=(value,fallback,max)=>Number.isFinite(Number(value))?Math.max(0,Math.min(max,Number(value))):fallback;
-  return {name:rawName,roughness:bounded(override.roughness,0.7,1),metalness:bounded(override.metalness,0,1),color:colorValue(override.color),doubleSide:override.doubleSide===true,recomputeNormals:override.recomputeNormals===true,emissive:colorValue(override.emissive),emissiveIntensity:bounded(override.emissiveIntensity,0,8)};
+  const rawToon=override.toon&&typeof override.toon==='object'?override.toon:null;const toon=rawToon?{enabled:rawToon.enabled===true,shadowColor:colorValue(rawToon.shadowColor),midColor:colorValue(rawToon.midColor),highlightColor:colorValue(rawToon.highlightColor),shadowThreshold:bounded(rawToon.shadowThreshold,0.32,0.95),highlightThreshold:bounded(rawToon.highlightThreshold,0.68,0.99),rimColor:colorValue(rawToon.rimColor),rimIntensity:bounded(rawToon.rimIntensity,0.42,4),rimPower:bounded(rawToon.rimPower,2.6,8),outlineColor:colorValue(rawToon.outlineColor),outlineWidth:bounded(rawToon.outlineWidth,0.12,0.45),sssColor:colorValue(rawToon.sssColor),sssIntensity:bounded(rawToon.sssIntensity,0.12,1.5),windStrength:bounded(rawToon.windStrength,0,2.5),windSpeed:bounded(rawToon.windSpeed,1,4)}:null;return {name:rawName,roughness:bounded(override.roughness,0.7,1),metalness:bounded(override.metalness,0,1),color:colorValue(override.color),doubleSide:override.doubleSide===true,recomputeNormals:override.recomputeNormals===true,emissive:colorValue(override.emissive),emissiveIntensity:bounded(override.emissiveIntensity,0,8),toon};
+
  });
 }
 return restored;});const active=typeof archive.project.active==='string'&&Object.prototype.hasOwnProperty.call(files,archive.project.active)?archive.project.active:Object.keys(files).find(name=>files[name].type==='ps');return{files,assets,objects,environment,active,binaries};}
@@ -1229,8 +1291,8 @@ async function renameProjectAsset(oldName){
    window.PStudio3D?.invalidateAsset?.(oldName);window.PStudio3D?.invalidateAsset?.(next);
   }
   asset.name=next;
-  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===oldName)o.sprite=next;});imageCache.delete(oldName);}
-  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===oldName)o.model=next;});
+  if(asset.kind==='image'){window.PStudioECSScene?.renameSpriteAsset?.(oldName,next,sceneObjects);imageCache.delete(oldName);}
+  if(asset.kind==='model')window.PStudioECSMaterials?.renameRenderableAsset?.(oldName,next,sceneObjects);
   for(const key of Object.keys(projectFiles)){
    if(projectFiles[key].type==='ps')projectFiles[key].content=replaceQuotedAssetReference(projectFiles[key].content,oldName,next);
   }
@@ -1242,14 +1304,14 @@ async function deleteProjectAsset(name){
  const asset=projectAssets.find(a=>a.name===name);if(!asset||asset.locked||window.PStudioEngine?.isRunning())return;
  if(projectFiles[activeProjectFile]?.type==='ps')projectFiles[activeProjectFile].content=codeEditor.value;
  const refs=asset.kind==='model'?Object.values(projectFiles).filter(f=>f.type==='ps'&&String(f.content).includes(name)).length:0;
- const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>o.model===name).length:0;
+ const sceneRefs=asset.kind==='model'?sceneObjects.filter(o=>getSceneRenderableAsset(o)===name).length:0;
  const warning=(refs||sceneRefs)?'\\n\\n'+refs+'個のScriptと'+sceneRefs+'個のScene Objectがこのモデルを参照しています。Scene Object側の参照は削除後に解除されます。':'';
  if(!await showPStudioConfirm("アセット「"+name+"」を削除しますか？","これを削除すると、これまでのデータやファイルが失われる可能性があります。"+((refs||sceneRefs)?"\n\n"+refs+"個のScriptと"+sceneRefs+"個のScene Objectがこのモデルを参照しています。削除後、Scene Object側の参照は解除されます。":""),"削除"))return;
  try{
   if(asset.kind==='model'){await window.PStudioAssetStore.remove(name);window.PStudio3D?.invalidateAsset?.(name);}
   projectAssets=projectAssets.filter(a=>a.name!==name);
-  if(asset.kind==='image'){sceneObjects.forEach(o=>{if(o.sprite===name)o.sprite='';});imageCache.delete(name);}
-  if(asset.kind==='model')sceneObjects.forEach(o=>{if(o.model===name)o.model='';});
+  if(asset.kind==='image'){window.PStudioECSScene?.renameSpriteAsset?.(name,'',sceneObjects);imageCache.delete(name);}
+  if(asset.kind==='model')window.PStudioECSMaterials?.renameRenderableAsset?.(name,'',sceneObjects);
   persistProject();renderProjectTree();renderGamePreview();if(asset.kind==='model'&&workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Deleted asset: '+name);
  }catch(error){toast('Delete failed: '+error.message);}
 }
@@ -1530,35 +1592,182 @@ function setupAssetDrop(){const zone=document.getElementById('asset-drop');if(!z
 function refreshInspectorAssetOptions(){const sel=document.getElementById('obj-sprite');if(!sel)return;const current=selectedObject()?.sprite||'';sel.innerHTML='<option value="">None</option>'+projectAssets.filter(a=>a.kind==='image').map(a=>'<option value="'+escapeHTML(a.name)+'">'+escapeHTML(a.name)+'</option>').join('');sel.value=current;const scripts=document.getElementById('obj-script');if(scripts){scripts.innerHTML='<option value="">None</option>'+Object.keys(projectFiles).filter(k=>projectFiles[k].type==='ps').map(n=>'<option value="'+escapeHTML(n)+'">'+escapeHTML(n)+'</option>').join('');scripts.value=selectedObject()?.script||''}}
 function selectedObject(){return sceneObjects.find(o=>o.id===selectedObjectId)}
 function setToggleState(id,enabled){const badge=document.getElementById(id);if(!badge)return;const active=!!enabled;badge.textContent=active?'ON':'OFF';badge.classList.toggle('is-on',active);badge.dataset.state=active?'on':'off';}
+function syncEcsSceneMaterials(){
+ if(!Array.isArray(sceneObjects)||!window.PStudioECS)return;
+ window.PStudioECS.syncSceneObjects(sceneObjects);
+ window.PStudioECSMaterials?.migrateLegacySceneObjects?.(sceneObjects);
+ window.PStudioECSScene?.syncSceneObjects?.(sceneObjects);
+}
+function removeSceneComponent(object,type){
+ const ecs=window.PStudioECS,entity=ensureEcsSceneObject(object);
+ if(!ecs||entity===null||!ecs.hasComponent(entity,type))return false;
+ const preflight=ecs.serializeEntityComponents(entity,['Transform','SceneObjectRef'],object);
+ if(!preflight){toast('このScene Objectは新しいECS保存形式です。保存データを変更しませんでした。');return false;}
+ const previous=JSON.parse(JSON.stringify(ecs.getComponent(entity,type)));
+ try{
+  ecs.removeComponent(entity,type);
+  const saved=ecs.serializeEntityComponents(entity,['Transform','SceneObjectRef'],object);
+  if(!saved)throw new Error('ECS Component schema cannot be serialized safely.');
+  object.ecsComponentsVersion=saved.version;object.ecsComponents=saved.components;
+  persistProject();return true;
+ }catch(error){
+  try{if(!ecs.hasComponent(entity,type))ecs.addComponent(entity,type,previous);}catch(rollbackError){console.error('[PStudio ECS Inspector] Component remove rollback failed:',rollbackError);}
+  toast(error?.message||'ECS Componentを削除できませんでした。');return false;
+ }
+}
+function getSceneScriptFile(object){return object?window.PStudioECSScene?.getScriptFile?.(object.id,sceneObjects)||'':'';}
+function setSceneScriptFile(object,fileName){return !!object&&!!window.PStudioECSScene?.setScriptFile?.(object.id,fileName,sceneObjects);}
+function getSceneSpriteRenderer(object){return object?window.PStudioECSScene?.getSpriteRenderer?.(object.id,sceneObjects)||null:null;}
+function setSceneSpriteRenderer(object,config){return !!object&&!!window.PStudioECSScene?.setSpriteRenderer?.(object.id,config,sceneObjects);}
+function getSceneRenderableAsset(object){return object?window.PStudioECSMaterials?.getRenderableAsset?.(object.id,sceneObjects)||'':'';}
+function setSceneRenderableAsset(object,asset){return !!object&&!!window.PStudioECSMaterials?.setRenderableAsset?.(object.id,asset,sceneObjects);}
+function getSceneCollider2D(object){return !!object&&window.PStudioECSScene?.getCollider2D?.(object.id,sceneObjects)===true;}
+function setSceneCollider2D(object,enabled){return !!object&&!!window.PStudioECSScene?.setCollider2D?.(object.id,!!enabled,sceneObjects);}
+function isSceneObjectManipulationEnabled(object){return !!object&&(window.PStudioECSScene?.isManipulationEnabled?.(object.id,sceneObjects)??(object.manipulationEnabled!==false));}
+function setSceneObjectManipulationEnabled(object,enabled){return !!object&&!!window.PStudioECSScene?.setManipulationEnabled?.(object.id,!!enabled,sceneObjects);}
+function ensureEcsSceneObject(object){
+ if(!object||object.id===undefined||object.id===null)return null;
+ syncEcsSceneMaterials();
+ const ecs=window.PStudioECS;
+ let entity=ecs?.getEntityForSceneObject?.(String(object.id))??null;
+ if(entity===null&&Array.isArray(sceneObjects)){
+  ecs?.syncSceneObjects?.(sceneObjects);
+  entity=ecs?.getEntityForSceneObject?.(String(object.id))??null;
+ }
+ return entity;
+}
+function getSceneComponent(object,type){
+ const entity=ensureEcsSceneObject(object),ecs=window.PStudioECS;
+ if(entity===null||!ecs?.hasComponent?.(entity,type))return null;
+ return ecs.getComponent(entity,type);
+}
+function setSceneComponent(object,type,config){
+ const ecs=window.PStudioECS,entity=ensureEcsSceneObject(object);
+ if(!ecs||entity===null)return false;
+ const preflight=ecs.serializeEntityComponents(entity,['Transform','SceneObjectRef'],object);
+ if(!preflight){toast('このScene Objectは新しいECS保存形式です。現在の設定は変更しませんでした。');return false;}
+ const had=ecs.hasComponent(entity,type),previous=had?JSON.parse(JSON.stringify(ecs.getComponent(entity,type))):null;
+ try{
+  if(had)ecs.setComponent(entity,type,config);else ecs.addComponent(entity,type,config);
+  const saved=ecs.serializeEntityComponents(entity,['Transform','SceneObjectRef'],object);
+  if(!saved)throw new Error('ECS Component schema cannot be serialized safely.');
+  object.ecsComponentsVersion=saved.version;object.ecsComponents=saved.components;
+  persistProject();return true;
+ }catch(error){
+  try{if(had)ecs.setComponent(entity,type,previous);else if(ecs.hasComponent(entity,type))ecs.removeComponent(entity,type);}catch(rollbackError){console.error('[PStudio ECS Inspector] Component rollback failed:',rollbackError);}
+  toast(error?.message||'ECS Componentを保存できませんでした。');return false;
+ }
+}
+function getSceneToonMaterial(object){return window.PStudioECSMaterials?.getToonMaterial?.(object?.id,sceneObjects)||getSceneComponent(object,'ToonMaterial')?.settings||null;}
+function setSceneToonMaterial(object,value){return window.PStudioECSMaterials?.setToonMaterial?.(object?.id,value,sceneObjects)??setSceneComponent(object,'ToonMaterial',{settings:value});}
+function getSceneMaterialOverrides(object){return window.PStudioECSMaterials?.getMaterialOverrides?.(object?.id,sceneObjects)||getSceneComponent(object,'MaterialOverrides')?.overrides||[];}
+function setSceneMaterialOverrides(object,value){return window.PStudioECSMaterials?.setMaterialOverrides?.(object?.id,value,sceneObjects)??setSceneComponent(object,'MaterialOverrides',{overrides:value});}
+function getSceneShaderFragment(object){return window.PStudioECSMaterials?.getShaderMaterial?.(object?.id,sceneObjects)?.fragmentShader||getSceneComponent(object,'ShaderMaterial')?.fragmentShader||'';}
+function setSceneShaderFragment(object,source){return window.PStudioECSMaterials?.setShaderMaterial?.(object?.id,source,sceneObjects)??setSceneComponent(object,'ShaderMaterial',{enabled:!!source,fragmentShader:source});}
+function removeSceneShaderFragment(object){return window.PStudioECSMaterials?.resetShaderMaterial?.(object?.id,sceneObjects)??removeSceneComponent(object,'ShaderMaterial');}
+function getScenePostFX(object){return getSceneComponent(object,'PostFX');}
+function setScenePostFX(object,value){return setSceneComponent(object,'PostFX',value);}
+function getSceneParticleEmitter(object){return getSceneComponent(object,'ParticleEmitter');}
+function setSceneParticleEmitter(object,value){return setSceneComponent(object,'ParticleEmitter',value);}
+function getSceneMeshCollider(object){const value=window.PStudioECSMaterials?.getMeshCollider?.(object?.id,sceneObjects);return value===null||value===undefined?false:value;}
+function setSceneMeshCollider(object,enabled){return window.PStudioECSMaterials?.setMeshCollider?.(object?.id,!!enabled,sceneObjects)??(enabled?setSceneComponent(object,'MeshCollider',{enabled:true}):removeSceneComponent(object,'MeshCollider'));}
+function getSceneRenderableScale(object){return window.PStudioECSMaterials?.getRenderableScale?.(object?.id,sceneObjects)??1;}
+function setSceneRenderableScale(object,value){return window.PStudioECSMaterials?.setRenderableScale?.(object?.id,value,sceneObjects)??false;}
 function syncObjectToggleStates(object){
- setToggleState('obj-collider-state',object?.collider);
- setToggleState('obj-bloom-state',object?.postProcessing?.bloom);
- setToggleState('obj-ssao-state',object?.postProcessing?.ssao);
- setToggleState('obj-particle-enabled-state',object?.particleEmitter?.enabled);
+ setToggleState('obj-collider-state',getSceneMeshCollider(object));
+ setToggleState('obj-bloom-state',getScenePostFX(object)?.bloom);
+ setToggleState('obj-ssao-state',getScenePostFX(object)?.ssao);
+ setToggleState('obj-particle-enabled-state',getSceneParticleEmitter(object)?.enabled);
  const button=document.getElementById('obj-manipulation-toggle');
- if(button){const enabled=!!object&&object.manipulationEnabled!==false;button.disabled=!object;button.textContent='Object manipulation: '+(enabled?'ON':'OFF');button.classList.toggle('is-on',enabled);button.setAttribute('aria-pressed',String(enabled));}
+ if(button){const enabled=!!object&&isSceneObjectManipulationEnabled(object);button.disabled=!object;button.textContent='Object manipulation: '+(enabled?'ON':'OFF');button.classList.toggle('is-on',enabled);button.setAttribute('aria-pressed',String(enabled));}
 }
 function toggleSelectedManipulation(){
  const object=selectedObject();if(!object)return false;
- object.manipulationEnabled=object.manipulationEnabled===false;
- persistProject();syncObjectToggleStates(object);
- toast('Object manipulation: '+(object.manipulationEnabled?'ON':'OFF'));
- return object.manipulationEnabled;
+ const enabled=!isSceneObjectManipulationEnabled(object);
+ if(!setSceneObjectManipulationEnabled(object,enabled))return false;
+ syncObjectToggleStates(object);
+ toast('Object manipulation: '+(enabled?'ON':'OFF'));
+ return enabled;
 }
-async function deleteSelectedObject(){const o=selectedObject();if(!o)return;if(window.PStudioEngine?.isRunning()){toast('Stop the game before deleting an object');return}if(!await showPStudioConfirm("「"+o.name+"」を削除しますか？","これを削除すると、シーン内のオブジェクト設定や関連データが失われます。","削除"))return;sceneObjects=sceneObjects.filter(item=>item.id!==o.id);selectedObjectId=null;selectSceneObject(null);persistProject();renderGamePreview();toast('Object deleted')}
+async function deleteSelectedObject(){const o=selectedObject();if(!o)return;if(window.PStudioEngine?.isRunning()){toast('Stop the game before deleting an object');return}if(!await showPStudioConfirm("「"+o.name+"」を削除しますか？","これを削除すると、シーン内のオブジェクト設定や関連データが失われます。","削除"))return;sceneObjects=sceneObjects.filter(item=>item.id!==o.id);syncEcsSceneMaterials();selectedObjectId=null;selectSceneObject(null);persistProject();renderGamePreview();toast('Object deleted')}
 const DEFAULT_SHADER_FRAGMENT="uniform vec3 uColor;\nvarying vec2 vUv;\nvoid main() {\n    vec3 color = uColor;\n    float bands = step(0.5, fract(vUv.x * 8.0));\n    color *= mix(0.72, 1.0, bands);\n    gl_FragColor = vec4(color, 1.0);\n}";
-function selectSceneObject(id){selectedObjectId=id;window.PStudio3D?.setSelected?.(id);const o=selectedObject();document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;const shaderSection=document.getElementById('shader-editor-section');if(shaderSection)shaderSection.hidden=!o||!!o.model;const shaderInput=document.getElementById('shader-fragment');if(shaderInput)shaderInput.value=o?.shaderFragment||DEFAULT_SHADER_FRAGMENT;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-z','z'],['obj-rotation-x','rotationX'],['obj-rotation-y','rotationY'],['obj-rotation-z','rotationZ'],['obj-w','w'],['obj-h','h']])document.getElementById(field).value=o[key]??0;const modelSettings=document.getElementById('obj-model-settings');if(modelSettings){modelSettings.hidden=!o.model;if(o.model){document.getElementById('obj-model-name').value=o.model;document.getElementById('obj-model-scale').value=o.modelScale||1;const mat=(o.modelMaterialOverrides||[])[0]||{name:'*',roughness:0.7,metalness:0,color:'#d1d5db'};document.getElementById('obj-model-material-name').value=mat.name;document.getElementById('obj-model-material-roughness').value=mat.roughness;document.getElementById('obj-model-material-metalness').value=mat.metalness;document.getElementById('obj-model-material-color').value=mat.color||'#d1d5db';document.getElementById('obj-model-double-side').checked=!!mat.doubleSide;document.getElementById('obj-model-recompute-normals').checked=!!mat.recomputeNormals;document.getElementById('obj-model-material-emissive').value=mat.emissive||'#000000';document.getElementById('obj-model-material-emissive-intensity').value=mat.emissiveIntensity??0;}}const mirrorSettings=document.getElementById('obj-mirror-water-settings');if(mirrorSettings){mirrorSettings.hidden=!o.mirrorWater;if(o.mirrorWater){document.getElementById('obj-mirror-width').value=o.mirrorWidth??PSTUDIO_SCENE_GRID_SIZE;document.getElementById('obj-mirror-depth').value=o.mirrorDepth??PSTUDIO_SCENE_GRID_SIZE;document.getElementById('obj-mirror-reflectivity').value=o.mirrorReflectivity??1;document.getElementById('obj-mirror-wave-strength').value=o.waveStrength??0.05;}}document.getElementById('obj-collider').checked=!!o.collider;const fx=o.postProcessing||{};document.getElementById('obj-bloom').checked=!!fx.bloom;document.getElementById('obj-ssao').checked=!!fx.ssao;syncObjectToggleStates(o);document.getElementById('obj-postfx-strength').value=fx.strength??0.45;const pe=o.particleEmitter||{};document.getElementById('obj-particle-enabled').checked=!!pe.enabled;document.getElementById('obj-particle-rate').value=pe.rate??12;document.getElementById('obj-particle-color').value=pe.color||'#ffffff';document.getElementById('obj-particle-speed').value=pe.speed??2;document.getElementById('obj-particle-lifetime').value=pe.lifetime??1;document.getElementById('obj-particle-max').value=pe.maxCount??200;refreshInspectorAssetOptions()}syncObjectToggleStates(o);renderGamePreview()}
-window.PStudioSceneInteraction={select:(id)=>selectSceneObject(id),isManipulationEnabled:(id)=>sceneObjects.find(item=>item.id===id)?.manipulationEnabled!==false,toggleManipulation:(id)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return false;o.manipulationEnabled=o.manipulationEnabled===false;persistProject();syncObjectToggleStates(o);toast('Object manipulation: '+(o.manipulationEnabled?'ON':'OFF'));return o.manipulationEnabled;},move:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=Number(x)||0;o.y=Number(y)||0;o.z=Number(z)||0;persistProject();},moveWorld:(id,x,y,z)=>{const o=sceneObjects.find(item=>item.id===id);if(!o)return;o.x=(Number(x)||0)*100+480-(Number(o.w)||64)/2;o.y=270-(Number(y)||0)*100-(Number(o.h)||64)/2;o.z=(Number(z)||0)*100;persistProject();}};
+function selectSceneObject(id){selectedObjectId=id;syncEcsSceneMaterials();window.PStudio3D?.setSelected?.(id);const o=selectedObject();const renderableAsset=getSceneRenderableAsset(o);const spriteConfig=getSceneSpriteRenderer(o);document.getElementById('object-empty').hidden=!!o;document.getElementById('object-fields').hidden=!o;const shaderSection=document.getElementById('shader-editor-section');if(shaderSection)shaderSection.hidden=!o||!!renderableAsset;const shaderInput=document.getElementById('shader-fragment');if(shaderInput)shaderInput.value=getSceneShaderFragment(o)||DEFAULT_SHADER_FRAGMENT;if(o){for(const [field,key] of [['obj-name','name'],['obj-x','x'],['obj-y','y'],['obj-z','z'],['obj-rotation-x','rotationX'],['obj-rotation-y','rotationY'],['obj-rotation-z','rotationZ'],['obj-w','width'],['obj-h','height']])document.getElementById(field).value=(key==='width'||key==='height')?(spriteConfig?.[key]??64):(o[key]??0);const modelSettings=document.getElementById('obj-model-settings');if(modelSettings){modelSettings.hidden=!renderableAsset;if(renderableAsset){document.getElementById('obj-model-name').value=renderableAsset;document.getElementById('obj-model-scale').value=getSceneRenderableScale(o)||1;const mat=(getSceneMaterialOverrides(o)||[])[0]||{name:'*',roughness:0.7,metalness:0,color:'#d1d5db'};document.getElementById('obj-model-material-name').value=mat.name;document.getElementById('obj-model-material-roughness').value=mat.roughness;document.getElementById('obj-model-material-metalness').value=mat.metalness;document.getElementById('obj-model-material-color').value=mat.color||'#d1d5db';document.getElementById('obj-model-double-side').checked=!!mat.doubleSide;document.getElementById('obj-model-recompute-normals').checked=!!mat.recomputeNormals;document.getElementById('obj-model-material-emissive').value=mat.emissive||'#000000';document.getElementById('obj-model-material-emissive-intensity').value=mat.emissiveIntensity??0;const toon=getSceneToonMaterial(o)||mat.toon||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}}if(!renderableAsset){const toon=getSceneToonMaterial(o)||{};for(const [id,key,fallback] of [['obj-model-toon-shadow','shadowColor','#46516f'],['obj-model-toon-mid','midColor','#9eafd0'],['obj-model-toon-highlight','highlightColor','#ffffff'],['obj-model-toon-rim-color','rimColor','#b8dcff'],['obj-model-toon-outline-color','outlineColor','#182235'],['obj-model-toon-sss-color','sssColor','#f0a5a0']])document.getElementById(id).value=toon[key]||fallback;for(const [id,key,fallback] of [['obj-model-toon-shadow-threshold','shadowThreshold',0.32],['obj-model-toon-highlight-threshold','highlightThreshold',0.68],['obj-model-toon-rim-intensity','rimIntensity',0.42],['obj-model-toon-rim-power','rimPower',2.6],['obj-model-toon-outline-width','outlineWidth',0.12],['obj-model-toon-sss-intensity','sssIntensity',0.12],['obj-model-wind-strength','windStrength',0],['obj-model-wind-speed','windSpeed',1]])document.getElementById(id).value=toon[key]??fallback;document.getElementById('obj-model-toon-enabled').checked=toon.enabled===true;}document.getElementById('obj-collider').checked=!!getSceneMeshCollider(o);const fx=getScenePostFX(o)||{};document.getElementById('obj-bloom').checked=!!fx.bloom;document.getElementById('obj-ssao').checked=!!fx.ssao;syncObjectToggleStates(o);document.getElementById('obj-postfx-strength').value=fx.strength??0.45;const pe=getSceneParticleEmitter(o)||{};document.getElementById('obj-particle-enabled').checked=!!pe.enabled;document.getElementById('obj-particle-rate').value=pe.rate??12;document.getElementById('obj-particle-color').value=pe.color||'#ffffff';document.getElementById('obj-particle-speed').value=pe.speed??2;document.getElementById('obj-particle-lifetime').value=pe.lifetime??1;document.getElementById('obj-particle-max').value=pe.maxCount??200;refreshInspectorAssetOptions()}const mirrorSettings=document.getElementById('obj-mirror-water-settings');if(mirrorSettings){mirrorSettings.hidden=!o?.mirrorWater;if(o?.mirrorWater){document.getElementById('obj-mirror-width').value=o.mirrorWidth??PSTUDIO_SCENE_GRID_SIZE;document.getElementById('obj-mirror-depth').value=o.mirrorDepth??PSTUDIO_SCENE_GRID_SIZE;document.getElementById('obj-mirror-reflectivity').value=o.mirrorReflectivity??1;document.getElementById('obj-mirror-wave-strength').value=o.waveStrength??0.05;}}syncObjectToggleStates(o);renderGamePreview()}
+window.PStudioSceneInteraction={
+ select:(id)=>selectSceneObject(id),
+ isManipulationEnabled:(id)=>isSceneObjectManipulationEnabled(sceneObjects.find(item=>item.id===id)),
+ toggleManipulation:(id)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return false;const enabled=!isSceneObjectManipulationEnabled(object);if(!setSceneObjectManipulationEnabled(object,enabled))return false;syncObjectToggleStates(object);toast('Object manipulation: '+(enabled?'ON':'OFF'));return enabled;},
+ move:(id,x,y,z)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return;object.x=Number(x)||0;object.y=Number(y)||0;object.z=Number(z)||0;persistProject();},
+ moveWorld:(id,x,y,z)=>{const object=sceneObjects.find(item=>item.id===id);if(!object)return;const size=getSceneSpriteRenderer(object)||{width:64,height:64};object.x=(Number(x)||0)*100+480-size.width/2;object.y=270-(Number(y)||0)*100-size.height/2;object.z=(Number(z)||0)*100;persistProject();}
+};
+function applySelectedShaderGraph()};
 function applySelectedShaderGraph(){const mode=document.getElementById('shader-node-mode')?.value||'solid';const source={"solid":"uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}","stripes":"uniform vec3 uColor; varying vec2 vUv; void main(){float s=step(0.5,fract(vUv.x*12.0));gl_FragColor=vec4(uColor*mix(0.55,1.0,s),1.0);}","checker":"uniform vec3 uColor; varying vec2 vUv; void main(){float c=mod(floor(vUv.x*8.0)+floor(vUv.y*8.0),2.0);gl_FragColor=vec4(uColor*mix(0.45,1.0,c),1.0);}","radial":"uniform vec3 uColor; varying vec2 vUv; void main(){float d=length(vUv-vec2(0.5));gl_FragColor=vec4(uColor*mix(1.0,0.25,smoothstep(0.05,0.65,d)),1.0);}","glow":"uniform vec3 uColor; varying vec2 vUv; void main(){float g=1.0-smoothstep(0.0,0.7,length(vUv-vec2(0.5)));gl_FragColor=vec4(uColor*(0.35+g*1.8),1.0);}"};const input=document.getElementById('shader-fragment');if(input)input.value=source[mode]||source.solid;applySelectedShader();}
-function applySelectedModelMaterial(){const o=selectedObject();if(!o?.model)return;const name=document.getElementById('obj-model-material-name')?.value.trim()||'*';const entry={name,roughness:Number(document.getElementById('obj-model-material-roughness')?.value)||0,metalness:Number(document.getElementById('obj-model-material-metalness')?.value)||0,color:document.getElementById('obj-model-material-color')?.value||'#ffffff',doubleSide:!!document.getElementById('obj-model-double-side')?.checked,recomputeNormals:!!document.getElementById('obj-model-recompute-normals')?.checked,emissive:document.getElementById('obj-model-material-emissive')?.value||'#000000',emissiveIntensity:Math.max(0,Math.min(8,Number(document.getElementById('obj-model-material-emissive-intensity')?.value)||0))};o.modelMaterialOverrides=o.modelMaterialOverrides||[];o.modelMaterialOverrides=o.modelMaterialOverrides.filter(x=>x.name!==name);o.modelMaterialOverrides.push(entry);persistProject();window.setPStudioViewMode?.('3d');toast('GLB material override applied');}
-function updateSelectedPostFX(){const o=selectedObject();if(!o)return;o.postProcessing={bloom:!!document.getElementById('obj-bloom')?.checked,ssao:!!document.getElementById('obj-ssao')?.checked,strength:Number(document.getElementById('obj-postfx-strength')?.value)||0.45};syncObjectToggleStates(o);persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');}
-function updateSelectedParticleEmitter(){const o=selectedObject();if(!o)return;o.particleEmitter={enabled:!!document.getElementById('obj-particle-enabled')?.checked,rate:Number(document.getElementById('obj-particle-rate')?.value)||0,color:document.getElementById('obj-particle-color')?.value||'#ffffff',speed:Number(document.getElementById('obj-particle-speed')?.value)||0,lifetime:Number(document.getElementById('obj-particle-lifetime')?.value)||1,maxCount:Math.max(1,Math.min(1200,Number(document.getElementById('obj-particle-max')?.value)||200))};syncObjectToggleStates(o);persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');}
-function applySelectedShader(){const o=selectedObject();if(!o)return;if(o.model){toast('Custom fragment shaders currently apply only to primitive 3D geometry');return;}const input=document.getElementById('shader-fragment');const source=String(input?.value||'');if(source.length>12000){toast('Shader source must be 12 KB or less');return;}o.shaderFragment=source.trim()||DEFAULT_SHADER_FRAGMENT;persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader applied');}
-function resetSelectedShader(){const o=selectedObject();if(!o)return;delete o.shaderFragment;const input=document.getElementById('shader-fragment');if(input)input.value=DEFAULT_SHADER_FRAGMENT;persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader reset');}
-function updateSelectedObject(key,value){const o=selectedObject();if(!o)return;o[key]=['x','y','z','rotationX','rotationY','rotationZ','w','h','modelScale','mirrorWidth','mirrorDepth','mirrorReflectivity','waveStrength'].includes(key)?Number(value):value;if(['w','h'].includes(key)&&o[key]<1)o[key]=1;if(key==='modelScale'&&o[key]<0.001)o[key]=0.001;if(key==='collider')syncObjectToggleStates(o);persistProject();renderGamePreview();if((o.model||o.mirrorWater)&&workspaceView==='game')window.setPStudioViewMode?.('3d')}
+function applySelectedToonMaterial(){const o=selectedObject();if(!o)return;const toon={enabled:!!document.getElementById('obj-model-toon-enabled')?.checked,shadowColor:document.getElementById('obj-model-toon-shadow')?.value||'#46516f',midColor:document.getElementById('obj-model-toon-mid')?.value||'#9eafd0',highlightColor:document.getElementById('obj-model-toon-highlight')?.value||'#ffffff',shadowThreshold:Number(document.getElementById('obj-model-toon-shadow-threshold')?.value??0.32),highlightThreshold:Number(document.getElementById('obj-model-toon-highlight-threshold')?.value??0.68),rimColor:document.getElementById('obj-model-toon-rim-color')?.value||'#b8dcff',rimIntensity:Number(document.getElementById('obj-model-toon-rim-intensity')?.value??0.42),rimPower:Number(document.getElementById('obj-model-toon-rim-power')?.value??2.6),outlineColor:document.getElementById('obj-model-toon-outline-color')?.value||'#182235',outlineWidth:Number(document.getElementById('obj-model-toon-outline-width')?.value??0.12),sssColor:document.getElementById('obj-model-toon-sss-color')?.value||'#f0a5a0',sssIntensity:Number(document.getElementById('obj-model-toon-sss-intensity')?.value??0.12),windStrength:Number(document.getElementById('obj-model-wind-strength')?.value??0),windSpeed:Number(document.getElementById('obj-model-wind-speed')?.value??1)};if(!setSceneToonMaterial(o,toon))return;window.setPStudioViewMode?.('3d');toast(toon.enabled?'NPR Toon material applied':'GPU wind settings applied');}
+function applySelectedModelMaterial(){const o=selectedObject();if(!getSceneRenderableAsset(o))return;const name=document.getElementById('obj-model-material-name')?.value.trim()||'*';const toon={enabled:!!document.getElementById('obj-model-toon-enabled')?.checked,shadowColor:document.getElementById('obj-model-toon-shadow')?.value||'#46516f',midColor:document.getElementById('obj-model-toon-mid')?.value||'#9eafd0',highlightColor:document.getElementById('obj-model-toon-highlight')?.value||'#ffffff',shadowThreshold:Number(document.getElementById('obj-model-toon-shadow-threshold')?.value??0.32),highlightThreshold:Number(document.getElementById('obj-model-toon-highlight-threshold')?.value??0.68),rimColor:document.getElementById('obj-model-toon-rim-color')?.value||'#b8dcff',rimIntensity:Number(document.getElementById('obj-model-toon-rim-intensity')?.value??0.42),rimPower:Number(document.getElementById('obj-model-toon-rim-power')?.value??2.6),outlineColor:document.getElementById('obj-model-toon-outline-color')?.value||'#182235',outlineWidth:Number(document.getElementById('obj-model-toon-outline-width')?.value??0.12),sssColor:document.getElementById('obj-model-toon-sss-color')?.value||'#f0a5a0',sssIntensity:Number(document.getElementById('obj-model-toon-sss-intensity')?.value??0.12),windStrength:Number(document.getElementById('obj-model-wind-strength')?.value??0),windSpeed:Number(document.getElementById('obj-model-wind-speed')?.value??1)};const prior=(getSceneMaterialOverrides(o)||[]).find(item=>item.name===name);const toonConfigured=toon.enabled||toon.windStrength>0||!!prior?.toon;const entry={name,roughness:Number(document.getElementById('obj-model-material-roughness')?.value)||0,metalness:Number(document.getElementById('obj-model-material-metalness')?.value)||0,color:document.getElementById('obj-model-material-color')?.value||'#ffffff',doubleSide:!!document.getElementById('obj-model-double-side')?.checked,recomputeNormals:!!document.getElementById('obj-model-recompute-normals')?.checked,emissive:document.getElementById('obj-model-material-emissive')?.value||'#000000',emissiveIntensity:Math.max(0,Math.min(8,Number(document.getElementById('obj-model-material-emissive-intensity')?.value)||0)),toon:toonConfigured?toon:null};const overrides=(getSceneMaterialOverrides(o)||[]).filter(x=>x.name!==name);overrides.push(entry);if(!setSceneMaterialOverrides(o,overrides))return;window.setPStudioViewMode?.('3d');toast('GLB material and NPR overrides applied');}
+function updateSelectedPostFX(){const o=selectedObject();if(!o)return;if(!setScenePostFX(o,{enabled:true,bloom:!!document.getElementById('obj-bloom')?.checked,ssao:!!document.getElementById('obj-ssao')?.checked,strength:Number(document.getElementById('obj-postfx-strength')?.value)||0.45}))return;syncObjectToggleStates(o);if(workspaceView==='game')window.setPStudioViewMode?.('3d');}
+function updateSelectedParticleEmitter(){const o=selectedObject();if(!o)return;if(!setSceneParticleEmitter(o,{enabled:!!document.getElementById('obj-particle-enabled')?.checked,useSceneTransform:true,emitterId:'inspector',offsetX:0,offsetY:0,offsetZ:0,positionX:0,positionY:0,positionZ:0,rate:Number(document.getElementById('obj-particle-rate')?.value)||0,color:document.getElementById('obj-particle-color')?.value||'#ffffff',speed:Number(document.getElementById('obj-particle-speed')?.value)||0,lifetime:Number(document.getElementById('obj-particle-lifetime')?.value)||1,maxCount:Math.max(1,Math.min(1200,Number(document.getElementById('obj-particle-max')?.value)||200))}))return;syncObjectToggleStates(o);if(workspaceView==='game')window.setPStudioViewMode?.('3d');}
+function applySelectedShader(){const o=selectedObject();if(!o)return;if(getSceneRenderableAsset(o)){toast('Custom fragment shaders currently apply only to primitive 3D geometry');return;}const input=document.getElementById('shader-fragment');const source=String(input?.value||'');if(source.length>12000){toast('Shader source must be 12 KB or less');return;}if(!setSceneShaderFragment(o,source.trim()||DEFAULT_SHADER_FRAGMENT))return;if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader applied');}
+function resetSelectedShader(){const o=selectedObject();if(!o)return;removeSceneShaderFragment(o);const input=document.getElementById('shader-fragment');if(input)input.value=DEFAULT_SHADER_FRAGMENT;persistProject();if(workspaceView==='game')window.setPStudioViewMode?.('3d');toast('Shader reset');}
+function updateSelectedObject(key,value){
+ const object=selectedObject();if(!object)return;
+ if(key==='modelScale'){
+  if(!setSceneRenderableScale(object,Math.max(0.001,Number(value)||1)))return;
+ }else if(key==='collider'){
+  if(!setSceneMeshCollider(object,!!value)||!setSceneCollider2D(object,!!value))return;
+  syncObjectToggleStates(object);
+ }else if(key==='script'){
+  if(!setSceneScriptFile(object,value))return;
+ }else if(key==='sprite'||key==='color'||key==='shape'||key==='w'||key==='h'){
+  const current=getSceneSpriteRenderer(object)||{enabled:true,spriteAsset:'',width:64,height:64,color:'#d1d5db',shape:'rect',layer:0,sortOrder:0};
+  const config={...current};
+  if(key==='sprite')config.spriteAsset=String(value||'');
+  else if(key==='color')config.color=String(value||'#d1d5db');
+  else if(key==='shape')config.shape=value==='circle'?'circle':'rect';
+  else if(key==='w')config.width=Math.max(1,Number(value)||64);
+  else if(key==='h')config.height=Math.max(1,Number(value)||64);
+  if(!setSceneSpriteRenderer(object,config))return;
+ }else{
+  object[key]=['x','y','z','rotationX','rotationY','rotationZ','mirrorWidth','mirrorDepth','mirrorReflectivity','waveStrength'].includes(key)?Number(value):value;
+  persistProject();
+ }
+ renderGamePreview();
+ if((getSceneRenderableAsset(object)||object.mirrorWater)&&workspaceView==='game')window.setPStudioViewMode?.('3d');
+}
 function serializeScene(){return JSON.stringify({width:960,height:540,objects:sceneObjects,environment:normalizeSceneEnvironment(sceneEnvironment)},null,2)}
-function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects;sceneEnvironment=normalizeSceneEnvironment(data.environment)}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}syncSceneEnvironmentPresetButtons();selectSceneObject(selectedObjectId)}
-function renderGamePreview(){const canvas=document.getElementById('game-canvas');if(!canvas)return;const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#28313d';ctx.lineWidth=1;for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}for(const o of sceneObjects){const asset=projectAssets.find(a=>a.name===o.sprite&&a.kind==='image');if(asset){let img=imageCache.get(asset.name);if(!img){img=new Image();img.onload=()=>renderGamePreview();img.src=asset.data;imageCache.set(asset.name,img)}if(img.complete&&img.naturalWidth)ctx.drawImage(img,o.x,o.y,o.w,o.h)}else{ctx.fillStyle=o.color||'#d1d5db';if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill()}else ctx.fillRect(o.x,o.y,o.w,o.h)}if(o.id===selectedObjectId){ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);if(o.shape==='circle'){ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2+4,0,Math.PI*2);ctx.stroke()}else{ctx.strokeRect(o.x-4,o.y-4,o.w+8,o.h+8)}ctx.setLineDash([])}ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(o.name,o.x,o.y-10)}document.getElementById('game-status').textContent=`${sceneObjects.length} objects · 960 × 540 · Local preview`}
+function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects;sceneEnvironment=normalizeSceneEnvironment(data.environment)}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}syncSceneEnvironmentPresetButtons();syncEcsSceneMaterials();selectSceneObject(selectedObjectId)}
+function renderGamePreview(){
+ const canvas=document.getElementById('game-canvas');if(!canvas)return;
+ const ctx=canvas.getContext('2d');
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ ctx.fillStyle='#171d26';ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.strokeStyle='#28313d';ctx.lineWidth=1;
+ for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+ for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+ for(const object of sceneObjects){
+  const sprite=getSceneSpriteRenderer(object)||{enabled:true,spriteAsset:'',width:64,height:64,color:'#d1d5db',shape:'rect'};
+  if(sprite.enabled!==false){
+   const asset=projectAssets.find(entry=>entry.name===sprite.spriteAsset&&entry.kind==='image');
+   if(asset){
+    let img=imageCache.get(asset.name);
+    if(!img){img=new Image();img.onload=()=>renderGamePreview();img.src=asset.data;imageCache.set(asset.name,img);}
+    if(img.complete&&img.naturalWidth)ctx.drawImage(img,object.x,object.y,sprite.width,sprite.height);
+   }else{
+    ctx.fillStyle=sprite.color||'#d1d5db';
+    if(sprite.shape==='circle'){
+     ctx.beginPath();ctx.arc(object.x+sprite.width/2,object.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2,0,Math.PI*2);ctx.fill();
+    }else ctx.fillRect(object.x,object.y,sprite.width,sprite.height);
+   }
+  }
+  if(object.id===selectedObjectId){
+   ctx.strokeStyle='#f4f4f5';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+   if(sprite.shape==='circle'){
+    ctx.beginPath();ctx.arc(object.x+sprite.width/2,object.y+sprite.height/2,Math.max(sprite.width,sprite.height)/2+4,0,Math.PI*2);ctx.stroke();
+   }else ctx.strokeRect(object.x-4,object.y-4,sprite.width+8,sprite.height+8);
+   ctx.setLineDash([]);
+  }
+  ctx.fillStyle='#e5e7eb';ctx.font='12px sans-serif';ctx.fillText(object.name,object.x,object.y-10);
+ }
+ document.getElementById('game-status').textContent=`${sceneObjects.length} objects · 960 × 540 · Local preview`;
+}
 const imageCache=new Map();
 
 function syncSceneOverlayButtons(){
@@ -1583,7 +1792,7 @@ function addSceneObjectFromMenu(kind){
  if(kind==='mirror-water')return addMirrorWaterToScene();
  return false;
 }
-function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false});selectedObjectId=id;selectSceneObject(id);persistProject()}
+function addSceneObject(){const id='object-'+Date.now();const n=sceneObjects.filter(o=>o.name.startsWith('Object')).length+1;sceneObjects.push({id,name:'Object '+n,x:400,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'',color:'#d1d5db',shape:'rect',collider:false,manipulationEnabled:true,ecsComponents:[]});selectedObjectId=id;selectSceneObject(id);persistProject()}
 function addMirrorWaterToScene(){
  if(window.PStudioEngine?.isRunning()){toast('ゲームを停止してから水鏡を追加してください');return;}
  const id='mirror-water-'+Date.now();
@@ -1601,7 +1810,7 @@ function addModelToScene(assetName){
  const scriptName=ensureModelScript(asset);
  const id='model-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
  const base=assetName.replace(/\.[^.]+$/,'');
- sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:scriptName,color:'#d1d5db',shape:'rect',collider:false});
+ sceneObjects.push({id,name:base||'Model',model:assetName,modelScale:1,x:430,y:220,z:0,rotationX:0,rotationY:0,rotationZ:0,w:100,h:100,sprite:'',script:scriptName,color:'#d1d5db',shape:'rect',collider:false,ecsComponents:[]});
  selectedObjectId=id;
  switchWorkspaceView('game');
  selectSceneObject(id);
@@ -1611,7 +1820,7 @@ function addModelToScene(assetName){
 }
 function frameSelectedModel(){
  const object=(sceneObjects||[]).find(item=>String(item.id)===String(selectedObjectId));
- if(!object?.model){toast('3Dモデルを選択してください');return;}
+ if(!getSceneRenderableAsset(object)){toast('3Dモデルを選択してください');return;}
  window.PStudioEngine?.setViewMode?.('3d');
  const result=window.PStudio3D?.frameObject?.(object.id);
  if(result?.pending){toast('モデルの準備ができ次第、選択モデルへカメラを合わせます');return;}
@@ -2807,6 +3016,21 @@ try {
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
+<script src="/static/pstudio_ecs_time.js?v=20261125-ecs-time-state-phase22-r1"></script>
+<script src="/static/pstudio_ecs_script.js"></script>
+<script src="/static/pstudio_ecs_ui.js"></script>
+<script src="/static/pstudio_ecs_modules.js"></script>
+<script src="/static/pstudio_ecs_input.js"></script>
+<script src="/static/pstudio_ecs_collision.js"></script>
+<script src="/static/pstudio_ecs_audio.js"></script>
+<script src="/static/pstudio_ecs_physics.js"></script>
+<script src="/static/pstudio_ecs_gameplay.js"></script>
+<script src="/static/pstudio_ecs_rendering.js"></script>
+<script src="/static/pstudio_ecs_streaming.js"></script>
+<script src="/static/pstudio_ecs_visualfx.js"></script>
+<script src="/static/pstudio_ecs_materials.js"></script>
+<script src="/static/pstudio_ecs_scene.js"></script>
+<script src="/static/pstudio_ecs_inspector.js"></script>
 <script src="/static/pstudio_selects.js?v=20261124-custom-selects1"></script>
 <script type="module">
 import('/static/pstudio_webgpu_lab.mjs?v=20261124-pbr-tsl-lab1')

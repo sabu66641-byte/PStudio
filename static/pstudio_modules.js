@@ -22,6 +22,10 @@
     try { globalThis.PStudioEvents?.emit('module.' + type, event); } catch (_) {}
   }
 
+  function emitState(record) {
+    emit('state-changed', serialize(record));
+  }
+
   function serialize(record) {
     return {
       id: record.id,
@@ -115,10 +119,12 @@
         }
         record.state = 'activating';
         record.error = null;
+        emitState(record);
         await record.activate?.(Object.freeze({ id: record.id, modules: api }));
         record.enabled = true;
         record.state = 'enabled';
         activated.push(record);
+        emitState(record);
         emit('enabled', serialize(record));
       }
       return order.map(serialize);
@@ -128,10 +134,15 @@
         catch (rollbackError) { console.error('[PStudio Modules] rollback failed:', record.id, rollbackError); }
         record.enabled = false;
         record.state = 'registered';
+        emitState(record);
         emit('disabled', serialize(record));
       }
       const failed = order.find(record => record.state === 'activating');
-      if (failed) { failed.state = 'error'; failed.error = String(error?.message || error); }
+      if (failed) {
+        failed.state = 'error';
+        failed.error = String(error?.message || error);
+        emitState(failed);
+      }
       throw error;
     }
   }
@@ -149,16 +160,19 @@
       for (const dependent of dependents) await disableInternal(dependent.id, { cascade: true });
     }
     record.state = 'deactivating';
+    emitState(record);
     try {
       await record.deactivate?.(Object.freeze({ id, modules: api, rollback: false }));
       record.enabled = false;
       record.state = 'registered';
       record.error = null;
+      emitState(record);
       emit('disabled', serialize(record));
       return serialize(record);
     } catch (error) {
       record.state = 'error';
       record.error = String(error?.message || error);
+      emitState(record);
       throw error;
     }
   }

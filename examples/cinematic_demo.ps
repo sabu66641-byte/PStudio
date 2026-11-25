@@ -1,0 +1,17 @@
+# Attach this script to the player Game Object.
+# Add another Scene Object named "Weapon" to record its moving path.
+
+func start()
+    set_time_scale(1)
+    set_god_rays(true, 0.7)
+
+func update(dt)
+    if was_key_pressed("space")
+        camera_shake(0.9, 0.24)
+        set_time_scale(0.2)
+
+    if not is_key_down("space")
+        set_time_scale(1)
+
+    # Call each frame to sample the weapon's trail.
+    draw_trail("Weapon", "#8fe6ff", 0.08, 0.3)

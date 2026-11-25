@@ -8,6 +8,7 @@ const presets = require(path.join(root, 'static', 'pstudio_scene_environment.js'
 const renderer = fs.readFileSync(path.join(root, 'static', 'pstudio_3d_engine.js'), 'utf8');
 const engine = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
+const materials = fs.readFileSync(path.join(root, 'static/pstudio_ecs_materials.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 
 test('scene environment module defines four independent environment presets', () => {
@@ -594,4 +595,52 @@ test('opt-in dynamic GI incrementally captures a rasterized one-bounce SH cache 
     'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(html.includes('id="dynamic-gi-toggle"'));
+});
+
+test('project backup Scene Object reconstruction preserves v1 ECS Components and legacy v0 payloads', () => {
+  const start = html.indexOf('function copySavedEcsComponentPayload');
+  const end = html.indexOf('function validateAndBuildBackup', start + 1);
+  assert.ok(start >= 0 && end > start);
+  const source = html.slice(start, end);
+  const copyPayload = new Function('window', source + '\nreturn copySavedEcsComponentPayload;')({
+    PStudioECS: { sceneComponentSchemaVersion: 1 }
+  });
+  const legacyArray = { ecsComponents: [{ type: 'Health', data: { hp: 25 } }] };
+  const restoredArray = copyPayload(legacyArray, {});
+  assert.equal(restoredArray.ecsComponentsVersion, 0);
+  assert.deepEqual(restoredArray.ecsComponents, legacyArray.ecsComponents);
+
+  const legacyMap = { ecsComponents: { Inventory: { items: { potion: 2 } } } };
+  const restoredMap = copyPayload(legacyMap, {});
+  assert.equal(restoredMap.ecsComponentsVersion, 0);
+  assert.deepEqual(restoredMap.ecsComponents, legacyMap.ecsComponents);
+
+  const v1 = {
+    ecsComponentsVersion: 1,
+    ecsComponents: [
+      { type: 'Renderable', data: { assetName: 'tree.glb', scale: 2 } },
+      { type: 'PluginSettings', data: { enabled: true } }
+    ]
+  };
+  const restoredV1 = copyPayload(v1, {});
+  assert.equal(restoredV1.ecsComponentsVersion, 1);
+  assert.deepEqual(restoredV1.ecsComponents, v1.ecsComponents);
+});
+
+test('project backup preserves opaque future ECS schemas and rejects malformed/current oversized payloads', () => {
+  const start = html.indexOf('function copySavedEcsComponentPayload');
+  const end = html.indexOf('function validateAndBuildBackup', start + 1);
+  const copyPayload = new Function('window', html.slice(start, end) + '\nreturn copySavedEcsComponentPayload;')({
+    PStudioECS: { sceneComponentSchemaVersion: 1 }
+  });
+  const future = {
+    ecsComponentsVersion: 7,
+    ecsComponents: { schema: 'future-map', records: [{ type: 'FutureType', data: [1, 2, 3] }] }
+  };
+  const copy = copyPayload(future, {});
+  assert.deepEqual(copy, future);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 'future', ecsComponents: [] }, {}), /version is invalid/);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 1, ecsComponents: { invalid: true } }, {}), /must be an array/);
+  assert.throws(() => copyPayload({ ecsComponentsVersion: 1, ecsComponents: Array.from({ length: 129 }, (_, i) => ({ type: 'C' + i, data: {} })) }, {}), /at most 128/);
+  assert.throws(() => copyPayload({ ecsComponents: { a: 'x'.repeat(1024 * 1024 + 1) } }, {}), /1 MB/);
 });

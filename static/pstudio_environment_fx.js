@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const T = () => window.THREE;
-  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), foliageTranslucencyMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set(), contactShadowPasses = new Set();
+  const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), toonMaterials = new Set(), outlineMaterialCache = new Map(), foliageTranslucencyMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set(), contactShadowPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
@@ -170,15 +170,24 @@
     return material;
   }
 
-  function configureFoliage(material,object) {
-    if(!material || material.userData.pstudioFoliageHQ)return material;
+  function configureFoliage(material,object,settings={}) {
+    if(!material)return material;
+    const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):0));
+    const existing=material.userData?.pstudioFoliageHQ;
+    if(!existing&&Object.prototype.hasOwnProperty.call(settings,'windStrength')&&Number(settings.windStrength)<=0)return material;
+    if(existing){
+      if(Number.isFinite(Number(settings.windStrength))&&existing.strength?.value!==undefined)existing.strength.value=clamp(settings.windStrength,0,2.5);
+      if(Number.isFinite(Number(settings.windSpeed))&&existing.speed?.value!==undefined)existing.speed.value=clamp(settings.windSpeed,0,4);
+      return material;
+    }
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial&&!material.isMeshToonMaterial)return material;
     object?.geometry?.computeBoundingBox?.();
     const b=object?.geometry?.boundingBox,height=Math.max(.1,b?b.max.y-b.min.y:10),base=b?b.min.y:0;
     const role=String(object?.userData?.pstudioWindPart||'foliage');
     const authored=Number(object?.userData?.pstudioWindWeight);
     const fallback=role === 'trunk' ? 0.12 : role === 'branch' ? 0.42 : role === 'leaf' ? 0.88 : 0.34;
-    const strength=Number.isFinite(authored)?Math.max(0,Math.min(1,authored)):fallback;
+    const strength=Number.isFinite(Number(settings.windStrength))?clamp(settings.windStrength,0,2.5):(Number.isFinite(authored)?Math.max(0,Math.min(1,authored)):fallback);
+    const speed=Number.isFinite(Number(settings.windSpeed))?clamp(settings.windSpeed,0,4):1;
     const standardSurface=!!(material.isMeshStandardMaterial||material.isMeshPhysicalMaterial);
     const authoredTranslucency=Number(object?.userData?.pstudioFoliageTranslucency??material.userData?.pstudioFoliageTranslucency);
     const defaultTranslucency=role==='leaf'?.48:role==='branch'?.075:role==='trunk'?.015:.24;
@@ -189,7 +198,7 @@
     const scatteringPower=Number.isFinite(authoredPower)?Math.max(1,Math.min(12,authoredPower)):3.2;
     const tint=object?.userData?.pstudioFoliageTranslucencyColor??material.userData?.pstudioFoliageTranslucencyColor??'#d9edaa';
     const u={
-      time:{value:0},strength:{value:strength},height:{value:height},base:{value:base},
+      time:{value:0},strength:{value:strength},speed:{value:speed},height:{value:height},base:{value:base},
       direction:{value:new (T().Vector2)(.83,.56).normalize()},
       translucency:{value:translucency},thickness:{value:thickness},scatteringPower:{value:scatteringPower},
       translucencyColor:{value:new (T().Color)(tint)}
@@ -198,13 +207,14 @@
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
       Object.assign(shader.uniforms,{
-        uPStudioWindTime:u.time,uPStudioWindStrength:u.strength,
+        uPStudioWindTime:u.time,uPStudioWindStrength:u.strength,uPStudioWindSpeed:u.speed,
         uPStudioFoliageHeight:u.height,uPStudioFoliageBaseY:u.base,
         uPStudioWindDirection:u.direction
       });
       shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
         'uniform float uPStudioWindTime;',
         'uniform float uPStudioWindStrength;',
+        'uniform float uPStudioWindSpeed;',
         'uniform float uPStudioFoliageHeight;',
         'uniform float uPStudioFoliageBaseY;',
         'uniform vec2 uPStudioWindDirection;',
@@ -220,9 +230,9 @@
         'float foliageHeight01=clamp((position.y-uPStudioFoliageBaseY)/max(.1,uPStudioFoliageHeight),0.0,1.0);',
         'float foliageBend=pow(foliageHeight01,1.42);',
         'float worldPhase=dot(pstudioWindWorld.xz,normalize(uPStudioWindDirection));',
-        'float broadGust=sin(uPStudioWindTime*.78+worldPhase*.047);',
-        'float secondaryGust=sin(uPStudioWindTime*1.31+worldPhase*.113+position.y*.39);',
-        'float leafFlutter=sin(uPStudioWindTime*3.25+worldPhase*.31+position.y*1.7+position.x*1.1);',
+        'float broadGust=sin(uPStudioWindTime*uPStudioWindSpeed*.78+worldPhase*.047);',
+        'float secondaryGust=sin(uPStudioWindTime*uPStudioWindSpeed*1.31+worldPhase*.113+position.y*.39);',
+        'float leafFlutter=sin(uPStudioWindTime*uPStudioWindSpeed*3.25+worldPhase*.31+position.y*1.7+position.x*1.1);',
         'float sway=(broadGust*.23+secondaryGust*.052+leafFlutter*.014)*foliageBend*uPStudioWindStrength;',
         'transformed.x+=sway*uPStudioWindDirection.x;',
         'transformed.z+=sway*uPStudioWindDirection.y;',
@@ -262,7 +272,7 @@
       }
     };
     material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v4-'+role+'-translucency-'+(translucency>0?'on':'off')+(oldKey?oldKey():'');
-    material.userData.pstudioFoliageHQ={time:u.time,role,strength,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
+    material.userData.pstudioFoliageHQ={time:u.time,role,strength:u.strength,speed:u.speed,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
     foliage.add(material);
@@ -505,6 +515,203 @@
     return material;
   }
 
+
+
+  function releaseOutline(object) {
+    const record=object?.userData?.pstudioOutlineShell;
+    if(!record)return;
+    if(record.mesh?.parent)record.mesh.parent.remove(record.mesh);
+    const cached=outlineMaterialCache.get(record.key);
+    if(cached){
+      cached.refs=Math.max(0,cached.refs-1);
+      if(cached.refs===0){if(Array.isArray(cached.material))cached.material.forEach(item=>item?.dispose?.());else cached.material.dispose?.();outlineMaterialCache.delete(record.key);}
+    }
+    delete object.userData.pstudioOutlineShell;
+  }
+
+  function configureOutline(object,settings={}) {
+    const Three=T();
+    if(!Three||!object?.isMesh||!object.geometry)return;
+    const enabled=settings.enabled!==false;
+    const width=Math.max(0.005,Math.min(0.45,Number(settings.width)||0));
+    if(!enabled||width<=0){releaseOutline(object);return;}
+    const color=String(settings.color||'#182235');
+    const sourceMaterials=Array.isArray(object.material)?object.material:[settings.sourceMaterial||object.material];
+    const materialStates=sourceMaterials.map(sourceMaterial=>{
+      const useAlphaTextures=!!(sourceMaterial&&(sourceMaterial.alphaTest>0||sourceMaterial.transparent||sourceMaterial.alphaHash));
+      return {sourceMaterial,useAlphaTextures,map:useAlphaTextures?(sourceMaterial?.map||null):null,alphaMap:useAlphaTextures?(sourceMaterial?.alphaMap||null):null};
+    });
+    const cacheKey=JSON.stringify([color,width.toFixed(4),materialStates.map(state=>({map:state.map?.uuid||'',alphaMap:state.alphaMap?.uuid||'',alphaTest:state.sourceMaterial?.alphaTest||0,opacity:state.sourceMaterial?.opacity??1,transparent:!!state.sourceMaterial?.transparent,alphaHash:!!state.sourceMaterial?.alphaHash,alphaToCoverage:!!state.sourceMaterial?.alphaToCoverage,vertexColors:!!state.sourceMaterial?.vertexColors}))]);
+    const currentOutline=object.userData?.pstudioOutlineShell;
+    if(currentOutline?.key===cacheKey){
+      currentOutline.mesh.geometry=object.geometry;
+      if(object.isInstancedMesh){currentOutline.mesh.count=object.count;currentOutline.mesh.instanceMatrix=object.instanceMatrix;if(object.instanceColor)currentOutline.mesh.instanceColor=object.instanceColor;}
+      if(object.isSkinnedMesh&&object.skeleton)currentOutline.mesh.bind(object.skeleton,object.bindMatrix);
+      return;
+    }
+    releaseOutline(object);
+    let cached=outlineMaterialCache.get(cacheKey);
+    if(!cached){
+      const materials=materialStates.map(({sourceMaterial,useAlphaTextures,map,alphaMap})=>{
+        const material=new Three.MeshBasicMaterial({
+          color,map,alphaMap,alphaTest:sourceMaterial?.alphaTest||0,
+          transparent:!!(useAlphaTextures&&sourceMaterial?.transparent),opacity:sourceMaterial?.opacity??1,
+          alphaToCoverage:!!sourceMaterial?.alphaToCoverage,alphaHash:!!sourceMaterial?.alphaHash,
+          vertexColors:!!sourceMaterial?.vertexColors,
+          side:Three.BackSide,depthWrite:false,depthTest:true,
+          toneMapped:false,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1
+        });
+        material.onBeforeCompile=function(shader){
+          shader.uniforms.uPStudioOutlineExpansion={value:width};
+          shader.vertexShader=addAfter(shader.vertexShader,'#include <common>',[
+            'uniform float uPStudioOutlineExpansion;',
+            '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
+            'attribute vec3 normal;',
+            '#endif'
+          ].join('\n'));
+          shader.vertexShader=addAfter(shader.vertexShader,'#include <skinning_vertex>',[
+            '#if !defined(USE_ENVMAP) && !defined(USE_SKINNING)',
+            'vec3 objectNormal = normal;',
+            '#endif',
+            'transformed+=normalize(objectNormal)*uPStudioOutlineExpansion;'
+          ].join('\n'));
+          if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
+        };
+        material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+        return material;
+      });
+      const material=Array.isArray(object.material)?materials:materials[0];
+      cached={material,refs:0};
+      outlineMaterialCache.set(cacheKey,cached);
+    }
+    cached.refs++;
+    const shell=object.isInstancedMesh
+      ?new Three.InstancedMesh(object.geometry,cached.material,object.count)
+      :object.isSkinnedMesh&&object.skeleton
+        ?new Three.SkinnedMesh(object.geometry,cached.material)
+        :new Three.Mesh(object.geometry,cached.material);
+    if(shell.isInstancedMesh){shell.instanceMatrix=object.instanceMatrix;if(object.instanceColor)shell.instanceColor=object.instanceColor;shell.count=object.count;}
+    if(shell.isSkinnedMesh&&object.skeleton){
+      shell.bind(object.skeleton,object.bindMatrix);
+      shell.bindMode=object.bindMode;
+    }
+    shell.position.set(0,0,0);shell.quaternion.set(0,0,0,1);shell.scale.set(1,1,1);
+    shell.frustumCulled=object.frustumCulled;
+    shell.castShadow=false;shell.receiveShadow=false;
+    shell.raycast=()=>{};
+    shell.renderOrder=(Number(object.renderOrder)||0)-0.1;
+    shell.userData.pstudioOutlineShell=true;
+    object.add(shell);
+    object.userData.pstudioOutlineShell={key:cacheKey,mesh:shell};
+  }
+
+  function configureToon(material,settings={},object=null) {
+    const Three=T();
+    if(!Three||!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
+    const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):0));
+    const defaults={
+      shadowColor:'#46516f',midColor:'#9eafd0',highlightColor:'#ffffff',
+      shadowThreshold:.32,highlightThreshold:.68,
+      rimColor:'#b8dcff',rimIntensity:.42,rimPower:2.6,
+      outlineColor:'#182235',outlineWidth:.12,
+      sssColor:'#f0a5a0',sssIntensity:.12,
+      enabled:true,windStrength:0,windSpeed:1
+    };
+    const value=Object.assign({},defaults,settings||{});
+    let record=material.userData?.pstudioToonHQ;
+    if(!record){
+      if(!material.userData)material.userData={};
+      const u={
+        enabled:{value:0},
+        shadowColor:{value:new Three.Color(defaults.shadowColor)},
+        midColor:{value:new Three.Color(defaults.midColor)},
+        highlightColor:{value:new Three.Color(defaults.highlightColor)},
+        shadowThreshold:{value:defaults.shadowThreshold},
+        highlightThreshold:{value:defaults.highlightThreshold},
+        rimColor:{value:new Three.Color(defaults.rimColor)},
+        rimIntensity:{value:defaults.rimIntensity},
+        rimPower:{value:defaults.rimPower},
+        outlineColor:{value:new Three.Color(defaults.outlineColor)},
+        outlineWidth:{value:defaults.outlineWidth},
+        sssColor:{value:new Three.Color(defaults.sssColor)},
+        sssIntensity:{value:defaults.sssIntensity}
+      };
+      const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+      material.onBeforeCompile=function(shader,renderer){
+        if(previousCompile)previousCompile.call(this,shader,renderer);
+        Object.assign(shader.uniforms,{
+          uPStudioToonEnabled:u.enabled,
+          uPStudioToonShadowColor:u.shadowColor,uPStudioToonMidColor:u.midColor,
+          uPStudioToonHighlightColor:u.highlightColor,
+          uPStudioToonShadowThreshold:u.shadowThreshold,uPStudioToonHighlightThreshold:u.highlightThreshold,
+          uPStudioToonRimColor:u.rimColor,uPStudioToonRimIntensity:u.rimIntensity,uPStudioToonRimPower:u.rimPower,
+          uPStudioToonOutlineColor:u.outlineColor,uPStudioToonOutlineWidth:u.outlineWidth,
+          uPStudioToonSSSColor:u.sssColor,uPStudioToonSSSIntensity:u.sssIntensity
+        });
+        shader.fragmentShader=addAfter(shader.fragmentShader,'#include <common>',[
+          'uniform float uPStudioToonEnabled;',
+          'uniform vec3 uPStudioToonShadowColor;',
+          'uniform vec3 uPStudioToonMidColor;',
+          'uniform vec3 uPStudioToonHighlightColor;',
+          'uniform float uPStudioToonShadowThreshold;',
+          'uniform float uPStudioToonHighlightThreshold;',
+          'uniform vec3 uPStudioToonRimColor;',
+          'uniform float uPStudioToonRimIntensity;',
+          'uniform float uPStudioToonRimPower;',
+          'uniform vec3 uPStudioToonOutlineColor;',
+          'uniform float uPStudioToonOutlineWidth;',
+          'uniform vec3 uPStudioToonSSSColor;',
+          'uniform float uPStudioToonSSSIntensity;'
+        ].join('\n'));
+        shader.fragmentShader=addAfter(shader.fragmentShader,'#include <lights_fragment_end>',[
+          'float pStudioToonRim=0.0;',
+          'if(uPStudioToonEnabled>0.5){',
+          'float pStudioToonDirect=max(0.0,dot(reflectedLight.directDiffuse,vec3(0.2126,0.7152,0.0722)));',
+          'float pStudioToonIndirect=max(0.0,dot(reflectedLight.indirectDiffuse,vec3(0.2126,0.7152,0.0722)));',
+          'float pStudioToonBase=max(0.025,dot(max(diffuseColor.rgb,vec3(0.0)),vec3(0.2126,0.7152,0.0722)));',
+          'float pStudioToonLight=clamp((pStudioToonDirect+pStudioToonIndirect)/pStudioToonBase,0.0,1.0);',
+          'vec3 pStudioToonRamp=mix(uPStudioToonShadowColor,uPStudioToonMidColor,smoothstep(uPStudioToonShadowThreshold-0.015,uPStudioToonShadowThreshold+0.015,pStudioToonLight));',
+          'pStudioToonRamp=mix(pStudioToonRamp,uPStudioToonHighlightColor,smoothstep(uPStudioToonHighlightThreshold-0.015,uPStudioToonHighlightThreshold+0.015,pStudioToonLight));',
+          'reflectedLight.directDiffuse*=pStudioToonRamp;',
+          'reflectedLight.indirectDiffuse*=pStudioToonRamp;',
+          'float pStudioToonNdotV=clamp(dot(normalize(normal),normalize(-vViewPosition)),0.0,1.0);',
+          'pStudioToonRim=pow(1.0-pStudioToonNdotV,max(0.5,uPStudioToonRimPower))*uPStudioToonRimIntensity;',
+          'float pStudioToonSubsurface=pow(1.0-pStudioToonLight,2.0)*uPStudioToonSSSIntensity;',
+          'reflectedLight.indirectDiffuse+=uPStudioToonSSSColor*pStudioToonSubsurface;',
+          '}',
+        ].join('\n'));
+        shader.fragmentShader=addAfter(shader.fragmentShader,'#include <opaque_fragment>',[
+          'if(uPStudioToonEnabled>0.5){',
+          'gl_FragColor.rgb+=uPStudioToonRimColor*pStudioToonRim*0.82;',
+          '}'
+        ].join('\n'));
+      };
+      material.customProgramCacheKey=()=>'pstudio-npr-toon-v1'+(previousKey?previousKey():'');
+      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1};
+      toonMaterials.add(material);
+      material.needsUpdate=true;
+    }
+    const u=record.uniforms;
+    u.enabled.value=value.enabled===false?0:1;
+    u.shadowColor.value.set(value.shadowColor);
+    u.midColor.value.set(value.midColor);
+    u.highlightColor.value.set(value.highlightColor);
+    u.shadowThreshold.value=clamp(value.shadowThreshold,0.02,0.95);
+    u.highlightThreshold.value=Math.max(u.shadowThreshold.value+0.02,clamp(value.highlightThreshold,0.05,0.99));
+    u.rimColor.value.set(value.rimColor);
+    u.rimIntensity.value=clamp(value.rimIntensity,0,4);
+    u.rimPower.value=clamp(value.rimPower,0.5,8);
+    u.outlineColor.value.set(value.outlineColor);
+    u.outlineWidth.value=clamp(value.outlineWidth,0.005,0.45);
+    u.sssColor.value.set(value.sssColor);
+    u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
+    record.enabled=u.enabled.value>0.5;
+    if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
+    if(object&&settings&&Object.prototype.hasOwnProperty.call(settings,'windStrength'))configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
+    return material;
+  }
+
+
   function configureObject(object) {
     if(!object?.isMesh||!object.material)return;
     const name=String(object.name||'');
@@ -745,6 +952,42 @@
     return pass;
   }
 
+  function createGodRaysPass(FX,Three) {
+    if(!FX?.ShaderPass||!Three?.Vector2)return null;
+    const shader={
+      uniforms:{
+        tDiffuse:{value:null},
+        uLightPosition:{value:new Three.Vector2(0.5,0.78)},
+        uIntensity:{value:0},
+        uDensity:{value:0.92},
+        uDecay:{value:0.965},
+        uWeight:{value:0.82},
+        uThreshold:{value:0.58}
+      },
+      vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse;uniform vec2 uLightPosition;',
+        'uniform float uIntensity;uniform float uDensity;uniform float uDecay;uniform float uWeight;uniform float uThreshold;',
+        'varying vec2 vUv;',
+        'void main(){',
+        'vec4 source=texture2D(tDiffuse,vUv);',
+        'vec2 delta=(vUv-uLightPosition)*(uDensity/20.0);',
+        'vec2 coord=vUv;float illuminationDecay=1.0;vec3 shafts=vec3(0.0);',
+        'for(int i=0;i<20;i++){coord-=delta;vec3 sampleColor=texture2D(tDiffuse,clamp(coord,vec2(0.001),vec2(0.999))).rgb;',
+        'float luminance=dot(sampleColor,vec3(0.2126,0.7152,0.0722));',
+        'float bright=smoothstep(uThreshold,uThreshold+0.38,luminance);',
+        'shafts+=sampleColor*bright*illuminationDecay;illuminationDecay*=uDecay;}',
+        'vec3 result=source.rgb+shafts*(uWeight/20.0)*uIntensity;',
+        'gl_FragColor=vec4(result,source.a);',
+        '}'
+      ].join('\n')
+    };
+    const pass=new FX.ShaderPass(shader);
+    pass.enabled=false;
+    return pass;
+  }
+
+
   function createVolumetricFogPass(FX,Three) {
     if(!FX?.ShaderPass||!Three?.DepthTexture)return null;
     const shader={
@@ -822,7 +1065,7 @@
   }
 
   window.PStudioEnvironmentFX={
-    configureObject,configureTerrain,configureWater,configureFoliage,configureUnderwater,configureParallax,configureTriplanar,update,createContactShadowPass,createVolumetricFogPass,createVolumetricCloudPass,
+    configureObject,configureTerrain,configureWater,configureFoliage,configureToon,configureUnderwater,configureParallax,configureTriplanar,update,createGodRaysPass,createContactShadowPass,createVolumetricFogPass,createVolumetricCloudPass,
     configureAtmosphere(settings={}){
       const direction=settings.lightDirection||settings.sunDirection;
       const applyDirection=uniform=>{
@@ -849,7 +1092,8 @@
       return true;
     },
     setSceneDepthTexture(texture,width,height,near,far){for(const material of water){const u=material?.userData?.pstudioWaterHQ;if(!u?.sceneDepth||!u?.viewport?.set||!u?.near||!u?.far||!u?.sceneDepthValid)continue;if(!['sceneDepth','near','far','sceneDepthValid'].every(key=>Object.prototype.hasOwnProperty.call(u[key],'value')))continue;u.sceneDepth.value=texture||null;u.viewport.value.set(Math.max(1,width||1),Math.max(1,height||1));u.near.value=Math.max(.001,near||.1);u.far.value=Math.max(u.near.value+1,far||1600);u.sceneDepthValid.value=texture?1:0;}},
-    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);foliageTranslucencyMaterials.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);terrainMaterials.delete(material);},
-    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,foliageTranslucencyMaterials:foliageTranslucencyMaterials.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,terrainMaterials:terrainMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size,contactShadowPasses:contactShadowPasses.size})
+    releaseObject(object){releaseOutline(object);},
+    releaseMaterial(material){water.delete(material);waterDetailMaterials.delete(material);foliage.delete(material);toonMaterials.delete(material);foliageTranslucencyMaterials.delete(material);caustics.delete(material);parallaxMaterials.delete(material);triplanarMaterials.delete(material);terrainMaterials.delete(material);},
+    getStats:()=>({waterMaterials:water.size,waterDetailMaterials:waterDetailMaterials.size,foliageMaterials:foliage.size,toonMaterials:toonMaterials.size,outlineMaterials:outlineMaterialCache.size,foliageTranslucencyMaterials:foliageTranslucencyMaterials.size,causticMaterials:caustics.size,parallaxMaterials:parallaxMaterials.size,triplanarMaterials:triplanarMaterials.size,terrainMaterials:terrainMaterials.size,cloudPasses:cloudPasses.size,fogPasses:fogPasses.size,contactShadowPasses:contactShadowPasses.size})
   };
 })();

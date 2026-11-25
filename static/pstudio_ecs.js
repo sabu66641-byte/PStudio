@@ -6,7 +6,11 @@
   'use strict';
 
   const COMPONENT_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+  const SCENE_COMPONENTS_VERSION = 1;
+  const COMPONENT_FIELD_ID = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
   const SYSTEM_ID = /^[a-z][a-z0-9._-]{1,63}$/;
+  const SYSTEM_PHASES = new Set(['update', 'prePhysics', 'postUpdate', 'postPhysics']);
+  const SCHEMA_FIELD_TYPES = new Set(['number', 'integer', 'boolean', 'string', 'enum', 'color', 'vector3', 'array', 'json', 'entity']);
   const componentDefinitions = new Map();
   const componentStores = new Map();
   const systems = new Map();
@@ -107,20 +111,126 @@
     }
   }
 
+  function cloneJsonValue(value) {
+    if (value === undefined) return undefined;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeComponentSchema(schema) {
+    if (schema == null) return null;
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      throw new TypeError('ECS Component schema must be an object of field definitions.');
+    }
+    const result = Object.create(null);
+    for (const [fieldName, raw] of Object.entries(schema)) {
+      if (!COMPONENT_FIELD_ID.test(fieldName) || ['__proto__', 'prototype', 'constructor'].includes(fieldName)) {
+        throw new Error('Invalid ECS Component field name: ' + fieldName);
+      }
+      const descriptor = typeof raw === 'string' ? { type: raw } : raw;
+      if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) {
+        throw new TypeError('Invalid schema definition for Component field: ' + fieldName);
+      }
+      const fieldType = String(descriptor.type || '');
+      if (!SCHEMA_FIELD_TYPES.has(fieldType)) {
+        throw new Error('Unsupported ECS Component field type "' + fieldType + '" for ' + fieldName);
+      }
+      const field = {
+        type: fieldType,
+        label: String(descriptor.label || fieldName),
+        description: String(descriptor.description || ''),
+        required: descriptor.required === true,
+        nullable: descriptor.nullable === true
+      };
+      for (const key of ['min', 'max', 'step', 'maxLength']) {
+        if (descriptor[key] !== undefined) {
+          const number = Number(descriptor[key]);
+          if (!Number.isFinite(number) || (key === 'step' && number <= 0) || (key === 'maxLength' && number < 0)) {
+            throw new TypeError('Invalid "' + key + '" for Component field: ' + fieldName);
+          }
+          field[key] = number;
+        }
+      }
+      if (field.min !== undefined && field.max !== undefined && field.min > field.max) {
+        throw new RangeError('Component field min exceeds max: ' + fieldName);
+      }
+      if (fieldType === 'enum') {
+        if (!Array.isArray(descriptor.options) || descriptor.options.length < 1 || descriptor.options.length > 128) {
+          throw new TypeError('Enum Component fields require 1–128 options: ' + fieldName);
+        }
+        field.options = descriptor.options.map(option => {
+          if (!['string', 'number', 'boolean'].includes(typeof option) || (typeof option === 'number' && !Number.isFinite(option))) {
+            throw new TypeError('Enum options must be strings, finite numbers or booleans: ' + fieldName);
+          }
+          return option;
+        });
+      }
+      if (Object.prototype.hasOwnProperty.call(descriptor, 'default')) {
+        try { field.default = cloneJsonValue(descriptor.default); }
+        catch (_) { throw new TypeError('Component field default must be JSON serializable: ' + fieldName); }
+      }
+      result[fieldName] = field;
+    }
+    return result;
+  }
+
+  function validateSchemaField(fieldName, field, value) {
+    if (value === null && field.nullable === true) return;
+    let valid = false;
+    switch (field.type) {
+      case 'number': valid = typeof value === 'number' && Number.isFinite(value); break;
+      case 'integer': valid = Number.isSafeInteger(value); break;
+      case 'boolean': valid = typeof value === 'boolean'; break;
+      case 'string': valid = typeof value === 'string' && (field.maxLength === undefined || value.length <= field.maxLength); break;
+      case 'enum': valid = field.options.some(option => Object.is(option, value)); break;
+      case 'color': valid = typeof value === 'string' && /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value); break;
+      case 'vector3': valid = !!value && typeof value === 'object' && !Array.isArray(value) && ['x','y','z'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key])); break;
+      case 'array': valid = Array.isArray(value); break;
+      case 'json': valid = value !== undefined; break;
+      case 'entity': valid = value === null || Number.isSafeInteger(value); break;
+    }
+    if (!valid) throw new TypeError('Component field "' + fieldName + '" must be ' + field.type + '.');
+    if (typeof value === 'number') {
+      if (field.min !== undefined && value < field.min) throw new RangeError('Component field "' + fieldName + '" is below min ' + field.min + '.');
+      if (field.max !== undefined && value > field.max) throw new RangeError('Component field "' + fieldName + '" exceeds max ' + field.max + '.');
+    }
+  }
+
   function normalizeComponent(type, value, entity) {
     const definition = componentDefinitions.get(type);
     let result = value;
-    if (result === undefined && typeof definition.create === 'function') {
-      result = definition.create(entity);
-    }
+    if (result === undefined && typeof definition.create === 'function') result = definition.create(entity);
     if (result === undefined) result = {};
     if (result === null || typeof result !== 'object' || Array.isArray(result)) {
       throw new TypeError('ECS component data must be an object: ' + type);
+    }
+    result = { ...result };
+    if (definition.schema) {
+      for (const [fieldName, field] of Object.entries(definition.schema)) {
+        if (!Object.prototype.hasOwnProperty.call(result, fieldName) && Object.prototype.hasOwnProperty.call(field, 'default')) {
+          result[fieldName] = cloneJsonValue(field.default);
+        }
+      }
     }
     if (typeof definition.normalize === 'function') {
       result = definition.normalize(result, entity);
       if (result === null || typeof result !== 'object' || Array.isArray(result)) {
         throw new TypeError('ECS component normalizer returned invalid data: ' + type);
+      }
+    }
+    if (definition.schema) {
+      for (const [fieldName, field] of Object.entries(definition.schema)) {
+        if (!Object.prototype.hasOwnProperty.call(result, fieldName)) {
+          if (field.required) throw new TypeError('Required Component field is missing: ' + fieldName);
+          continue;
+        }
+        validateSchemaField(fieldName, field, result[fieldName]);
+      }
+      if (!definition.additionalProperties) {
+        for (const fieldName of Object.keys(result)) {
+          if (!Object.prototype.hasOwnProperty.call(definition.schema, fieldName)) {
+            throw new TypeError('Unknown Component field "' + fieldName + '" in ' + type + '.');
+          }
+        }
       }
     }
     if (typeof definition.validate === 'function' && definition.validate(result, entity) === false) {
@@ -139,15 +249,74 @@
         throw new TypeError('Component option "' + hook + '" must be a function.');
       }
     }
+    const schema = normalizeComponentSchema(settings.schema);
     componentDefinitions.set(key, {
       create: settings.create || null,
       normalize: settings.normalize || null,
       validate: settings.validate || null,
       onAdd: settings.onAdd || null,
-      onRemove: settings.onRemove || null
+      onRemove: settings.onRemove || null,
+      schema,
+      additionalProperties: settings.additionalProperties !== false,
+      persistent: settings.persistent !== false,
+      readonly: settings.readonly === true,
+      internal: settings.internal === true,
+      source: settings.source ? String(settings.source) : '',
+      label: String(settings.label || key),
+      description: String(settings.description || ''),
+      category: String(settings.category || 'General')
     });
     componentStores.set(key, new SparseSet());
     emit('component-registered', { type: key });
+    return key;
+  }
+
+  function updateComponentDefinition(type, options) {
+    assertStructureMutable();
+    const key = requireComponentType(type);
+    const previous = componentDefinitions.get(key);
+    const settings = options || {};
+    for (const hook of ['create', 'normalize', 'validate', 'onAdd', 'onRemove']) {
+      if (settings[hook] !== undefined && typeof settings[hook] !== 'function') {
+        throw new TypeError('Component option "' + hook + '" must be a function.');
+      }
+    }
+    const next = {
+      ...previous,
+      create: settings.create === undefined ? previous.create : settings.create,
+      normalize: settings.normalize === undefined ? previous.normalize : settings.normalize,
+      validate: settings.validate === undefined ? previous.validate : settings.validate,
+      onAdd: settings.onAdd === undefined ? previous.onAdd : settings.onAdd,
+      onRemove: settings.onRemove === undefined ? previous.onRemove : settings.onRemove,
+      schema: settings.schema === undefined ? previous.schema : normalizeComponentSchema(settings.schema),
+      additionalProperties: settings.additionalProperties === undefined ? previous.additionalProperties : settings.additionalProperties !== false,
+      persistent: settings.persistent === undefined ? previous.persistent : settings.persistent !== false,
+      readonly: settings.readonly === undefined ? previous.readonly : settings.readonly === true,
+      internal: settings.internal === undefined ? previous.internal : settings.internal === true,
+      source: settings.source === undefined ? previous.source : String(settings.source || ''),
+      label: settings.label === undefined ? previous.label : String(settings.label || key),
+      description: settings.description === undefined ? previous.description : String(settings.description || ''),
+      category: settings.category === undefined ? previous.category : String(settings.category || 'General')
+    };
+    if (typeof next.create !== 'function' && next.create !== null) throw new TypeError('Component option "create" must be a function.');
+    if (typeof next.normalize !== 'function' && next.normalize !== null) throw new TypeError('Component option "normalize" must be a function.');
+    if (typeof next.validate !== 'function' && next.validate !== null) throw new TypeError('Component option "validate" must be a function.');
+    if (typeof next.onAdd !== 'function' && next.onAdd !== null) throw new TypeError('Component option "onAdd" must be a function.');
+    if (typeof next.onRemove !== 'function' && next.onRemove !== null) throw new TypeError('Component option "onRemove" must be a function.');
+
+    const store = componentStores.get(key);
+    const normalizedValues = new Map();
+    componentDefinitions.set(key, next);
+    try {
+      for (const entity of store.entities) {
+        normalizedValues.set(entity, normalizeComponent(key, store.get(entity), entity));
+      }
+    } catch (error) {
+      componentDefinitions.set(key, previous);
+      throw error;
+    }
+    for (const [entity, data] of normalizedValues) store.set(entity, data);
+    emit('component-definition-updated', { type: key });
     return key;
   }
 
@@ -327,12 +496,19 @@
     if (typeof settings.update !== 'function') throw new TypeError('ECS system update must be a function: ' + id);
     const required = normalizeTypes(settings.components || settings.requiredComponents || []);
     const priority = finite(settings.priority, 0);
+    const phase = String(settings.phase || 'update');
+    if (!SYSTEM_PHASES.has(phase)) throw new Error('Invalid ECS System phase: ' + phase);
     const record = {
       id,
+      name: String(settings.name || id),
       components: required,
       priority,
+      phase,
       sequence: systemSequence++,
       enabled: settings.enabled !== false,
+      internal: settings.internal === true,
+      source: settings.source ? String(settings.source) : '',
+      description: String(settings.description || ''),
       update: settings.update
     };
     systems.set(id, record);
@@ -361,6 +537,107 @@
     return record.enabled;
   }
 
+  function setSystemPriority(id, value) {
+    const record = systems.get(String(id || ''));
+    if (!record) throw new Error('ECS system is not registered: ' + String(id));
+    const priority = Number(value);
+    if (!Number.isFinite(priority)) throw new TypeError('ECS system priority must be a finite number.');
+    record.priority = priority;
+    orderedSystems.sort((a, b) => a.priority - b.priority || a.sequence - b.sequence);
+    emit('system-priority-changed', { id: record.id, priority });
+    return priority;
+  }
+
+  function setSystemPhase(id, phase) {
+    const record = systems.get(String(id || ''));
+    if (!record) throw new Error('ECS system is not registered: ' + String(id));
+    const next = String(phase || '');
+    if (!SYSTEM_PHASES.has(next)) throw new Error('Invalid ECS System phase: ' + next);
+    record.phase = next;
+    emit('system-phase-changed', { id: record.id, phase: next });
+    return next;
+  }
+
+  function getSystems() {
+    return orderedSystems.map(system => ({
+      id: system.id,
+      name: system.name,
+      priority: system.priority,
+      phase: system.phase,
+      enabled: system.enabled,
+      components: system.components.slice(),
+      sequence: system.sequence,
+      internal: system.internal,
+      source: system.source,
+      description: system.description
+    }));
+  }
+
+  function getEntities(includeInactive) {
+    return Array.from(entities)
+      .filter(id => includeInactive === true || entityActive.get(id) !== false)
+      .sort((a, b) => a - b);
+  }
+
+  function getComponentTypes() {
+    return Array.from(componentDefinitions.keys()).sort();
+  }
+
+  function getComponentDefinition(type) {
+    const definition = componentDefinitions.get(String(type || ''));
+    if (!definition) return null;
+    return {
+      type: String(type),
+      label: definition.label,
+      description: definition.description,
+      category: definition.category,
+      schema: definition.schema ? cloneJsonValue(definition.schema) : null,
+      additionalProperties: definition.additionalProperties,
+      persistent: definition.persistent,
+      readonly: definition.readonly,
+      internal: definition.internal,
+      source: definition.source
+    };
+  }
+
+  function getComponentDefinitions() {
+    return getComponentTypes().map(type => getComponentDefinition(type));
+  }
+
+  function getEntityComponents(entity) {
+    const id = requireEntity(entity);
+    const result = [];
+    for (const [type, store] of componentStores) {
+      if (store.has(id)) {
+        const definition = componentDefinitions.get(type);
+        result.push({
+          type,
+          data: store.get(id),
+          persistent: definition.persistent,
+          readonly: definition.readonly,
+          schema: definition.schema ? cloneJsonValue(definition.schema) : null
+        });
+      }
+    }
+    result.sort((a, b) => a.type.localeCompare(b.type));
+    return result;
+  }
+
+  function unregisterComponent(type) {
+    assertStructureMutable();
+    const key = String(type || '');
+    const store = componentStores.get(key);
+    if (!store) return false;
+    if (store.size > 0) throw new Error('Cannot unregister a Component while entities still contain it: ' + key);
+    if (orderedSystems.some(system => system.components.includes(key))) {
+      throw new Error('Cannot unregister a Component while a System still requires it: ' + key);
+    }
+    componentStores.delete(key);
+    componentDefinitions.delete(key);
+    emit('component-unregistered', { type: key });
+    return true;
+  }
+
   function flushDeferred() {
     if (flushingDeferred || iterationDepth > 0 || updating || deferredHead >= deferred.length) return;
     flushingDeferred = true;
@@ -387,16 +664,17 @@
     return deferred.length - deferredHead;
   }
 
-  function update(deltaTime, context) {
+  function runSystems(deltaTime, context, phase) {
     if (!enabled) return false;
     if (updating) throw new Error('ECS update() cannot be called recursively.');
     const dt = Number(deltaTime);
     if (!Number.isFinite(dt) || dt < 0) throw new TypeError('ECS delta time must be a finite non-negative number.');
+    if (!SYSTEM_PHASES.has(phase)) throw new Error('Invalid ECS System phase: ' + phase);
     updating = true;
     try {
       const frameSystems = orderedSystems.slice();
       for (const system of frameSystems) {
-        if (!system.enabled || !systems.has(system.id)) continue;
+        if (!system.enabled || !systems.has(system.id) || system.phase !== phase) continue;
         try { system.update(dt, api, context || null); }
         catch (error) {
           const detail = error && error.message ? error.message : String(error);
@@ -410,6 +688,20 @@
       flushDeferred();
     }
     return true;
+  }
+
+  function update(deltaTime, context) {
+    return runSystems(deltaTime, context, 'update');
+  }
+
+  function updatePhase(phase, deltaTime, context) {
+    if (phase === 'update') return update(deltaTime, context);
+    return runSystems(deltaTime, context, phase);
+  }
+
+  function hasSystemsForPhase(phase) {
+    const key = String(phase || '');
+    return enabled && orderedSystems.some(system => system.enabled && system.phase === key);
   }
 
   function clearEntities() {
@@ -463,6 +755,103 @@
     return false;
   }
 
+  function readSavedComponentEntries(object) {
+    const hasLegacyData = Object.prototype.hasOwnProperty.call(object, 'ecsComponents');
+    const hasVersion = Object.prototype.hasOwnProperty.call(object, 'ecsComponentsVersion');
+    if (!hasLegacyData && !hasVersion) return [];
+
+    const rawVersion = hasVersion ? Number(object.ecsComponentsVersion) : 0;
+    if (!Number.isSafeInteger(rawVersion) || rawVersion < 0) {
+      console.warn('[PStudio ECS] invalid saved Component schema version; skipping restore:', object.id);
+      return null;
+    }
+    if (rawVersion > SCENE_COMPONENTS_VERSION) {
+      console.warn('[PStudio ECS] saved Component schema is newer than this runtime; preserving without restore:', object.id, rawVersion);
+      return null;
+    }
+
+    let entries = object.ecsComponents;
+    if (rawVersion === 0) {
+      // Version 0 was the unversioned format: an array of {type,data}.
+      // Also accept a type-keyed object for early experimental backups.
+      if (Array.isArray(entries)) {
+        entries = entries.slice();
+      } else if (entries && typeof entries === 'object') {
+        entries = Object.entries(entries).map(([type, data]) => ({ type, data }));
+      } else {
+        entries = [];
+      }
+      object.ecsComponents = entries;
+      object.ecsComponentsVersion = SCENE_COMPONENTS_VERSION;
+    } else if (!Array.isArray(entries)) {
+      console.warn('[PStudio ECS] malformed versioned Component list; skipping restore:', object.id);
+      return null;
+    }
+
+    const normalized = [];
+    const seen = new Set();
+    for (const entry of entries) {
+      const type = typeof entry?.type === 'string' ? entry.type : '';
+      if (!COMPONENT_ID.test(type) || seen.has(type)) continue;
+      seen.add(type);
+      const data = entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data)
+        ? entry.data : {};
+      normalized.push({ type, data });
+    }
+    return normalized;
+  }
+
+  function serializeEntityComponents(entity, excludeTypes = [], sceneObject = null) {
+    const excluded = new Set((Array.isArray(excludeTypes) ? excludeTypes : [excludeTypes])
+      .filter(value => value !== undefined && value !== null)
+      .map(String));
+    // Preserve forward-version data verbatim. An older runtime must never
+    // downgrade a payload whose schema it cannot understand.
+    const savedEntries = sceneObject ? readSavedComponentEntries(sceneObject) : [];
+    if (sceneObject && savedEntries === null) return null;
+
+    const components = [];
+    const includedTypes = new Set();
+    for (const entry of getEntityComponents(entity)) {
+      if (!entry.persistent || excluded.has(entry.type)) continue;
+      try {
+        components.push({
+          type: entry.type,
+          data: cloneJsonValue(entry.data)
+        });
+        includedTypes.add(entry.type);
+      } catch (error) {
+        console.warn('[PStudio ECS] Component could not be serialized:', entry.type, error);
+      }
+    }
+
+    // Keep records for Component types not registered by this runtime. They may
+    // belong to another project module or a newer plugin and are not safe to drop.
+    for (const entry of savedEntries || []) {
+      if (excluded.has(entry.type) || includedTypes.has(entry.type) || componentDefinitions.has(entry.type)) continue;
+      try {
+        components.push({ type: entry.type, data: cloneJsonValue(entry.data) });
+        includedTypes.add(entry.type);
+      } catch (error) {
+        console.warn('[PStudio ECS] Unknown saved Component could not be preserved:', entry.type, error);
+      }
+    }
+    return { version: SCENE_COMPONENTS_VERSION, components };
+  }
+
+  function restoreSceneObjectComponents(entity, object) {
+    const entries = readSavedComponentEntries(object);
+    if (!entries) return;
+    for (const entry of entries) {
+      const type = entry.type;
+      if (!componentDefinitions.has(type)) continue;
+      const definition = componentDefinitions.get(type);
+      if (!definition.persistent || componentStores.get(type)?.has(entity)) continue;
+      try { addComponent(entity, type, entry.data); }
+      catch (error) { console.warn('[PStudio ECS] skipped invalid saved component:', type, error); }
+    }
+  }
+
   function syncSceneObjects(sceneObjects) {
     if (!Array.isArray(sceneObjects)) throw new TypeError('syncSceneObjects expects an array.');
     const seen = new Set();
@@ -486,6 +875,7 @@
         });
         sceneEntityByObjectId.set(objectId, entity);
         sceneSnapshots.set(entity, Object.assign({}, source));
+        restoreSceneObjectComponents(entity, object);
         continue;
       }
 
@@ -502,6 +892,7 @@
       sceneSnapshots.set(entity, Object.assign({}, canonical));
       const ref = getComponent(entity, 'SceneObjectRef');
       ref.name = String(object.name || '');
+      restoreSceneObjectComponents(entity, object);
     }
 
     for (const [objectId, entity] of Array.from(sceneEntityByObjectId.entries())) {
@@ -545,9 +936,24 @@
 
   const api = {
     registerComponent,
+    updateComponentDefinition,
+    unregisterComponent,
+    hasComponentType(type) { return componentDefinitions.has(String(type || '')); },
+    getComponentTypes,
+    getComponentDefinition,
+    getComponentDefinitions,
+    getEntityComponents,
+    serializeEntityComponents,
+    sceneComponentSchemaVersion: SCENE_COMPONENTS_VERSION,
+    getEntities,
     registerSystem,
     unregisterSystem,
     setSystemEnabled,
+    setSystemPriority,
+    setSystemPhase,
+    getSystems,
+    hasSystemsForPhase,
+    updatePhase,
     createEntity,
     destroyEntity,
     addComponent,
@@ -562,7 +968,10 @@
     clearEntities,
     setEnabled(value) { enabled = !!value; emit('enabled-changed', { enabled }); return enabled; },
     isEnabled() { return enabled; },
-    hasActiveSystems() { return enabled && orderedSystems.some(system => system.enabled); },
+    hasActiveSystems() {
+      return enabled && orderedSystems.some(system => system.enabled &&
+        (!system.components.length || system.components.every(type => componentStores.get(type)?.size > 0)));
+    },
     on(type, callback) {
       if (typeof callback !== 'function') throw new TypeError('ECS listener must be a function.');
       const key = String(type);
@@ -581,6 +990,18 @@
   };
 
   registerComponent('Transform', {
+    schema: {
+      x: { type: 'number', default: 0, label: 'Position X' },
+      y: { type: 'number', default: 0, label: 'Position Y' },
+      z: { type: 'number', default: 0, label: 'Position Z' },
+      rotationX: { type: 'number', default: 0, label: 'Rotation X' },
+      rotationY: { type: 'number', default: 0, label: 'Rotation Y' },
+      rotationZ: { type: 'number', default: 0, label: 'Rotation Z' },
+      scaleX: { type: 'number', default: 1, label: 'Scale X' },
+      scaleY: { type: 'number', default: 1, label: 'Scale Y' },
+      scaleZ: { type: 'number', default: 1, label: 'Scale Z' }
+    },
+    additionalProperties: false,
     create: () => ({ x: 0, y: 0, z: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scaleX: 1, scaleY: 1, scaleZ: 1 }),
     normalize: value => ({
       ...value,
@@ -596,6 +1017,13 @@
     })
   });
   registerComponent('SceneObjectRef', {
+    schema: {
+      sceneObjectId: { type: 'string', required: true, label: 'Scene Object ID' },
+      name: { type: 'string', default: '', label: 'Name' }
+    },
+    additionalProperties: false,
+    readonly: true,
+    persistent: false,
     validate: value => typeof value.sceneObjectId === 'string' && value.sceneObjectId.length > 0
   });
 
