@@ -64,7 +64,7 @@ function serializeGeometry(geometry, geometryIds) {
 
 const MATERIAL_TEXTURE_SLOTS = [
   'map', 'alphaMap', 'aoMap', 'bumpMap', 'normalMap', 'displacementMap',
-  'emissiveMap', 'lightMap', 'metalnessMap', 'roughnessMap', 'specularMap',
+  'emissiveMap', 'lightMap', 'metalnessMap', 'roughnessMap', 'diffuseRoughnessMap', 'specularMap',
   'clearcoatMap', 'clearcoatNormalMap', 'clearcoatRoughnessMap', 'iridescenceMap',
   'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap',
   'specularColorMap', 'specularIntensityMap', 'transmissionMap',
@@ -103,6 +103,7 @@ async function serializeMaterial(material, materialIds, textures, textureIds, im
     color: colorArray(material.color),
     emissive: colorArray(material.emissive),
     roughness: material.roughness,
+    diffuseRoughness: Number.isFinite(material.diffuseRoughness) ? material.diffuseRoughness : null,
     metalness: material.metalness,
     opacity: material.opacity,
     alphaTest: material.alphaTest,
@@ -306,7 +307,8 @@ async function serializeGLTF(gltf,assetKey='') {
         : 'MeshStandardMaterial',
       name: material.name || '',
       color: colorArray(material.color), emissive: colorArray(material.emissive),
-      roughness: material.roughness, metalness: material.metalness,
+      roughness: material.roughness, diffuseRoughness: Number.isFinite(material.diffuseRoughness) ? material.diffuseRoughness : null,
+      metalness: material.metalness,
       opacity: material.opacity, alphaTest: material.alphaTest,
       transparent: !!material.transparent, depthWrite: material.depthWrite !== false,
       depthTest: material.depthTest !== false, side: material.side,

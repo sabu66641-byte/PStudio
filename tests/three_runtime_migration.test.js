@@ -43,6 +43,10 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
   const physicalMaterial = new THREE.MeshPhysicalMaterial();
   assert.equal(physicalMaterial.iridescenceThicknessMinimum, 100);
   assert.equal(physicalMaterial.iridescenceThicknessMaximum, 400);
+  const roughPhysicalMaterial = new THREE.MeshPhysicalMaterial({ diffuseRoughness: 0.65 });
+  assert.equal(roughPhysicalMaterial.diffuseRoughness, 0.65);
+  assert.ok('diffuseRoughnessMap' in roughPhysicalMaterial);
+  roughPhysicalMaterial.dispose();
   physicalMaterial.dispose();
 
   const tsl = await import('three/tsl');

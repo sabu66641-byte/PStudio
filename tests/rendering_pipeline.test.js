@@ -1532,3 +1532,37 @@ test('GLTF worker serializes r187 iridescence thickness min/max and hydrates leg
   assert.ok(hydrate.includes('params.iridescenceThicknessMinimum'));
   assert.ok(hydrate.includes('params.iridescenceThicknessMaximum'));
 });
+
+
+test('r187 EON diffuse roughness and diffuse roughness textures travel through the GLTF worker and GLB hydrator',()=>{
+  const worker=fs.readFileSync(path.join(root,'static/pstudio_gltf_worker.js'),'utf8');
+  assert.ok(worker.includes("'diffuseRoughnessMap'"));
+  assert.ok(worker.includes('diffuseRoughness: Number.isFinite(material.diffuseRoughness)'));
+  assert.ok(renderer.includes("desc.type==='MeshPhysicalMaterial'&&Number.isFinite(desc.diffuseRoughness)"));
+  assert.ok(renderer.includes("if(textures[textureId])material[slot]=textures[textureId]"));
+});
+
+test('r187 EON diffuse roughness is an opt-in per-material override and resets to the imported default',()=>{
+  const start=renderer.indexOf('function applyModelMaterial(instance, state)');
+  const end=renderer.indexOf('function updateModelIK(instance, ik)',start);
+  assert.ok(start>=0&&end>start,'material override boundaries');
+  const apply=renderer.slice(start,end);
+  assert.ok(apply.includes('item.diffuseRoughness??null'));
+  assert.ok(apply.includes("'diffuseRoughness' in material&&Number.isFinite(defaults.diffuseRoughness)"));
+  assert.ok(apply.includes("'diffuseRoughness' in material&&Number.isFinite(override.diffuseRoughness)"));
+  assert.ok(apply.includes('Math.max(0,Math.min(1,override.diffuseRoughness))'));
+  const authoring=fs.readFileSync(path.join(root,'static/pstudio_ecs_materials.js'),'utf8');
+  assert.ok(authoring.includes('diffuseRoughness: clamp(entry.diffuseRoughness, 0, 1, 0)'));
+  assert.ok(html.includes('id="obj-model-material-diffuse-roughness"'));
+  assert.ok(html.includes('mat.diffuseRoughness??0'));
+  assert.ok(html.includes('diffuseRoughness:bounded(override.diffuseRoughness,0,1)'));
+  assert.ok(html.includes('diffuseRoughness:Math.max(0,Math.min(1,Number(document.getElementById(') && html.includes('obj-model-material-diffuse-roughness'));
+});
+
+test('r187 PMREM uses cube-render-target outputs for environment, physical sky and HDR without removed CubeUV viewport bridges',()=>{
+  assert.ok(renderer.includes('pmremGenerator.fromScene(room,0.04)'));
+  assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(texture)'));
+  assert.ok(renderer.includes('createPhysicalSkyEnvironmentTarget(T)'));
+  assert.ok(renderer.includes('pmremGenerator.fromScene(skyScene,0.04)'));
+  assert.doesNotMatch(renderer,/CubeUVReflectionMapping|renderer\.setViewport\s*\(|renderer\.setScissor\s*\(/);
+});

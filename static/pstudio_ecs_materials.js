@@ -99,6 +99,7 @@
     return {
       name: String(entry.name || '*').slice(0, 128),
       roughness: clamp(entry.roughness, 0, 1, 0.7),
+      diffuseRoughness: clamp(entry.diffuseRoughness, 0, 1, 0),
       metalness: clamp(entry.metalness, 0, 1, 0),
       color: color(entry.color, '#d1d5db'),
       doubleSide: entry.doubleSide === true,
@@ -335,6 +336,7 @@
           for (const override of normalizeOverrides(entry.config.overrides)) {
             pending.push({
               type: 'model_material', name: override.name, roughness: override.roughness,
+              diffuseRoughness: override.diffuseRoughness,
               metalness: override.metalness, color: override.color, doubleSide: override.doubleSide,
               recomputeNormals: override.recomputeNormals, emissive: override.emissive,
               emissiveIntensity: override.emissiveIntensity, toon: override.toon
