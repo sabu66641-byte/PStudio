@@ -5525,7 +5525,7 @@ void main(){
       Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
     ];
     const atmosphericLightDirection=[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)];
-    window.PStudioEnvironmentFX?.configureAtmosphere?.({
+    const environmentState=window.PStudioRenderingEnvironment?.resolvePStudioEnvironmentState?.(profile)||{
       sunDirection:skySunDirection,
       lightDirection:atmosphericLightDirection,
       sunColor:profile.atmosphereSunColor||profile.lightColor,
@@ -5540,7 +5540,8 @@ void main(){
       cloudDetail:Number.isFinite(Number(profile.cloudDetail))?Number(profile.cloudDetail):0.58,
       cloudBase:Number.isFinite(Number(profile.cloudBase))?Number(profile.cloudBase):54,
       cloudTop:Number.isFinite(Number(profile.cloudTop))?Number(profile.cloudTop):108
-    });
+    };
+    window.PStudioEnvironmentFX?.configureAtmosphere?.(environmentState);
     return profile;
   }
 
