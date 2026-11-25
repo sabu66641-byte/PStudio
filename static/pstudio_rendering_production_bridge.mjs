@@ -201,6 +201,10 @@ export function createPStudioProductionRenderingBridge(options = {}) {
       if (disposed || !host) return false;
       return host.resize(width, height, pixelRatio);
     },
+    setClusteredLightingSnapshot(snapshot) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setClusteredLightingSnapshot?.(snapshot) === true;
+    },
     async useFallback(cause) {
       if (disposed || !host) return false;
       const error = cause instanceof Error ? cause : new Error(String(cause || 'PStudio requested WebGL2 fallback.'));
