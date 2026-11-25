@@ -218,6 +218,9 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
     'function requestProductionWebGPUMigration',
     "productionRendererBridge.render()",
     'productionRendererBridge.resize(width,height,bridgePixelRatio)',
+    'const liveBlockers=getProductionWebGPUFeatureBlockers()',
+    "productionRendererBridge?.getState?.().backend==='webgl2'&&renderer&&scene&&camera",
+
     'fallbackFromWebGPUForUnsupportedFeatures(commandsByObject)',
     'productionPendingCommands=commandsByObject',
     'requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true})',
