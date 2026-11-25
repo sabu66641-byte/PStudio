@@ -25,6 +25,12 @@ function cloneUserData(value) {
 }
 
 function hasCustomShaderHook(material) {
+  const userData = material?.userData || {};
+  const csmOnly = userData.pstudioCSMOnlyHook === true
+    && userData.pstudioProbeShaderSetup !== true
+    && userData.pstudioCSMHook === material.onBeforeCompile
+    && !Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey');
+  if (csmOnly) return false;
   return Boolean(
     (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
     || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
@@ -74,6 +80,18 @@ export function createPStudioNodeMaterial(source, options = {}) {
     source.userData = originalUserData;
   }
 
+  // The WebGL CSM defines and its shader hook have a native TSL equivalent.
+  // They must not leak into the WebGPU NodeMaterial after conversion.
+  if (source.userData?.pstudioCSMOnlyHook === true && !source.userData?.pstudioProbeShaderSetup) {
+    delete safeMetadata.pstudioCSMOnlyHook;
+    delete safeMetadata.pstudioCSMSetup;
+    delete safeMetadata.pstudioCSMHook;
+    if (target.defines) {
+      delete target.defines.USE_CSM;
+      delete target.defines.CSM_CASCADES;
+      delete target.defines.CSM_FADE;
+    }
+  }
   target.userData = {
     ...safeMetadata,
     pstudioNodeMaterial: true,
@@ -113,14 +131,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       if (source) skippedMaterials += 1;
       return source;
     }
-    const hasCustomShaderHook = (
-      Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')
-      && typeof source.onBeforeCompile === 'function'
-    ) || (
-      Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')
-      && typeof source.customProgramCacheKey === 'function'
-    );
-    if (hasCustomShaderHook) {
+    if (hasCustomShaderHook(source)) {
       skippedMaterials += 1;
       skippedLegacyShaderHooks += 1;
       return source;
