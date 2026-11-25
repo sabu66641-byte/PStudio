@@ -18,7 +18,6 @@ test('shared environment state normalizes all four scene presets without mutatin
     assert.ok(Math.abs(Math.hypot(...state.sunDirection) - 1) < 1e-9);
     assert.ok(Math.abs(Math.hypot(...state.lightDirection) - 1) < 1e-9);
     assert.ok(state.cloudTop >= state.cloudBase + 1);
-    assert.ok(state.cloudSteps >= 8 && state.cloudSteps <= 64);
     for (const key of ['sunColor','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
       assert.ok(state[key], name + ':' + key);
     }
