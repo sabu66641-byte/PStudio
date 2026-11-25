@@ -206,6 +206,9 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
   const clusterStorage = TSL.storage(clusterAttribute, 'vec4', clusterAttribute.count).toReadOnly();
   const nearUniform = TSL.uniform(0.1);
   const farUniform = TSL.uniform(DEFAULT_FAR);
+  const enabledUniform = TSL.uniform(1);
+  let lastRevision = null;
+  let lastEnabled = true;
   let disposed = false;
   let uploads = 0;
   let lastLightCount = 0;
@@ -216,6 +219,7 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
     clusterStorage,
     nearUniform,
     farUniform,
+    enabledUniform,
     grid: Object.freeze({ ...grid }),
     maxLights,
     maxPerCell,
@@ -235,12 +239,15 @@ export function createPStudioTSLClusterStorage(renderer, options = {}) {
       clusterAttribute.needsUpdate = true;
       nearUniform.value = Math.max(0.001, finite(snapshot.near, 0.1));
       farUniform.value = Math.max(nearUniform.value * 1.01, finite(snapshot.far, DEFAULT_FAR));
+      lastEnabled = snapshot.enabled !== false;
+      enabledUniform.value = lastEnabled ? 1 : 0;
+      lastRevision = Number.isFinite(Number(snapshot.revision)) ? Number(snapshot.revision) : null;
       lastLightCount = Math.max(0, Math.min(maxLights, Math.floor(finite(snapshot.lightCount, 0))));
       uploads++;
       return true;
     },
     getState() {
-      return Object.freeze({ disposed, uploads, lastLightCount, lightBytes, clusterBytes, recordWidth, clusterCount });
+      return Object.freeze({ disposed, uploads, lastLightCount, lightBytes, clusterBytes, recordWidth, clusterCount, enabled: lastEnabled, revision: lastRevision });
     },
     dispose() {
       if (disposed) return false;
@@ -273,7 +280,7 @@ export function createPStudioTSLClusterIrradianceNode(storage) {
   const missing=requiredClusterTSLFunctions();
   if(missing.length)throw new Error('Three.js r187 is missing clustered TSL functions: '+missing.join(', '));
 
-  const {grid,maxPerCell,recordWidth,nearUniform,farUniform}=storage;
+  const {grid,maxPerCell,recordWidth,nearUniform,farUniform,enabledUniform}=storage;
   const lightRecords=storage.lightStorage;
   const clusterRecords=storage.clusterStorage;
   const expression=TSL.Fn(()=>{
@@ -310,7 +317,7 @@ export function createPStudioTSLClusterIrradianceNode(storage) {
       });
     });
 
-    return total;
+    return total.mul(TSL.float(enabledUniform));
   })();
 
   return new THREE.IrradianceNode(expression);
@@ -342,6 +349,7 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
   const clusteredNode=createPStudioTSLClusterIrradianceNode(storage);
   let disposed=false;
   let lastMembership='';
+  let lastRevision = Number.isFinite(Number(snapshot.revision)) ? Number(snapshot.revision) : null;
 
   for(const material of materials){
     if(material.lightsNode&&typeof material.lightsNode.getLights!=='function'){
@@ -389,9 +397,16 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
     materialCount:entries.length,
     update(nextSnapshot){
       if(disposed)return false;
-      storage.update(nextSnapshot);
-      updateLights(nextSnapshot.clusteredLights||new Set());
-      return true;
+      const revision = Number.isFinite(Number(nextSnapshot?.revision)) ? Number(nextSnapshot.revision) : null;
+      const membershipChanged = (nextSnapshot?.clusteredLights||new Set()).size !== (snapshot.clusteredLights||new Set()).size
+        || [...(nextSnapshot?.clusteredLights||new Set())].some(light => !(snapshot.clusteredLights||new Set()).has(light));
+      if(revision === null || revision !== lastRevision || membershipChanged || nextSnapshot?.enabled !== (snapshot.enabled !== false)) {
+        storage.update(nextSnapshot);
+        updateLights(nextSnapshot.clusteredLights||new Set());
+        lastRevision = revision;
+        return true;
+      }
+      return false;
     },
     getState(){
       return Object.freeze({
