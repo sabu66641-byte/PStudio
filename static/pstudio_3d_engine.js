@@ -6,6 +6,12 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
+  let productionRendererBridge = null;
+  let productionRendererPromotionStarted = false;
+  let productionRendererPromotionPromise = null;
+  let productionRendererFallbackRequested = false;
+  let productionWebGPUCompileStage = null;
+  let productionWebGPUBlockers = [];
   let rendererInitializationFailed=false;
   let postProcessingFailed=false,postProcessingFailureReason='';
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null,godRaysPass=null;
@@ -604,6 +610,158 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     occlusionRaycaster=new T.Raycaster();occlusionRaycaster.firstHitOnly=true;applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
+  function getProductionWebGPUFeatureBlockers(commandsByObject=null){
+    const blockers=[];
+    const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
+    const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
+    if(waterMaterials.size>0||Number(fx.waterMaterials)>0||Number(fx.waterDetailMaterials)>0)add('water','水面・水深・ミラー反射のTSL移植が未完了です。');
+    if(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0)add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
+    if(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0)add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
+    if(Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
+    if(Number(fx.causticMaterials)>0)add('caustics','水中コースティクスのTSL移植が未完了です。');
+    if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
+    if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
+    if(volumetricCloudsEnabled)add('volumetric-clouds','体積雲のTSL RenderPipeline移植が未完了です。');
+    if(contactShadowsEnabled)add('contact-shadows','コンタクトシャドウのTSL移植が未完了です。');
+    if(ssaoEnabled||qualityAOEnabled)add('ambient-occlusion','GTAO／SSAOのTSL移植が未完了です。');
+    if(ssrEnabled)add('screen-space-reflections','SSRのTSL移植が未完了です。');
+    if(godRaysEnabled||godRaysFallbackEnabled)add('god-rays','God RaysのTSL移植が未完了です。');
+    if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
+    if(clusteredLightingActive||clusteredLightSet.size>0)add('clustered-lighting','クラスタ照明のTSL／Storage Buffer移植が未完了です。');
+    if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
+    if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
+    if(csm)add('cascaded-shadow-maps','CSMのWebGPU向けカスケードシャドウ検証が未完了です。');
+    if(commandsByObject&&typeof commandsByObject.values==='function'){
+      for(const list of commandsByObject.values()){
+        for(const command of list||[]){
+          const type=String(command?.type||'');
+          if(['water','terrain','particles','particle_emitter','particle_emitter_stop','trail','toon_material'].includes(type)){
+            add('unported-command-'+type,'未移植の描画コマンドがシーンに含まれています: '+type);
+          }else if(type==='material'&&String(command?.shader||'')==='custom'){
+            add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
+          }else if(type==='model_material'&&command?.toon&&command.toon.enabled!==false){
+            add('toon-model-material','モデルのトゥーンマテリアルはTSL移植後に有効化してください。');
+          }else if(type==='postfx'&&(command?.ssao||command?.ssr)){
+            add('postfx-command','SSAO／SSRを含むポストプロセスはTSL移植後に有効化してください。');
+          }
+        }
+      }
+    }
+    return blockers;
+  }
+
+  function publishProductionRendererRuntime(snapshot={}){
+    const backend=snapshot.backend==='webgpu'?'webgpu':'webgl2';
+    const previous=window.PStudioRenderingRuntime||{};
+    window.PStudioRenderingRuntime=Object.freeze({
+      ...previous,
+      activeSceneBackend:backend,
+      webgpuSceneSessionReady:backend==='webgpu'&&snapshot.state==='ready',
+      productionBridgeState:String(snapshot.state||'idle'),
+      productionBridgeStage:snapshot.stage||null,
+      productionBridgeBlockers:Object.freeze([...(snapshot.blockers||productionWebGPUBlockers||[])])
+    });
+    try{
+      window.dispatchEvent(new CustomEvent('pstudio-production-renderer-state-changed',{detail:{
+        backend,state:snapshot.state||'idle',stage:snapshot.stage||null,
+        blockers:snapshot.blockers||productionWebGPUBlockers||[]
+      }}));
+    }catch(_){}
+  }
+
+  function requestProductionWebGPUMigration(options={}){
+    if(!renderer||!scene||!camera)return Promise.resolve(false);
+    if(productionRendererPromotionPromise)return productionRendererPromotionPromise;
+    if(!window.PStudioProductionRenderingBridgeFactory)return Promise.resolve(false);
+
+    const existingState=productionRendererBridge?.getState?.();
+    if(options.retry===true&&productionRendererBridge&&
+       (existingState?.state==='fallback'||existingState?.state==='failed')){
+      try{productionRendererBridge.dispose();}catch(_){}
+      productionRendererBridge=null;
+      productionRendererFallbackRequested=false;
+    }
+
+    if(!productionRendererBridge){
+      try{
+        const factory=window.PStudioProductionRenderingBridgeFactory;
+        productionRendererBridge=factory({
+          legacyCanvas:canvas,scene,camera,documentRef:document,navigatorRef:window.navigator,
+          pipelineOptions:{bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false},
+          configureRenderer:webgpuRenderer=>{
+            webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
+            webgpuRenderer.toneMapping=window.THREE.ACESFilmicToneMapping;
+            webgpuRenderer.toneMappingExposure=1.12;
+            if(webgpuRenderer.shadowMap)webgpuRenderer.shadowMap.enabled=true;
+            const rect=canvas.getBoundingClientRect();
+            const width=Math.max(1,Math.floor(rect.width||canvas.clientWidth||1));
+            const height=Math.max(1,Math.floor(rect.height||canvas.clientHeight||1));
+            const ratio=Math.max(0.5,Math.min(4.5,Number(renderer.getPixelRatio?.())||1));
+            webgpuRenderer.setPixelRatio?.(ratio);
+            webgpuRenderer.setSize(width,height,false);
+          },
+          environmentProfile:window.PStudioSceneEnvironment?.getPreset?.(activeEnvironmentPreset)||undefined,
+          canPromote:()=>{
+            const blockers=getProductionWebGPUFeatureBlockers();
+            productionWebGPUBlockers=blockers;
+            return{allowed:blockers.length===0,blockers};
+          },
+          onStageChange:(stage,details)=>{
+            productionWebGPUCompileStage=stage==='converting-materials'||stage==='compiling'?stage:null;
+            if(stage==='failed'||stage==='ready'||stage==='disposed')productionWebGPUCompileStage=null;
+            publishProductionRendererRuntime({
+              state:stage==='failed'?'failed':'initializing-webgpu',
+              backend:'webgl2',stage,blockers:productionWebGPUBlockers
+            });
+          },
+          onStateChange:snapshot=>{
+            if(snapshot.state==='ready'&&snapshot.backend==='webgpu'){
+              productionWebGPUCompileStage=null;
+              productionRendererFallbackRequested=false;
+            }else if(snapshot.state==='fallback'||snapshot.state==='failed'||snapshot.state==='disposed'){
+              productionWebGPUCompileStage=null;
+            }
+            productionWebGPUBlockers=snapshot.blockers||productionWebGPUBlockers;
+            publishProductionRendererRuntime(snapshot);
+          }
+        });
+      }catch(error){
+        productionWebGPUBlockers=[{id:'bridge-construction',message:String(error?.message||error)}];
+        publishProductionRendererRuntime({state:'failed',backend:'webgl2',blockers:productionWebGPUBlockers});
+        return Promise.resolve(false);
+      }
+    }
+
+    productionWebGPUBlockers=productionRendererBridge.evaluate?.().blockers||productionWebGPUBlockers;
+    productionRendererPromotionPromise=Promise.resolve()
+      .then(()=>productionRendererBridge.initialize())
+      .catch(error=>{
+        productionWebGPUCompileStage=null;
+        productionWebGPUBlockers=[{id:'webgpu-initialization',message:String(error?.message||error)}];
+        console.warn('[PStudio] WebGPU scene promotion failed; the existing WebGL2 renderer remains active.',error);
+        publishProductionRendererRuntime({state:'failed',backend:'webgl2',blockers:productionWebGPUBlockers});
+        return false;
+      })
+      .finally(()=>{productionRendererPromotionPromise=null;});
+    return productionRendererPromotionPromise;
+  }
+
+  function fallbackFromWebGPUForUnsupportedFeatures(commandsByObject){
+    if(!productionRendererBridge||productionRendererFallbackRequested)return;
+    if(productionRendererBridge.getState?.().backend!=='webgpu')return;
+    const blockers=getProductionWebGPUFeatureBlockers(commandsByObject);
+    if(!blockers.length)return;
+    productionRendererFallbackRequested=true;
+    productionWebGPUBlockers=blockers;
+    const error=new Error('The active scene enabled a feature that has not completed its WebGPU/TSL port.');
+    error.code='PSTUDIO_WEBGPU_FEATURE_NOT_PORTED';
+    error.details=blockers;
+    productionRendererBridge.useFallback(error).catch(fallbackError=>{
+      productionRendererFallbackRequested=false;
+      console.error('[PStudio] WebGL2 recovery after an unsupported WebGPU feature failed.',fallbackError);
+    });
+  }
+
   function renderingBackendStatus(){
     let migration=null;
     try{
@@ -611,12 +769,18 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     }catch(error){
       migration={productionReady:false,error:String(error?.message||error)};
     }
+    const bridge=productionRendererBridge?.getState?.()||null;
+    const active=bridge?.backend==='webgpu'?'webgpu':'webgl2';
     return Object.freeze({
-      active:renderer?.backend?.isWebGPUBackend===true?'webgpu':'webgl2',
+      active,
       target:'webgpu-tsl',
       webgpuAvailable:!!migration?.webgpuAvailable,
-      productionReady:migration?.productionReady===true,
+      productionReady:false,
+      sceneSessionReady:active==='webgpu'&&bridge?.state==='ready',
       sceneReady:migration?.sceneReady??null,
+      promotionState:bridge?.state||'not-started',
+      promotionStage:bridge?.stage||null,
+      promotionBlockers:bridge?.blockers||productionWebGPUBlockers,
       blockers:migration?.blockers||[]
     });
   }
@@ -652,6 +816,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       if(waterDepthTarget){const size=renderer.getDrawingBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      if(productionRendererBridge){
+        const ratio=Number(renderer.getPixelRatio?.())||1;
+        productionRendererBridge.resize(width,height,ratio);
+      }
       lastSize = { width, height };
     }
   }
@@ -1291,6 +1459,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    // Keep the last valid WebGL frame on screen while legacy PBR materials are
+    // converted and the WebGPU pipeline is compiled; never render mixed material backends.
+    if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')return;
     const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
     applyCameraShake();camera.updateMatrixWorld(true);
     const frameStarted=window.performance?.now?.()??Date.now();
@@ -1310,6 +1481,21 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     updateEditorGridPresentation();
     updateClusteredLighting();
     updateRenderingFrameBudget();
+    if(productionRendererBridge?.getState?.().backend==='webgpu'){
+      const started=window.performance?.now?.()??Date.now();
+      try{
+        if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
+      }catch(error){
+        productionRendererBridge.useFallback(error).catch(fallbackError=>{
+          console.error('[PStudio] WebGPU frame failure and WebGL2 recovery both failed.',error,fallbackError);
+        });
+      }finally{
+        lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+        pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
+        updatePerformanceMonitor(window.performance?.now?.()??Date.now());
+      }
+      return;
+    }
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     const hiddenStaticSky=[];
@@ -6175,6 +6361,13 @@ void main(){
     for(const instance of pendingFrameInstances)frameCameraToModel(instance);
     refreshSelectionOutline();
     updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
+    fallbackFromWebGPUForUnsupportedFeatures(commandsByObject);
+    if(!productionRendererPromotionStarted){
+      productionRendererPromotionStarted=true;
+      requestProductionWebGPUMigration({automatic:true}).catch(error=>{
+        console.warn('[PStudio] Automatic WebGPU scene promotion was not completed; WebGL2 remains active.',error);
+      });
+    }
   }
   function clear() {
     if (!renderer) return;
@@ -6262,6 +6455,12 @@ void main(){
   window.PStudio3D = {
     render,
     getRenderingBackendStatus:renderingBackendStatus,
+    requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true}),
+    getWebGPUMigrationDiagnostics:()=>Object.freeze({
+      bridge:productionRendererBridge?.getState?.()||null,
+      blockers:Object.freeze(getProductionWebGPUFeatureBlockers()),
+      compileStage:productionWebGPUCompileStage
+    }),
     clear,
     frameObject,
     adjustZoom:adjustCameraZoom,

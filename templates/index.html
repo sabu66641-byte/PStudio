@@ -2997,9 +2997,12 @@ try {
   try {
     const productionRendererHost = await import('/static/pstudio_rendering_production_host.mjs?v=20261125-webgpu-canvas-host-phase2-v1');
     window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost;
+    const productionBridge = await import('/static/pstudio_rendering_production_bridge.mjs?v=20261125-production-scene-bridge-v1');
+    window.PStudioProductionRenderingBridgeFactory = productionBridge.createPStudioProductionRenderingBridge;
   } catch (error) {
     window.PStudioProductionRendererHostFactory = null;
-    console.warn('[PStudio] Dual-canvas WebGPU/WebGL renderer host unavailable; existing renderer startup remains active.', error);
+    window.PStudioProductionRenderingBridgeFactory = null;
+    console.warn('[PStudio] Production WebGPU scene bridge unavailable; the existing WebGL2 renderer remains active.', error);
   }
   try {
     window.PStudioReflector = (await import('three/addons/objects/Reflector.js')).Reflector;
