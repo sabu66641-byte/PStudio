@@ -23,7 +23,7 @@
   let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0,dynamicResolutionMetricSource='unavailable';
   const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
   let lastFrameRenderStats={calls:0,triangles:0,points:0,geometries:0,textures:0};
-  let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
+  let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastFrameIntervalSampleAt=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
@@ -416,12 +416,12 @@
       const frameInterval=Number(lastFrameIntervalMs)||0;
       // Frame pacing is the fallback when timer queries are absent, disjoint or stale.
       // Ignore background-tab pauses, initial frames and long scheduling stalls.
-      if(!pageVisible||!lastDrawFrameStartedAt||frameInterval<8||frameInterval>100){
+      if(!pageVisible||!lastFrameIntervalSampleAt||now-lastFrameIntervalSampleAt>250||frameInterval<1||frameInterval>100){
         dynamicResolutionMetricSource='unavailable';
         return false;
       }
       sampleMs=frameInterval;
-      sampleAt=lastDrawFrameStartedAt;
+      sampleAt=lastFrameIntervalSampleAt;
       source='frame-interval-fallback';
     }
     if(!sampleAt||sampleAt===dynamicResolutionLastSampleAt)return false;
@@ -1226,7 +1226,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const frameStarted=window.performance?.now?.()??Date.now();
     if(lastDrawFrameStartedAt){
       const interval=frameStarted-lastDrawFrameStartedAt;
-      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;pushMetricSample(frameIntervalSamples,interval);}
+      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);}
     }
     lastDrawFrameStartedAt=frameStarted;
     // Update the camera's world matrix before positioning camera-relative celestial meshes.
