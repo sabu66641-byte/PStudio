@@ -862,28 +862,6 @@
     return complete;
   }
 
-  function sceneComponentPayloadFingerprint(object) {
-    const payload = object.ecsComponents;
-    let hash = 2166136261;
-    const append = value => {
-      const type = typeof value === 'string' ? value : '';
-      for (let index = 0; index < type.length; index++) {
-        hash ^= type.charCodeAt(index);
-        hash = Math.imul(hash, 16777619);
-      }
-      hash ^= 255;
-      hash = Math.imul(hash, 16777619);
-    };
-    if (Array.isArray(payload)) {
-      for (const entry of payload) append(entry?.type);
-    } else if (payload && typeof payload === 'object') {
-      for (const type in payload) {
-        if (Object.prototype.hasOwnProperty.call(payload, type)) append(type);
-      }
-    }
-    return hash >>> 0;
-  }
-
   function sceneComponentPayloadCount(object) {
     const payload = object.ecsComponents;
     if (Array.isArray(payload)) return payload.length;
@@ -897,11 +875,9 @@
     const payload = object.ecsComponents;
     const version = object.ecsComponentsVersion ?? 0;
     const count = sceneComponentPayloadCount(object);
-    const fingerprint = sceneComponentPayloadFingerprint(object);
     const cached = sceneComponentPayloadSnapshots.get(entity);
     if (cached && cached.version === version && cached.payload === payload &&
-        cached.count === count && cached.fingerprint === fingerprint &&
-        cached.definitionRevision === componentDefinitionRevision) return;
+        cached.count === count && cached.definitionRevision === componentDefinitionRevision) return;
 
     if (!restoreSceneObjectComponents(entity, object)) {
       sceneComponentPayloadSnapshots.delete(entity);
@@ -911,7 +887,6 @@
       version: object.ecsComponentsVersion ?? 0,
       payload: object.ecsComponents,
       count: sceneComponentPayloadCount(object),
-      fingerprint: sceneComponentPayloadFingerprint(object),
       definitionRevision: componentDefinitionRevision
     });
   }
