@@ -2906,7 +2906,14 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       if(desc.attenuationColor)params.attenuationColor=color(desc.attenuationColor);
       if(desc.sheenColor)params.sheenColor=color(desc.sheenColor);
       if(desc.specularColor)params.specularColor=color(desc.specularColor);
-      if(Array.isArray(desc.iridescenceThicknessRange))params.iridescenceThicknessRange=desc.iridescenceThicknessRange;
+      if(Number.isFinite(desc.iridescenceThicknessMinimum)||Number.isFinite(desc.iridescenceThicknessMaximum)){
+        params.iridescenceThicknessMinimum=Number.isFinite(desc.iridescenceThicknessMinimum)?desc.iridescenceThicknessMinimum:100;
+        params.iridescenceThicknessMaximum=Number.isFinite(desc.iridescenceThicknessMaximum)?desc.iridescenceThicknessMaximum:400;
+      }else if(Array.isArray(desc.iridescenceThicknessRange)){
+        // Accept packets produced by older PStudio workers, but hydrate through r187's fields.
+        params.iridescenceThicknessMinimum=Number.isFinite(desc.iridescenceThicknessRange[0])?desc.iridescenceThicknessRange[0]:100;
+        params.iridescenceThicknessMaximum=Number.isFinite(desc.iridescenceThicknessRange[1])?desc.iridescenceThicknessRange[1]:400;
+      }
       if(Array.isArray(desc.normalScale))params.normalScale=new T.Vector2(...desc.normalScale);
       const Constructors={MeshPhysicalMaterial:T.MeshPhysicalMaterial,MeshStandardMaterial:T.MeshStandardMaterial,MeshBasicMaterial:T.MeshBasicMaterial,MeshLambertMaterial:T.MeshLambertMaterial,MeshPhongMaterial:T.MeshPhongMaterial,MeshToonMaterial:T.MeshToonMaterial,LineBasicMaterial:T.LineBasicMaterial,PointsMaterial:T.PointsMaterial};
       const Constructor=Constructors[desc.type]||T.MeshStandardMaterial;
