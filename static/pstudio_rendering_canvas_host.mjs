@@ -38,7 +38,7 @@ export function createPStudioRendererCanvasHost(options = {}) {
   const parentOriginalIsolation = parent.style?.isolation || '';
   let changedParentPosition = false;
   let disposed = false;
-  let activeBackend = 'webgpu';
+  let activeBackend = null;
 
   function setStyle(element, key, value) {
     if (element.style?.setProperty) element.style.setProperty(key, value);
@@ -70,7 +70,11 @@ export function createPStudioRendererCanvasHost(options = {}) {
       fallbackCanvas.setAttribute?.('aria-label', 'PStudio WebGL compatibility renderer');
     }
     if (insertedByHost) parent.insertBefore(fallbackCanvas, primaryCanvas.nextSibling);
-    activate(activeBackend);
+    for (const canvas of elements) {
+      setStyle(canvas, 'pointer-events', 'none');
+      setStyle(canvas, 'visibility', 'hidden');
+      canvas.setAttribute?.('aria-hidden', 'true');
+    }
   }
 
   function activate(backend) {
