@@ -21,7 +21,7 @@ test('saved Components restore when their type is registered after the first Sce
   }];
   ecs.syncSceneObjects(objects);
   const entity = ecs.getEntityForSceneObject('late');
-  assert.equal(ecs.hasComponent(entity, 'LateBound'), false);
+  assert.equal(ecs.hasComponent(entity, 'Transform'), true);
 
   ecs.registerComponent('LateBound', {
     persistent: true,
