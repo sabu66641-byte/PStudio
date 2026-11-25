@@ -58,7 +58,7 @@ export function buildPStudioClusteredLightData(options = {}) {
   const lights = [];
 
   for (const light of options.lights || []) {
-    if (!light?.isPointLight || light.visible === false || finite(light.intensity, 0) <= 0) continue;
+    if (!light?.isPointLight || finite(light.intensity, 0) <= 0) continue;
     if (lights.length >= maxLights) {
       nativeFallbackLights.add(light);
       continue;
