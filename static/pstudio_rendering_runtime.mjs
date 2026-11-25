@@ -27,6 +27,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
   let state = 'idle';
   let active = null;
   let initialization = null;
+  let fallbackInitialization = null;
   let disposed = false;
   let generation = 0;
   let lastError = null;
@@ -38,6 +39,53 @@ export function createPStudioProductionRendererRuntime(options = {}) {
 
   function isCurrent(ticket) {
     return !disposed && ticket === generation && !controller.signal.aborted;
+  }
+
+  async function activateFallback(cause, ticket = generation) {
+    if (!allowFallback || typeof createFallback !== 'function') return false;
+    if (!isCurrent(ticket)) return false;
+    if (active?.backend === 'webgl2') return active;
+    if (fallbackInitialization) return fallbackInitialization;
+
+    fallbackInitialization = (async () => {
+      let fallback = null;
+      publish('initializing-fallback', { cause });
+      try {
+        fallback = await createFallback({
+          canvas: fallbackCanvas,
+          webgpuCanvas: canvas,
+          scene,
+          camera,
+          signal: controller.signal,
+          cause
+        });
+        if (!isCurrent(ticket)) {
+          fallback?.dispose?.();
+          throw new Error('Fallback initialization was superseded.');
+        }
+        if (!fallback || typeof fallback.render !== 'function') {
+          fallback?.dispose?.();
+          throw new TypeError('Fallback adapter must provide render().');
+        }
+        const previous = active;
+        active = Object.freeze({
+          backend: fallback.backend || 'webgl2',
+          handle: fallback,
+          render: () => fallback.render(),
+          dispose: () => fallback.dispose?.()
+        });
+        try { previous?.dispose?.(); } catch (_) {}
+        publish('ready', { backend: active.backend, fallback: true, cause });
+        return active;
+      } catch (error) {
+        lastError = error;
+        if (isCurrent(ticket)) publish('failed', { backend: null, error, cause });
+        throw error;
+      }
+    })().finally(() => {
+      fallbackInitialization = null;
+    });
+    return fallbackInitialization;
   }
 
   async function initialize() {
@@ -66,11 +114,24 @@ export function createPStudioProductionRendererRuntime(options = {}) {
             if (!isCurrent(ticket)) return;
             publish('device-lost', { backend: 'webgpu', deviceLoss: info });
             try { options.onDeviceLost?.(info); } catch (_) {}
+            const cause = new Error(String(info?.message || 'The WebGPU device was lost.'));
+            cause.code = 'PSTUDIO_WEBGPU_DEVICE_LOST';
+            cause.details = info || null;
+            activateFallback(cause, ticket).catch(() => {});
           }
         });
         if (!isCurrent(ticket)) {
           webgpu?.dispose?.();
           throw new Error('Renderer initialization was superseded.');
+        }
+        if (fallbackInitialization) {
+          await fallbackInitialization;
+          webgpu?.dispose?.();
+          if (active) return active;
+        }
+        if (active?.backend === 'webgl2') {
+          webgpu?.dispose?.();
+          return active;
         }
         if (!webgpu || typeof webgpu.render !== 'function') {
           webgpu?.dispose?.();
@@ -91,34 +152,13 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           publish('failed', { backend: null, error });
           throw error;
         }
-        publish('initializing-fallback', { previousError: error });
-        let fallback = null;
         try {
-          fallback = await createFallback({
-            canvas: fallbackCanvas,
-            webgpuCanvas: canvas,
-            scene,
-            camera,
-            signal: controller.signal,
-            cause: error
-          });
-          if (!isCurrent(ticket)) {
-            fallback?.dispose?.();
-            throw new Error('Fallback initialization was superseded.');
-          }
-          if (!fallback || typeof fallback.render !== 'function') {
-            throw new TypeError('Fallback adapter must provide render().');
-          }
-          active = Object.freeze({
-            backend: fallback.backend || 'webgl2',
-            handle: fallback,
-            render: () => fallback.render(),
-            dispose: () => fallback.dispose?.()
-          });
-          publish('ready', { backend: active.backend, fallback: true, previousError: error });
-          return active;
+          const fallback = await activateFallback(error, ticket);
+          if (fallback) return fallback;
+          publish('failed', { backend: null, error });
+          throw error;
         } catch (fallbackError) {
-          if (isCurrent(ticket)) publish('failed', { backend: null, error: fallbackError, previousError: error });
+          if (isCurrent(ticket) && state !== 'failed') publish('failed', { backend: null, error: fallbackError, previousError: error });
           throw fallbackError;
         }
       }
