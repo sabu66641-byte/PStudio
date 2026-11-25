@@ -32,6 +32,7 @@ export function createPStudioProductionRendererHost(options = {}) {
     initialize: runtime.initialize,
     render: runtime.render,
     resize: runtime.resize,
+    setClusteredLightingSnapshot: runtime.setClusteredLightingSnapshot,
     useFallback: runtime.useFallback,
     getState() {
       return Object.freeze({
