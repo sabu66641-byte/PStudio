@@ -1,4 +1,4 @@
-import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs';
+import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs?v=20261126-cluster-live-v1';
 import { createPStudioRendererCanvasHost } from './pstudio_rendering_canvas_host.mjs';
 
 /**
