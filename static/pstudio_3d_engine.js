@@ -3709,49 +3709,77 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
   function scheduleAutoLODPump(){
     if(autoLODPumpScheduled||!autoLODQueue.length)return;
     autoLODPumpScheduled=true;
-    const pump=deadline=>{
-      autoLODPumpScheduled=false;
-      const job=autoLODQueue[0];
-      if(!job)return;
-      const {geometry,token,count,levels,specs,modifier}=job;
-      if(geometry.userData?.pstudioLODToken!==token||geometry.userData?.pstudioLODDisposed){
-        if(geometry.userData?.pstudioLODToken===token)geometry.userData.pstudioAutoLODGenerating=false;
-        job.done=true;
-        autoLODQueue.shift();scheduleAutoLODPump();return;
-      }
-      if(deadline&&typeof deadline.timeRemaining==='function'&&deadline.timeRemaining()<8){
-        scheduleAutoLODPump();return;
-      }
-      const spec=specs[job.nextSpec++];
-      if(spec){
-        try{
-          const lod=modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));
-          if(!lod?.attributes?.position||lod.attributes.position.count>=count*0.94)lod?.dispose?.();
-          else{
-            lod.computeBoundingSphere?.();
-            lod.computeVertexNormals?.();
-            levels.push({geometry:lod,distance:spec.distance,owned:true});
-          }
-        }catch(error){
-          console.warn('[PStudio] Automatic LOD generation skipped:',error);
-          job.failed=true;
-          job.nextSpec=specs.length;
+    const pump=async deadline=>{
+      try{
+        const job=autoLODQueue[0];
+        if(!job)return;
+        const {geometry,token,count,levels,specs,modifier}=job;
+        const isCurrent=()=>geometry.userData?.pstudioLODToken===token&&!geometry.userData?.pstudioLODDisposed;
+        if(!isCurrent()){
+          if(geometry.userData?.pstudioLODToken===token)geometry.userData.pstudioAutoLODGenerating=false;
+          job.done=true;
+          autoLODQueue.shift();
+          return;
         }
+        if(deadline&&typeof deadline.timeRemaining==='function'&&deadline.timeRemaining()<8)return;
+        const spec=specs[job.nextSpec++];
+        if(spec){
+          let lod=null;
+          try{
+            // SimplifyModifier.modify() is asynchronous since r186 because it waits
+            // for MeshoptSimplifier.ready. Keep the queue serial while it resolves.
+            lod=await modifier.modify(geometry,Math.max(1,Math.floor(count*(1-spec.keep))));
+          }catch(error){
+            console.warn('[PStudio] Automatic LOD generation skipped:',error);
+            job.failed=true;
+            job.nextSpec=specs.length;
+          }
+          if(lod){
+            // The source geometry may have been replaced or disposed while meshopt ran.
+            // Never attach a result generated from a stale source.
+            if(!isCurrent()){
+              lod.dispose?.();
+              if(geometry.userData?.pstudioLODToken===token)geometry.userData.pstudioAutoLODGenerating=false;
+              job.done=true;
+              autoLODQueue.shift();
+              return;
+            }
+            if(!lod.attributes?.position||lod.attributes.position.count>=count*0.94)lod.dispose?.();
+            else{
+              lod.computeBoundingSphere?.();
+              lod.computeVertexNormals?.();
+              levels.push({geometry:lod,distance:spec.distance,owned:true});
+            }
+          }
+        }
+        if(isCurrent())geometry.userData.pstudioAutoLODLevels=levels;
+        if(job.nextSpec<specs.length)return;
+        if(isCurrent()){
+          geometry.userData.pstudioAutoLODGenerating=false;
+          job.done=true;
+          try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length,sharedGeometry:true});}catch(_){}
+        }else{
+          for(const level of levels)if(level.owned)level.geometry.dispose?.();
+          job.done=true;
+        }
+        autoLODQueue.shift();
+      }catch(error){
+        const failedJob=autoLODQueue[0];
+        if(failedJob){
+          console.warn('[PStudio] Automatic LOD queue task failed:',error);
+          failedJob.failed=true;
+          failedJob.nextSpec=failedJob.specs.length;
+          failedJob.done=true;
+          if(failedJob.geometry.userData?.pstudioLODToken===failedJob.token)failedJob.geometry.userData.pstudioAutoLODGenerating=false;
+          autoLODQueue.shift();
+        }
+      }finally{
+        autoLODPumpScheduled=false;
+        if(autoLODQueue.length)scheduleAutoLODPump();
       }
-      geometry.userData.pstudioAutoLODLevels=levels;
-      if(job.nextSpec<specs.length){scheduleAutoLODPump();return;}
-      if(geometry.userData.pstudioLODToken===token&&!geometry.userData.pstudioLODDisposed){
-        geometry.userData.pstudioAutoLODGenerating=false;
-        job.done=true;
-        try{window.PStudioEvents?.emit('render.lod.generated',{trianglesBefore:geometry.index?.count/3||count/3,levels:levels.length,sharedGeometry:true});}catch(_){}
-      }else{
-        for(const level of levels)if(level.owned)level.geometry.dispose?.();
-        job.done=true;
-      }
-      autoLODQueue.shift();scheduleAutoLODPump();
     };
-    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(pump);
-    else window.setTimeout(()=>pump(null),250);
+    if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(deadline=>{void pump(deadline);},{timeout:1000});
+    else window.setTimeout(()=>{void pump(null);},250);
   }
   function scheduleAutoLOD(object,geometry){
     const Modifier=window.PStudioSimplifyModifier,pos=geometry?.attributes?.position,count=pos?.count||0;
