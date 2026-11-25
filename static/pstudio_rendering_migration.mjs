@@ -4,14 +4,17 @@ import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs?v=
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v2';
+import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v1';
+
+export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '本番WebGPUの実機負荷・長時間動作・WebGL2復旧の回帰検証' }),
-  Object.freeze({ id: 'legacy-materials', label: '地形・水面・植生・VFXのカスタムGLSLをTSLへ移植' }),
-  Object.freeze({ id: 'environment-effects', label: '物理大気散乱・体積雲・高度フォグ・水面反射の環境表現を移植' }),
-  Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・SH GI・水面反射のTSL／WebGPU移植' }),
+  Object.freeze({ id: 'legacy-materials', label: '認定済みTSLアダプター対象外の独自GLSL・拡張材質を移植' }),
+  Object.freeze({ id: 'environment-effects', label: '体積雲・高度フォグ・水中コースティクスのTSL移植' }),
+  Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・静的／動的SH GI・プローブキャプチャのTSL／WebGPU移植' }),
   Object.freeze({ id: 'post-processing', label: 'EffectComposer依存のGTAO・SSR・霧・雲・AA等をRenderPipelineへ移植' }),
   Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
   Object.freeze({ id: 'parity-validation', label: '実ブラウザー／実GPUで画質・性能・長時間動作の同等性を検証' })
@@ -133,7 +136,9 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'standard/physical PBR NodeMaterial conversion',
       'TSL RenderPipeline with shared beauty/depth/packed-view-normal frame resources and Bloom',
       'TSL atmospheric sky and shared equirectangular PBR IBL',
-      'shared frame-budget and environment-state modules'
+      'shared frame-budget and environment-state modules',
+      'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
+      'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass'
     ]),
     blockers: Object.freeze(blockers)
   });
@@ -164,6 +169,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let pipelineHandle = null;
   let csmHandle = null;
   let surfaceHandle = null;
+  let waterDepthHandle = null;
+  let waterSurfaceHandle = null;
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
@@ -234,6 +241,23 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     reportStage('porting-surface-features', { materialCount: materialConversion.convertedMaterials || 0 });
     surfaceHandle = applyPStudioTSLSurfaceFeatures(scene, { environmentProfile });
 
+    let hasWaterMaterials = false;
+    scene.traverse((object) => {
+      if (!object?.isMesh || !object.material) return;
+      const assigned = Array.isArray(object.material) ? object.material : [object.material];
+      if (assigned.some((material) => material?.userData?.pstudioTSLFeatures?.includes('water'))) {
+        hasWaterMaterials = true;
+      }
+    });
+    if (hasWaterMaterials) {
+      reportStage('porting-water-depth-and-reflections');
+      waterDepthHandle = createPStudioTSLWaterDepthPrepass(renderer, scene, camera);
+      waterSurfaceHandle = applyPStudioTSLWaterSurfaces(scene, {
+        depthTexture: waterDepthHandle.depthTexture
+      });
+      await waterDepthHandle.compile();
+    }
+
     environmentHandle = createPStudioTSLEnvironment(scene, {
       profile: environmentProfile,
       camera,
@@ -284,6 +308,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         if (disposed || (deviceLoss && deviceLoss.reason !== 'destroyed')) return false;
         environmentHandle?.updateCamera?.(camera);
         csmHandle?.updateCamera?.(camera);
+        waterDepthHandle?.prepareFrame?.();
         return pipelineHandle.render();
       },
       setEnvironment(profile) {
@@ -307,6 +332,12 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
             materialCount: surfaceHandle?.materialCount || 0,
             features: surfaceHandle?.features || Object.freeze([])
           }),
+          water: Object.freeze({
+            active: !!waterSurfaceHandle,
+            waterMeshes: waterSurfaceHandle?.waterMeshes || 0,
+            reflectorCount: waterSurfaceHandle?.reflectorCount || 0,
+            depthPrepass: waterDepthHandle?.getState?.() || null
+          }),
           materials: Object.freeze({
             convertedMeshes: materialConversion?.convertedMeshes || 0,
             convertedMaterials: materialConversion?.convertedMaterials || 0,
@@ -320,6 +351,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { pipelineHandle?.dispose?.(); } catch (_) {}
         try { environmentHandle?.dispose?.(); } catch (_) {}
         try { csmHandle?.dispose?.(); } catch (_) {}
+        try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
+        try { waterDepthHandle?.dispose?.(); } catch (_) {}
         try { surfaceHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
@@ -332,6 +365,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { pipelineHandle?.dispose?.(); } catch (_) {}
     try { environmentHandle?.dispose?.(); } catch (_) {}
     try { csmHandle?.dispose?.(); } catch (_) {}
+    try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
+    try { waterDepthHandle?.dispose?.(); } catch (_) {}
     try { surfaceHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
     try { backendHandle?.dispose?.(); } catch (_) {}
