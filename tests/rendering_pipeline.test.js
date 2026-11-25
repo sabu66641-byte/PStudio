@@ -1387,7 +1387,7 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
     "from './pstudio_rendering_backend.mjs'",
-    "from './pstudio_rendering_materials.mjs'",
+    "from './pstudio_rendering_materials.mjs?v=20261125-safe-pbr1'",
     "from './pstudio_rendering_pipeline.mjs'",
     'createPStudioWebGPUBackend({',
     'convertPStudioScenePBRMaterials(scene)',
@@ -1425,6 +1425,13 @@ test('WebGPU PBR and TSL pilot uses shared backend, material conversion and Rend
   assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
   assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
   assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);
+});
+
+test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks += 1'));
+  assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks,'));
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{

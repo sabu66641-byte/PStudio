@@ -71,9 +71,24 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
   let convertedMeshes = 0;
   let skippedMaterials = 0;
 
+  let skippedLegacyShaderHooks = 0;
   const convertOne = (source) => {
     if (!isPStudioLegacyPBRMaterial(source)) {
       if (source) skippedMaterials += 1;
+      return source;
+    }
+    // Custom GLSL hooks are not represented by standard/physical PBR state.
+    // Keep these materials intact until their shader behavior has a TSL port.
+    const hasCustomShaderHook = (
+      Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')
+      && typeof source.onBeforeCompile === 'function'
+    ) || (
+      Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')
+      && typeof source.customProgramCacheKey === 'function'
+    );
+    if (hasCustomShaderHook) {
+      skippedMaterials += 1;
+      skippedLegacyShaderHooks += 1;
       return source;
     }
     if (!converted.has(source)) converted.set(source, createPStudioNodePBRMaterial(source, options));
@@ -107,6 +122,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
     convertedMaterials: converted.size,
     convertedMeshes,
     skippedMaterials,
+    skippedLegacyShaderHooks,
     disposeSourceMaterials() {
       if (released) return false;
       released = true;
