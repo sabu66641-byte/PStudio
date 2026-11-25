@@ -48,7 +48,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-tsl-ibl-session-v2'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
@@ -1384,15 +1384,15 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'id="webgpu-lab-open"',
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
-    'pstudio_webgpu_lab.mjs?v=20261125-tsl-ibl-lab-v2',
+    'pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261125-tsl-ibl-session-v2'
+    'pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261125-tsl-ibl-session-v2'",
+    "from './pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
