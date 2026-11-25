@@ -29,13 +29,15 @@ export function isPStudioTSLSurfaceFeatureMaterial(material) {
   const approvedHookMatches = typeof material?.onBeforeCompile === 'function'
     && material.pstudioTSLPortApprovedCompileHook === material.onBeforeCompile
     && material.pstudioTSLPortApprovedCacheKey === material.customProgramCacheKey;
+  const convertedSurfaceCertificate = material?.isNodeMaterial === true
+    && material.pstudioTSLSurfacePreflightApproved === true;
   const knownCSMHook = data.pstudioCSMOnlyHook === true
     && data.pstudioProbeShaderSetup !== true
     && data.pstudioCSMHook === material?.onBeforeCompile
     && material.pstudioTSLPortApprovedCacheKey === material.customProgramCacheKey;
   return data.pstudioTSLPortVersion === 1
     && data.pstudioTSLPortHasForeignHook !== true
-    && (approvedHookMatches || knownCSMHook)
+    && (approvedHookMatches || knownCSMHook || convertedSurfaceCertificate)
     && features.length > 0
     && features.every((feature) => SUPPORTED_FEATURES.has(feature));
 }
