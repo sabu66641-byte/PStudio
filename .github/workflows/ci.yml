@@ -42,5 +42,8 @@ jobs:
       - name: Check standalone WebGPU lab module syntax
         run: node --check static/pstudio_webgpu_lab.mjs
 
+      - name: Check production 3D engine syntax
+        run: node --check static/pstudio_3d_engine.js
+
       - name: Run JavaScript regression tests
         run: node --test tests/*.test.js
