@@ -23,6 +23,8 @@ function readSettings(material) {
   const bounds = settings.bounds || {};
   return Object.freeze({
     waterfall: settings.waterfall === true,
+    mirrorOnly: settings.mirrorOnly === true,
+    waveStrength: Math.max(0, Math.min(1, finite(settings.waveStrength, 0.05)),
     amplitude: Math.max(0, Math.min(0.5, finite(settings.amplitude, 0.105))),
     minX: finite(bounds.minX, -50),
     minZ: finite(bounds.minZ, -50),
@@ -172,6 +174,27 @@ function buildWaterNodes(material, settings, depthTexture, object, reflectors) {
   });
   object.add(reflectorNode.target);
   reflectors.push({ object, node: reflectorNode });
+
+  if (settings.mirrorOnly) {
+    const reflectorUV = reflectorNode.uvNode;
+    const ripple = TSL.vec2(
+      reflectorUV.y.mul(190).add(t.mul(0.65)).sin(),
+      reflectorUV.x.mul(170).sub(t.mul(0.52)).cos()
+    ).mul(0.008 * settings.waveStrength);
+    reflectorNode.uvNode = reflectorUV.add(ripple);
+    material.colorNode = TSL.mix(
+      TSL.color(material.color),
+      reflectorNode.rgb,
+      settings.reflectivity
+    );
+    material.roughnessNode = TSL.float(0.012);
+    material.metalnessNode = TSL.float(0);
+    material.side = THREE.DoubleSide;
+    material.transparent = false;
+    material.depthWrite = true;
+    material.needsUpdate = true;
+    return;
+  }
 
   const facing = TSL.max(viewNormal.dot(TSL.positionViewDirection), 0);
   const fresnel = TSL.float(0.02).add(
