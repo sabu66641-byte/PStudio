@@ -42,6 +42,9 @@
   let particleClock=0,lastRenderDurationMs=0;
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
+  const renderingFrameBudgetController=window.PStudioRenderingBudget?.createPStudioFrameBudgetController?.()||null;
+  const renderingFrameBudget=renderingFrameBudgetController?.state||{source:'unavailable',measuredMs:null,targetFrameMs:16.67,resourcePressure:0,scale:1,mirrorIntervalFrames:1,mirrorResolutionScale:1,giCaptureAllowed:true,giCadenceMultiplier:1,cloudStepScale:1,fogStepScale:1,contactShadowStepScale:1,revision:0};
+  let frameBudgetCurrentPosition=null,frameBudgetPreviousPosition=null,frameBudgetCurrentDirection=null,frameBudgetPreviousDirection=null,frameBudgetCameraValid=false,lastFrameBudgetEventRevision=-1;
   function dynamicProbeCaptureIntervalMs(renderMs,gpuFresh){
     const helper=window.PStudioRenderingGI?.dynamicProbeCaptureIntervalMs;
     return typeof helper==='function'?helper(renderMs,gpuFresh):DYNAMIC_PROBE_UPDATE_INTERVAL_MS;
@@ -725,9 +728,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function mirrorWaterResolutionScale(){
     const hardware=qualityHardwareCapabilities();
-    // Match the scene's pixel detail unless the device has entered memory-safety mode.
-    if(memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0))return 0.86;
-    return 1.0;
+    const base=memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0;
+    return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
@@ -800,7 +802,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(!mirrors.length)return 0;
     mirrorWaterFrameCounter++;
     const touch=Number(window.navigator?.maxTouchPoints||0)>0;
-    const updateInterval=touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1;
+    const updateInterval=renderingFrameBudgetController
+      ?Math.max(1,Math.floor(Number(renderingFrameBudget.mirrorIntervalFrames)||1))
+      :touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1;
     const forceRefresh=mirrors.some(mesh=>!mesh.userData.pstudioMirrorWater.hasRendered);
     if(mirrorWaterFrameCounter%updateInterval!==0&&!forceRefresh)return mirrors.length;
     const size=renderer.getDrawingBufferSize(new T.Vector2());
@@ -1103,6 +1107,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       adaptiveLevel:adaptiveQualityLevel,mobilePostFxBudget:adaptiveTouchPostFxBudget,
       renderEffects:{ao:qualityAOEnabled,ssr:ssrEnabled,volumetricClouds:volumetricCloudsEnabled,volumetricFog:volumetricFogEnabled,contactShadows:contactShadowsEnabled},
       dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource,
+      frameBudget:{source:renderingFrameBudget.source,scale:Number(renderingFrameBudget.scale.toFixed(3)),mirrorIntervalFrames:renderingFrameBudget.mirrorIntervalFrames,mirrorResolutionScale:Number(renderingFrameBudget.mirrorResolutionScale.toFixed(3)),giCaptureAllowed:renderingFrameBudget.giCaptureAllowed,giCadenceMultiplier:renderingFrameBudget.giCadenceMultiplier,cloudStepScale:Number(renderingFrameBudget.cloudStepScale.toFixed(3)),fogStepScale:Number(renderingFrameBudget.fogStepScale.toFixed(3)),contactShadowStepScale:Number(renderingFrameBudget.contactShadowStepScale.toFixed(3))},
       renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
       dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates,captureResolution:qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64,nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs(gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs,gpuFresh)},
       note:'FPS is based on renderer redraw intervals. GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percentage is GPU render time divided by 16.67 ms, not total GPU utilization.'
@@ -1133,6 +1138,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
       'Quality: '+stats.quality.toUpperCase()+'  |  Scale: '+Math.round(stats.dynamicResolutionScale*100)+'%  |  DPR: '+(stats.renderPixelRatio===null?'—':stats.renderPixelRatio.toFixed(2)),
       'Dynamic resolution source: '+stats.dynamicResolutionSource,
+      'Shared frame budget: '+stats.frameBudget.scale+'  |  Mirror: '+stats.frameBudget.mirrorIntervalFrames+'f  |  GI: '+(stats.frameBudget.giCaptureAllowed?'allowed':'paused'),
       'Dynamic GI: '+(stats.dynamicGI.enabled?'ON':'OFF')+' / '+stats.dynamicGI.status+' ('+stats.dynamicGI.validProbes+'/'+stats.dynamicGI.totalProbes+')',
       'Timing: '+stats.timingSource+(stats.memorySafety?'  |  MEMORY SAFETY':''),
       'Post FX: '+(stats.postProcessing.failed?'direct-render fallback':'composer available'),
@@ -1218,6 +1224,52 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(nightTwinkleStars.material?.uniforms?.uMoonDirectionWorld&&moonDirection)nightTwinkleStars.material.uniforms.uMoonDirectionWorld.value.copy(moonDirection);
     if(nightTwinkleStars.material?.uniforms?.uMoonOcclusion)nightTwinkleStars.material.uniforms.uMoonOcclusion.value=moonMesh?.visible?1:0;
   }
+  function updateRenderingFrameBudget(){
+    if(!renderingFrameBudgetController||!renderer||!camera)return renderingFrameBudget;
+    const T=window.THREE,now=window.performance?.now?.()??Date.now();
+    if(!frameBudgetCurrentPosition){
+      frameBudgetCurrentPosition=new T.Vector3();frameBudgetPreviousPosition=new T.Vector3();
+      frameBudgetCurrentDirection=new T.Vector3();frameBudgetPreviousDirection=new T.Vector3();
+    }
+    camera.getWorldPosition(frameBudgetCurrentPosition);
+    camera.getWorldDirection(frameBudgetCurrentDirection);
+    const cameraMoving=!frameBudgetCameraValid||
+      frameBudgetCurrentPosition.distanceToSquared(frameBudgetPreviousPosition)>0.0004||
+      frameBudgetCurrentDirection.dot(frameBudgetPreviousDirection)<0.9997;
+    frameBudgetPreviousPosition.copy(frameBudgetCurrentPosition);
+    frameBudgetPreviousDirection.copy(frameBudgetCurrentDirection);
+    frameBudgetCameraValid=true;
+    const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
+    const frameFresh=lastFrameIntervalSampleAt>0&&now-lastFrameIntervalSampleAt<250;
+    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    const dynamicScene=waterMaterials.size>0||dynamicLights.size>0||dynamicGIEnabled||
+      volumetricCloudsEnabled||particleEmitters.size>0||trailEffects.size>0;
+    const revision=renderingFrameBudget.revision;
+    renderingFrameBudgetController.update(
+      gpuFresh?lastGpuRenderDurationMs:0,
+      gpuFresh,
+      frameFresh?lastFrameIntervalMs:0,
+      touch?20:16.67,
+      lastMemoryPressure,
+      cameraMoving,
+      dynamicScene,
+      true,
+      dynamicGIEnabled
+    );
+    window.PStudioEnvironmentFX?.setFrameBudget?.(renderingFrameBudget);
+    if(renderingFrameBudget.revision!==revision&&renderingFrameBudget.revision!==lastFrameBudgetEventRevision){
+      lastFrameBudgetEventRevision=renderingFrameBudget.revision;
+      try{window.PStudioEvents?.emit('render.frame-budget.changed',{
+        source:renderingFrameBudget.source,scale:Number(renderingFrameBudget.scale.toFixed(3)),
+        mirrorIntervalFrames:renderingFrameBudget.mirrorIntervalFrames,
+        mirrorResolutionScale:Number(renderingFrameBudget.mirrorResolutionScale.toFixed(3)),
+        giCaptureAllowed:renderingFrameBudget.giCaptureAllowed,
+        giCadenceMultiplier:renderingFrameBudget.giCadenceMultiplier
+      });}catch(_){}
+    }
+    return renderingFrameBudget;
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
@@ -1238,6 +1290,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     applyEditorOverlayVisibility();
     updateEditorGridPresentation();
     updateClusteredLighting();
+    updateRenderingFrameBudget();
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     const hiddenStaticSky=[];
@@ -1829,7 +1882,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!dynamicProbeDirty.some(Boolean)){dynamicGIStatus='ready';return;}
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     const recentRenderMs=gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs;
-    const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh);
+    if(renderingFrameBudgetController&&!renderingFrameBudget.giCaptureAllowed)return;
+    const captureInterval=dynamicProbeCaptureIntervalMs(recentRenderMs,gpuFresh)*
+      (renderingFrameBudgetController?Math.max(1,Number(renderingFrameBudget.giCadenceMultiplier)||1):1);
     if(now-lastDynamicProbeUpdateAt<captureInterval)return;
     if(recentRenderMs>(gpuFresh?12:7))return;
     const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
