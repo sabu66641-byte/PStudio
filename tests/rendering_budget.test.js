@@ -93,8 +93,8 @@ test('renderer, planar reflections, Dynamic GI and post FX consume the shared br
   const budgetEnd=engine.indexOf('function drawFrame()',budgetStart);
   assert.ok(budgetStart>=0&&budgetEnd>budgetStart,'budget controller integration boundaries');
   const budgetIntegration=engine.slice(budgetStart,budgetEnd);
-  assert.doesNotMatch(budgetIntegration,/waterMaterials\\.size/,'water surfaces are hidden during reflection and should not alone force refreshes');
-  assert.match(budgetIntegration,/dynamicLights\\.size>0/);
-  assert.match(budgetIntegration,/activeEnvironmentPreset==='night'/);
+  assert.equal(budgetIntegration.includes('waterMaterials.size'),false,'water surfaces are hidden during reflection and should not alone force refreshes');
+  assert.ok(budgetIntegration.includes('dynamicLights.size>0'));
+  assert.ok(budgetIntegration.includes("activeEnvironmentPreset==='night'"));
   assert.ok(html.includes('pstudio_rendering_budget.js?v=20261125-frame-budget-v1'));
 });
