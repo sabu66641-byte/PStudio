@@ -2,18 +2,27 @@ import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_
 import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261125-node-material-families-v1';
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
+import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
+
+export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '本番WebGPUの実機負荷・長時間動作・WebGL2復旧の回帰検証' }),
   Object.freeze({ id: 'legacy-materials', label: '地形・水面・植生・VFXのカスタムGLSLをTSLへ移植' }),
   Object.freeze({ id: 'environment-effects', label: '物理大気散乱・体積雲・高度フォグ・水面反射の環境表現を移植' }),
-  Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・SH GI・CSM・水面反射のTSL／WebGPU移植' }),
+  Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・SH GI・水面反射のTSL／WebGPU移植' }),
   Object.freeze({ id: 'post-processing', label: 'EffectComposer依存のGTAO・SSR・霧・雲・AA等をRenderPipelineへ移植' }),
   Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
   Object.freeze({ id: 'parity-validation', label: '実ブラウザー／実GPUで画質・性能・長時間動作の同等性を検証' })
 ]);
 
 function hasCustomShaderHooks(material) {
+  const userData = material?.userData || {};
+  const csmOnly = userData.pstudioCSMOnlyHook === true
+    && userData.pstudioProbeShaderSetup !== true
+    && userData.pstudioCSMHook === material.onBeforeCompile
+    && !Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey');
+  if (csmOnly) return false;
   return Boolean(
     (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
     || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
@@ -116,6 +125,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
     productionReady: false,
     completedFoundations: Object.freeze([
       'strict WebGPU backend initialization',
+      'native TSL CSMShadowNode with reversible WebGL CSM hand-off',
       'production dual-canvas bridge with compatibility-gated WebGPU promotion and WebGL2 recovery',
       'production scene frame-loop, resize and staged material-conversion handoff',
       'standard/physical PBR NodeMaterial conversion',
@@ -150,6 +160,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let materialConversion = null;
   let environmentHandle = null;
   let pipelineHandle = null;
+  let csmHandle = null;
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
@@ -223,8 +234,14 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     });
     environmentHandle.updateCamera(camera);
 
+    if (options.csm?.enabled !== false && options.csm) {
+      reportStage('initializing-csm', { cascades: options.csm.cascades || 3 });
+      csmHandle = createPStudioTSLCascadeShadows(scene, camera, options.csm);
+    }
+
     reportStage('compiling', { convertedMaterials: materialConversion.convertedMaterials || 0 });
     await renderer.compileAsync(scene, camera);
+    csmHandle?.updateCamera?.(camera, true);
     if (options.signal?.aborted) {
       const error = new Error('WebGPU scene session initialization was cancelled.');
       error.name = 'AbortError';
@@ -259,6 +276,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       render() {
         if (disposed || (deviceLoss && deviceLoss.reason !== 'destroyed')) return false;
         environmentHandle?.updateCamera?.(camera);
+        csmHandle?.updateCamera?.(camera);
         return pipelineHandle.render();
       },
       setEnvironment(profile) {
@@ -277,6 +295,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           capabilities,
           pipeline: pipelineHandle?.getState?.() || null,
           environment: environmentHandle?.getState?.() || null,
+          csm: csmHandle?.getState?.() || null,
           materials: Object.freeze({
             convertedMeshes: materialConversion?.convertedMeshes || 0,
             convertedMaterials: materialConversion?.convertedMaterials || 0,
@@ -289,6 +308,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         disposed = true;
         try { pipelineHandle?.dispose?.(); } catch (_) {}
         try { environmentHandle?.dispose?.(); } catch (_) {}
+        try { csmHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
         reportStage('disposed');
@@ -299,6 +319,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     reportStage('failed', { message: String(error?.message || error) });
     try { pipelineHandle?.dispose?.(); } catch (_) {}
     try { environmentHandle?.dispose?.(); } catch (_) {}
+    try { csmHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
     try { backendHandle?.dispose?.(); } catch (_) {}
     throw error;
