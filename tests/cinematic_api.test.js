@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const runtime = fs.readFileSync(path.join(root, 'static', 'pstudio_engine.js'), 'utf8');
+const ecsTime = fs.readFileSync(path.join(root, 'static', 'pstudio_ecs_time.js'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'static', 'pstudio_3d_engine.js'), 'utf8');
 const fxSource = fs.readFileSync(path.join(root, 'static', 'pstudio_environment_fx.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
@@ -26,16 +27,20 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
   assert.match(runtime, /case 'set_god_rays': if\(a\.length===2\)/);
 });
 
-test('time scale is initialized per Play session and scales browser simulation delta', () => {
-  assert.match(runtime, /timeScale:1/);
-  assert.match(runtime, /runtime\.timeScale=Math\.max\(0,Math\.min\(4,finite\(a\[0\]\)\)\)/);
-  assert.match(runtime, /const timeScale=Math\.max\(0,Math\.min\(4,Number\(runtime\?\.timeScale\?\?1\)\)\)/);
-  assert.match(runtime, /const dt=Math\.min\(0\.1,raw\*timeScale\)/);
+test('time scale is owned by ECS TimeState while preserving the browser simulation delta contract', () => {
+  assert.equal(runtime.includes('runtime.timeScale'), false);
+  assert.ok(runtime.includes('window.PStudioECSTime?.setTimeScale(a[0])'));
+  assert.ok(runtime.includes('window.PStudioECSTime.beginFrame(raw)'));
+  assert.ok(runtime.includes('window.PStudioECSTime.start()'));
+  assert.ok(runtime.includes('window.PStudioECSTime?.clear?.()'));
+  assert.ok(ecsTime.includes('timeScale: 1'));
+  assert.ok(ecsTime.includes('MAX_TIME_SCALE = 4'));
+  assert.ok(ecsTime.includes('MAX_DELTA_TIME = 0.1'));
+  assert.ok(ecsTime.includes('Math.min(MAX_DELTA_TIME, raw * state.timeScale)'));
   assert.match(runtime, /requires3D:needs3D/);
   assert.match(runtime, /runtime\?\.requires3D\|\|has3D/);
   assert.match(renderer, /frameDelta=Number\.isFinite\(value\)\?Math\.max\(0,Math\.min\(0\.1,value\)\):1\/60/);
 });
-
 test('camera shake is transient and restores the authored camera transform after each draw', () => {
   assert.match(runtime, /window\.PStudio3D\?\.cameraShake\?\.\(intensity,duration\)/);
   assert.match(renderer, /function triggerCameraShake\(intensity,duration\)/);
@@ -88,7 +93,7 @@ test('the Scene API help and technical docs describe all four cinematic calls', 
     assert.ok(readme.includes(name), name + ' in README');
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
-  assert.match(html, /pstudio_engine\.js\?v=20261122-step4-cinematic1/);
+  assert.match(html, /pstudio_engine\.js\?v=20261125-ecs-scene-sync-phase24-r1/);
   assert.match(html, /pstudio_3d_engine\.js\?v=20261122-step4-cinematic1/);
   assert.match(html, /pstudio_environment_fx\.js\?v=20261122-step4-cinematic1/);
 });
