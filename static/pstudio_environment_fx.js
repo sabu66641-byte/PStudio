@@ -843,8 +843,14 @@
       pass.uniforms.uCloudSteps.value=steps;
       pass.uniforms.uCloudLightSteps.value=lightSteps;
       pass.userData=pass.userData||{};
-      pass.userData.pstudioCloudQuality={preset,adaptiveLevel:level,steps,lightSteps};
+      pass.userData.pstudioCloudQuality={preset,adaptiveLevel:level,steps,baseSteps:steps,frameBudgetScale:1,lightSteps};
       return {...pass.userData.pstudioCloudQuality};
+    };
+    pass.setFrameBudgetScale=scale=>{
+      const quality=pass.userData?.pstudioCloudQuality;if(!quality)return false;
+      const factor=Math.max(.45,Math.min(1,Number(scale)||1));
+      const next=Math.max(8,Math.min(64,Math.round((Number(quality.baseSteps)||Number(quality.steps)||8)*factor)));
+      pass.uniforms.uCloudSteps.value=next;quality.steps=next;quality.frameBudgetScale=factor;return true;
     };
     pass.configureAtmosphere=(settings={})=>{
       const uniforms=pass.uniforms;
@@ -938,8 +944,14 @@
       const steps=Math.max(4,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uSteps.value=steps;
       pass.userData=pass.userData||{};
-      pass.userData.pstudioContactShadowQuality={preset,adaptiveLevel:level,steps};
+      pass.userData.pstudioContactShadowQuality={preset,adaptiveLevel:level,steps,baseSteps:steps,frameBudgetScale:1};
       return {...pass.userData.pstudioContactShadowQuality};
+    };
+    pass.setFrameBudgetScale=scale=>{
+      const quality=pass.userData?.pstudioContactShadowQuality;if(!quality)return false;
+      const factor=Math.max(.45,Math.min(1,Number(scale)||1));
+      const next=Math.max(4,Math.min(32,Math.round((Number(quality.baseSteps)||Number(quality.steps)||4)*factor)));
+      pass.uniforms.uSteps.value=next;quality.steps=next;quality.frameBudgetScale=factor;return true;
     };
     const render=pass.render.bind(pass);
     pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
@@ -1050,8 +1062,14 @@
       const steps=Math.max(6,Math.min(32,Math.round(base*factor)));
       pass.uniforms.uFogSteps.value=steps;
       pass.userData=pass.userData||{};
-      pass.userData.pstudioFogQuality={preset,adaptiveLevel:level,steps};
+      pass.userData.pstudioFogQuality={preset,adaptiveLevel:level,steps,baseSteps:steps,frameBudgetScale:1};
       return {...pass.userData.pstudioFogQuality};
+    };
+    pass.setFrameBudgetScale=scale=>{
+      const quality=pass.userData?.pstudioFogQuality;if(!quality)return false;
+      const factor=Math.max(.45,Math.min(1,Number(scale)||1));
+      const next=Math.max(6,Math.min(32,Math.round((Number(quality.baseSteps)||Number(quality.steps)||6)*factor)));
+      pass.uniforms.uFogSteps.value=next;quality.steps=next;quality.frameBudgetScale=factor;return true;
     };
     const render=pass.render.bind(pass);
     pass.render=function(renderer,writeBuffer,readBuffer,delta,mask){
@@ -1066,6 +1084,12 @@
 
   window.PStudioEnvironmentFX={
     configureObject,configureTerrain,configureWater,configureFoliage,configureToon,configureUnderwater,configureParallax,configureTriplanar,update,createGodRaysPass,createContactShadowPass,createVolumetricFogPass,createVolumetricCloudPass,
+    setFrameBudget(settings={}){
+      for(const pass of cloudPasses)pass.setFrameBudgetScale?.(settings.cloudStepScale);
+      for(const pass of fogPasses)pass.setFrameBudgetScale?.(settings.fogStepScale);
+      for(const pass of contactShadowPasses)pass.setFrameBudgetScale?.(settings.contactShadowStepScale);
+      return true;
+    },
     configureAtmosphere(settings={}){
       const direction=settings.lightDirection||settings.sunDirection;
       const applyDirection=uniform=>{

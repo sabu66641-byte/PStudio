@@ -18,7 +18,6 @@ test('shared environment state normalizes all four scene presets without mutatin
     assert.ok(Math.abs(Math.hypot(...state.sunDirection) - 1) < 1e-9);
     assert.ok(Math.abs(Math.hypot(...state.lightDirection) - 1) < 1e-9);
     assert.ok(state.cloudTop >= state.cloudBase + 1);
-    assert.ok(state.cloudSteps >= 8 && state.cloudSteps <= 64);
     for (const key of ['sunColor','fogColor','fogAmbientColor','waterReflectionTint','waterShallow','waterDeep','waterFoam']) {
       assert.ok(state[key], name + ':' + key);
     }
@@ -45,7 +44,7 @@ test('environment state clamps invalid values and uses deterministic water color
   assert.equal(state.cloudDetail, 1);
   assert.equal(state.cloudBase, 100);
   assert.equal(state.cloudTop, 101);
-  assert.equal(state.cloudSteps, 64);
+  // Volumetric march steps are owned by the pass quality controller, not environment state.
   assert.equal(state.waterAbsorption, 0);
   assert.equal(state.waterReflectionTint, environment.waterDefaults.dusk.reflection);
   assert.ok(Object.isFrozen(state));
