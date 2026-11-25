@@ -36,13 +36,13 @@ function loadBackupValidator() {
 function loadProjectImportHarness({ failPersist = false } = {}) {
   const html = read('templates/index.html');
   const helpers = [
-    extract(html, 'function safeProjectName(', '\\nasync function exportProjectBackup'),
-    extract(html, 'function validateBackupDataUrl(', '\\nasync function exportNativeEcsProject'),
-    extract(html, 'function decodeBackupBase64(', '\\nfunction validateBackupDataUrl'),
-    extract(html, 'function copySavedEcsComponentPayload(', '\\nfunction validateAndBuildBackup'),
-    extract(html, 'function validateAndBuildBackup(', '\\nasync function importProjectBackup'),
-    extract(html, 'async function importProjectBackup(', '\\nfunction loadProject(')
-  ].join('\\n\\n');
+    extract(html, 'function safeProjectName(', '\nasync function exportProjectBackup'),
+    extract(html, 'function validateBackupDataUrl(', '\nasync function exportNativeEcsProject'),
+    extract(html, 'function decodeBackupBase64(', '\nfunction validateBackupDataUrl'),
+    extract(html, 'function copySavedEcsComponentPayload(', '\nfunction validateAndBuildBackup'),
+    extract(html, 'function validateAndBuildBackup(', '\nasync function importProjectBackup'),
+    extract(html, 'async function importProjectBackup(', '\nfunction loadProject(')
+  ].join('\n\n');
 
   const assets = new Map([['tree.glb', new Blob(['old-model'], { type: 'model/old' })]]);
   const storage = new Map([['PSTUDIO_PROJECT', 'previous-storage']]);
