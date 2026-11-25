@@ -724,6 +724,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             }else if(snapshot.state==='ready'&&snapshot.backend==='webgl2'){
               productionWebGPUCompileStage=null;
               productionRendererFallbackRequested=false;
+              window.requestAnimationFrame(()=>{
+                if(productionRendererBridge?.getState?.().backend==='webgl2'&&renderer&&scene&&camera)drawFrame();
+              });
             }else if(snapshot.state==='fallback'||snapshot.state==='failed'||snapshot.state==='disposed'){
               productionWebGPUCompileStage=null;
             }
@@ -1500,6 +1503,11 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     updateClusteredLighting();
     updateRenderingFrameBudget();
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
+      const liveBlockers=getProductionWebGPUFeatureBlockers();
+      if(liveBlockers.length){
+        fallbackFromWebGPUForUnsupportedFeatures();
+        return;
+      }
       const started=window.performance?.now?.()??Date.now();
       try{
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
