@@ -29,7 +29,7 @@ test('cinematic APIs are game-only AST built-ins with strict arity', () => {
 
 test('time scale is owned by ECS TimeState while preserving the browser simulation delta contract', () => {
   assert.equal(runtime.includes('runtime.timeScale'), false);
-  assert.ok(runtime.includes('window.PStudioECSTime?.setTimeScale(a[0])'));
+  assert.ok(runtime.includes('window.PStudioECSTime.setTimeScale(a[0])'));
   assert.ok(runtime.includes('window.PStudioECSTime.beginFrame(raw)'));
   assert.ok(runtime.includes('window.PStudioECSTime.start()'));
   assert.ok(runtime.includes('window.PStudioECSTime?.clear?.()'));
