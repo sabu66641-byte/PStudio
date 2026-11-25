@@ -1,7 +1,7 @@
 // GLTFLoader imports the bare specifier "three". Module workers do not inherit the
 // document import map, so use a self-contained ESM bundle for the parser.
-import { GLTFLoader } from 'https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js?bundle';
-import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/meshopt_decoder.module.js';
+import { GLTFLoader } from 'https://esm.sh/three@0.187.0/examples/jsm/loaders/GLTFLoader.js?bundle';
+import { MeshoptDecoder } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/meshopt_decoder.module.js';
 const TRANSFERS = new Set();
 const VIRTUAL_IMAGES = new Map();
 
@@ -433,9 +433,9 @@ async function parseGLB(message) {
   let ktx2Loader=null;
   if ((json.extensionsUsed || []).includes('KHR_texture_basisu')) {
     try {
-      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/KTX2Loader.js?bundle');
+      const module = await import('https://esm.sh/three@0.187.0/examples/jsm/loaders/KTX2Loader.js?bundle');
       ktx2Loader = new module.KTX2Loader();
-      ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/');
+      ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/basis/');
       ktx2Loader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
       const support=message.textureSupport||{};
       const extensions={
@@ -462,9 +462,9 @@ async function parseGLB(message) {
   let dracoLoader=null;
   if ((json.extensionsUsed || []).includes('KHR_draco_mesh_compression')) {
     try {
-      const module = await import('https://esm.sh/three@0.160.0/examples/jsm/loaders/DRACOLoader.js?bundle');
+      const module = await import('https://esm.sh/three@0.187.0/examples/jsm/loaders/DRACOLoader.js?bundle');
       dracoLoader = new module.DRACOLoader();
-      dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
+      dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/draco/');
       dracoLoader.setWorkerLimit(Math.max(1,Math.min(2,Number(self.navigator?.deviceMemory)||2)));
       loader.setDRACOLoader(dracoLoader);
     } catch (cause) {
