@@ -16,6 +16,7 @@ const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs
 const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
+const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
 
 
 test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
