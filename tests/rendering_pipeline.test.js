@@ -17,6 +17,7 @@ const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
 const webgpuSurface = fs.readFileSync(path.join(root, 'static/pstudio_rendering_surface_tsl.mjs'), 'utf8');
+const webgpuWater = fs.readFileSync(path.join(root, 'static/pstudio_rendering_water_tsl.mjs'), 'utf8');
 const environmentFX = fs.readFileSync(path.join(root, 'static/pstudio_environment_fx.js'), 'utf8');
 const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
 const webgpuEnvironmentTSL = fs.readFileSync(path.join(root, 'static/pstudio_rendering_environment_tsl.mjs'), 'utf8');
@@ -50,7 +51,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v2'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-water-tsl-v1'));
   assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v2'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
@@ -1390,12 +1391,12 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v2'
+    'pstudio_rendering_migration.mjs?v=20261126-water-tsl-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v2'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-water-tsl-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1469,9 +1470,9 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-tsl-water-gates-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-tsl-surface-v2'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-tsl-water-v1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
@@ -1899,4 +1900,151 @@ test('TSL surface setup rolls back earlier material graphs when a later feature 
   foliage.dispose();
   invalidTerrain.dispose();
   geometry.dispose();
+});
+
+
+test('pinned Three.js r187 exports native TSL water reflection and depth APIs',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  assert.equal(typeof THREE.MeshBasicNodeMaterial,'function');
+  assert.equal(typeof THREE.RenderTarget,'function');
+  assert.equal(typeof THREE.DepthTexture,'function');
+  for(const name of ['reflector','screenUV','perspectiveDepthToViewZ','cameraNear','cameraFar','modelNormalMatrix','positionView','positionViewDirection','time','uv','vertexColor']) {
+    assert.ok(TSL[name]!==undefined,name);
+  }
+});
+
+test('TSL water surfaces clone materials per mesh, create ReflectorNode targets and restore on disposal',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLWaterSurfaces}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(20,20,16,16);
+  const original=new THREE.MeshStandardNodeMaterial({color:0x65d9bf});
+  original.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water'],
+    pstudioWaterTSLSettings:{
+      waterfall:false,amplitude:.105,
+      bounds:{minX:-10,minZ:-10,width:20,depth:20},
+      shallow:'#65d9bf',deep:'#08727d',foam:'#e3fff6',
+      reflectivity:.92,reflectionResolutionScale:.5,absorption:.19
+    }
+  };
+  original.pstudioTSLSurfacePreflightApproved=true;
+  const waterMesh=new THREE.Mesh(geometry,original);
+  waterMesh.userData.pstudioWaterSurface=true;
+  scene.add(waterMesh);
+  const depthTexture=new THREE.DepthTexture(8,8,THREE.UnsignedIntType);
+  const handle=applyPStudioTSLWaterSurfaces(scene,{depthTexture});
+  assert.equal(handle.waterMeshes,1);
+  assert.equal(handle.reflectorCount,1);
+  assert.notEqual(waterMesh.material,original);
+  assert.ok(waterMesh.material.colorNode?.isNode);
+  assert.ok(waterMesh.material.positionNode?.isNode);
+  assert.ok(waterMesh.material.normalNode?.isNode);
+  assert.ok(waterMesh.children.some(child=>child.isObject3D));
+  assert.equal(waterMesh.userData.pstudioWaterTSLActive,true);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(waterMesh.material,original);
+  assert.equal(waterMesh.children.length,0);
+  assert.equal(waterMesh.userData.pstudioWaterTSLActive,undefined);
+  original.dispose();
+  geometry.dispose();
+  depthTexture.dispose();
+});
+
+test('TSL water depth prepass restores scene and renderer state after successful compile and render',async()=>{
+  const THREE=await import('three/webgpu');
+  const {createPStudioTSLWaterDepthPrepass}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera();
+  const originalOverride=new THREE.MeshBasicNodeMaterial();
+  scene.overrideMaterial=originalOverride;
+  const waterMaterial=new THREE.MeshStandardNodeMaterial();
+  const opaqueMaterial=new THREE.MeshStandardNodeMaterial();
+  const transparentMaterial=new THREE.MeshBasicNodeMaterial({transparent:true});
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(4,4),waterMaterial);
+  water.userData.pstudioWaterSurface=true;
+  const opaque=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),opaqueMaterial);
+  const transparent=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),transparentMaterial);
+  scene.add(water,opaque,transparent);
+
+  const previousTarget={name:'previous-target'};
+  const previousMRT={name:'previous-mrt'};
+  let currentTarget=previousTarget,currentMRT=previousMRT;
+  const shadowMap={autoUpdate:true},xr={enabled:true};
+  let compileCalls=0,renderCalls=0;
+  const renderer={
+    autoClear:false,shadowMap,xr,
+    getDrawingBufferSize(value){return value.set(32,24);},
+    getRenderTarget(){return currentTarget;},
+    getMRT(){return currentMRT;},
+    setMRT(value){currentMRT=value;},
+    setRenderTarget(value){currentTarget=value;},
+    clear(){},
+    async compileAsync(){
+      compileCalls++;
+      assert.equal(water.visible,false);
+      assert.equal(transparent.visible,false);
+      assert.ok(scene.overrideMaterial?.isMeshBasicNodeMaterial);
+    },
+    render(){
+      renderCalls++;
+      assert.equal(water.visible,false);
+      assert.equal(transparent.visible,false);
+      assert.equal(opaque.visible,true);
+      assert.equal(currentTarget?.isRenderTarget,true);
+    }
+  };
+  const handle=createPStudioTSLWaterDepthPrepass(renderer,scene,camera);
+  assert.equal(await handle.compile(),true);
+  assert.equal(handle.prepareFrame(),true);
+  assert.equal(compileCalls,1);
+  assert.equal(renderCalls,1);
+  assert.equal(water.visible,true);
+  assert.equal(transparent.visible,true);
+  assert.equal(scene.overrideMaterial,originalOverride);
+  assert.equal(currentTarget,previousTarget);
+  assert.equal(currentMRT,previousMRT);
+  assert.equal(renderer.autoClear,false);
+  assert.equal(shadowMap.autoUpdate,true);
+  assert.equal(xr.enabled,true);
+  assert.equal(handle.getState().preparedFrames,1);
+  assert.equal(handle.dispose(),true);
+  originalOverride.dispose();
+  waterMaterial.dispose();opaqueMaterial.dispose();transparentMaterial.dispose();
+  water.geometry.dispose();opaque.geometry.dispose();transparent.geometry.dispose();
+});
+
+test('TSL water depth prepass restores visibility and render targets when rendering fails',async()=>{
+  const THREE=await import('three/webgpu');
+  const {createPStudioTSLWaterDepthPrepass}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera();
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicNodeMaterial());
+  water.userData.pstudioWaterSurface=true;
+  scene.add(water);
+  const previousTarget={name:'previous-target'};
+  let target=previousTarget;
+  const renderer={
+    autoClear:false,
+    getDrawingBufferSize(value){return value.set(16,16);},
+    getRenderTarget(){return target;},
+    getMRT(){return null;},
+    setMRT(){},
+    setRenderTarget(value){target=value;},
+    clear(){},
+    render(){throw new Error('simulated render failure');}
+  };
+  const handle=createPStudioTSLWaterDepthPrepass(renderer,scene,camera);
+  assert.throws(()=>handle.prepareFrame(),/depth prepass failed/);
+  assert.equal(water.visible,true);
+  assert.equal(target,previousTarget);
+  assert.equal(scene.overrideMaterial,null);
+  assert.equal(renderer.autoClear,false);
+  assert.match(handle.getState().lastError,/simulated render failure/);
+  handle.dispose();
+  water.material.dispose();water.geometry.dispose();
 });
