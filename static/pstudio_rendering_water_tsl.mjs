@@ -265,6 +265,26 @@ export function createPStudioTSLWaterDepthPrepass(renderer, scene, camera) {
     const previousAutoClear = renderer.autoClear;
     const previousShadowAutoUpdate = renderer.shadowMap?.autoUpdate;
     const previousXrEnabled = renderer.xr?.enabled;
+    let restored = false;
+
+    const restore = () => {
+      if (restored) return false;
+      restored = true;
+      scene.overrideMaterial = previousOverride;
+      for (const entry of hidden) {
+        try { entry.object.visible = entry.visible; } catch (_) {}
+      }
+      try { renderer.setMRT?.(previousMRT); } catch (_) {}
+      try { renderer.setRenderTarget(previousTarget); } catch (_) {}
+      try { renderer.autoClear = previousAutoClear; } catch (_) {}
+      if (renderer.shadowMap && previousShadowAutoUpdate !== undefined) {
+        try { renderer.shadowMap.autoUpdate = previousShadowAutoUpdate; } catch (_) {}
+      }
+      if (renderer.xr && previousXrEnabled !== undefined) {
+        try { renderer.xr.enabled = previousXrEnabled; } catch (_) {}
+      }
+      return true;
+    };
 
     try {
       scene.overrideMaterial = depthMaterial;
@@ -274,16 +294,12 @@ export function createPStudioTSLWaterDepthPrepass(renderer, scene, camera) {
       renderer.setRenderTarget(target);
       renderer.autoClear = true;
       renderer.clear?.(true, true, true);
-      return callback(width, height);
-    } finally {
-      scene.overrideMaterial = previousOverride;
-      for (const entry of hidden) entry.object.visible = entry.visible;
-      renderer.setMRT?.(previousMRT);
-      renderer.setRenderTarget(previousTarget);
-      renderer.autoClear = previousAutoClear;
-      if (renderer.shadowMap && previousShadowAutoUpdate !== undefined) renderer.shadowMap.autoUpdate = previousShadowAutoUpdate;
-      if (renderer.xr && previousXrEnabled !== undefined) renderer.xr.enabled = previousXrEnabled;
+    } catch (error) {
+      restore();
+      throw error;
     }
+
+    return Object.freeze({ width, height, restore });
   }
 
   function withDepthState(callback) {
