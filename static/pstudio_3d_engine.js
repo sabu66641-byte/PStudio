@@ -617,10 +617,16 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const blockers=[];
     const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
     const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
-    if(waterMaterials.size>0||Number(fx.waterMaterials)>0||Number(fx.waterDetailMaterials)>0)add('water','水面・水深・ミラー反射のTSL移植が未完了です。');
-    if(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0)add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
-    if(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0)add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
-    if(Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
+    const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
+    const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
+    if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
+    if(Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植が未完了です。');
+    if(!supportsSurfaceTSL&&(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0))add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
+    if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
+    if(!supportsSurfaceTSL&&Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
+    let hasLegacyMirrorWater=false;
+    scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
+    if(hasLegacyMirrorWater)add('mirror-water','独立したMirror WaterオブジェクトのTSLリフレクター移行が未完了です。');
     if(Number(fx.causticMaterials)>0)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
@@ -638,7 +644,11 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       for(const list of commandsByObject.values()){
         for(const command of list||[]){
           const type=String(command?.type||'');
-          if(['water','terrain','particles','particle_emitter','particle_emitter_stop','trail','toon_material'].includes(type)){
+          const unsupportedDrawCommand =
+            ['particles','particle_emitter','particle_emitter_stop','trail','toon_material'].includes(type)
+            || (type==='water'&&!supportsWaterTSL)
+            || (type==='terrain'&&!supportsSurfaceTSL);
+          if(unsupportedDrawCommand){
             add('unported-command-'+type,'未移植の描画コマンドがシーンに含まれています: '+type);
           }else if(type==='material'&&String(command?.shader||'')==='custom'){
             add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
