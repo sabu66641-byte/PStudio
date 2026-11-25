@@ -41,16 +41,20 @@ test('production runtime initializes WebGPU once and delegates rendering/disposa
 test('production runtime falls back only through the caller-provided legacy adapter', async () => {
   const [THREE, runtimeModule] = await modules;
   const input = makeScene(THREE);
+  const fallbackCanvas = {};
   let fallbackCreates = 0, fallbackRenders = 0, fallbackDisposals = 0;
   const runtime = runtimeModule.createPStudioProductionRendererRuntime({
     ...input,
+    fallbackCanvas,
     createWebGPU: async () => {
       const error = new Error('WebGPU unavailable');
       error.code = 'PSTUDIO_WEBGPU_UNAVAILABLE';
       throw error;
     },
-    createFallback: async ({ cause }) => {
+    createFallback: async ({ cause, canvas, webgpuCanvas }) => {
       fallbackCreates += 1;
+      assert.equal(canvas, fallbackCanvas);
+      assert.equal(webgpuCanvas, input.canvas);
       assert.equal(cause.code, 'PSTUDIO_WEBGPU_UNAVAILABLE');
       return {
         backend: 'webgl2',
@@ -99,4 +103,32 @@ test('disposing during asynchronous initialization prevents late renderer adopti
   await assert.rejects(pending, /superseded/);
   assert.equal(lateDisposals, 1);
   assert.equal(runtime.getState().state, 'disposed');
+});
+
+
+test('production runtime rejects a shared WebGPU/WebGL canvas before creating either context', async () => {
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  await assert.rejects(
+    Promise.resolve().then(() => runtimeModule.createPStudioProductionRendererRuntime({
+      ...input,
+      fallbackCanvas: input.canvas,
+      createWebGPU: async () => ({ render: () => true }),
+      createFallback: async () => ({ render: () => true })
+    })),
+    /must be different elements/
+  );
+});
+
+test('production runtime requires an isolated fallback canvas when fallback is enabled', async () => {
+  const [THREE, runtimeModule] = await modules;
+  const input = makeScene(THREE);
+  assert.throws(
+    () => runtimeModule.createPStudioProductionRendererRuntime({
+      ...input,
+      createWebGPU: async () => ({ render: () => true }),
+      createFallback: async () => ({ render: () => true })
+    }),
+    /separate fallbackCanvas is required/
+  );
 });
