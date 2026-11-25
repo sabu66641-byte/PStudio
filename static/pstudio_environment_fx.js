@@ -485,8 +485,19 @@
     const bounds=object?.geometry?.boundingBox;
     const localMin=Number.isFinite(bounds?.min?.y)?bounds.min.y:0;
     const localMax=Number.isFinite(bounds?.max?.y)?bounds.max.y:1;
-    const worldBase=(Number(object?.position?.y)||0)+localMin;
-    const heightRange=Math.max(.001,localMax-localMin);
+    let worldBase=(Number(object?.position?.y)||0)+localMin;
+    let heightRange=Math.max(.001,localMax-localMin);
+    const Three=T();
+    if(object&&Three?.Box3){
+      try{
+        object.updateWorldMatrix?.(true,false);
+        const worldBounds=new Three.Box3().setFromObject(object,true);
+        if(!worldBounds.isEmpty()){
+          worldBase=worldBounds.min.y;
+          heightRange=Math.max(.001,worldBounds.max.y-worldBounds.min.y);
+        }
+      }catch(_){}
+    }
     const read=(name,fallback,min,max)=>{
       const value=Number(options[name]??material.userData?.['pstudioTerrain'+name[0].toUpperCase()+name.slice(1)]);
       return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
