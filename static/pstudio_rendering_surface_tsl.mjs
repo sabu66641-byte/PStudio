@@ -378,7 +378,9 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
 
   const applied = [];
   const materials = new Set();
+  const sceneLights = [];
   root.traverse((object) => {
+    if (object?.isLight && object.visible !== false) sceneLights.push(object);
     if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
     const assigned = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of assigned) if (material) materials.add(material);
@@ -412,7 +414,7 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
       if (features.includes('terrain')) applyTerrain(material, material.userData);
       if (features.includes('foliage')) foliageRole = applyFoliage(material, material.userData, options);
       if (features.includes('water-detail')) applyWaterDetail(material, material.userData);
-      if (features.includes('sh-gi')) shHandle = attachPStudioTSLSHProbeToMaterial(material, options.sceneLights || []);
+      if (features.includes('sh-gi')) shHandle = attachPStudioTSLSHProbeToMaterial(material, options.sceneLights || sceneLights);
       material.userData = {
         ...material.userData,
         pstudioTSLFeaturesApplied: features.slice(),
