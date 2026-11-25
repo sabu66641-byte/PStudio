@@ -174,3 +174,63 @@ test('clustered WebGPU storage rejects WebGL backends and unsafe device buffer l
   const tinyDevice={backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:16,maxBufferSize:16}}}};
   assert.throws(()=>createPStudioTSLClusterStorage(tinyDevice,{grid:{x:1,y:1,z:1},maxLights:2,maxPerCell:1}),/maxStorageBufferBindingSize/);
 });
+
+
+test('TSL SH irradiance uses the same nine RGB coefficients and PBR lighting context',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  const {createPStudioTSLSHProbeNode,attachPStudioTSLSHProbeToMaterial,blendPStudioTSLSHCoefficients}=await import('../static/pstudio_rendering_gi_tsl.mjs');
+  assert.equal(typeof THREE.IrradianceNode,'function');
+  assert.equal(typeof THREE.LightsNode,'function');
+  assert.equal(typeof TSL.uniform,'function');
+  const probe=createPStudioTSLSHProbeNode();
+  assert.ok(probe.node instanceof THREE.IrradianceNode);
+  assert.equal(probe.uniforms.length,9);
+  const coefficients=new Float32Array(27);
+  for(let index=0;index<27;index++)coefficients[index]=(index+1)*0.01;
+  assert.equal(probe.setCoefficients(coefficients),true);
+  assert.equal(probe.uniforms[0].value.x,0.01);
+  assert.equal(probe.uniforms[8].value.z,0.27);
+  const target=new Float32Array(27);
+  assert.ok(blendPStudioTSLSHCoefficients(target,coefficients,240,240)>0.49);
+  assert.ok(target[0]>0.004&&target[0]<0.006);
+
+  const material=new THREE.MeshStandardNodeMaterial();
+  const light=new THREE.DirectionalLight(0xffffff,2);
+  const originalLightsNode=material.lightsNode??null;
+  const handle=attachPStudioTSLSHProbeToMaterial(material,[light]);
+  assert.ok(material.lightsNode instanceof THREE.LightsNode);
+  const lights=material.lightsNode.getLights();
+  assert.ok(lights.includes(light));
+  assert.ok(lights.some(item=>item instanceof THREE.IrradianceNode));
+  assert.equal(material.userData.pstudioTSLProbeUniforms.length,9);
+  const values=Float32Array.from({length:27},(_,index)=>index/100);
+  handle.setCoefficients(values);
+  assert.equal(handle.uniforms[1].value.y,0.04);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(material.lightsNode,originalLightsNode);
+  assert.equal(material.userData.pstudioTSLProbeUniforms,undefined);
+  material.dispose();
+  light.dispose();
+});
+
+test('TSL SH probe adapter preserves existing scene lights and supports independent per-material uniforms',async()=>{
+  const THREE=await import('three/webgpu');
+  const {attachPStudioTSLSHProbeToMaterial}=await import('../static/pstudio_rendering_gi_tsl.mjs');
+  const scene=new THREE.Scene();
+  const key=new THREE.DirectionalLight(0xffffff,2);
+  const fill=new THREE.PointLight(0x88aaff,1,20,2);
+  scene.add(key,fill);
+  const materialA=new THREE.MeshPhysicalNodeMaterial();
+  const materialB=new THREE.MeshStandardNodeMaterial();
+  const a=attachPStudioTSLSHProbeToMaterial(materialA,[key,fill]);
+  const b=attachPStudioTSLSHProbeToMaterial(materialB,[key,fill]);
+  assert.equal(materialA.lightsNode.getLights().filter(item=>item.isLight).length,2);
+  assert.equal(materialB.lightsNode.getLights().filter(item=>item.isLight).length,2);
+  a.setCoefficients(new Float32Array(27).fill(0.5));
+  b.setCoefficients(new Float32Array(27).fill(0.25));
+  assert.notEqual(a.uniforms[0].value.x,b.uniforms[0].value.x);
+  a.dispose();b.dispose();
+  materialA.dispose();materialB.dispose();key.dispose();fill.dispose();
+});
