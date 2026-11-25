@@ -218,6 +218,10 @@ Physics uses a separate world-space data path:
 
 The runtime order is: ECS `update` Systems → ECS `prePhysics` Systems → legacy per-object ps callbacks and render-command generation → ECS `postUpdate` Systems → `PStudioPhysics.step()` → ECS `postPhysics` Systems → rendering. The Physics bridge creates/configures bodies before the simulation and copies the solver snapshot back to `PhysicsState` / `PhysicsTransform` afterward. It deliberately does not copy Physics world units directly into the editor `Transform`; the renderer and legacy runtime still use their established coordinate conversion. This prevents a 2D pixel coordinate from being mistaken for a 3D Physics world coordinate and avoids two subsystems writing the same position.
 
+### Runtime clock and timing ownership
+
+`window.PStudioECSTime` owns runtime simulation time as a non-persistent ECS `TimeState` Component: scaled/unscaled delta time, elapsed time, frame count and the existing 0–4 time-scale contract. The browser `requestAnimationFrame` scheduler remains platform-owned.
+
 ### Navigation graph ownership
 
 The runtime Navigation graph is stored in standalone ECS Entities carrying the internal, runtime-only `NavigationNode` Component. Each node owns its world-space position, neighboring node IDs and blocked state. The `PStudioECSGameplay` bridge provides node lookup, nearest-node queries and A* next-node lookup; the existing `nav_*` ps built-ins remain the compatibility surface. Grid and triangle-derived graph builders create/update these Components. Navigation Entities are intentionally not attached to Scene Objects or serialized as editor Scene Components; the graph retains its existing in-memory Play/Stop lifetime. The ID-to-Entity Map in the bridge is only a lookup cache, not a second owner of graph data.
@@ -249,7 +253,7 @@ Attach `examples/ecs_systems.ps` to a Scene Object. In the ECS Inspector, add `E
 
 The Backup menu also exports a **Native C++17 ECS project (.zip)** with Component structs, supported System callbacks, a portable C++17 ECS runtime and a CMake sample project. That export is a native ECS module/sample executable, not a complete PStudio game build. The browser Three.js renderer, GLB pipeline, browser input/audio, JavaScript Physics bridge and broader gameplay systems have not yet been ported to native C++. A complete native game `.exe`, `.app` or APK remains a separate backend/packaging project.
 
-Run the focused JavaScript regression suites with `node --test tests/ecs.test.js tests/ecs_physics.test.js tests/physics.test.js`. The full JavaScript suite is `node --test tests/*.test.js`; Python tests are `python -m unittest discover -s tests -p "test_*.py" -v`.
+Run the focused JavaScript regression suites with `node --test tests/ecs.test.js tests/ecs_physics.test.js tests/physics.test.js`. The full JavaScript suite is `node --test tests/*.test.js`; Python tests are `python -m unittest discover -s tests -p "test_*.py" -v`. The informational Scene synchronization benchmark is `node benchmarks/ecs_scene_sync.js` (100/500/1,000 Scene Objects; no hardware-dependent pass/fail threshold).
 
 ### Time State 1.0
 
