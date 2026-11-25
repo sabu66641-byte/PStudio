@@ -58,8 +58,11 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
   assert.equal(typeof webgpu.MeshStandardMaterial, 'function');
   assert.equal(typeof webgpu.MeshPhysicalMaterial, 'function');
   assert.equal(typeof webgpu.MeshStandardNodeMaterial, 'function');
+  assert.equal(typeof webgpu.MeshPhysicalNodeMaterial, 'function');
+  assert.equal(typeof webgpu.RenderPipeline, 'function');
   assert.equal(typeof webgpu.DirectionalLight, 'function');
   assert.equal(typeof tsl.uv, 'function');
+  assert.equal(typeof tsl.pass, 'function');
   assert.equal(typeof tsl.mix, 'function');
   assert.equal(typeof tsl.vec3, 'function');
 

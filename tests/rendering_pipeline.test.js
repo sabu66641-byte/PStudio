@@ -13,6 +13,9 @@ const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const selectUI = fs.readFileSync(path.join(root, 'static/pstudio_selects.js'), 'utf8');
 const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'), 'utf8');
 const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs'), 'utf8');
+const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
+const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
+const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
 
 
 test('GLTF worker parser, meshopt decoder, KTX2 and Draco modules share the production r187 runtime',()=>{
@@ -1344,34 +1347,57 @@ test('tablet and mobile workspace use a single main column with accessible proje
   ])assert.ok(html.includes(token),token);
 });
  
-test('WebGPU PBR and TSL pilot remains opt-in and isolated from the production WebGL renderer',()=>{
+test('WebGPU PBR and TSL pilot uses shared backend, material conversion and RenderPipeline modules',()=>{
   for(const token of [
     'id="webgpu-lab-open"',
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
-    'pstudio_webgpu_lab.mjs?v=20261124-pbr-tsl-lab1',
+    'pstudio_webgpu_lab.mjs?v=20261125-shared-rendering-tsl-v1',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    'navigator.gpu.requestAdapter',
-    'await rendererCandidate.init()',
-    'rendererCandidate.backend?.isWebGPUBackend !== true',
+    "from './pstudio_rendering_backend.mjs'",
+    "from './pstudio_rendering_materials.mjs'",
+    "from './pstudio_rendering_pipeline.mjs'",
+    'createPStudioWebGPUBackend({',
+    'convertPStudioScenePBRMaterials(scene)',
     'new THREE.MeshStandardMaterial',
     'new THREE.MeshPhysicalMaterial',
     'new THREE.MeshStandardNodeMaterial',
     'TSL.mix(',
     'new THREE.CanvasTexture',
     'keyLight.castShadow = true',
-    'rendererCandidate.compileAsync(scene, camera)',
-    'rendererCandidate.setAnimationLoop(',
-    'renderer.setAnimationLoop(null)',
-    'rendererCandidate.dispose()'
+    'renderer.compileAsync(scene, camera)',
+    'pipelineHandle = createPStudioRenderPipeline(',
+    'pipelineHandle.render()',
+    'pipelineHandle.dispose()'
   ])assert.ok(webgpuLab.includes(token),token);
+  for(const token of [
+    "await renderer.init()",
+    "renderer?.backend?.isWebGPUBackend",
+    "renderer.setAnimationLoop(null)",
+    "renderer.dispose()"
+  ])assert.ok(webgpuBackend.includes(token),token);
+  for(const token of [
+    'THREE.MeshStandardNodeMaterial',
+    'THREE.MeshPhysicalNodeMaterial',
+    'target.copy(source)',
+    'target.onBeforeCompile = () => {}',
+    'convertPStudioScenePBRMaterials'
+  ])assert.ok(webgpuMaterials.includes(token),token);
+  for(const token of [
+    'new THREE.RenderPipeline(renderer)',
+    'pass(scene, camera)',
+    'bloom(sceneColor',
+    'renderPipeline.render()',
+    'renderPipeline.dispose()'
+  ])assert.ok(webgpuPipeline.includes(token),token);
   assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
   assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
+  assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
