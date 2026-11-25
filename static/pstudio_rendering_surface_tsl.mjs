@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 
-const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage']);
+const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water']);
 const EPSILON = 1e-5;
 
 function finite(value, fallback) {
