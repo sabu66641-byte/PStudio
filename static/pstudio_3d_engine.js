@@ -20,7 +20,7 @@
   }
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
-  let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0;
+  let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0,dynamicResolutionMetricSource='unavailable';
   const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
   let lastFrameRenderStats={calls:0,triangles:0,points:0,geometries:0,textures:0};
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
@@ -356,7 +356,7 @@
     memorySafetyApplied=false;
     resetPostProcessingFailure();
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
-    dynamicResolutionScale=1;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;dynamicResolutionLastChange=0;dynamicResolutionLastSampleAt=0;
+    dynamicResolutionScale=1;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;dynamicResolutionLastChange=0;dynamicResolutionLastSampleAt=0;dynamicResolutionMetricSource='unavailable';
     adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
@@ -404,13 +404,33 @@
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
   function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
-  function updateDynamicResolutionFromGpu(now,hasRecentGpuSample){
-    if(!adaptiveQualityEnabled||!renderer||!hasRecentGpuSample||lastGpuTimerTimestamp===dynamicResolutionLastSampleAt)return false;
-    dynamicResolutionLastSampleAt=lastGpuTimerTimestamp;
+  function updateDynamicResolutionFromMetrics(now,hasRecentGpuSample){
+    if(!adaptiveQualityEnabled||!renderer)return false;
+    let sampleMs=0,sampleAt=0,source='unavailable';
+    if(hasRecentGpuSample&&Number.isFinite(lastGpuRenderDurationMs)&&lastGpuRenderDurationMs>0&&lastGpuTimerTimestamp>0){
+      sampleMs=lastGpuRenderDurationMs;
+      sampleAt=lastGpuTimerTimestamp;
+      source='gpu-timer-query';
+    }else{
+      const pageVisible=typeof document==='undefined'||document.visibilityState!=='hidden';
+      const frameInterval=Number(lastFrameIntervalMs)||0;
+      // Frame pacing is the fallback when timer queries are absent, disjoint or stale.
+      // Ignore background-tab pauses, initial frames and long scheduling stalls.
+      if(!pageVisible||!lastDrawFrameStartedAt||frameInterval<8||frameInterval>100){
+        dynamicResolutionMetricSource='unavailable';
+        return false;
+      }
+      sampleMs=frameInterval;
+      sampleAt=lastDrawFrameStartedAt;
+      source='frame-interval-fallback';
+    }
+    if(!sampleAt||sampleAt===dynamicResolutionLastSampleAt)return false;
+    dynamicResolutionLastSampleAt=sampleAt;
+    dynamicResolutionMetricSource=source;
     const touch=Number(window.navigator?.maxTouchPoints||0)>0;
     const targetMs=(touch||adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?20:16.67;
-    if(lastGpuRenderDurationMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
-    else if(lastGpuRenderDurationMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
+    if(sampleMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
+    else if(sampleMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
     else{dynamicResolutionSlowSamples=Math.max(0,dynamicResolutionSlowSamples-1);dynamicResolutionFastSamples=0;}
     if(now-dynamicResolutionLastChange<900)return false;
     let next=dynamicResolutionScale;
@@ -419,14 +439,19 @@
     if(Math.abs(next-dynamicResolutionScale)<0.001)return false;
     dynamicResolutionScale=next;dynamicResolutionLastChange=now;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;
     applyEffectiveRenderScale();lastSize={width:0,height:0};resize();
-    try{window.PStudioEvents?.emit('render.dynamic-resolution.changed',{scale:Number(dynamicResolutionScale.toFixed(3)),gpuTimeMs:Number(lastGpuRenderDurationMs.toFixed(2)),targetMs});}catch(_){}
+    try{window.PStudioEvents?.emit('render.dynamic-resolution.changed',{
+      scale:Number(dynamicResolutionScale.toFixed(3)),
+      gpuTimeMs:source==='gpu-timer-query'?Number(sampleMs.toFixed(2)):null,
+      frameIntervalMs:source==='frame-interval-fallback'?Number(sampleMs.toFixed(2)):null,
+      targetMs,source
+    });}catch(_){}
     return true;
   }
   function applyAdaptiveQuality(){
     if(!adaptiveQualityEnabled||!renderer)return;
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
-    updateDynamicResolutionFromGpu(now,hasRecentGpuSample);
+    updateDynamicResolutionFromMetrics(now,hasRecentGpuSample);
     const fallbackFrameMs=Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0);
     adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission';
     // GPU timer queries are unavailable on some mobile browsers. In that case,
@@ -1078,7 +1103,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
       adaptiveLevel:adaptiveQualityLevel,mobilePostFxBudget:adaptiveTouchPostFxBudget,
       renderEffects:{ao:qualityAOEnabled,ssr:ssrEnabled,volumetricClouds:volumetricCloudsEnabled,volumetricFog:volumetricFogEnabled,contactShadows:contactShadowsEnabled},
-      dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),
+      dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource,
       renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
       dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates,captureResolution:qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64,nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs(gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs,gpuFresh)},
       note:'FPS is based on renderer redraw intervals. GPU memory is a resource-registry estimate, not a complete hardware VRAM measurement. GPU frame-budget percentage is GPU render time divided by 16.67 ms, not total GPU utilization.'
@@ -1108,6 +1133,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       'Geometry: '+stats.geometries+'  |  Textures: '+stats.textures,
       'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
       'Quality: '+stats.quality.toUpperCase()+'  |  Scale: '+Math.round(stats.dynamicResolutionScale*100)+'%  |  DPR: '+(stats.renderPixelRatio===null?'—':stats.renderPixelRatio.toFixed(2)),
+      'Dynamic resolution source: '+stats.dynamicResolutionSource,
       'Dynamic GI: '+(stats.dynamicGI.enabled?'ON':'OFF')+' / '+stats.dynamicGI.status+' ('+stats.dynamicGI.validProbes+'/'+stats.dynamicGI.totalProbes+')',
       'Timing: '+stats.timingSource+(stats.memorySafety?'  |  MEMORY SAFETY':''),
       'Post FX: '+(stats.postProcessing.failed?'direct-render fallback':'composer available'),
