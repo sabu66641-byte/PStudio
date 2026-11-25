@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { isPStudioTSLSurfaceFeatureMaterial } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v1';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
   ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial', THREE.MeshPhysicalNodeMaterial],
@@ -25,6 +26,7 @@ function cloneUserData(value) {
 }
 
 function hasCustomShaderHook(material) {
+  if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
   const userData = material?.userData || {};
   const csmOnly = userData.pstudioCSMOnlyHook === true
     && userData.pstudioProbeShaderSetup !== true
