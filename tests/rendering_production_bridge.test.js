@@ -207,6 +207,7 @@ test('production bridge deduplicates concurrent initialization and permits retry
 });
 
 // Keep the browser bootstrap and the engine's runtime handoff coupled in regression coverage.
+// This test protects the runtime routing contract across the full production bootstrap.
 test('production 3D render loop is wired to a fail-closed WebGPU bridge with resize and fallback routing', () => {
   const root = path.join(__dirname, '..');
   const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
