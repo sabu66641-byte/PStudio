@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
-import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v1';
+import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261126-surface-tsl-v2';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
 const canvas = document.getElementById('webgpu-lab-canvas');
