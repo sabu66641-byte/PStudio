@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const html = fs.readFileSync(path.join(__dirname, '..', 'templates', 'index.html'), 'utf8');
 const modules = Promise.all([
   import('three/webgpu'),
   import('../static/pstudio_rendering_production_host.mjs')
@@ -98,4 +101,11 @@ test('production host activates a distinct WebGL canvas when WebGPU initializati
   assert.equal(children.length, 2);
   host.dispose();
   assert.equal(children.length, 1);
+});
+
+test('application bootstraps the production renderer host factory without changing legacy startup', () => {
+  assert.ok(html.includes('/static/pstudio_rendering_production_host.mjs?v=20261125-webgpu-canvas-host-phase2-v1'));
+  assert.ok(html.includes('window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost'));
+  assert.ok(html.includes('window.PStudioProductionRendererHostFactory = null'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
 });
