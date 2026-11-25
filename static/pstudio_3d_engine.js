@@ -13,6 +13,8 @@
   let lastWebGPUBridgePixelRatio = 0;
   let productionWebGPUCompileStage = null;
   let productionWebGPUBlockers = [];
+  let productionPendingCommands = null;
+  let productionPendingRenderRevision = 0;
   let rendererInitializationFailed=false;
   let postProcessingFailed=false,postProcessingFailureReason='';
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null,godRaysPass=null;
@@ -727,6 +729,15 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             }
             productionWebGPUBlockers=snapshot.blockers||productionWebGPUBlockers;
             publishProductionRendererRuntime(snapshot);
+            if(snapshot.state==='ready'&&productionPendingCommands){
+              const revision=productionPendingRenderRevision;
+              window.requestAnimationFrame(()=>{
+                if(productionWebGPUCompileStage!==null||!productionPendingCommands||revision!==productionPendingRenderRevision)return;
+                const pending=productionPendingCommands;
+                productionPendingCommands=null;
+                try{render(pending);}catch(error){console.error('[PStudio] Deferred scene update after renderer promotion failed.',error);}
+              });
+            }
           }
         });
       }catch(error){
@@ -6032,6 +6043,13 @@ void main(){
 
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
+    if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling'){
+      productionPendingCommands=commandsByObject;
+      productionPendingRenderRevision++;
+      return;
+    }
+    productionPendingCommands=null;
+    productionPendingRenderRevision++;
     const T = window.THREE;
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
