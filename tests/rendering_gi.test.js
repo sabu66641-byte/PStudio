@@ -189,8 +189,8 @@ test('TSL SH irradiance uses the same nine RGB coefficients and PBR lighting con
   const coefficients=new Float32Array(27);
   for(let index=0;index<27;index++)coefficients[index]=(index+1)*0.01;
   assert.equal(probe.setCoefficients(coefficients),true);
-  assert.equal(probe.uniforms[0].value.x,0.01);
-  assert.equal(probe.uniforms[8].value.z,0.27);
+  assert.ok(Math.abs(probe.uniforms[0].value.x-0.01)<1e-7);
+  assert.ok(Math.abs(probe.uniforms[8].value.z-0.27)<1e-6);
   const target=new Float32Array(27);
   assert.ok(blendPStudioTSLSHCoefficients(target,coefficients,240,240)>0.49);
   assert.ok(target[0]>0.004&&target[0]<0.006);
@@ -206,7 +206,7 @@ test('TSL SH irradiance uses the same nine RGB coefficients and PBR lighting con
   assert.equal(material.userData.pstudioTSLProbeUniforms.length,9);
   const values=Float32Array.from({length:27},(_,index)=>index/100);
   handle.setCoefficients(values);
-  assert.equal(handle.uniforms[1].value.y,0.04);
+  assert.ok(Math.abs(handle.uniforms[1].value.y-0.04)<1e-7);
   assert.equal(handle.dispose(),true);
   assert.equal(handle.dispose(),false);
   assert.equal(material.lightsNode,originalLightsNode);
