@@ -2048,3 +2048,82 @@ test('TSL water depth prepass restores visibility and render targets when render
   handle.dispose();
   water.material.dispose();water.geometry.dispose();
 });
+
+
+test('TSL water-detail material preserves its transparent overlay state across fallback disposal',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(5,5,4,4);
+  const material=new THREE.MeshStandardNodeMaterial({color:0x8fd8dc,transparent:false,depthWrite:true,side:THREE.FrontSide});
+  const hook=function approvedWaterDetailHook(){};
+  const cacheKey=function approvedWaterDetailCache(){return 'pstudio-water-detail-tsl';};
+  material.onBeforeCompile=hook;
+  material.customProgramCacheKey=cacheKey;
+  material.pstudioTSLPortApprovedCompileHook=hook;
+  material.pstudioTSLPortApprovedCacheKey=cacheKey;
+  material.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water-detail'],
+    pstudioWaterDetailTSLSettings:{role:'shoreline-foam',type:1,strength:0.54}
+  };
+  const mesh=new THREE.Mesh(geometry,material);
+  scene.add(mesh);
+  const handle=applyPStudioTSLSurfaceFeatures(scene);
+  assert.equal(handle.materialCount,1);
+  assert.ok(material.positionNode?.isNode);
+  assert.ok(material.colorNode?.isNode);
+  assert.ok(material.opacityNode?.isNode);
+  assert.equal(material.transparent,true);
+  assert.equal(material.depthWrite,false);
+  assert.equal(material.side,THREE.DoubleSide);
+  assert.equal(handle.dispose(),true);
+  assert.equal(material.positionNode,null);
+  assert.equal(material.opacityNode,null);
+  assert.equal(material.transparent,false);
+  assert.equal(material.depthWrite,true);
+  assert.equal(material.side,THREE.FrontSide);
+  material.dispose();
+  geometry.dispose();
+});
+
+test('TSL Mirror Water uses a native reflector node without the legacy mirror GLSL hook',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLWaterSurfaces}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(40,40,8,8);
+  const material=new THREE.MeshPhysicalNodeMaterial({
+    color:0x0b3d52,roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008
+  });
+  material.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water'],
+    pstudioWaterTSLSettings:{
+      mirrorOnly:true,amplitude:0,waveStrength:0.05,
+      shallow:'#0b3d52',deep:'#0b3d52',foam:'#0b3d52',
+      reflectivity:1,reflectionResolutionScale:0.5,absorption:0.01
+    }
+  };
+  material.pstudioTSLSurfacePreflightApproved=true;
+  const mirror=new THREE.Mesh(geometry,material);
+  mirror.userData.pstudioWaterSurface=true;
+  mirror.userData.pstudioMirrorWater={reflectivity:1,waveStrength:0.05};
+  scene.add(mirror);
+  const depthTexture=new THREE.DepthTexture(16,16,THREE.UnsignedIntType);
+  const handle=applyPStudioTSLWaterSurfaces(scene,{depthTexture});
+  assert.equal(handle.waterMeshes,1);
+  assert.equal(handle.reflectorCount,1);
+  assert.ok(mirror.material.colorNode?.isNode);
+  assert.ok(mirror.material.roughnessNode?.isNode);
+  assert.equal(mirror.material.transparent,false);
+  assert.equal(mirror.material.depthWrite,true);
+  assert.equal(mirror.children.length,1);
+  assert.equal(handle.dispose(),true);
+  assert.equal(mirror.material,material);
+  assert.equal(mirror.children.length,0);
+  material.dispose();
+  geometry.dispose();
+  depthTexture.dispose();
+});
