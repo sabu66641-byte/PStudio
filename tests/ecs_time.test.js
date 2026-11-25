@@ -81,6 +81,6 @@ test('the game runtime reads and writes time scale through the ECS time bridge',
   assert.match(engine, /PStudioECSTime\.setTimeScale\(a\[0\]\)/);
   assert.match(engine, /PStudioECSTime\.beginFrame\(raw\)/);
   assert.match(engine, /PStudioECSTime\.start\(\)/);
-  assert.match(engine, /PStudioECSTime\.clear\(\)/);
+  assert.match(engine, /PStudioECSTime\?\.clear\?\.\(\)/);
   assert.doesNotMatch(engine, /runtime\.timeScale/);
 });
