@@ -1445,7 +1445,7 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
     'function pushMetricSample(list,value)',
     'function updatePerformanceMonitor(',
     'function togglePerformanceMonitor()',
-    'function updateDynamicResolutionFromGpu(',
+    'function updateDynamicResolutionFromMetrics(',
     'dynamicResolutionScale',
     'EXT_disjoint_timer_query_webgl2',
     'gpuFrameBudgetPercent',
