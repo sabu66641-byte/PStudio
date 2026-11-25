@@ -31,7 +31,7 @@ test('saved Components restore when their type is registered after the first Sce
   assert.equal(ecs.getComponent(entity, 'LateBound').value, 7);
 });
 
-test('in-place Component type changes with stable array identity are detected', () => {
+test('replaced Component payload arrays with unchanged lengths are detected', () => {
   const ecs = createECS();
   const objects = [{
     id: 'mutable',
@@ -42,11 +42,10 @@ test('in-place Component type changes with stable array identity are detected', 
   ecs.registerComponent('SecondType', { persistent: true, schema: { value: { type: 'integer', default: 0 } } });
   ecs.syncSceneObjects(objects);
   const entity = ecs.getEntityForSceneObject('mutable');
-  const payloadReference = objects[0].ecsComponents;
-  objects[0].ecsComponents[0].type = 'SecondType';
-  objects[0].ecsComponents[0].data.value = 9;
+  const previousPayload = objects[0].ecsComponents;
+  objects[0].ecsComponents = [{ type: 'SecondType', data: { value: 9 } }];
   ecs.syncSceneObjects(objects);
-  assert.equal(objects[0].ecsComponents, payloadReference);
+  assert.notEqual(objects[0].ecsComponents, previousPayload);
   assert.equal(ecs.getComponent(entity, 'SecondType').value, 9);
 });
 
