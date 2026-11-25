@@ -1445,7 +1445,7 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
     'function pushMetricSample(list,value)',
     'function updatePerformanceMonitor(',
     'function togglePerformanceMonitor()',
-    'function updateDynamicResolutionFromGpu(',
+    'function updateDynamicResolutionFromMetrics(',
     'dynamicResolutionScale',
     'EXT_disjoint_timer_query_webgl2',
     'gpuFrameBudgetPercent',
@@ -1461,14 +1461,28 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
   assert.ok(renderer.includes('RENDER_METRIC_HISTORY=120'));
 });
 
-test('dynamic render resolution only reacts to fresh GPU timer samples and stays inside configured bounds',()=>{
-  assert.match(renderer,/lastGpuTimerTimestamp===dynamicResolutionLastSampleAt/);
-  assert.match(renderer,/dynamicResolutionScale>0\.55/);
-  assert.match(renderer,/dynamicResolutionScale<1/);
-  assert.match(renderer,/targetMs\*1\.06/);
-  assert.match(renderer,/targetMs\*0\.78/);
-  assert.match(renderer,/DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900/);
-  assert.match(renderer,/applyEffectiveRenderScale\(\)/);
+test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fallback',()=>{
+  const start=renderer.indexOf('  function updateDynamicResolutionFromMetrics(');
+  const end=renderer.indexOf('  function applyAdaptiveQuality(',start);
+  assert.ok(start>=0&&end>start,'dynamic resolution metric controller boundaries');
+  const controller=renderer.slice(start,end);
+  assert.match(controller,/hasRecentGpuSample&&Number\.isFinite\(lastGpuRenderDurationMs\)/);
+  assert.match(controller,/source='gpu-timer-query'/);
+  assert.match(controller,/document\.visibilityState!=='hidden'/);
+  assert.match(controller,/now-lastFrameIntervalSampleAt>250/);
+  assert.match(controller,/frameInterval<1\|\|frameInterval>100/);
+  assert.match(renderer,/lastFrameIntervalSampleAt=frameStarted/);
+  assert.match(controller,/source='frame-interval-fallback'/);
+  assert.match(controller,/sampleAt===dynamicResolutionLastSampleAt/);
+  assert.match(controller,/dynamicResolutionScale>0\.55/);
+  assert.match(controller,/dynamicResolutionScale<1/);
+  assert.match(controller,/targetMs\*1\.06/);
+  assert.match(controller,/targetMs\*0\.78/);
+  assert.match(controller,/applyEffectiveRenderScale\(\)/);
+  assert.match(controller,/frameIntervalMs:source==='frame-interval-fallback'/);
+  assert.match(controller,/source\s*\}\)/);
+  assert.ok(renderer.includes('dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource'));
+  assert.match(renderer,/updateDynamicResolutionFromMetrics\(now,hasRecentGpuSample\)/);
 });
 
 test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{
