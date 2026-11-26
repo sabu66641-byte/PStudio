@@ -1474,7 +1474,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-npr-toon-aa-v2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-genesis-1-2-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-npr-toon-v1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
@@ -1615,8 +1615,14 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
     'window.PStudioGenesisEnvironment?.createGenesisEnvironmentController',
     'genesisEnvironmentController.update(deltaSeconds)',
     'window.PStudioEnvironmentFX?.update?.(particleClock)',
-    "applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.5)",
+    "applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375)",
     'productionRendererBridge.setEnvironment?.(state)',
+    'productionRendererBridge.setWaterEnvironment?.(state)',
+    'const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true',
+    'function updateEnvironment(profile = {})',
+    'const amplitude = TSL.uniform(settings.amplitude)',
+    'const rainIntensity = TSL.uniform(0)',
+    'reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple)',
     'uMirrorWindDirection','uMirrorWindSpeed','uMirrorRain',
     "createGpuParticleSystem(384,'#C7E3F8',.11)",
     'spawnGpuParticle(genesisRainSystem',
