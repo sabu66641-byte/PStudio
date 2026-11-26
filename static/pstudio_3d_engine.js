@@ -707,11 +707,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
     if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
     const activeClusterLighting=clusteredLightingActive||clusteredLightSet.size>0;
-    const hasReflectorCamera=waterMaterials.size>0||Number(fx.waterMaterials)>0||hasLegacyMirrorWater;
-    if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','クラスタ照明のTSL／Storage Bufferアダプターが利用できません。');
-    else if(activeClusterLighting&&hasReflectorCamera)add('clustered-lighting-reflector-camera','反射カメラ別のクラスタ照明データ更新が未完了です。');
-    else if(activeClusterLighting)add('clustered-lighting-pbr-parity','現行TSLクラスタ照明は拡散寄与までです。PBRスペキュラ・影・全反射カメラの一致検証が終わるまでWebGL2を維持します。');
-    if(bakedLightProbe||bakedLightProbeVolume?.length)add('static-gi-probe-capture','既存の静的SHプローブ生成はWebGL CubeCamera経路です。WebGPUキャプチャと係数の同等性検証が未完了です。');
+    if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','ClusteredLightsNode Forward+ PBRアダプターが利用できません。');
+    const supportsSHGI=window.PStudioRenderingMigration?.supportsPStudioTSLSHGI===true;
+    if((bakedLightProbe||bakedLightProbeVolume?.length)&&!supportsSHGI)add('static-gi-probe-capture','静的SHのTSL IrradianceNodeアダプターが利用できません。');
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled){
@@ -726,16 +724,20 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
     if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
     if(godRaysEnabled&&!supportsGodRaysNode)add('god-rays','God RaysのTSL RenderPipelineアダプターが利用できません。');
-    if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
-    if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
-    if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
+    if(dynamicGIEnabled&&!supportsSHGI)add('dynamic-gi','動的SH GIのTSLプローブ係数アダプターが利用できません。');
+    const supportsParticleTSL=!!window.PStudioWebGPU?.MeshBasicNodeMaterial&&!!window.PStudioTSL?.attribute;
+    const particleSystems=[...particleEmitters.values(),...particleBursts.values()];
+    if(particleSystems.some(effect=>effect?.system?.material?.isNodeMaterial!==true)
+      ||(particleSystems.length>0&&!supportsParticleTSL))add('gpu-particles','GPUパーティクルがTSL NodeMaterialへ移植されていません。');
+    if([...trailEffects.values()].some(trail=>trail?.material?.isNodeMaterial!==true)
+      ||(trailEffects.size>0&&!supportsParticleTSL))add('trails','トレイルVFXがTSL NodeMaterialへ移植されていません。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
       for(const list of commandsByObject.values()){
         for(const command of list||[]){
           const type=String(command?.type||'');
           const unsupportedDrawCommand =
-            ['particles','particle_emitter','particle_emitter_stop','trail','toon_material'].includes(type)
+            ['toon_material'].includes(type)
             || (type==='water'&&!supportsWaterTSL)
             || (type==='terrain'&&!supportsSurfaceTSL);
           if(unsupportedDrawCommand){
@@ -1673,7 +1675,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       }finally{
         lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
         pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
-        updatePerformanceMonitor(window.performance?.now?.()??Date.now());
+        const completedAt=window.performance?.now?.()??Date.now();
+        updatePerformanceMonitor(completedAt);
+        // Dynamic SH captures run after the submitted WebGPU frame, using its active backend.
+        void serviceDynamicRadianceCache(completedAt).catch(error=>{
+          dynamicGIStatus='error';
+          console.warn('[PStudio] Dynamic WebGPU SH capture failed safely:',error);
+        });
       }
       return;
     }
@@ -1827,6 +1835,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
 #include <colorspace_fragment>}`
       });
       // The legacy fallback remains available only when the TSL constructors could not load.
+      geometry.setIndex(null);
       geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
       geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
       geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
