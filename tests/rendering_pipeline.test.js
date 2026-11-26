@@ -1395,7 +1395,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'pstudio_webgpu_lab.mjs?v=20261126-cluster-sh-vfx-v2',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'
+    'pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
