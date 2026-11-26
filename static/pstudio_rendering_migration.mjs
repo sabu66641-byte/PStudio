@@ -1,6 +1,6 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
 import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v6';
-import { createPStudioRenderPipeline, supportsPStudioTSLSSAO as pipelineSupportsSSAO, supportsPStudioTSLGTAO as pipelineSupportsGTAO, supportsPStudioTSLSSR as pipelineSupportsSSR } from './pstudio_rendering_pipeline.mjs?v=20261126-screen-space-v1';
+import { createPStudioRenderPipeline, supportsPStudioTSLSSAO as pipelineSupportsSSAO, supportsPStudioTSLGTAO as pipelineSupportsGTAO, supportsPStudioTSLSSR as pipelineSupportsSSR, supportsPStudioTSLGodRays as pipelineSupportsGodRays } from './pstudio_rendering_pipeline.mjs?v=20261126-screen-space-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
@@ -13,6 +13,7 @@ export const supportsPStudioTSLCaustics = supportsPStudioTSLSurfaceFeatures;
 export const supportsPStudioTSLSSAO = pipelineSupportsSSAO;
 export const supportsPStudioTSLGTAO = pipelineSupportsGTAO;
 export const supportsPStudioTSLSSR = pipelineSupportsSSR;
+export const supportsPStudioTSLGodRays = pipelineSupportsGodRays;
 export const supportsPStudioTSLClusteredLighting = typeof createPStudioTSLClusterStorage === 'function' && typeof applyPStudioTSLClusteredLighting === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
@@ -22,7 +23,7 @@ const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'legacy-materials', label: '認定済みTSLアダプター対象外の独自GLSL・拡張材質を移植' }),
   Object.freeze({ id: 'environment-effects', label: '体積雲・高度フォグのTSL移植' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・静的／動的SH GI・プローブキャプチャのTSL／WebGPU移植' }),
-  Object.freeze({ id: 'post-processing', label: '体積雲・霧・God Rays・Contact Shadows等の残存ポストプロセスをRenderPipelineへ移植' }),
+  Object.freeze({ id: 'post-processing', label: '体積雲・霧・Contact Shadows等の残存ポストプロセスをRenderPipelineへ移植' }),
   Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
   Object.freeze({ id: 'parity-validation', label: '実ブラウザー／実GPUで画質・性能・長時間動作の同等性を検証' })
 ]);
@@ -353,6 +354,10 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       setSSR(settings) {
         if (disposed) return false;
         return pipelineHandle.setSSR(settings);
+      },
+      setGodRays(settings) {
+        if (disposed) return false;
+        return pipelineHandle.setGodRays(settings);
       },
       setClusteredLightingSnapshot(snapshot) {
         if (disposed || !snapshot) return false;
