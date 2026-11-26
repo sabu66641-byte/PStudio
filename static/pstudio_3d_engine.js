@@ -1780,22 +1780,65 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
 
   function createGpuParticleSystem(capacity,color,size=0.085){
-    const T=window.THREE,count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
+    const T=window.THREE,W=window.PStudioWebGPU,TSL=window.PStudioTSL;
+    const count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
     const origins=new Float32Array(count*3),velocities=new Float32Array(count*3),births=new Float32Array(count),lifetimes=new Float32Array(count);
-    geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
-    geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
-    geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
-    geometry.setAttribute('aBirth',new T.BufferAttribute(births,1));
-    geometry.setAttribute('aLife',new T.BufferAttribute(lifetimes,1));
+    // A camera-facing instanced quad avoids WebGPU's 1-pixel point-primitive limit.
+    geometry.setAttribute('position',new T.BufferAttribute(new Float32Array([
+      -0.5,-0.5,0, 0.5,-0.5,0, -0.5,0.5,0, 0.5,0.5,0
+    ]),3));
+    geometry.setAttribute('uv',new T.BufferAttribute(new Float32Array([0,0,1,0,0,1,1,1]),2));
+    geometry.setIndex([0,1,2,2,1,3]);
+    geometry.setAttribute('aOrigin',new T.InstancedBufferAttribute(origins,3));
+    geometry.setAttribute('aVelocity',new T.InstancedBufferAttribute(velocities,3));
+    geometry.setAttribute('aBirth',new T.InstancedBufferAttribute(births,1));
+    geometry.setAttribute('aLife',new T.InstancedBufferAttribute(lifetimes,1));
     const uniforms={uTime:{value:particleClock},uColor:{value:new T.Color(color||'#ffffff')},uSize:{value:size},uPixelRatio:{value:renderer?.getPixelRatio?.()||1},uGravity:{value:2.4}};
-    const material=new T.ShaderMaterial({uniforms,transparent:true,depthWrite:false,blending:T.AdditiveBlending,
-      vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
+    let material;
+    if(W?.MeshBasicNodeMaterial&&TSL?.attribute&&TSL?.positionLocal&&TSL?.uniform){
+      const uTime=TSL.uniform(particleClock),uColor=TSL.uniform(new T.Color(color||'#ffffff'));
+      const uSize=TSL.uniform(size),uGravity=TSL.uniform(2.4);
+      const uWorldSize=TSL.uniform(0.04),uCameraRight=TSL.uniform(new T.Vector3(1,0,0)),uCameraUp=TSL.uniform(new T.Vector3(0,1,0));
+      const age=TSL.max(uTime.sub(TSL.attribute('aBirth','float')),TSL.float(0));
+      const lifetime=TSL.max(TSL.attribute('aLife','float'),TSL.float(0.05));
+      const origin=TSL.attribute('aOrigin','vec3');
+      const velocity=TSL.attribute('aVelocity','vec3');
+      const ballistic=origin.add(velocity.mul(age)).add(TSL.vec3(0,uGravity.mul(age.mul(age)).mul(-0.5),0));
+      const billboard=uCameraRight.mul(TSL.positionLocal.x.mul(uWorldSize)).add(uCameraUp.mul(TSL.positionLocal.y.mul(uWorldSize)));
+      const radial=TSL.positionLocal.xy.mul(2);
+      const radialDistance=radial.dot(radial);
+      const alive=TSL.float(1).sub(TSL.step(lifetime,age));
+      const fade=TSL.float(1).sub(TSL.smoothstep(lifetime.mul(0.68),lifetime,age));
+      const soft=TSL.float(1).sub(TSL.smoothstep(0.18,1,radialDistance));
+      material=new W.MeshBasicNodeMaterial();
+      material.positionNode=ballistic.add(billboard);
+      material.colorNode=uColor;
+      material.opacityNode=alive.mul(fade).mul(soft);
+      material.transparent=true;material.depthWrite=false;material.depthTest=true;
+      material.blending=T.AdditiveBlending;material.side=T.DoubleSide;material.toneMapped=true;
+      Object.assign(uniforms,{uTime,uColor,uSize,uGravity,uWorldSize,uCameraRight,uCameraUp});
+    }else{
+      material=new T.ShaderMaterial({uniforms,transparent:true,depthWrite:false,blending:T.AdditiveBlending,
+        vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
 uniform float uTime;uniform float uSize;uniform float uPixelRatio;uniform float uGravity;varying float vAlpha;
 void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3 p=aOrigin+aVelocity*age+vec3(0.0,-0.5*uGravity*age*age,0.0);vec4 mvPosition=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mvPosition;gl_PointSize=clamp(uSize*uPixelRatio*(280.0/max(0.1,-mvPosition.z)),1.0,40.0);vAlpha=alive*(1.0-smoothstep(aLife*0.68,aLife,age));}`,
-      fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);\n#include <tonemapping_fragment>
+        fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);
+#include <tonemapping_fragment>
 #include <colorspace_fragment>}`
-    });
-    const points=new T.Points(geometry,material);points.frustumCulled=false;points.renderOrder=3;geometry.setDrawRange(0,count);
+      });
+      // The legacy fallback remains available only when the TSL constructors could not load.
+      geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+      geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
+      geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
+      geometry.setAttribute('aBirth',new T.BufferAttribute(births,1));
+      geometry.setAttribute('aLife',new T.BufferAttribute(lifetimes,1));
+    }
+    const points=material.isNodeMaterial===true
+      ?new T.InstancedMesh(geometry,material,count)
+      :new T.Points(geometry,material);
+    points.frustumCulled=false;points.renderOrder=3;
+    if(material.isNodeMaterial===true){points.count=count;geometry.setDrawRange(0,6);}
+    else geometry.setDrawRange(0,count);
     return{points,geometry,material,uniforms,capacity:count,cursor:0};
   }
   function spawnGpuParticle(system,origin,velocity,lifetime){
@@ -1840,7 +1883,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     trail.geometry.setDrawRange(0,(points.length-1)*6);
   }
   function updateTrailEffect(key,command){
-    const T=window.THREE;
+    const T=window.THREE,W=window.PStudioWebGPU,TSL=window.PStudioTSL;
     if(!T||!scene)return;
     const duration=Math.max(0.05,Math.min(10,Number(command.duration)||0.25));
     const width=Math.max(0.001,Math.min(1,Number(command.width)||0.05));
@@ -1859,19 +1902,36 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
       const indices=[];
       for(let i=0;i<MAX_TRAIL_POINTS-1;i++){const a=i*2,b=a+1,c=a+2,d=a+3;indices.push(a,b,c,b,d,c);}
       geometry.setIndex(indices);
-      const material=new T.ShaderMaterial({
-        uniforms:{uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}},
-        vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-        fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
-        transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
-      });
+      let material,uniforms;
+      if(W?.MeshBasicNodeMaterial&&TSL?.attribute&&TSL?.uniform){
+        uniforms={
+          uColor:TSL.uniform(new T.Color('#ffffff')),
+          uTime:TSL.uniform(particleClock),
+          uDuration:TSL.uniform(duration)
+        };
+        const age=TSL.max(uniforms.uTime.sub(TSL.attribute('aBirth','float')),TSL.float(0));
+        const alpha=TSL.clamp(TSL.float(1).sub(age.div(TSL.max(uniforms.uDuration,TSL.float(0.001)))),0,1).mul(0.86);
+        material=new W.MeshBasicNodeMaterial();
+        material.colorNode=uniforms.uColor;
+        material.opacityNode=alpha;
+        material.transparent=true;material.depthWrite=false;material.depthTest=true;
+        material.side=T.DoubleSide;material.blending=T.AdditiveBlending;material.toneMapped=true;
+      }else{
+        uniforms={uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}};
+        material=new T.ShaderMaterial({
+          uniforms,
+          vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+          fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
+          transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
+        });
+      }
       const mesh=new T.Mesh(geometry,material);mesh.frustumCulled=false;mesh.renderOrder=5;scene.add(mesh);
-      trail={geometry,material,mesh,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
+      trail={geometry,material,mesh,uniforms,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
       trailEffects.set(key,trail);
     }
     trail.width=width;trail.duration=duration;trail.lastCalledAt=particleClock;
-    trail.material.uniforms.uDuration.value=duration;
-    try{trail.material.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.material.uniforms.uColor.value.set('#ffffff');}
+    trail.uniforms.uDuration.value=duration;
+    try{trail.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.uniforms.uColor.value.set('#ffffff');}
     const position=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0);
     const last=trail.points[trail.points.length-1];
     if(!last||last.position.distanceToSquared(position)>0.000025||particleClock-trail.lastSampleAt>=0.025){
@@ -1885,7 +1945,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
       if(particleClock-trail.lastCalledAt>trail.duration){
         disposeTrailEffect(trail);trailEffects.delete(key);continue;
       }
-      const time=trail.material?.uniforms?.uTime;
+      const time=trail.uniforms?.uTime;
       if(time&&Object.prototype.hasOwnProperty.call(time,'value'))time.value=particleClock;
     }
   }
@@ -1915,12 +1975,27 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     camera.updateMatrixWorld(true);
   }
   function updateGpuParticleSystems(){
-    const ratio=renderer?.getPixelRatio?.()||1;
-    const update=system=>{const uniforms=system?.uniforms;if(!uniforms?.uTime||!uniforms?.uPixelRatio)return false;uniforms.uTime.value=particleClock;uniforms.uPixelRatio.value=ratio;return true;};
+    const T=window.THREE,activeRenderer=productionRendererBridge?.getRenderer?.()||renderer;
+    const ratio=activeRenderer?.getPixelRatio?.()||1;
+    const logicalHeight=activeRenderer?.getSize?.(new T.Vector2())?.y||activeRenderer?.domElement?.clientHeight||720;
+    const projectionY=Math.max(0.001,Math.abs(Number(camera?.projectionMatrix?.elements?.[5])||1));
+    const right=camera?new T.Vector3(1,0,0).applyQuaternion(camera.quaternion):new T.Vector3(1,0,0);
+    const up=camera?new T.Vector3(0,1,0).applyQuaternion(camera.quaternion):new T.Vector3(0,1,0);
+    const update=system=>{
+      const uniforms=system?.uniforms;
+      if(!uniforms?.uTime)return false;
+      uniforms.uTime.value=particleClock;
+      if(uniforms.uPixelRatio)uniforms.uPixelRatio.value=ratio;
+      if(uniforms.uWorldSize&&uniforms.uSize){
+        uniforms.uWorldSize.value=560*(Number(uniforms.uSize.value)||0.085)/(projectionY*Math.max(1,logicalHeight));
+      }
+      if(uniforms.uCameraRight?.value?.copy)uniforms.uCameraRight.value.copy(right);
+      if(uniforms.uCameraUp?.value?.copy)uniforms.uCameraUp.value.copy(up);
+      return true;
+    };
     for(const emitter of particleEmitters.values())update(emitter?.system);
     for(const effect of particleBursts.values())update(effect?.system);
   }
-
   function configureWaterMaterial(material,object=null) {
     if(window.PStudioEnvironmentFX?.configureWater)return window.PStudioEnvironmentFX.configureWater(material,object,false);
     const uniforms={uPStudioTime:{value:0},uPStudioWaveAmplitude:{value:0.075}};
