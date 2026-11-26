@@ -23,6 +23,8 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
     'three/addons/postprocessing/GTAOPass.js',
     'three/addons/postprocessing/TAARenderPass.js',
     'three/addons/postprocessing/SMAAPass.js',
+    'three/addons/tsl/display/TRAANode.js',
+    'three/addons/tsl/display/SMAANode.js',
     'three/addons/postprocessing/ShaderPass.js',
     'three/addons/postprocessing/SSRPass.js',
     'three/addons/lights/LightProbeGenerator.js',
@@ -51,6 +53,9 @@ test('Three.js r187 core, WebGPU/TSL entry points, renderer addons and BVH runti
 
   const tsl = await import('three/tsl');
   assert.equal(typeof tsl.vec3, 'function');
+  assert.equal(typeof tsl.velocity, 'object');
+  assert.equal(typeof addonModules[13].traa, 'function');
+  assert.equal(typeof addonModules[14].smaa, 'function');
   assert.equal(typeof THREE.WebGLRenderer.prototype.setNodesHandler, 'undefined');
 
   const webgpu = await import('three/webgpu');
