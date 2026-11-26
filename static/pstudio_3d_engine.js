@@ -112,7 +112,7 @@
   let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
   let nightTwinkleStars=null;
   let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunViewDirection=null,sunIntensity=0,sunAngularRadius=1.2,sunGlareStrength=0,moonGlareStrength=0;
-  let adaptiveMaximumTouchMode=false,adaptiveUltraTouchMode=false,adaptiveTouchPostFxBudget=false;
+  let adaptiveMaximumTouchMode=false,adaptiveUltraTouchMode=false,adaptiveTouchResolutionBudget=false;
   const meshCache = new Map();
   const gridCache = new Map();
   let lastSize = { width: 0, height: 0 };
@@ -329,7 +329,7 @@
       // levels trade resolution for frame time on constrained devices.
       const adaptiveScale=adaptive?[0.35,0.65,1][level]:1;
       // A constrained touch device must not allocate a desktop-class Ultra drawing buffer.
-      const mobilePixelRatioCap=adaptiveTouchPostFxBudget?[.8,1.0,1.2][level]:Infinity;
+      const mobilePixelRatioCap=adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity;
       const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap);
       const rect=canvas?.getBoundingClientRect?.()||{};
       const width=Math.max(0,Number(rect.width)||0),height=Math.max(0,Number(rect.height)||0);
@@ -344,7 +344,7 @@
     const scale=adaptive
       ?(selected==='maximum'?[.66,.78,.94][level]:[.68,.84,1][level])
       :1;
-    const mobilePixelRatioCap=adaptiveTouchPostFxBudget?[.72,.9,1.05][level]:Infinity;
+    const mobilePixelRatioCap=adaptiveTouchResolutionBudget?[.72,.9,1.05][level]:Infinity;
     return Math.min(dpr,profile.pixelRatio*scale,mobilePixelRatioCap);
   }
 
@@ -376,16 +376,16 @@
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
-    adaptiveTouchPostFxBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
+    adaptiveTouchResolutionBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
     adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
-    // Ultra retains its 2x Maximum output target. Constrained touch devices begin one
-    // adaptive rung lower so the premium effects do not stall the editor during startup.
+    // Ultra retains its configured 2x Maximum output target. Constrained touch devices begin one
+    // adaptive rung lower for buffer/sampling safety; the requested effect set remains enabled.
     adaptiveQualityLevel=2;
     if(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)adaptiveQualityLevel=1;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
     const effectsEnabled=!memorySafetyApplied;
-    const premiumEffectsEnabled=effectsEnabled&&!adaptiveTouchPostFxBudget;
+    const premiumEffectsEnabled=effectsEnabled;
     qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;
     ssrEnabled=premiumEffectsEnabled&&profile.ssr&&!!ssrPass;
     contactShadowsEnabled=!!contactShadowPass&&premiumEffectsEnabled&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);
@@ -411,7 +411,7 @@
     }
     try{window.PStudioEvents?.emit('render.quality.changed',{requested:qualityPreset,active:selected,profile,adaptive:adaptiveQualityEnabled,outputMultiplier:qualityPreset==='ultra'?2:1});}catch(_){}
     try{window.localStorage?.setItem('pstudio-render-quality',qualityPreset);}catch(_){}
-    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied,touchResolutionBudget:adaptiveTouchResolutionBudget}}));}catch(_){}
     return{preset:selected,...profile,adaptiveLevel:adaptiveQualityLevel};
   }
   function adaptiveQualityFrameEMAReset(){adaptiveFrameEMA=0;adaptiveSlowFrames=0;adaptiveFastFrames=0;}
@@ -475,13 +475,13 @@
     else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
     if(now-adaptiveLastChange<1800)return;
     let changed=false;
-    if(adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
-    else if(adaptiveFastFrames>=(adaptiveTouchPostFxBudget?90:150)&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
+    if(adaptiveSlowFrames>=(adaptiveTouchResolutionBudget?6:35)&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
+    else if(adaptiveFastFrames>=(adaptiveTouchResolutionBudget?90:150)&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
     const safeScale=applyEffectiveRenderScale();
-    const effects=!memorySafetyApplied&&!adaptiveTouchPostFxBudget;
+    const effects=!memorySafetyApplied;
     qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;ssrEnabled=effects&&base.ssr&&!!ssrPass;
     volumetricCloudsEnabled=effects&&!!base.clouds&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';
     volumetricFogEnabled=effects&&!!base.atmosphere&&!!volumetricFogPass;
@@ -496,8 +496,8 @@
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
     lastSize={width:0,height:0};resize();
-    try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale:safeScale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource,requested:qualityPreset});}catch(_){}
-    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied}}));}catch(_){}
+    try{window.PStudioEvents?.emit('render.quality.adapted',{level:adaptiveQualityLevel,scale:safeScale,renderTimeMs:adaptiveFrameEMA,source:adaptiveMetricSource,requested:qualityPreset,touchResolutionBudget:adaptiveTouchResolutionBudget});}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('pstudio-quality-state-changed',{detail:{requested:qualityPreset,active:selected,adaptiveLevel:adaptiveQualityLevel,adaptiveEnabled:adaptiveQualityEnabled,safetyLimited:memorySafetyApplied,touchResolutionBudget:adaptiveTouchResolutionBudget}}));}catch(_){}
   }
 
   function ensureRenderer(){
@@ -1104,7 +1104,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function mirrorWaterResolutionScale(){
     const hardware=qualityHardwareCapabilities();
-    const base=memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0;
+    const base=memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0;
     return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
   }
   function configureMirrorWaterMaterial(material){
@@ -1495,7 +1495,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       gpuPressure:memory.gpuPressure,jsHeapUsedBytes:memory.usedJSHeapBytes,
       jsHeapLimitBytes:memory.jsHeapLimitBytes,
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
-      adaptiveLevel:adaptiveQualityLevel,mobilePostFxBudget:adaptiveTouchPostFxBudget,
+      adaptiveLevel:adaptiveQualityLevel,mobileResolutionBudget:adaptiveTouchResolutionBudget,
+      effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null,
       renderEffects:{ao:qualityAOEnabled,ssr:ssrEnabled,volumetricClouds:volumetricCloudsEnabled,volumetricFog:volumetricFogEnabled,contactShadows:contactShadowsEnabled},
       dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource,
       frameBudget:{source:renderingFrameBudget.source,scale:Number(renderingFrameBudget.scale.toFixed(3)),mirrorIntervalFrames:renderingFrameBudget.mirrorIntervalFrames,mirrorResolutionScale:Number(renderingFrameBudget.mirrorResolutionScale.toFixed(3)),giCaptureAllowed:renderingFrameBudget.giCaptureAllowed,giCadenceMultiplier:renderingFrameBudget.giCadenceMultiplier,cloudStepScale:Number(renderingFrameBudget.cloudStepScale.toFixed(3)),fogStepScale:Number(renderingFrameBudget.fogStepScale.toFixed(3)),contactShadowStepScale:Number(renderingFrameBudget.contactShadowStepScale.toFixed(3))},
@@ -6196,7 +6197,7 @@ void main(){
     configureMoonSky(T,profile);
     configureSunSky(T,profile);
     const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
-    const cloudTierActive=!memorySafetyApplied&&!adaptiveTouchPostFxBudget;
+    const cloudTierActive=!memorySafetyApplied;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
     const signature=String(profile.name||'day');
@@ -6527,7 +6528,7 @@ void main(){
         const key=String(ownerId)+':'+commandIndex;
         if (d.type==='camera') { cameraCommand=d; cameraOwnerId=d.cameraOwnerId??ownerId; continue; }
         if (d.type==='environment') { environment=Object.assign(environment||{},d); continue; }
-      if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||(!adaptiveTouchPostFxBudget&&!!d.ssao);const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
+      if(d.type==='postfx'){bloomEnabled=bloomEnabled||!!d.bloom;ssaoEnabled=ssaoEnabled||(!memorySafetyApplied&&!!d.ssao);const strength=Number(d.strength);if(Number.isFinite(strength))bloomStrength=Math.max(0,Math.min(2,strength));continue;}
       if(d.type==='trail'){updateTrailEffect(String(ownerId)+':'+String(d.targetId),d);continue;}
       if(d.type==='camera_shake'||d.type==='camera_fx')continue;
       if(d.type==='model_material')continue;
@@ -6983,7 +6984,7 @@ void main(){
     },
     getCameraBasis,
     getModelCollisionTriangles,
-    setPostProcessing:(bloom,ssao,strength,ssr)=>{resetPostProcessingFailure();bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr&&!adaptiveTouchPostFxBudget;if(renderer&&scene&&camera)drawFrame();},
+    setPostProcessing:(bloom,ssao,strength,ssr)=>{resetPostProcessingFailure();bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!memorySafetyApplied;bloomStrength=Math.max(0,Math.min(2,Number(strength)||0.45));if(ssr!==undefined)ssrEnabled=!!ssr&&!memorySafetyApplied;if(renderer&&scene&&camera)drawFrame();},
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
     togglePerformanceMonitor,
     getPerformanceStats:performanceStatsSnapshot,
@@ -7032,7 +7033,7 @@ void main(){
       resetPostProcessingFailure();
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;
       const selected=resolveQualityPreset(qualityPreset),profile=QUALITY_PROFILES[selected];
-      contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&!adaptiveTouchPostFxBudget&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);
+      contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&(contactShadowsRequested===null?!!profile.contactShadows:contactShadowsRequested);
       if(contactShadowPass){
         const u=contactShadowPass.uniforms||{};
         if(Number.isFinite(options.intensity)&&u.uIntensity)u.uIntensity.value=Math.max(0,Math.min(.85,options.intensity));
@@ -7042,15 +7043,15 @@ void main(){
         contactShadowPass.enabled=contactShadowsEnabled;
       }
       if(renderer&&scene&&camera)drawFrame();
-      return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested};
+      return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};
     },
-    setVolumetricFog:(enabled,options={})=>{resetPostProcessingFailure();volumetricFogEnabled=!!enabled&&!adaptiveTouchPostFxBudget;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass};},
-    setVolumetricClouds:(enabled,options={})=>{resetPostProcessingFailure();volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(64,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass,reason:adaptiveTouchPostFxBudget?'Disabled by the constrained-touch rendering budget.':null};},
+    setVolumetricFog:(enabled,options={})=>{resetPostProcessingFailure();volumetricFogEnabled=!!enabled&&!memorySafetyApplied;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};},
+    setVolumetricClouds:(enabled,options={})=>{resetPostProcessingFailure();volumetricCloudsEnabled=!!enabled&&!memorySafetyApplied&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(64,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};},
     getQualityPreset:()=>{
       const active=resolveQualityPreset(qualityPreset),hardware=qualityHardwareCapabilities();
       const targetPixelRatio=qualityPreset==='ultra'?Math.min(hardware.pixelRatio,QUALITY_PROFILES.maximum.pixelRatio)*2:resolveQualityRenderPixelRatio(active,adaptiveQualityLevel,adaptiveQualityEnabled);
       const renderPixelRatio=renderer?.getPixelRatio?.()||resolveQualityRenderPixelRatio(active,adaptiveQualityLevel,adaptiveQualityEnabled);
-      return{requested:qualityPreset,active,adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,hardware,outputMultiplier:qualityPreset==='ultra'?2:1,targetPixelRatio,renderPixelRatio,resolutionLimited:qualityPreset==='ultra'&&renderPixelRatio+0.001<targetPixelRatio};
+      return{requested:qualityPreset,active,adaptiveEnabled:adaptiveQualityEnabled,adaptiveLevel:adaptiveQualityLevel,safetyLimited:memorySafetyApplied,touchResolutionBudget:adaptiveTouchResolutionBudget,hardware,outputMultiplier:qualityPreset==='ultra'?2:1,targetPixelRatio,renderPixelRatio,resolutionLimited:qualityPreset==='ultra'&&renderPixelRatio+0.001<targetPixelRatio};
     },
     getMemoryStats:memorySnapshot,
     getStats:()=>renderer?{

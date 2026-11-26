@@ -78,19 +78,23 @@ test('Ultra can reduce actual drawing-buffer resolution when adaptive quality st
   assert.ok(renderer.includes('Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0)'));
 });
 
-test('constrained touch Maximum protects the frame budget by disabling full-screen volumetric and screen-space passes',()=>{
-  assert.ok(renderer.includes("adaptiveTouchPostFxBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode"));
-  assert.ok(renderer.includes("const premiumEffectsEnabled=effectsEnabled&&!adaptiveTouchPostFxBudget"));
-  assert.ok(renderer.includes("qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass"));
-  assert.ok(renderer.includes("ssrEnabled=premiumEffectsEnabled&&profile.ssr&&!!ssrPass"));
-  assert.ok(renderer.includes("volumetricCloudsEnabled=!!(premiumEffectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio')"));
-  assert.ok(renderer.includes("volumetricFogEnabled=!!(premiumEffectsEnabled&&profile.atmosphere&&volumetricFogPass)"));
-  assert.ok(renderer.includes("contactShadowsEnabled=!!contactShadowPass&&premiumEffectsEnabled"));
-  assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.72,.9,1.05][level]:Infinity"));
-  assert.ok(renderer.includes("adaptiveTouchPostFxBudget?[.8,1.0,1.2][level]:Infinity"));
-  assert.ok(renderer.includes("adaptiveSlowFrames>=(adaptiveTouchPostFxBudget?6:35)"));
-  assert.ok(renderer.includes("mobilePostFxBudget:adaptiveTouchPostFxBudget"));
-  assert.match(renderer,/setVolumetricClouds:\(enabled,options=\{\}\)=>\{(?:resetPostProcessingFailure\(\);)?volumetricCloudsEnabled=!!enabled&&!adaptiveTouchPostFxBudget/);
+test('constrained touch Maximum and Ultra preserve configured effects while applying resolution budgeting',()=>{
+  assert.ok(renderer.includes("adaptiveTouchResolutionBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode"));
+  assert.ok(renderer.includes("const premiumEffectsEnabled=effectsEnabled;"));
+  assert.ok(renderer.includes("const effects=!memorySafetyApplied;"));
+  assert.ok(renderer.includes("const cloudTierActive=!memorySafetyApplied;"));
+  assert.ok(renderer.includes("adaptiveTouchResolutionBudget?[.72,.9,1.05][level]:Infinity"));
+  assert.ok(renderer.includes("adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity"));
+  assert.ok(renderer.includes("mobileResolutionBudget:adaptiveTouchResolutionBudget"));
+  assert.ok(renderer.includes("touchResolutionBudget:adaptiveTouchResolutionBudget"));
+  assert.ok(renderer.includes("effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null"));
+  assert.ok(renderer.includes("volumetricFogEnabled=!!enabled&&!memorySafetyApplied"));
+  assert.ok(renderer.includes("volumetricCloudsEnabled=!!enabled&&!memorySafetyApplied&&!!volumetricCloudPass"));
+  assert.ok(renderer.includes("contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&"));
+  assert.ok(renderer.includes("ssaoEnabled=!!ssao&&!memorySafetyApplied"));
+  assert.ok(renderer.includes("ssrEnabled=!!ssr&&!memorySafetyApplied"));
+  assert.doesNotMatch(renderer,/premiumEffectsEnabled=effectsEnabled&&!adaptiveTouchResolutionBudget/);
+  assert.doesNotMatch(renderer,/volumetricCloudsEnabled=!!enabled&&!adaptiveTouchResolutionBudget/);
 });
 
 test('quality presets configure render resolution and shadow filtering', () => {
@@ -125,7 +129,7 @@ test('Mirror Water uses bounded reflection targets coordinated by the shared fra
     'pstudio-planar-mirror-water-v2','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
-    'const base=memorySafetyApplied||adaptiveTouchPostFxBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0',
+    'const base=memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0',
     'return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
     'renderer.capabilities?.maxTextureSize',
     'Math.floor(size.x*scale)',
@@ -1182,7 +1186,7 @@ test('baked SH probe grids use trilinear interpolation with a sparse-probe fallb
 test('high and ultra quality presets activate GTAO automatically and adaptive quality keeps it synchronized',()=>{
   assert.ok(renderer.includes('qualityAOEnabled=premiumEffectsEnabled&&profile.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
   assert.ok(renderer.includes('qualityAOEnabled=effects&&base.ao&&!!ssaoPass;ssaoEnabled=qualityAOEnabled;'));
-  assert.match(renderer,/setPostProcessing:\(bloom,ssao,strength,ssr\)=>\{(?:resetPostProcessingFailure\(\);)?bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!adaptiveTouchPostFxBudget;/);
+  assert.match(renderer,/setPostProcessing:\(bloom,ssao,strength,ssr\)=>\{(?:resetPostProcessingFailure\(\);)?bloomEnabled=!!bloom;ssaoEnabled=!!ssao&&!memorySafetyApplied;/);
   assert.ok(renderer.includes('if(ssaoPass)ssaoPass.enabled=ssaoEnabled'));
 });
 
