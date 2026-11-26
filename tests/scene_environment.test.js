@@ -227,7 +227,7 @@ test('atmosphere renderer calibrates physical-sky exposure and always draws a de
     'if(physicalSky)physicalSky.visible=false'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('function createProceduralSkyTexture(T,profile,resolutionScale=1,continuous=false)'));
-  assert.match(renderer,/const width=Math\\.max\\(512,Math\\.round\\(2048\\*scale\\)\\),height=Math\\.max\\(256,Math\\.round\\(1024\\*scale\\)\\)/);
+  assert.match(renderer,/const width=Math\.max\(512,Math\.round\(2048\*scale\)\),height=Math\.max\(256,Math\.round\(1024\*scale\)\)/);
   assert.ok(renderer.includes('for(let i=0;i<12000;i++)'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
