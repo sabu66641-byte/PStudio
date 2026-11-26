@@ -6402,7 +6402,11 @@ void main(){
     // than drawing a cheaper substitute for GENESIS transitions.
     const nightProfile=window.PStudioGenesisEnvironment?.profileForTime?.(23.4)||
       window.PStudioSceneEnvironment?.getPreset?.('night')||{name:'night',starBrightness:1.62};
-    const profile={...nightProfile,name:'night',visualPreset:'night',starBrightness:1.62,cloudDensity:0,cloudCoverage:0};
+    const profile={...nightProfile,name:'night',visualPreset:'night',
+      // Light-only layer: a black base prevents SCREEN blending from lifting
+      // the whole sky and washing out the Milky Way against the live gradient.
+      skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000',
+      starBrightness:1.62,cloudDensity:0,cloudCoverage:0,sunIntensity:0};
     const sourceTexture=createProceduralSkyTexture(T,profile,width/2048,true);
     const canvas=document.createElement('canvas');
     canvas.width=width;canvas.height=height;
@@ -6476,18 +6480,17 @@ void main(){
       context.restore();
     }
 
-    // Authored multi-octave cloud field remains separate from the sky gradient.
-    // It drifts horizontally and naturally yields to the starfield at night.
+    // Keep the authored panorama cloud field as a static fallback only. When the
+    // world-space volumetric pass is active it owns cloud motion and shading;
+    // layering a drifting equirectangular sheet over it creates conflicting
+    // motion cues and the false upward-converging look.
     const cloudDensity=Math.max(0,Math.min(1,Number(state.cloudDensity||0)/1.3));
     const cloudCoverage=Math.max(0,Math.min(1,Number(state.cloudCoverage||0)/.62));
     const cloudVisibility=cloudDensity*cloudCoverage;
-    if(cloudVisibility>.012&&genesisCloudCanvas){
-      const windX=Number(state.cloudWindX)||0;
-      const drift=((windX*Math.max(0,Number(state.animationTime)||0)*.012)%width+width)%width;
+    if(!volumetricCloudsEnabled&&cloudVisibility>.012&&genesisCloudCanvas){
       context.save();context.globalCompositeOperation='source-over';
       context.globalAlpha=Math.min(.88,cloudVisibility*.92);
-      context.drawImage(genesisCloudCanvas,-drift,0,width,height);
-      context.drawImage(genesisCloudCanvas,width-drift,0,width,height);
+      context.drawImage(genesisCloudCanvas,0,0,width,height);
       context.restore();
     }
 
