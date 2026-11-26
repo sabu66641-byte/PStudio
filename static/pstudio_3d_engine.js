@@ -6435,7 +6435,7 @@ void main(){
         positions.push(
           centerX+(Math.cos(angle)*radial-Math.sin(angle)*tangent)*edge,
           centerY+(Math.sin(angle)*radial+Math.cos(angle)*tangent)*edge,
-          .006+Math.sin(theta)*.012
+          .006+Math.sin(theta)*.032+Math.max(0,Math.cos(theta))*.018
         );
       }
       for(let segment=0;segment<segments;segment++){
@@ -6584,7 +6584,39 @@ void main(){
     const roof=genesisAddMesh(T,parent,geometry,materials.roof,centerX,0,centerZ);
     roof.name='GENESIS Curved Japanese Roof';
     roof.material.side=T.DoubleSide;
-    const tileGeometry=new T.BoxGeometry(.82,.075,1.10);
+    // Individual ceramic kawara tiles use a shallow crowned cross-section, bevelled
+    // edge returns and a real underside instead of repeated rectangular blocks.
+    const tileGeometry=new T.BufferGeometry();
+    const tilePositions=[],tileIndices=[],tileColumnsAcross=8;
+    for(let layer=0;layer<2;layer++){
+      for(let row=0;row<2;row++){
+        const z=row===0?-.575:.575;
+        for(let column=0;column<=tileColumnsAcross;column++){
+          const u=column/tileColumnsAcross,px=(u-.5)*.86;
+          const crown=.042+.072*Math.sin(Math.PI*u);
+          tilePositions.push(px,layer===0?crown:crown-.072,z);
+        }
+      }
+    }
+    const tileRow=(layer,row,column)=>layer*18+row*9+column;
+    for(let column=0;column<tileColumnsAcross;column++){
+      const a=tileRow(0,0,column),b=a+1,c=tileRow(0,1,column),d=c+1;
+      tileIndices.push(a,c,b,b,c,d);
+      const ba=tileRow(1,0,column),bb=ba+1,bc=tileRow(1,1,column),bd=bc+1;
+      tileIndices.push(ba,bb,bc,bb,bd,bc);
+    }
+    for(const edge of [0,tileColumnsAcross]){
+      const a=tileRow(0,0,edge),b=tileRow(0,1,edge),c=tileRow(1,0,edge),d=tileRow(1,1,edge);
+      tileIndices.push(a,c,b,b,c,d);
+    }
+    for(const row of [0,1]){
+      for(let column=0;column<tileColumnsAcross;column++){
+        const a=tileRow(0,row,column),b=a+1,c=tileRow(1,row,column),d=c+1;
+        tileIndices.push(a,b,c,b,d,c);
+      }
+    }
+    tileGeometry.setAttribute('position',new T.Float32BufferAttribute(tilePositions,3));
+    tileGeometry.setIndex(tileIndices);tileGeometry.computeVertexNormals();
     const tileColumns=Math.floor(dimensions.halfWidth/.9);
     const tileRows=Math.floor(dimensions.halfDepth/1.15);
     const tileCount=tileColumns*tileRows*2;
