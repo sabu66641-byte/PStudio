@@ -525,7 +525,7 @@ export function applyPStudioTSLNativeClusteredLighting(root, options = {}) {
     if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
     const assigned = Array.isArray(object.material) ? object.material : [object.material];
     for (const material of assigned) {
-      if (material?.isNodeMaterial !== true || entries.some(entry => entry.material === material)) continue;
+      if (material?.isNodeMaterial !== true || !material.lights || entries.some(entry => entry.material === material)) continue;
       const originalLightsNode = material.lightsNode ?? null;
       const originalLights = originalLightsNode?.getLights?.();
       entries.push({
