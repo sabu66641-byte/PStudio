@@ -52,7 +52,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
   assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-caustics-v1'));
-  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v5'));
+  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v6'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
