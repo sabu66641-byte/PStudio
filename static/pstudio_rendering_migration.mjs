@@ -24,13 +24,15 @@ export const supportsPStudioTSLSHGI = typeof attachPStudioTSLSHProbeToMaterial =
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
-  Object.freeze({ id: 'renderer-parity-validation', label: '本番WebGPUの実機負荷・長時間動作・WebGL2復旧の回帰検証' }),
-  Object.freeze({ id: 'legacy-materials', label: '認定済みTSLアダプター対象外の独自GLSL・拡張材質を移植' }),
-  Object.freeze({ id: 'environment-effects', label: 'TSL体積雲・高度フォグ実装済み／実機パリティ検証待ち' }),
-  Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・静的／動的SH GI・プローブキャプチャのTSL／WebGPU移植' }),
-  Object.freeze({ id: 'post-processing', label: '残存のAA・特殊GLSL等をRenderPipelineへ移植' }),
-  Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
-  Object.freeze({ id: 'parity-validation', label: '実ブラウザー／実GPUで画質・性能・長時間動作の同等性を検証' })
+  Object.freeze({ id: 'renderer-parity-validation', label: '実機WebGPUでフレーム時間・メモリ・長時間動作・WebGL2復旧を回帰検証' }),
+  Object.freeze({ id: 'legacy-materials', label: '残存GLSLを個別TSL移植：NPR Toon、Backface Outline Shell、外部ShaderMaterial／独自onBeforeCompile材質' }),
+  Object.freeze({ id: 'environment-effects', label: 'TSL体積雲・体積フォグは接続済み。実機で深度交差・散乱・ノイズ・時間変化の視覚品質を比較' }),
+  Object.freeze({ id: 'lighting-gi-shadows', label: 'ClusteredLightsNode PBR・9係数SH・WebGPU CubeRenderTarget読出しを接続済み。反射視点・影・SH係数の実機等価性を検証' }),
+  Object.freeze({ id: 'gpu-particles-trails', label: 'TSL NodeMaterialのInstanced GPU Particle／Ribbon Trailを接続済み。粒子密度・透明合成・負荷・寿命境界を実機検証' }),
+  Object.freeze({ id: 'water-reflection-parity', label: 'TSL水深プリパス・ReflectorNode・水面材質を接続済み。複数反射面・カメラ切替・深度／反射の実機パリティを検証' }),
+  Object.freeze({ id: 'post-processing', label: 'TSL AO・SSR・Contact Shadows・God Rays・Bloom・Clouds・Fogの更新経路を統合済み。TAA／SMAA等の残存AAと実機合成を検証' }),
+  Object.freeze({ id: 'resource-profiling', label: 'GPUリソース予算・メモリ／タイミング計測・デバイスロスト復旧を実機で統合検証' }),
+  Object.freeze({ id: 'parity-validation', label: '実ブラウザー／実GPUでWebGL2との画質・性能・長時間動作の同等性を確認' })
 ]);
 
 function hasCustomShaderHooks(material) {
@@ -154,7 +156,12 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL SH probe irradiance attached per NodeMaterial, preserving PStudio 9xRGB coefficients and object-local temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
-      'TSL underwater caustics with the legacy diffuse-light response preserved'
+      'TSL underwater caustics with the legacy diffuse-light response preserved',
+      'TSL InstancedMesh billboard GPU particles with per-instance ballistic motion and lifetime shading',
+      'TSL ribbon trail materials with per-vertex lifetime fading',
+      'WebGPU CubeRenderTarget SH probe capture/readback with WebGPU-only renderer selection',
+      'Production bridge/runtime/host forwarding for Bloom, AO, SSR, God Rays, Contact Shadows, volumetric clouds and fog',
+      'Change-aware TSL post-processing graph rebuilds to avoid per-frame recompilation'
     ]),
     blockers: Object.freeze(blockers)
   });
