@@ -135,6 +135,230 @@ function createVolumetricFogNode(inputColor, sceneDepth, settings) {
   });
 }
 
+
+export const supportsPStudioTSLVolumetricClouds = [
+  'getViewPosition', 'projectionDepth', 'cameraProjectionMatrixInverse',
+  'cameraWorldMatrix', 'cameraNear', 'cameraFar', 'isBackgroundDepth',
+  'Loop', 'If', 'Break', 'sin', 'cos', 'exp', 'pow', 'mix', 'smoothstep',
+  'fract', 'floor', 'normalize', 'dot', 'clamp'
+].every(name => TSL[name] !== undefined);
+
+function vector2Option(value, fallback) {
+  if (Array.isArray(value) && value.length >= 2 && value.slice(0, 2).every(item => Number.isFinite(Number(item)))) {
+    return new THREE.Vector2(Number(value[0]), Number(value[1]));
+  }
+  if (value?.isVector2) return value.clone();
+  return new THREE.Vector2(...fallback);
+}
+
+function normalizeVolumetricClouds(options) {
+  if (options === false || options?.enabled === false || options == null) return null;
+  const source = options === true ? {} : options;
+  const cloudBase = Math.max(-500, Math.min(10000, Number.isFinite(Number(source.cloudBase)) ? Number(source.cloudBase) : 54));
+  return {
+    fogColor: vector3Option(source.fogColor, [0.75, 0.886, 0.922]),
+    sunDirection: vector3Option(source.sunDirection, [-0.42, 0.78, -0.46]).normalize(),
+    sunColor: vector3Option(source.sunColor, [1, 0.941, 0.831]),
+    time: Number.isFinite(Number(source.time)) ? Number(source.time) : 0,
+    cloudBase,
+    cloudTop: Math.max(cloudBase + 1, Math.min(12000, Number.isFinite(Number(source.cloudTop)) ? Number(source.cloudTop) : 108)),
+    density: Math.max(0, Math.min(2, Number.isFinite(Number(source.density)) ? Number(source.density) : 0.78)),
+    scale: Math.max(0.0001, Math.min(0.1, Number.isFinite(Number(source.scale)) ? Number(source.scale) : 0.0095)),
+    coverage: Math.max(0, Math.min(1, Number.isFinite(Number(source.coverage)) ? Number(source.coverage) : 0.48)),
+    detail: Math.max(0, Math.min(1, Number.isFinite(Number(source.detail)) ? Number(source.detail) : 0.58)),
+    wind: vector2Option(source.wind, [-0.8, 0.32]),
+    steps: Math.max(8, Math.min(64, Math.round(Number(source.steps) || 34))),
+    lightSteps: Math.max(1, Math.min(3, Math.round(Number(source.lightSteps) || 2))),
+    atmosphereStrength: Math.max(0, Math.min(1, Number.isFinite(Number(source.atmosphereStrength)) ? Number(source.atmosphereStrength) : 0.96))
+  };
+}
+
+function createVolumetricCloudNode(inputColor, sceneDepth, settings) {
+  const fogColor = TSL.uniform(settings.fogColor.clone());
+  const sunDirection = TSL.uniform(settings.sunDirection.clone());
+  const sunColor = TSL.uniform(settings.sunColor.clone());
+  const time = TSL.uniform(settings.time);
+  const cloudBase = TSL.uniform(settings.cloudBase);
+  const cloudTop = TSL.uniform(settings.cloudTop);
+  const density = TSL.uniform(settings.density);
+  const scale = TSL.uniform(settings.scale);
+  const coverage = TSL.uniform(settings.coverage);
+  const detail = TSL.uniform(settings.detail);
+  const wind = TSL.uniform(settings.wind.clone());
+  const steps = TSL.uniform(settings.steps);
+  const lightSteps = TSL.uniform(settings.lightSteps);
+  const atmosphereStrength = TSL.uniform(settings.atmosphereStrength);
+
+  const hash = TSL.Fn(([p]) => {
+    const q = TSL.fract(p.mul(0.3183099).add(TSL.vec3(0.1, 0.17, 0.13))).mul(17);
+    return TSL.fract(q.x.mul(q.y).mul(q.z).mul(q.x.add(q.y).add(q.z)));
+  }, { p: 'vec3', return: 'float' });
+
+  const noise = TSL.Fn(([p]) => {
+    const cell = TSL.floor(p);
+    const f = TSL.fract(p);
+    const smooth = f.mul(f).mul(TSL.vec3(3).sub(f.mul(2)));
+    const n000 = hash(cell);
+    const n100 = hash(cell.add(TSL.vec3(1, 0, 0)));
+    const n010 = hash(cell.add(TSL.vec3(0, 1, 0)));
+    const n110 = hash(cell.add(TSL.vec3(1, 1, 0)));
+    const n001 = hash(cell.add(TSL.vec3(0, 0, 1)));
+    const n101 = hash(cell.add(TSL.vec3(1, 0, 1)));
+    const n011 = hash(cell.add(TSL.vec3(0, 1, 1)));
+    const n111 = hash(cell.add(TSL.vec3(1, 1, 1)));
+    const x00 = TSL.mix(n000, n100, smooth.x);
+    const x10 = TSL.mix(n010, n110, smooth.x);
+    const x01 = TSL.mix(n001, n101, smooth.x);
+    const x11 = TSL.mix(n011, n111, smooth.x);
+    return TSL.mix(TSL.mix(x00, x10, smooth.y), TSL.mix(x01, x11, smooth.y), smooth.z);
+  }, { p: 'vec3', return: 'float' });
+
+  const fbm = TSL.Fn(([p]) => {
+    const n0 = noise(p).mul(0.55);
+    const n1 = noise(p.mul(2.03).add(TSL.vec3(7.1, 3.7, 5.3))).mul(0.275);
+    const n2 = noise(p.mul(4.0609).add(TSL.vec3(21.513, 11.201, 16.009))).mul(0.1375);
+    return n0.add(n1).add(n2).div(0.9625);
+  }, { p: 'vec3', return: 'float' });
+
+  const cloudDensity = TSL.Fn(([worldPosition]) => {
+    const height = TSL.clamp(
+      worldPosition.y.sub(cloudBase).div(TSL.max(1, cloudTop.sub(cloudBase))),
+      0, 1
+    );
+    const vertical = TSL.smoothstep(0.012, 0.16, height)
+      .mul(TSL.float(1).sub(TSL.smoothstep(0.62, 0.985, height)));
+    const q = worldPosition.mul(scale).add(TSL.vec3(
+      wind.x.mul(time).mul(0.0008),
+      0,
+      wind.y.mul(time).mul(0.0008)
+    ));
+    const warp = TSL.vec3(
+      noise(q.mul(0.52).add(TSL.vec3(17, 3, 9))),
+      noise(q.mul(0.52).add(TSL.vec3(4, 19, 2))),
+      noise(q.mul(0.52).add(TSL.vec3(9, 7, 21)))
+    ).sub(0.5);
+    const body = fbm(q.add(warp.mul(0.52)));
+    const detailNoise = noise(q.mul(4.15).add(TSL.vec3(12, 5, 7)));
+    const fineDetailNoise = noise(q.mul(8.25).add(TSL.vec3(27, 11, 19)));
+    const erosion = TSL.float(1).sub(detailNoise).mul(detail).mul(0.12)
+      .add(TSL.float(1).sub(fineDetailNoise).mul(detail).mul(0.035));
+    const threshold = TSL.mix(0.68, 0.34, TSL.clamp(coverage, 0, 1));
+    const billow = TSL.smoothstep(
+      threshold.sub(0.18), threshold.add(0.13),
+      body.sub(erosion).add(TSL.float(0.5).sub(height).mul(0.045))
+    );
+    return billow.mul(vertical).mul(density).mul(1.25);
+  }, { worldPosition: 'vec3', return: 'float' });
+
+  const node = TSL.Fn(() => {
+    const uv = TSL.screenUV;
+    const source = inputColor.sample(uv);
+    const depth = sceneDepth.sample(uv).r;
+    const farDepth = TSL.projectionDepth(depth, TSL.cameraNear, TSL.cameraFar);
+    const viewFar = TSL.getViewPosition(uv, farDepth, TSL.cameraProjectionMatrixInverse);
+    const viewRay = TSL.normalize(viewFar);
+    const ray = TSL.normalize(TSL.cameraWorldMatrix.mul(TSL.vec4(viewRay, 0)).xyz);
+    const origin = TSL.cameraWorldMatrix.mul(TSL.vec4(0, 0, 0, 1)).xyz;
+    const safeRayY = TSL.max(ray.y, 0.012);
+    const t0 = cloudBase.sub(origin.y).div(safeRayY);
+    const t1 = cloudTop.sub(origin.y).div(safeRayY);
+    const begin = TSL.max(0, TSL.min(t0, t1));
+    const finish = TSL.min(TSL.max(t0, t1), 5200);
+    const activeSteps = TSL.clamp(steps, 8, 64);
+    const stepLength = finish.sub(begin).div(activeSteps);
+    const jitter = TSL.fract(TSL.sin(TSL.dot(uv.mul(1000), TSL.vec2(12.9898, 78.233))).mul(43758.5453));
+    const transmittance = TSL.float(1).toVar();
+    const scattering = TSL.vec3(0).toVar();
+    const sun = TSL.normalize(sunDirection);
+    const cosineAngle = TSL.dot(ray.negate(), sun);
+    const g = TSL.float(0.68);
+    const g2 = g.mul(g);
+    const phaseDenominator = TSL.max(0.001, TSL.float(1).add(g2).sub(g.mul(cosineAngle).mul(2)));
+    const phase = TSL.float(1).sub(g2).div(TSL.float(12.5663706).mul(TSL.pow(phaseDenominator, 1.5)));
+
+    TSL.If(
+      TSL.isBackgroundDepth(depth)
+        .and(ray.y.greaterThan(0.012))
+        .and(finish.greaterThan(begin))
+        .and(density.greaterThan(0.001))
+        .and(atmosphereStrength.greaterThan(0.001)),
+      () => {
+        TSL.Loop({ start: 0, end: 64 }, ({ i }) => {
+          TSL.If(TSL.float(i).greaterThanEqual(activeSteps), () => TSL.Break());
+          TSL.If(transmittance.lessThan(0.018), () => TSL.Break());
+          const travel = begin.add(TSL.float(i).add(jitter).mul(stepLength));
+          const worldPosition = origin.add(ray.mul(travel));
+          const localDensity = cloudDensity(worldPosition);
+          TSL.If(localDensity.greaterThan(0.002), () => {
+            const lightOptical = TSL.float(0).toVar();
+            TSL.Loop({ start: 0, end: 3 }, ({ j }) => {
+              TSL.If(TSL.float(j).greaterThanEqual(lightSteps), () => TSL.Break());
+              const lightDistance = TSL.float(10).add(TSL.float(j).mul(18));
+              const lightPoint = worldPosition.add(sun.mul(lightDistance));
+              lightOptical.addAssign(cloudDensity(lightPoint).mul(lightDistance).mul(0.012));
+            });
+            const lightTransmittance = TSL.exp(lightOptical.mul(-1.35));
+            const extinction = localDensity.mul(stepLength).mul(0.018);
+            const alpha = TSL.float(1).sub(TSL.exp(extinction.negate()));
+            const powder = TSL.float(1).sub(TSL.exp(localDensity.mul(-1.7)));
+            const forwardScatter = TSL.clamp(phase.mul(2.2), 0, 1.65);
+            const ambient = TSL.mix(
+              fogColor.mul(TSL.vec3(0.48, 0.58, 0.72)),
+              TSL.vec3(0.74, 0.81, 0.9),
+              TSL.clamp(ray.y.mul(0.5).add(0.45), 0, 1)
+            );
+            const direct = sunColor.mul(TSL.float(0.38).add(forwardScatter.mul(1.25))).mul(lightTransmittance);
+            const silverLining = TSL.pow(TSL.clamp(TSL.float(1).sub(lightTransmittance), 0, 1), 0.38).mul(0.22);
+            const cloudMultipleScatter = TSL.float(1).sub(lightTransmittance)
+              .mul(TSL.float(0.12).add(TSL.pow(powder, 0.6).mul(0.10)));
+            const densityTerm = TSL.float(1).sub(TSL.pow(TSL.float(1).sub(localDensity).pow(2), 2));
+            const ambientShape = TSL.pow(densityTerm, 2);
+            const cloudLight = ambient.mul(
+              TSL.float(0.58).add(TSL.float(0.22).mul(ambientShape)).add(cloudMultipleScatter)
+            ).add(direct.mul(TSL.pow(powder, 0.72))).add(sunColor.mul(silverLining));
+            scattering.addAssign(cloudLight.mul(alpha).mul(transmittance));
+            transmittance.mulAssign(TSL.float(1).sub(alpha));
+          });
+        });
+      }
+    );
+
+    const cloudResult = source.rgb.mul(transmittance)
+      .add(scattering.mul(atmosphereStrength));
+    const result = TSL.vec4(cloudResult, source.a);
+    return TSL.isBackgroundDepth(depth).select(result, source);
+  })();
+
+  return Object.freeze({
+    node,
+    set(next) {
+      if (!next) { density.value = 0; return; }
+      fogColor.value.copy(next.fogColor);
+      sunDirection.value.copy(next.sunDirection);
+      sunColor.value.copy(next.sunColor);
+      time.value = next.time;
+      cloudBase.value = next.cloudBase;
+      cloudTop.value = next.cloudTop;
+      density.value = next.density;
+      scale.value = next.scale;
+      coverage.value = next.coverage;
+      detail.value = next.detail;
+      wind.value.copy(next.wind);
+      steps.value = next.steps;
+      lightSteps.value = next.lightSteps;
+      atmosphereStrength.value = next.atmosphereStrength;
+    },
+    getState() {
+      return Object.freeze({
+        time: time.value, cloudBase: cloudBase.value, cloudTop: cloudTop.value,
+        density: density.value, scale: scale.value, coverage: coverage.value,
+        detail: detail.value, steps: steps.value, lightSteps: lightSteps.value,
+        atmosphereStrength: atmosphereStrength.value
+      });
+    }
+  });
+}
+
 export const supportsPStudioTSLContactShadows = [
   'getViewPosition', 'getScreenPositionFromClip', 'projectionDepth',
   'cameraProjectionMatrix', 'cameraProjectionMatrixInverse', 'cameraViewMatrix',
