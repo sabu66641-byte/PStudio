@@ -1479,11 +1479,21 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     return{
       fps:meanInterval&&meanInterval>0?Number((1000/meanInterval).toFixed(1)):null,
       frameIntervalMs:lastFrameIntervalMs?Number(lastFrameIntervalMs.toFixed(2)):null,
+      frameP50Ms:metricPercentile(frameIntervalSamples,50),
       frameP95Ms:metricPercentile(frameIntervalSamples,95),
+      frameP99Ms:metricPercentile(frameIntervalSamples,99),
+      frameIntervalSampleCount:frameIntervalSamples.length,
       cpuRenderSubmitMs:Number(lastRenderDurationMs.toFixed(2)),
+      cpuRenderSubmitP50Ms:metricPercentile(cpuRenderSamples,50),
       cpuRenderP95Ms:metricPercentile(cpuRenderSamples,95),
+      cpuRenderSubmitP99Ms:metricPercentile(cpuRenderSamples,99),
+      cpuRenderSampleCount:cpuRenderSamples.length,
       gpuRenderMs:gpuFresh?Number(lastGpuRenderDurationMs.toFixed(2)):null,
+      gpuRenderP50Ms:gpuFresh?metricPercentile(gpuRenderSamples,50):null,
       gpuRenderP95Ms:gpuFresh?metricPercentile(gpuRenderSamples,95):null,
+      gpuRenderP99Ms:gpuFresh?metricPercentile(gpuRenderSamples,99):null,
+      gpuRenderSampleCount:gpuRenderSamples.length,
+      gpuTimingFresh:gpuFresh,
       gpuFrameBudgetPercent:gpuFresh?Number((lastGpuRenderDurationMs/16.67*100).toFixed(1)):null,
       timingSource:gpuFresh?'gpu-timer-query':'cpu-render-submission',
       postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null},
@@ -1519,12 +1529,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const gpuBudget=stats.gpuFrameBudgetPercent===null?'—':stats.gpuFrameBudgetPercent.toFixed(0)+'% of 16.67 ms';
     const heap=stats.jsHeapUsedBytes===null?'unavailable':formatMetricBytes(stats.jsHeapUsedBytes);
     const gpuMemory=formatMetricBytes(stats.estimatedGpuBytes)+' / '+formatMetricBytes(stats.gpuBudgetBytes);
+    const triplet=(p50,p95,p99)=>[p50,p95,p99].map(value=>Number.isFinite(value)?value.toFixed(2):'—').join('/');
     const rows=[
       'PSTUDIO PERFORMANCE',
       'FPS: '+(stats.fps===null?'—':stats.fps.toFixed(1))+'  |  Frame: '+(stats.frameIntervalMs===null?'—':stats.frameIntervalMs.toFixed(2)+' ms'),
-      'Frame P95: '+(stats.frameP95Ms===null?'—':stats.frameP95Ms.toFixed(2)+' ms'),
-      'CPU render submit: '+stats.cpuRenderSubmitMs.toFixed(2)+' ms',
-      'GPU render: '+gpu+'  ('+gpuBudget+')',
+      'Frame interval P50/P95/P99: '+triplet(stats.frameP50Ms,stats.frameP95Ms,stats.frameP99Ms)+' ms  (n='+stats.frameIntervalSampleCount+')',
+      'CPU render path P50/P95/P99: '+triplet(stats.cpuRenderSubmitP50Ms,stats.cpuRenderP95Ms,stats.cpuRenderSubmitP99Ms)+' ms  (n='+stats.cpuRenderSampleCount+')',
+      'GPU render P50/P95/P99: '+triplet(stats.gpuRenderP50Ms,stats.gpuRenderP95Ms,stats.gpuRenderP99Ms)+' ms  (n='+stats.gpuRenderSampleCount+', '+(stats.gpuTimingFresh?'fresh':'stale/unavailable')+')  ('+gpuBudget+')',
       'Draw calls: '+stats.drawCalls+'  |  Triangles: '+stats.triangles.toLocaleString(),
       'Geometry: '+stats.geometries+'  |  Textures: '+stats.textures,
       'GPU estimate: '+gpuMemory+'  |  JS heap: '+heap,
