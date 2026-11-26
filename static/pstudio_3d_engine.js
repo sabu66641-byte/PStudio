@@ -644,6 +644,46 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     };
   }
 
+  function getPStudioVolumetricFogSettings(){
+    const uniforms=volumetricFogPass?.uniforms||{};
+    const toArray=(value,fallback)=>value?.toArray?.()||fallback;
+    return{
+      enabled:true,
+      fogColor:toArray(uniforms.uFogColor?.value,[0.725,0.847,0.851]),
+      fogAmbientColor:toArray(uniforms.uFogAmbientColor?.value,[0.851,0.933,1]),
+      sunColor:toArray(uniforms.uSunColor?.value,[1,0.945,0.839]),
+      sunDirection:toArray(uniforms.uSunDirection?.value,[-0.35,0.82,-0.44]),
+      density:Number(uniforms.uFogDensity?.value??0.0018),
+      heightFalloff:Number(uniforms.uHeightFalloff?.value??0.018),
+      baseHeight:Number(uniforms.uBaseHeight?.value??0),
+      anisotropy:Number(uniforms.uFogAnisotropy?.value??0.42),
+      steps:Number(uniforms.uFogSteps?.value??16),
+      time:Number(particleClock)||0
+    };
+  }
+
+  function getPStudioVolumetricCloudSettings(){
+    const uniforms=volumetricCloudPass?.uniforms||{};
+    const toArray=(value,fallback)=>value?.toArray?.()||fallback;
+    return{
+      enabled:true,
+      fogColor:toArray(uniforms.uFogColor?.value,[0.75,0.886,0.922]),
+      sunColor:toArray(uniforms.uSunColor?.value,[1,0.941,0.831]),
+      sunDirection:toArray(uniforms.uSunDirection?.value,[-0.42,0.78,-0.46]),
+      time:Number(particleClock)||0,
+      cloudBase:Number(uniforms.uCloudBase?.value??54),
+      cloudTop:Number(uniforms.uCloudTop?.value??108),
+      density:Number(uniforms.uCloudDensity?.value??0.78),
+      scale:Number(uniforms.uCloudScale?.value??0.0095),
+      coverage:Number(uniforms.uCloudCoverage?.value??0.48),
+      detail:Number(uniforms.uCloudDetail?.value??0.58),
+      wind:toArray(uniforms.uCloudWind?.value,[-0.8,0.32]),
+      steps:Number(uniforms.uCloudSteps?.value??34),
+      lightSteps:Number(uniforms.uCloudLightSteps?.value??2),
+      atmosphereStrength:Number(uniforms.uAtmosphereStrength?.value??0.96)
+    };
+  }
+
   function getProductionWebGPUFeatureBlockers(commandsByObject=null){
     const blockers=[];
     const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
@@ -674,8 +714,14 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(bakedLightProbe||bakedLightProbeVolume?.length)add('static-gi-probe-capture','既存の静的SHプローブ生成はWebGL CubeCamera経路です。WebGPUキャプチャと係数の同等性検証が未完了です。');
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
-    if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
-    if(volumetricCloudsEnabled)add('volumetric-clouds','体積雲のTSL RenderPipeline移植が未完了です。');
+    if(volumetricFogEnabled){
+      if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricFog!==true)add('volumetric-fog-tsl','体積フォグのTSLノード機能が利用できません。');
+      else add('volumetric-fog-parity','体積フォグTSLは実装済みですが、実機WebGPUでの散乱・深度・色差パリティ検証が未完了のためWebGL2を維持します。');
+    }
+    if(volumetricCloudsEnabled){
+      if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricClouds!==true)add('volumetric-clouds-tsl','体積雲のTSLノード機能が利用できません。');
+      else add('volumetric-clouds-parity','体積雲TSLは実装済みですが、実機WebGPUでのノイズ・多重散乱・深度パリティ検証が未完了のためWebGL2を維持します。');
+    }
     if(contactShadowsEnabled&&!supportsContactShadowsNode)add('contact-shadows','コンタクトシャドウのTSL深度レイマーチアダプターが利用できません。');
     if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
     if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
@@ -771,7 +817,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
             ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false,
             godRays:godRaysEnabled?getPStudioGodRaysSettings():false,
-            contactShadows:contactShadowsEnabled?getPStudioContactShadowSettings():false
+            contactShadows:contactShadowsEnabled?getPStudioContactShadowSettings():false,
+            volumetricFog:volumetricFogEnabled?getPStudioVolumetricFogSettings():false,
+            volumetricClouds:volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false
           },
           configureRenderer:webgpuRenderer=>{
             webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
@@ -1613,6 +1661,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
         if(godRaysEnabled)productionRendererBridge.setGodRays?.(getPStudioGodRaysSettings());
         productionRendererBridge.setContactShadows?.(contactShadowsEnabled?getPStudioContactShadowSettings():false);
+        productionRendererBridge.setVolumetricFog?.(volumetricFogEnabled?getPStudioVolumetricFogSettings():false);
+        productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false);
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
