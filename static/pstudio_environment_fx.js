@@ -330,6 +330,7 @@
   function configureUnderwater(material) {
     if(!material || material.userData.pstudioCausticsHQ)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    markTSLPortable(material,'caustics');
     const u={time:{value:0},strength:{value:.30}},old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -346,6 +347,7 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-underwater-caustics-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioCausticsHQ=u;caustics.add(material);return material;
   }
 
