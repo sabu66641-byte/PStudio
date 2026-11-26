@@ -248,7 +248,7 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
   }
 
   for (const token of [
-    '/static/pstudio_rendering_production_bridge.mjs?v=20261126-cluster-live-v1',
+    '/static/pstudio_rendering_production_bridge.mjs?v=20261126-sh-probe-capture-v1',
     'window.PStudioProductionRenderingBridgeFactory = productionBridge.createPStudioProductionRenderingBridge'
   ]) {
     assert.ok(html.includes(token), 'application bootstrap: ' + token);
