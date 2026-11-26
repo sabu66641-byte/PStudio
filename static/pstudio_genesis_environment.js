@@ -79,6 +79,8 @@
     result.label=result.name==='dusk'?'夕方':result.name==='night'?'夜':'昼';
     const sun=normalize3(result.skySunX,result.skySunY,result.skySunZ,[.35,.89,.28]);
     const moon=normalize3(result.moonDirectionX,result.moonDirectionY,result.moonDirectionZ,[0,1,0]);
+    const solarVisibility=smoothstep(clamp((sun[1]-.02)/.63,0,1,0));
+    result.sunIntensity=clamp(result.sunIntensity*(.72+.28*solarVisibility),0,8,0);
     result.starBrightness=clamp((.10-sun[1])/.56,0,1.5,0);
     result.skySunX=sun[0];result.skySunY=sun[1];result.skySunZ=sun[2];
     result.lightX=-sun[0];result.lightY=-sun[1];result.lightZ=-sun[2];
@@ -190,7 +192,7 @@
       profile.timeOfDay=Number(timeOfDay.toFixed(3));
       profile.timeScale=timeScale;
       profile.revision=revision;
-      profile.weatherName=profile.rainIntensity>.05?'rain':Object.keys(currentWeights).reduce((best,name)=>currentWeights[name]>currentWeights[best]?name:best,'clear');
+      profile.weatherName=Object.keys(currentWeights).reduce((best,name)=>currentWeights[name]>currentWeights[best]?name:best,'clear');
       profile.name=profile.visualPreset;
       snapshot=Object.freeze(profile);
       return snapshot;
