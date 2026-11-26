@@ -1,6 +1,6 @@
 # GENESIS Rendering Acceptance and Phase Plan
 
-**Status (2026-11-26):** source audit recorded; real-device baseline and hardware parity are still pending. This document is an acceptance contract, not a claim that the renderer has passed it.
+**Status (2026-11-26):** source audit recorded; GENESIS_TORII_MIRROR_V1 starter scripts and expanded percentile telemetry are included in PR #102. Candidate CI run #1361 passed. A post-merge main-branch run, browser-based WebGL2 session, real-device baseline, visual captures, and WebGPU hardware parity are not yet evidenced. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that the renderer has passed it.
 
 ## Mission
 
@@ -57,14 +57,14 @@ For each run, record the date, commit SHA, browser/version, OS, device/GPU and d
 
 Measure and retain:
 
-- Frame interval p50/p95/p99 and dropped/stalled-frame counts.
-- CPU frame/update time and renderer submission time, kept as separate measurements.
+- Frame interval p50/p95/p99 and dropped/stalled-frame counts. The renderer telemetry now exposes nearest-rank p50/p95/p99 and sample counts for frame intervals.
+- CPU render-path duration p50/p95/p99, kept separate from frame intervals. This is measured around the renderer branch; it is not a complete application/game-update CPU profile. A separate full update-loop timer remains required before that acceptance item can pass.
 - GPU frame time only when a valid GPU timing mechanism is available; identify the source and mark unavailable/stale/disjoint samples rather than substituting CPU time.
 - Draw calls, triangles, geometry/texture counts, render-target dimensions/counts, and estimated resource memory.
 - Available process/device memory signals, clearly distinguished from actual GPU allocation.
 - Screenshots and temporal captures with the fixture metadata attached.
 
-Run a warm-up before measurement and collect repeated foreground runs. Never compare different scenes, resolutions, exposure values, or camera paths as though they were equivalent. Preserve the raw measurements; do not keep only averages.
+Run a warm-up before measurement and collect repeated foreground runs. The telemetry uses a rolling 120-sample history and nearest-rank percentile selection (`ceil(p × n) - 1`). Always record the sample count. Never compare different scenes, resolutions, exposure values, or camera paths as though they were equivalent. Preserve the raw measurements; do not keep only averages. Frame interval percentiles include browser scheduling/display cadence; CPU render-path percentiles are not the total app update time. GPU percentiles are only valid while a recent, non-disjoint timer-query result exists. A blank/stale GPU result is unavailable, never a CPU-time substitute.
 
 ### Provisional frame budgets
 
@@ -82,7 +82,7 @@ Record p50, p95, and p99 separately. The 30 FPS tier is a minimum-device target,
 - The fixture and capture protocol are deterministic and versioned.
 - Current WebGL2 baseline is measured on named representative devices.
 - WebGPU is measured only on browsers/devices that actually expose a supported adapter; unsupported devices are marked not tested, not passed.
-- Existing Python and Node.js regression suites pass.
+- Existing Python and Node.js regression suites pass on the candidate commit, including explicit percentile-helper tests and source-level WebGL2 guards.
 - Every known measurement limitation and unverified hardware claim is documented.
 
 ## GENESIS 1 — Unified Atmosphere
