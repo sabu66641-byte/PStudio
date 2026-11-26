@@ -114,7 +114,8 @@
       shallow:{value:new Three.Color('#65d9bf')},
       deep:{value:new Three.Color('#08727d')},
       foam:{value:new Three.Color('#e3fff6')},
-      mode:{value:waterfall?1:0},reflection:{value:new Three.Color('#b8d9e8')},absorption:{value:0.19}
+      mode:{value:waterfall?1:0},reflection:{value:new Three.Color('#b8d9e8')},absorption:{value:0.19},
+      windDirection:{value:new Three.Vector2(1,0)},windSpeed:{value:0.35},rainIntensity:{value:0},wetness:{value:0}
     };
     markTSLPortable(material,'water');
     const old = material.onBeforeCompile, oldKey = material.customProgramCacheKey?.bind(material);
@@ -124,17 +125,21 @@
         uPStudioWaterTime:u.time,uPStudioWaterAmplitude:u.amplitude,uPStudioWaterBounds:u.bounds,
         uPStudioWaterShallow:u.shallow,uPStudioWaterDeep:u.deep,uPStudioWaterFoam:u.foam,uPStudioWaterMode:u.mode,
         uPStudioSceneDepth:u.sceneDepth,uPStudioWaterViewport:u.viewport,uPStudioCameraNear:u.near,uPStudioCameraFar:u.far,uPStudioSceneDepthValid:u.sceneDepthValid,
-        uPStudioWaterReflectionTint:u.reflection,uPStudioWaterAbsorption:u.absorption
+        uPStudioWaterReflectionTint:u.reflection,uPStudioWaterAbsorption:u.absorption,
+        uPStudioWaterWindDirection:u.windDirection,uPStudioWaterWindSpeed:u.windSpeed,
+        uPStudioWaterRainIntensity:u.rainIntensity,uPStudioWaterWetness:u.wetness
       });
       shader.vertexShader = addAfter(shader.vertexShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform float uPStudioWaterAmplitude;',
+        'uniform vec2 uPStudioWaterWindDirection;','uniform float uPStudioWaterWindSpeed;',
         'varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
       shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>',[
-        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92;',
-        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67;',
-        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43;',
-        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07;',
+        'float windPhase=dot(position.xz,normalize(uPStudioWaterWindDirection+vec2(.0001)))*uPStudioWaterWindSpeed*.075;',
+        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92+windPhase;',
+        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67+windPhase*.82;',
+        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43+windPhase*1.24;',
+        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07+windPhase*1.53;',
          'float wp5=position.x*.018+position.z*.026+uPStudioWaterTime*.23;',
         'float wx=uPStudioWaterAmplitude*(.071*.52*cos(wp1)+.137*.27*cos(wp2)+.31*.14*cos(wp3)+.49*.07*cos(wp4)+.018*.18*cos(wp5));',
         'float wz=uPStudioWaterAmplitude*(.043*.52*cos(wp1)-.091*.27*cos(wp2)+.22*.14*cos(wp3)-.37*.07*cos(wp4)+.026*.18*cos(wp5));',
@@ -153,6 +158,7 @@
       shader.vertexShader = addAfter(shader.vertexShader,'#include <project_vertex>','vPStudioWaterClip=gl_Position;');
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <common>',[
         'uniform float uPStudioWaterTime;','uniform vec4 uPStudioWaterBounds;',
+        'uniform float uPStudioWaterRainIntensity;','uniform float uPStudioWaterWetness;',
         'uniform vec3 uPStudioWaterShallow;','uniform vec3 uPStudioWaterDeep;','uniform vec3 uPStudioWaterFoam;',
         'uniform float uPStudioWaterMode;','uniform vec3 uPStudioWaterReflectionTint;','uniform float uPStudioWaterAbsorption;','uniform sampler2D uPStudioSceneDepth;','uniform vec2 uPStudioWaterViewport;','uniform float uPStudioCameraNear;','uniform float uPStudioCameraFar;','uniform float uPStudioSceneDepthValid;','varying vec3 vPStudioWaterWorld;','varying vec3 vPStudioWaterLocal;','varying vec2 vPStudioWaterUV;','varying vec4 vPStudioWaterClip;'
       ].join('\n'));
@@ -176,6 +182,13 @@
         'float variation=.5+.5*sin(vPStudioWaterWorld.x*.043+sin(vPStudioWaterWorld.z*.037)*1.8);',
         'vec3 depthColor=mix(uPStudioWaterShallow,uPStudioWaterDeep,clamp(depth*.88+variation*.12,0.0,1.0));',
         'float ripple=sin(vPStudioWaterWorld.x*1.85+vPStudioWaterWorld.z*1.31+uPStudioWaterTime*2.0)*sin(vPStudioWaterWorld.z*1.63-vPStudioWaterWorld.x*.74-uPStudioWaterTime*1.43);',
+        'vec2 rainGrid=vPStudioWaterWorld.xz*.45+uPStudioWaterTime*vec2(.013,.017);',
+        'vec2 rainCell=floor(rainGrid);vec2 rainLocal=fract(rainGrid)-.5;',
+        'float rainSeed=fract(sin(dot(rainCell,vec2(127.1,311.7)))*43758.5453);',
+        'float rainRadius=fract(uPStudioWaterTime*1.25+rainSeed)*.42;',
+        'float rainRing=(1.0-smoothstep(.018,.075,abs(length(rainLocal)-rainRadius)))*smoothstep(.02,.14,rainRadius)*(1.0-smoothstep(.34,.42,rainRadius));',
+        'rainRing*=uPStudioWaterRainIntensity;',
+        'ripple+=rainRing*.34;',
          'float crestFoam=smoothstep(.91,.995,.5+.5*sin(vPStudioWaterWorld.x*.31+vPStudioWaterWorld.z*.27+uPStudioWaterTime*1.22))*.11;',
          'foamBand=max(foamBand,crestFoam);',
         'if(uPStudioWaterMode<.5){diffuseColor.rgb=mix(diffuseColor.rgb,depthColor,.68);diffuseColor.rgb*=.96+.045*ripple;diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterFoam,clamp(foamBand*.62,0.0,.62));}',
@@ -184,13 +197,15 @@
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <normal_fragment_maps>',[
         'float microA=sin(vPStudioWaterWorld.x*1.72+vPStudioWaterWorld.z*1.31+uPStudioWaterTime*2.4);',
         'float microB=sin(vPStudioWaterWorld.z*1.94-vPStudioWaterWorld.x*.83-uPStudioWaterTime*1.8);',
+        'float rainGridPhase=sin(vPStudioWaterWorld.x*2.6+vPStudioWaterWorld.z*1.9+uPStudioWaterTime*3.2)*uPStudioWaterRainIntensity;',
         'float crossRipple=sin((vPStudioWaterWorld.x+vPStudioWaterWorld.z)*3.1+uPStudioWaterTime*2.9);',
-        'vec3 rippleN=normalize(vec3(.095*microA+.028*crossRipple,1.0,.09*microB-.024*crossRipple));',
-        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*.18);',
+        'vec3 rippleN=normalize(vec3(.095*microA+.028*crossRipple+rainGridPhase*.055,1.0,.09*microB-.024*crossRipple+rainGridPhase*.045));',
+        'normal=normalize(normal+(rippleN-vec3(0.0,1.0,0.0))*(.18+uPStudioWaterRainIntensity*.12));',
          'float viewFacing=clamp(dot(normalize(normal),normalize(vViewPosition)),0.0,1.0);',
          'float fresnel=pow(1.0-viewFacing,5.0);',
          'float crest=.5+.5*sin(vPStudioWaterWorld.x*.31+vPStudioWaterWorld.z*.27+uPStudioWaterTime*1.22);',
-         'diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterReflectionTint,clamp(fresnel*.28,0.0,.28));',
+         'diffuseColor.rgb=mix(diffuseColor.rgb,uPStudioWaterReflectionTint,clamp(fresnel*(.28+uPStudioWaterWetness*.08),0.0,.36));',
+        'diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.72,.85,.92),clamp(rainRing*.2,0.0,.2));',
          'diffuseColor.rgb+=uPStudioWaterReflectionTint*pow(max(crest,0.0),18.0)*.012;'
       ].join('\n'));
       shader.fragmentShader = addAfter(shader.fragmentShader,'#include <roughnessmap_fragment>',
@@ -1237,10 +1252,24 @@
         applyColor(u.deep,settings.waterDeep);
         applyColor(u.foam,settings.waterFoam);
         applyScalar(u.absorption,settings.waterAbsorption,0,2);
+        if(u.windDirection?.value?.set&&Array.isArray(settings.windDirection))u.windDirection.value.set(settings.windDirection[0],settings.windDirection[1]).normalize();
+        applyScalar(u.windSpeed,settings.windSpeed,0,12);
+        applyScalar(u.rainIntensity,settings.rainIntensity,0,1);
+        applyScalar(u.wetness,settings.wetness,0,1);
+      }
+      for(const material of foliage){
+        const u=material?.userData?.pstudioFoliageHQ;if(!u)continue;
+        applyScalar(u.strength,settings.windStrength,0,2.5);
+        applyScalar(u.speed,settings.windSpeed,0,4);
+        if(u.direction?.value?.set&&Array.isArray(settings.windDirection))u.direction.value.set(settings.windDirection[0],settings.windDirection[1]).normalize();
       }
       for(const pass of cloudPasses){
         const u=pass?.uniforms;if(!u)continue;
         applyDirection(u.uSunDirection);
+        if(u.uCloudWind?.value?.set){
+          const x=Number(settings.cloudWindX),z=Number(settings.cloudWindZ);
+          if(Number.isFinite(x)&&Number.isFinite(z))u.uCloudWind.value.set(Math.max(-4,Math.min(4,x)),Math.max(-4,Math.min(4,z)));
+        }
         applyColor(u.uSunColor,settings.sunColor);
         applyColor(u.uFogColor,settings.fogColor);
         applyScalar(u.uCloudDensity,settings.cloudDensity,0,2);
