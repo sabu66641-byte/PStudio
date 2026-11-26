@@ -628,6 +628,22 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     };
   }
 
+  function getPStudioContactShadowSettings(){
+    const uniforms=contactShadowPass?.uniforms||{};
+    const direction=uniforms.uLightDirectionWorld?.value;
+    return{
+      enabled:true,
+      intensity:Number(uniforms.uIntensity?.value??0.42),
+      maxDistance:Number(uniforms.uMaxDistance?.value??0.82),
+      thickness:Number(uniforms.uThickness?.value??0.075),
+      depthBias:Number(uniforms.uDepthBias?.value??0.018),
+      steps:Number(uniforms.uSteps?.value??12),
+      fadeStart:Number(uniforms.uFadeStart?.value??28),
+      fadeEnd:Number(uniforms.uFadeEnd?.value??105),
+      lightDirectionWorld:direction?.toArray?.()||[Number(direction?.x??0.35),Number(direction?.y??0.82),Number(direction?.z??0.44)]
+    };
+  }
+
   function getProductionWebGPUFeatureBlockers(commandsByObject=null){
     const blockers=[];
     const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
@@ -640,6 +656,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       :window.PStudioRenderingMigration?.supportsPStudioTSLSSAO===true;
     const supportsSSRNode=window.PStudioRenderingMigration?.supportsPStudioTSLSSR===true;
     const supportsGodRaysNode=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
+    const supportsContactShadowsNode=window.PStudioRenderingMigration?.supportsPStudioTSLContactShadows===true;
     const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
     if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
@@ -659,7 +676,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
     if(volumetricCloudsEnabled)add('volumetric-clouds','体積雲のTSL RenderPipeline移植が未完了です。');
-    if(contactShadowsEnabled)add('contact-shadows','コンタクトシャドウのTSL移植が未完了です。');
+    if(contactShadowsEnabled&&!supportsContactShadowsNode)add('contact-shadows','コンタクトシャドウのTSL深度レイマーチアダプターが利用できません。');
     if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
     if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
     if(godRaysEnabled&&!supportsGodRaysNode)add('god-rays','God RaysのTSL RenderPipelineアダプターが利用できません。');
@@ -753,7 +770,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false,
             ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
             ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false,
-            godRays:godRaysEnabled?getPStudioGodRaysSettings():false
+            godRays:godRaysEnabled?getPStudioGodRaysSettings():false,
+            contactShadows:contactShadowsEnabled?getPStudioContactShadowSettings():false
           },
           configureRenderer:webgpuRenderer=>{
             webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
@@ -1594,6 +1612,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         const clusterSnapshot=getPStudioClusteredLightingSnapshot();
         if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
         if(godRaysEnabled)productionRendererBridge.setGodRays?.(getPStudioGodRaysSettings());
+        productionRendererBridge.setContactShadows?.(contactShadowsEnabled?getPStudioContactShadowSettings():false);
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
