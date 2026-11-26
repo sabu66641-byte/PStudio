@@ -284,13 +284,14 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
 });
 
 
-test('production bridge forwards every post-processing control to the active WebGPU session',async()=>{
+test('production bridge forwards environment, water and post-processing controls to the active WebGPU session',async()=>{
   const [THREE,bridgeModule]=await modules;
   const {legacyCanvas}=makeCanvasDOM();
   const {scene,camera}=makeScene(THREE);
   const updates=[];
   const methods=[
     ['setEnvironment','environment'],
+    ['setWaterEnvironment','waterEnvironment'],
     ['setBloom','bloom'],
     ['setAmbientOcclusion','ambientOcclusion'],
     ['setSSR','ssr'],
