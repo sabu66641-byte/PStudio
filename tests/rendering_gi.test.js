@@ -70,6 +70,27 @@ test('dynamic SH contributions fade out smoothly and retire below the residual t
   assert.equal(coefficients[0], 0);
 });
 
+test('r187 SH probe readback is async, backend-native and excludes stale legacy/TSL probe lighting', () => {
+  const root = path.resolve(__dirname, '..');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'static/pstudio_rendering_runtime.mjs'), 'utf8');
+  const host = fs.readFileSync(path.join(root, 'static/pstudio_rendering_production_host.mjs'), 'utf8');
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_rendering_production_bridge.mjs'), 'utf8');
+
+  assert.match(engine, /async function bakeLightProbe\(/);
+  assert.match(engine, /async function bakeLightProbeVolume\(/);
+  assert.match(engine, /await generator\.fromCubeRenderTarget\(captureRenderer,target\)/);
+  assert.match(engine, /activeBackend==='webgpu'/);
+  assert.match(engine, /Target:T\.CubeRenderTarget/);
+  assert.match(engine, /Target:T\.WebGLCubeRenderTarget/);
+  assert.match(engine, /pstudioTSLProbeUniforms/);
+  assert.match(engine, /dynamicProbeCaptureInFlight/);
+  assert.match(engine, /void serviceDynamicRadianceCache\(now\)\.catch/);
+  assert.match(runtime, /getRenderer\(\)/);
+  assert.match(host, /getRenderer: runtime\.getRenderer/);
+  assert.match(bridge, /getRenderer\(\)/);
+});
+
 test('GI module is wired into the shared runtime and dynamic probe capture path', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
