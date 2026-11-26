@@ -252,12 +252,15 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   const effectsPipeline = pipelineModule.createPStudioRenderPipeline(renderer, scene, camera, {
     ambientOcclusion: { enabled: true, mode: 'ssao', strength: 0.8 },
     ssr: { enabled: true, quality: 0.65, reflectNonMetals: true },
-    godRays: { enabled: true, intensity: 0.8, lightPosition: [0.4, 0.7] }
+    godRays: { enabled: true, intensity: 0.8, lightPosition: [0.4, 0.7] },
+    contactShadows: { enabled: true, intensity: 0.4, steps: 12, lightDirectionWorld: [0.35, 0.82, 0.44] }
   });
   assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'ssao');
   assert.equal(effectsPipeline.getState().ssr.quality, 0.65);
   assert.equal(effectsPipeline.getState().godRays.intensity, 0.8);
   assert.deepEqual(effectsPipeline.getState().godRays.lightPosition, [0.4, 0.7]);
+  assert.equal(effectsPipeline.getState().contactShadows.intensity, 0.4);
+  assert.equal(effectsPipeline.getState().contactShadows.steps, 12);
   assert.equal(effectsPipeline.setAmbientOcclusion({ enabled: true, mode: 'gtao', strength: 0.9 }), true);
   assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'gtao');
   assert.equal(effectsPipeline.setSSR(false), true);
@@ -267,6 +270,10 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.deepEqual(effectsPipeline.getState().godRays.lightPosition, [0.6, 0.8]);
   assert.equal(effectsPipeline.setGodRays(false), true);
   assert.equal(effectsPipeline.getState().godRays, null);
+  assert.equal(effectsPipeline.setContactShadows({ enabled: true, intensity: 0.55, steps: 18 }), true);
+  assert.equal(effectsPipeline.getState().contactShadows.intensity, 0.55);
+  assert.equal(effectsPipeline.setContactShadows(false), true);
+  assert.equal(effectsPipeline.getState().contactShadows, null);
   assert.equal(effectsPipeline.dispose(), true);
 });
 
