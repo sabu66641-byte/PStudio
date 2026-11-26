@@ -5,7 +5,7 @@ import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
-import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-tsl-v2';
+import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting, applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
@@ -17,7 +17,7 @@ export const supportsPStudioTSLGodRays = pipelineSupportsGodRays;
 export const supportsPStudioTSLContactShadows = pipelineSupportsContactShadows;
 export const supportsPStudioTSLVolumetricFog = pipelineSupportsVolumetricFog;
 export const supportsPStudioTSLVolumetricClouds = pipelineSupportsVolumetricClouds;
-export const supportsPStudioTSLClusteredLighting = typeof createPStudioTSLClusterStorage === 'function' && typeof applyPStudioTSLClusteredLighting === 'function';
+export const supportsPStudioTSLClusteredLighting = typeof applyPStudioTSLNativeClusteredLighting === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
@@ -148,7 +148,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL RenderPipeline with shared beauty/depth/packed-view-normal frame resources and Bloom',
       'TSL atmospheric sky and shared equirectangular PBR IBL',
       'shared frame-budget and environment-state modules',
-      'TSL clustered point-light irradiance with revisioned StorageBuffer uploads and native-light overflow fallback',
+      'Three.js r187 ClusteredLightsNode Forward+ PBR with native Standard/Physical BRDF, spot attenuation, shadow-light retention and overflow-safe native-light fallback',
       'TSL SH irradiance nodes preserving PStudio 9xRGB probe coefficients and temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
@@ -260,17 +260,15 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     const initialClusterSnapshot = typeof options.getClusteredLightingSnapshot === 'function'
       ? options.getClusteredLightingSnapshot()
       : options.clusteredLightingSnapshot || null;
-    if (initialClusterSnapshot) {
-      reportStage('porting-clustered-lighting', {
-        lights: initialClusterSnapshot.lightCount || 0,
-        revision: initialClusterSnapshot.revision ?? null
-      });
-      clusterStorageHandle = createPStudioTSLClusterStorage(renderer, options.clusteredLightingOptions || {});
-      clusteredLightingHandle = applyPStudioTSLClusteredLighting(scene, {
-        storage: clusterStorageHandle,
-        snapshot: initialClusterSnapshot
-      });
-    }
+    reportStage('porting-clustered-lighting', {
+      lights: initialClusterSnapshot?.lightCount || 0,
+      revision: initialClusterSnapshot?.revision ?? null
+    });
+    clusteredLightingHandle = applyPStudioTSLNativeClusteredLighting(scene, {
+      renderer,
+      snapshot: initialClusterSnapshot,
+      ...(options.clusteredLightingOptions || {})
+    });
 
     let hasWaterMaterials = false;
     scene.traverse((object) => {
@@ -377,10 +375,10 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       setClusteredLightingSnapshot(snapshot) {
         if (disposed || !snapshot) return false;
         if (!clusteredLightingHandle) {
-          clusterStorageHandle = createPStudioTSLClusterStorage(renderer, options.clusteredLightingOptions || {});
-          clusteredLightingHandle = applyPStudioTSLClusteredLighting(scene, {
-            storage: clusterStorageHandle,
-            snapshot
+          clusteredLightingHandle = applyPStudioTSLNativeClusteredLighting(scene, {
+            renderer,
+            snapshot,
+            ...(options.clusteredLightingOptions || {})
           });
           return true;
         }
