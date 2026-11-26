@@ -242,10 +242,24 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.equal(pipeline.getState().bloom.strength, 0.2);
   assert.equal(pipeline.getState().bloom.radius, 0.3);
   assert.equal(pipeline.getState().bloom.threshold, 0.8);
+  assert.equal(pipeline.getFrameResources().attachments.includes('metalrough'), true);
+  assert.equal(pipeline.getState().frameResources.metalRoughEncoding, 'rg-unorm8');
   assert.equal(pipeline.setBloom(false), true);
   assert.equal(pipeline.getState().bloom, null);
   assert.equal(pipeline.dispose(), true);
   assert.equal(pipeline.dispose(), false);
+
+  const effectsPipeline = pipelineModule.createPStudioRenderPipeline(renderer, scene, camera, {
+    ambientOcclusion: { enabled: true, mode: 'ssao', strength: 0.8 },
+    ssr: { enabled: true, quality: 0.65, reflectNonMetals: true }
+  });
+  assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'ssao');
+  assert.equal(effectsPipeline.getState().ssr.quality, 0.65);
+  assert.equal(effectsPipeline.setAmbientOcclusion({ enabled: true, mode: 'gtao', strength: 0.9 }), true);
+  assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'gtao');
+  assert.equal(effectsPipeline.setSSR(false), true);
+  assert.equal(effectsPipeline.getState().ssr, null);
+  assert.equal(effectsPipeline.dispose(), true);
 });
 
 test('WebGPU Lab consumes the reusable strict WebGPU scene-session API', () => {
