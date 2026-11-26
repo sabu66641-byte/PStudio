@@ -163,6 +163,7 @@ function attachToonMaterial(material) {
   };
 
   material.setupLightingModel = adapter;
+  material.pstudioTSLToonUpdate = update;
   material.userData.pstudioTSLToonAdapterVersion = 1;
   material.needsUpdate = true;
 
@@ -180,6 +181,7 @@ function attachToonMaterial(material) {
         if (originalOwnSetup) material.setupLightingModel = originalSetup;
         else delete material.setupLightingModel;
       }
+      if (material.pstudioTSLToonUpdate === update) delete material.pstudioTSLToonUpdate;
       if (material.userData?.pstudioTSLToonAdapterVersion === 1) {
         delete material.userData.pstudioTSLToonAdapterVersion;
       }
