@@ -392,6 +392,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let godRaysHandle = null;
   let contactShadowsSettings = normalizeContactShadows(options.contactShadows);
   let contactShadowsHandle = null;
+  let volumetricFogSettings = normalizeVolumetricFog(options.volumetricFog);
+  let volumetricFogHandle = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
@@ -407,6 +409,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     releaseScreenSpaceNodes();
     let output = sceneColor;
 
+    if (volumetricFogSettings) {
+      volumetricFogHandle = createVolumetricFogNode(output, sceneDepth, volumetricFogSettings);
+      output = volumetricFogHandle.node;
+    } else {
+      volumetricFogHandle = null;
+    }
+
     if (aoSettings) {
       if (aoSettings.mode === 'gtao') {
         aoPass = gtao(sceneDepth, sceneNormal, camera);
@@ -421,7 +430,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     }
 
     if (ssrSettings) {
-      ssrPass = ssr(sceneColor, sceneDepth, sceneNormal, {
+      ssrPass = ssr(output, sceneDepth, sceneNormal, {
         metalnessNode: sceneMetalRough.r,
         roughnessNode: sceneMetalRough.g,
         reflectNonMetals: ssrSettings.reflectNonMetals,
@@ -445,6 +454,11 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       contactShadowsHandle = null;
     }
 
+    if (bloomSettings && bloomSettings.strength > 0) {
+      const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
+      output = output.add(glow);
+    }
+
     if (godRaysSettings) {
       godRaysHandle = createGodRaysNode(output, godRaysSettings);
       output = godRaysHandle.node;
@@ -452,11 +466,6 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       godRaysHandle = null;
     }
 
-    if (bloomSettings && bloomSettings.strength > 0) {
-      const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
-      output = output.add(glow);
-    }
-    if (godRaysHandle) output = godRaysHandle.node;
     renderPipeline.outputNode = output;
     renderPipeline.needsUpdate = true;
   }
@@ -572,6 +581,19 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       else contactShadowsHandle.set(contactShadowsSettings);
       return true;
     },
+    setVolumetricFog(nextOptions) {
+      if (disposed) return false;
+      const nextSettings = normalizeVolumetricFog(nextOptions);
+      if (!nextSettings && !volumetricFogSettings && !volumetricFogHandle) return true;
+      volumetricFogSettings = nextSettings;
+      if (!volumetricFogSettings) {
+        rebuildOutput();
+        return true;
+      }
+      if (!volumetricFogHandle) rebuildOutput();
+      else volumetricFogHandle.set(volumetricFogSettings);
+      return true;
+    },
     getFrameResources() {
       return disposed ? null : frameResources;
     },
@@ -583,6 +605,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
         ssr: ssrSettings ? { ...ssrSettings } : null,
         godRays: godRaysHandle ? godRaysHandle.getState() : null,
         contactShadows: contactShadowsHandle ? contactShadowsHandle.getState() : null,
+        volumetricFog: volumetricFogHandle ? volumetricFogHandle.getState() : null,
         frameResources: disposed ? null : Object.freeze({
           attachments: frameResources.attachments,
           normalEncoding: frameResources.normalEncoding,
