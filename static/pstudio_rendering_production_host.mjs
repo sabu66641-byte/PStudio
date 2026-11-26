@@ -1,4 +1,4 @@
-import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs?v=20261126-active-renderer-v1';
+import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs?v=20261126-genesis-water-live-v1';
 import { createPStudioRendererCanvasHost } from './pstudio_rendering_canvas_host.mjs';
 
 /**
