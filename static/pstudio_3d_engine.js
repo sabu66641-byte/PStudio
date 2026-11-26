@@ -6913,6 +6913,10 @@ void main(){
       const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
       addInstance(geometry,material,(start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5,null,[1,length,1],quaternion);
     };
+    const lanternCapGeometry=new T.ConeGeometry(1,1,4);
+    const goldOrnamentGeometry=new T.SphereGeometry(1,12,8);
+    const pagodaRingGeometry=new T.TorusGeometry(1,.045,8,36);
+    const sorinTipGeometry=new T.ConeGeometry(1,1,12);
     const addLantern=(x,z,scale=1,addLight=false)=>{
       const y=.4*scale;
       addBox(materials.stone,x,y,z,.9*scale,.36*scale,.9*scale);
@@ -6925,8 +6929,7 @@ void main(){
         addBox(materials.darkWood,x,y+2.08*scale,z+side*.31*scale,.72*scale,.9*scale,.075*scale);
       }
       addBox(materials.stone,x,y+2.56*scale,z,1.1*scale,.16*scale,1.1*scale);
-      const capGeometry=new T.ConeGeometry(1,1,4);
-      addInstance(capGeometry,materials.darkStone,x,y+2.91*scale,z,[0,Math.PI/4,0],[.78*scale,.52*scale,.78*scale]);
+      addInstance(lanternCapGeometry,materials.darkStone,x,y+2.91*scale,z,[0,Math.PI/4,0],[.78*scale,.52*scale,.78*scale]);
       addBeam(materials.gold,[x,y+3.16*scale,z],[x,y+3.50*scale,z],.05*scale,8);
       if(addLight){
         const light=new T.PointLight('#FFB879',2.35*scale,15*scale,2);
@@ -6996,7 +6999,7 @@ void main(){
     // Gold ridge-end ornaments, roof-end bells and curved corner supports.
     for(const side of [-1,1]){
       for(const zSide of [-1,1]){
-        add(new T.SphereGeometry(.34,16,12),materials.gold,shrineX+side*12.75,7.35,shrineZ+zSide*8.8);
+        addInstance(goldOrnamentGeometry,materials.gold,shrineX+side*12.75,7.35,shrineZ+zSide*8.8,null,[.34,.34,.34]);
         addBeam(materials.gold,[shrineX+side*10.5,6.4,shrineZ+zSide*7.2],[shrineX+side*12.2,7.1,shrineZ+zSide*8.9],.065);
       }
     }
@@ -7026,8 +7029,8 @@ void main(){
       genesisAddCurvedJapaneseRoof(T,root,materials,pagodaX,pagodaZ,roofDims,textureSet);
       for(const side of [-1,1]){
         for(const zSide of [-1,1]){
-          add(new T.SphereGeometry(.16,10,8),materials.gold,
-            pagodaX+side*(roofDims.halfWidth-.15),baseY+2.85,pagodaZ+zSide*(roofDims.halfDepth-.15));
+          addInstance(goldOrnamentGeometry,materials.gold,
+            pagodaX+side*(roofDims.halfWidth-.15),baseY+2.85,pagodaZ+zSide*(roofDims.halfDepth-.15),null,[.16,.16,.16]);
         }
       }
       if(tier===0||tier===2||tier===4){
@@ -7039,10 +7042,9 @@ void main(){
     addBeam(materials.gold,[pagodaX,20.2,pagodaZ],[pagodaX,27.8,pagodaZ],.085);
     for(let ring=0;ring<9;ring++){
       const y=20.7+ring*.72,radius=.64-ring*.048;
-      const torus=add(new T.TorusGeometry(radius,.045,8,36),materials.gold,pagodaX,y,pagodaZ);
-      torus.rotation.x=Math.PI/2;
+      addInstance(pagodaRingGeometry,materials.gold,pagodaX,y,pagodaZ,[Math.PI/2,0,0],[radius,radius,1]);
     }
-    const sorinTop=add(new T.ConeGeometry(.24,1.1,12),materials.gold,pagodaX,28.15,pagodaZ);
+    addInstance(sorinTipGeometry,materials.gold,pagodaX,28.15,pagodaZ,null,[.24,1.1,.24]);
 
     // Vermilion torii: splayed posts, kasagi curve, shimaki and gold collars.
     const gateX=15,gateZ=-60,postSpacing=12.2;
