@@ -146,10 +146,11 @@
         'objectNormal=normalize(vec3(-wx,1.0,-wz));'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <begin_vertex>',[
-        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92;',
-        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67;',
-        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43;',
-        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07;',
+        'float windPhase=dot(position.xz,normalize(uPStudioWaterWindDirection+vec2(.0001)))*uPStudioWaterWindSpeed*.075;',
+        'float wp1=position.x*.071+position.z*.043+uPStudioWaterTime*.92+windPhase;',
+        'float wp2=position.x*.137-position.z*.091-uPStudioWaterTime*.67+windPhase*.82;',
+        'float wp3=position.x*.31+position.z*.22+uPStudioWaterTime*1.43+windPhase*1.24;',
+        'float wp4=position.x*.49-position.z*.37+uPStudioWaterTime*2.07+windPhase*1.53;',
         'transformed.y+=uPStudioWaterAmplitude*(.52*sin(wp1)+.27*sin(wp2)+.14*sin(wp3)+.07*sin(wp4));'
       ].join('\n'));
       shader.vertexShader = addAfter(shader.vertexShader,'#include <worldpos_vertex>',[
