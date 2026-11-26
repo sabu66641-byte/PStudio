@@ -7100,11 +7100,21 @@ void main(){
       [58,-26,1.22],[78,4,1.32],[94,-34,1.1],[40,18,1.05],[-105,-58,.96],[22,-78,.92]
     ];
     const dummy=new T.Object3D();
+    const treeTrunkGeometry=new T.CylinderGeometry(.12,.36,1,12,2,false);
+    const treeBranchGeometry=new T.CylinderGeometry(.025,.13,1,7,1,false);
+    const addTreeSegment=(geometry,a,b,scale)=>{
+      const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
+      const direction=end.clone().sub(start),length=direction.length();
+      if(length<1e-4)return;
+      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
+      addInstance(geometry,materials.wood,(start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5,
+        null,[scale,length,scale],quaternion);
+    };
     let instance=0,randomSeed=0x39a7c221;
     const random=()=>{randomSeed=(Math.imul(randomSeed,1664525)+1013904223)>>>0;return randomSeed/4294967296;};
     for(const [tx,tz,scale] of treeSpecs){
       const trunkHeight=(5.8+random()*1.5)*scale;
-      genesisAddCylinderBetween(T,root,materials.wood,[tx,0,tz],[tx+.24*scale,trunkHeight,tz],.38*scale,.68*scale,14);
+      addInstance(treeTrunkGeometry,materials.wood,tx+.12*scale,trunkHeight*.5,tz,null,[scale,trunkHeight,scale]);
       const branchEnds=[];
       const branchCount=8;
       for(let branch=0;branch<branchCount;branch++){
@@ -7114,14 +7124,13 @@ void main(){
         const start=[tx+.12*scale,height,tz];
         const middle=[tx+Math.cos(angle)*length*.52,height+(.55+random()*.55)*scale,tz+Math.sin(angle)*length*.52];
         const end=[tx+Math.cos(angle)*length,height+(1.25+random()*1.4)*scale,tz+Math.sin(angle)*length];
-        const points=[new T.Vector3(...start),new T.Vector3(...middle),new T.Vector3(...end)];
-        const curve=new T.CatmullRomCurve3(points);
-        const branchMesh=add(new T.TubeGeometry(curve,10,.11*scale,7,false),materials.wood,0,0,0);
-        branchMesh.castShadow=true;branchEnds.push(end);
+        addTreeSegment(treeBranchGeometry,start,middle,scale);
+        addTreeSegment(treeBranchGeometry,middle,end,scale*.82);
+        branchEnds.push(end);
         for(let twig=0;twig<2;twig++){
           const direction=angle+(twig===0?-.38:.38);
           const twigEnd=[end[0]+Math.cos(direction)*1.5*scale,end[1]+(.55+random()*.65)*scale,end[2]+Math.sin(direction)*1.5*scale];
-          addBeam(materials.wood,middle,twigEnd,.052*scale);
+          addTreeSegment(treeBranchGeometry,middle,twigEnd,scale*.48);
           branchEnds.push(twigEnd);
         }
       }
