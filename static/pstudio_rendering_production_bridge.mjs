@@ -1,5 +1,5 @@
 import { createPStudioProductionRendererHost } from './pstudio_rendering_production_host.mjs?v=20261126-genesis-water-live-v1';
-import { inspectPStudioWebGPUSceneMaterials } from './pstudio_rendering_migration.mjs';
+import { inspectPStudioWebGPUSceneMaterials } from './pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1';
 
 /**
  * Safely promotes the existing production scene from its already-live WebGL2
