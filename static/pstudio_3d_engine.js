@@ -50,6 +50,8 @@
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
+  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null;
+  let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const renderingFrameBudgetController=window.PStudioRenderingBudget?.createPStudioFrameBudgetController?.()||null;
@@ -1573,7 +1575,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   function ensureNightTwinkleStars(T){
     if(nightTwinkleStars?.parent===scene)return nightTwinkleStars;
     if(!scene)return null;
-    const count=56,geometry=new T.BufferGeometry();
+    const count=180,geometry=new T.BufferGeometry();
     const positions=new Float32Array(count*3),phases=new Float32Array(count),intensities=new Float32Array(count),speeds=new Float32Array(count);
     let seed=0x4e494748;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
@@ -1589,7 +1591,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const material=new T.ShaderMaterial({
       uniforms:{
         uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))},
-        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0}
+        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0},uVisibility:{value:0}
       },
       vertexShader:[
         'attribute float aPhase;','attribute float aIntensity;','attribute float aSpeed;',
@@ -1603,7 +1605,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         '}'
       ].join('\n'),
       fragmentShader:[
-        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;',
+        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;','uniform float uVisibility;',
         'varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'vec2 p=gl_PointCoord-vec2(.5);float r=length(p);',
@@ -1613,7 +1615,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         'float alignment=dot(normalize(vSkyDirection),normalize(uMoonDirectionWorld));',
         'float moonHalo=smoothstep(0.89,0.999,alignment);',
         'float moonDim=1.0-uMoonOcclusion*moonHalo*.58;',
-        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim;',
+        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim*uVisibility;',
         'if(alpha<.012)discard;',
         'gl_FragColor=vec4(vec3(.72,.83,1.0)*alpha,alpha);',
         '}'
@@ -1631,8 +1633,12 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
   function updateNightTwinkleStars(){
     if(!nightTwinkleStars||!camera)return;
-    const visible=activeEnvironmentPreset==='night'&&!(hdrTexture&&hdrShowBackground);
+    const starBrightness=genesisEnvironmentState
+      ?Math.max(0,Math.min(1.8,Number(genesisEnvironmentState.starBrightness)||0))
+      :(activeEnvironmentPreset==='night'?1.2:0);
+    const visible=starBrightness>.015&&!(hdrTexture&&hdrShowBackground);
     nightTwinkleStars.visible=visible;
+    if(nightTwinkleStars.material?.uniforms?.uVisibility)nightTwinkleStars.material.uniforms.uVisibility.value=starBrightness/1.62;
     if(!visible)return;
     nightTwinkleStars.position.copy(camera.position);
     const distance=Math.max(camera.near+2,camera.far*.96);
@@ -5473,7 +5479,7 @@ void main(){
   }
   function configureMoonSky(T,profile){
     moonIntensity=Math.max(0,Math.min(1.5,Number(profile.moonIntensity)||0));
-    if(profile.name!=='night'||moonIntensity<=.001){
+    if(moonIntensity<=.015||Number(profile.starBrightness)<.035){
       if(moonMesh)moonMesh.visible=false;
       return false;
     }
@@ -5510,7 +5516,7 @@ void main(){
   function updateMoonSkyMesh(){
     if(!moonMesh||!camera)return;
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
+    moonMesh.visible=moonIntensity>.015&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
     const radius=distance*Math.tan(3.0*Math.PI/180);
@@ -5635,10 +5641,9 @@ void main(){
     return sunMesh;
   }
   function configureSunSky(T,profile){
-    const isDaylight=profile.name==='day'||profile.name==='dusk';
     sunIntensity=Math.max(0,Math.min(2,Number(profile.sunIntensity)||0));
     sunAngularRadius=Math.max(.2,Math.min(4,Number(profile.sunAngularRadius)||1.2));
-    if(!isDaylight||sunIntensity<=.001||Number(profile.sunRadius)<=0){
+    if(sunIntensity<=.001||Number(profile.sunRadius)<=0.04){
       if(sunMesh)sunMesh.visible=false;
       sunGlareStrength=0;
       return false;
@@ -5667,7 +5672,7 @@ void main(){
   function updateSunSkyMesh(){
     if(!sunMesh||!camera)return;
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    sunMesh.visible=(activeEnvironmentPreset==='day'||activeEnvironmentPreset==='dusk')&&sunIntensity>.001&&!hdrBackgroundVisible;
+    sunMesh.visible=sunIntensity>.001&&!hdrBackgroundVisible;
     if(!sunMesh.visible||!sunDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
     const radius=distance*Math.tan(sunAngularRadius*Math.PI/180);
