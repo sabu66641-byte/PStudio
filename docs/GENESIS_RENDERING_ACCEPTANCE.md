@@ -1,6 +1,6 @@
 # GENESIS Rendering Acceptance and Phase Plan
 
-**Status (2026-11-26):** GENESIS 0 is merged. GENESIS 1/2 shared time/weather/wind state, water/rain integration and the inspector-driven torii/mirror-water demo are implemented on PR #103; the candidate source and regression suites passed GitHub Actions run #1383. The main merge is pending. Browser-based visual captures, named-device WebGL2 baselines and WebGPU hardware parity remain unverified. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that the renderer has passed every hardware gate.
+**Status (2026-11-26):** GENESIS 0 and GENESIS 1/2 implementation changes are merged into `main`. GENESIS 1/2 was merged in commit `7968bda6209c6e6a196b4566fa30c565a2a79f62` via [PR #103](https://github.com/sabu66641-byte/PStudio/pull/103). Candidate CI #1385 and post-merge `main` Push CI #1386 both passed. This confirms source, regression and build-smoke checks; it does not certify physical-device visual quality. Browser-based captures, named-device WebGL2 baselines, WebGPU hardware parity, device-loss recovery and the 60-minute soak remain unverified. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that all hardware exit gates have passed.
 
 ## Mission
 
@@ -85,7 +85,7 @@ Record p50, p95, and p99 separately. The 30 FPS tier is a minimum-device target,
 - Existing Python and Node.js regression suites pass on the candidate commit, including explicit percentile-helper tests and source-level WebGL2 guards.
 - Every known measurement limitation and unverified hardware claim is documented.
 
-## GENESIS 1/2 candidate implementation
+## GENESIS 1/2 implementation (merged into main)
 
 The current implementation path is:
 
