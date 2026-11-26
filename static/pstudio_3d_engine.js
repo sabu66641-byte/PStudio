@@ -50,7 +50,7 @@
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
-  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null;
+  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null,genesisCloudCanvas=null,genesisSkyQuality=null;
   let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
@@ -6397,102 +6397,44 @@ void main(){
     return true;
   }
 
-  function createGenesisStarCanvas(width=768,height=384){
+  function createGenesisStarCanvas(T,width=1024,height=512){
+    // Reuse the renderer's authored high-detail Milky Way/star generator rather
+    // than drawing a cheaper substitute for GENESIS transitions.
+    const nightProfile=window.PStudioGenesisEnvironment?.profileForTime?.(23.4)||
+      window.PStudioSceneEnvironment?.getPreset?.('night')||{name:'night',starBrightness:1.62};
+    const profile={...nightProfile,name:'night',visualPreset:'night',starBrightness:1.62,cloudDensity:0,cloudCoverage:0};
+    const sourceTexture=createProceduralSkyTexture(T,profile,width/2048,true);
     const canvas=document.createElement('canvas');
     canvas.width=width;canvas.height=height;
     const context=canvas.getContext('2d');
-    if(!context)return canvas;
-    let seed=0x6d2b79f5;
-    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-    const clamp01=value=>Math.max(0,Math.min(1,value));
-    const smooth=(a,b,x)=>{const t=clamp01((x-a)/(b-a));return t*t*(3-2*t);};
-    const hash=(x,y)=>{const value=Math.sin(x*127.1+y*311.7+74.7)*43758.5453123;return value-Math.floor(value);};
-    const image=context.createImageData(width,height),pixels=image.data;
-    for(let y=0;y<height;y++){
-      const v=y/(height-1);
-      for(let x=0;x<width;x++){
-        const u=x/width,angle=u*Math.PI*2;
-        let center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
-        center+=(hash(Math.floor(x/20),Math.floor(y/16))-.5)*.022;
-        const distance=Math.abs(v-center);
-        const broad=hash(Math.floor(x/30),Math.floor(y/24));
-        const medium=hash(Math.floor(x/8),Math.floor(y/7));
-        const fine=hash(Math.floor(x/3),Math.floor(y/3));
-        const filament=clamp01((broad*.37+medium*.36+fine*.27-.30)*1.85);
-        const core=Math.exp(-Math.pow(distance/(.038+.024*broad),2)*1.45);
-        const haze=Math.exp(-Math.pow(distance/.145,2));
-        const dust=clamp01((medium*.48+fine*.52-.64)*3.3)*core;
-        const knots=clamp01((fine*.56+medium*.44-.56)*2.4);
-        const intensity=clamp01((core*(.10+filament*.72+knots*.18)+haze*.07)*(1-dust*.72));
-        if(intensity<.003)continue;
-        const warm=clamp01(.48+.36*Math.sin(angle*1.35+.35)+(medium-.5)*.45);
-        const offset=(y*width+x)*4;
-        pixels[offset]=Math.round(255*(.18+.56*warm)*intensity);
-        pixels[offset+1]=Math.round(255*(.22+.43*warm+.08*knots)*intensity);
-        pixels[offset+2]=Math.round(255*(.40+.43*(1-warm)+.06*knots)*intensity);
-        pixels[offset+3]=Math.round(185*intensity);
-      }
-    }
-    context.putImageData(image,0,0);
-    context.save();
-    context.globalCompositeOperation='screen';
-    for(let i=0;i<36;i++){
-      const u=(i/36+random()*.022)%1;
-      const x=u*width;
-      const angle=u*Math.PI*2;
-      const y=(.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1))*height;
-      const radius=8+random()*30;
-      const glow=context.createRadialGradient(x,y,0,x,y,radius);
-      const warm=random();
-      glow.addColorStop(0,warm>.45?'rgba(255,205,166,.16)':'rgba(173,198,255,.14)');
-      glow.addColorStop(.42,warm>.45?'rgba(238,150,155,.075)':'rgba(118,154,220,.07)');
-      glow.addColorStop(1,'rgba(95,120,190,0)');
-      context.fillStyle=glow;context.fillRect(x-radius,y-radius,radius*2,radius*2);
-    }
-    for(let i=0;i<4600;i++){
-      const u=random(),angle=u*Math.PI*2;
-      const center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
-      const band=Math.exp(-Math.pow((random()-.5)*.92,2)*1.7);
-      const y=Math.max(3,Math.min(height-2,(center+(random()-.5)*(.10+band*.06))*height));
-      const x=u*width;
-      const roll=random(),radius=roll>.997?1.9+random()*1.6:roll>.95?.7+random()*.8:.18+random()*.35;
-      const tint=random();
-      const color=tint>.91?'190,211,255':tint>.74?'218,228,255':tint<.10?'255,211,177':'239,242,255';
-      const alpha=roll>.997?.72+random()*.24:.20+random()*.58;
-      if(radius>1.2){
-        const halo=context.createRadialGradient(x,y,0,x,y,radius*5);
-        halo.addColorStop(0,'rgba('+color+','+(alpha*.32).toFixed(3)+')');
-        halo.addColorStop(1,'rgba('+color+',0)');
-        context.fillStyle=halo;context.fillRect(x-radius*5,y-radius*5,radius*10,radius*10);
-      }
-      context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
-      context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';context.fill();
-      if(radius>2.3&&random()>.68){
-        context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
-        context.lineWidth=.5;context.beginPath();
-        context.moveTo(x-radius*3.2,y);context.lineTo(x+radius*3.2,y);
-        context.moveTo(x,y-radius*3.2);context.lineTo(x,y+radius*3.2);
-        context.stroke();
-      }
-    }
-    for(let i=0;i<2100;i++){
-      const x=random()*width,y=8+random()*height*.52,radius=.12+random()*.22;
-      const tint=random(),color=tint>.9?'190,211,255':tint<.08?'255,220,190':'224,235,255';
-      context.fillStyle='rgba('+color+','+(.035+random()*.07).toFixed(3)+')';
-      context.fillRect(x,y,radius,radius);
-    }
-    context.restore();
+    if(context&&sourceTexture?.image)context.drawImage(sourceTexture.image,0,0,width,height);
+    sourceTexture?.dispose?.();
     return canvas;
   }
 
   function ensureGenesisSkyBackground(T){
-    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas)return true;
+    const selected=resolveQualityPreset(qualityPreset);
+    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas&&genesisCloudCanvas&&genesisSkyQuality===selected)return true;
+    if(genesisSkyTexture)disposeGenesisSkyBackground();
+    const dimensions=({
+      mobile:[768,384],balanced:[1024,512],high:[1536,768],maximum:[1792,896],ultra:[2048,1024]
+    })[selected]||[1024,512];
+    const [width,height]=dimensions;
     genesisSkyCanvas=document.createElement('canvas');
-    genesisSkyCanvas.width=512;genesisSkyCanvas.height=256;
+    genesisSkyCanvas.width=width;genesisSkyCanvas.height=height;
     genesisSkyContext=genesisSkyCanvas.getContext('2d');
     if(!genesisSkyContext)return false;
-    genesisStarCanvas=createGenesisStarCanvas(768,384);
+    genesisStarCanvas=createGenesisStarCanvas(T,width,height);
+    genesisCloudCanvas=document.createElement('canvas');
+    genesisCloudCanvas.width=width;genesisCloudCanvas.height=height;
+    const cloudContext=genesisCloudCanvas.getContext('2d');
+    if(cloudContext){
+      const dayProfile=window.PStudioGenesisEnvironment?.profileForTime?.(13)||
+        window.PStudioSceneEnvironment?.getPreset?.('day')||{};
+      drawDaytimeCloudField(cloudContext,width,height,{...dayProfile,cloudCoverage:.52,cloudDetail:.96},{x:width*.48,y:height*.3});
+    }
     genesisSkyTexture=new T.CanvasTexture(genesisSkyCanvas);
+    genesisSkyQuality=selected;
     genesisSkyTexture.mapping=T.EquirectangularReflectionMapping;
     genesisSkyTexture.colorSpace=T.SRGBColorSpace;
     genesisSkyTexture.wrapS=T.RepeatWrapping;
@@ -6507,49 +6449,58 @@ void main(){
 
   function updateGenesisSkyBackground(state,force=false,now=window.performance?.now?.()??Date.now()){
     if(!renderer||!scene||!state)return false;
-    if(!force&&now-genesisLastSkyUpdateAt<50)return false;
+    const selected=resolveQualityPreset(qualityPreset);
+    const updateInterval=selected==='mobile'?125:selected==='balanced'?100:80;
+    if(!force&&now-genesisLastSkyUpdateAt<updateInterval)return false;
     const T=window.THREE;
     if(!ensureGenesisSkyBackground(T))return false;
     const context=genesisSkyContext,width=genesisSkyCanvas.width,height=genesisSkyCanvas.height;
     const gradient=context.createLinearGradient(0,0,0,height);
     gradient.addColorStop(0,state.skyTop||'#080D22');
-    gradient.addColorStop(.29,state.skyMid||'#111A34');
-    gradient.addColorStop(.465,state.horizon||'#C88B68');
-    gradient.addColorStop(.515,state.fogColor||state.horizon||'#C88B68');
+    gradient.addColorStop(.16,state.skyTop||'#080D22');
+    gradient.addColorStop(.31,state.skyMid||'#111A34');
+    gradient.addColorStop(.445,state.horizon||'#C88B68');
+    gradient.addColorStop(.495,state.fogColor||state.horizon||'#C88B68');
+    gradient.addColorStop(.535,state.fogColor||state.horizon||'#C88B68');
     gradient.addColorStop(1,state.ground||'#11131D');
     context.globalAlpha=1;context.globalCompositeOperation='source-over';
     context.fillStyle=gradient;context.fillRect(0,0,width,height);
+
+    // The original high-resolution GENESIS Milky Way is blended additively so
+    // solar-altitude changes reveal stars/nebulae continuously without replacing
+    // or disposing the underlying texture.
     const stars=Math.max(0,Math.min(1,Number(state.starBrightness||0)/1.62));
-    const twilight=Math.max(0,Math.min(1,Number(state.twilightStrength)||0));
-    const horizonGlow=Math.max(stars*.42,twilight*.78);
-    if(horizonGlow>.005){
-      context.save();context.globalCompositeOperation='screen';
-      const glow=context.createRadialGradient(width*.54,height*.515,2,width*.54,height*.515,height*.28);
-      glow.addColorStop(0,'rgba(255,184,129,'+(horizonGlow*.23).toFixed(3)+')');
-      glow.addColorStop(.32,'rgba(231,132,119,'+(horizonGlow*.15).toFixed(3)+')');
-      glow.addColorStop(.68,'rgba(125,95,137,'+(horizonGlow*.055).toFixed(3)+')');
-      glow.addColorStop(1,'rgba(54,66,105,0)');
-      context.fillStyle=glow;context.fillRect(0,height*.30,width,height*.42);
-      context.restore();
-    }
-    const cloud=Math.max(0,Math.min(1,Number(state.cloudDensity||0)/1.4));
-    if(cloud>.025){
-      context.save();context.globalCompositeOperation='screen';context.globalAlpha=cloud*.36;
-      for(let i=0;i<24;i++){
-        const x=((i*83+Math.sin(i*2.17)*29)%width+width)%width;
-        const y=height*(.18+(i%5)*.052);
-        const radius=22+(i%7)*11;
-        const cloudGlow=context.createRadialGradient(x,y,1,x,y,radius);
-        cloudGlow.addColorStop(0,twilight>.2?'rgba(255,181,157,.20)':'rgba(210,231,246,.22)');
-        cloudGlow.addColorStop(.55,twilight>.2?'rgba(215,133,151,.08)':'rgba(190,217,239,.08)');
-        cloudGlow.addColorStop(1,'rgba(155,192,225,0)');
-        context.fillStyle=cloudGlow;context.fillRect(x-radius,y-radius,radius*2,radius*2);
-      }
-      context.restore();
-    }
     if(stars>.002&&genesisStarCanvas){
       context.save();context.globalCompositeOperation='screen';context.globalAlpha=stars;
       context.drawImage(genesisStarCanvas,0,0,width,height);
+      context.restore();
+    }
+
+    // Authored multi-octave cloud field remains separate from the sky gradient.
+    // It drifts horizontally and naturally yields to the starfield at night.
+    const cloudDensity=Math.max(0,Math.min(1,Number(state.cloudDensity||0)/1.3));
+    const cloudCoverage=Math.max(0,Math.min(1,Number(state.cloudCoverage||0)/.62));
+    const cloudVisibility=cloudDensity*cloudCoverage;
+    if(cloudVisibility>.012&&genesisCloudCanvas){
+      const windX=Number(state.cloudWindX)||0;
+      const drift=((windX*Math.max(0,Number(state.animationTime)||0)*.012)%width+width)%width;
+      context.save();context.globalCompositeOperation='source-over';
+      context.globalAlpha=Math.min(.88,cloudVisibility*.92);
+      context.drawImage(genesisCloudCanvas,-drift,0,width,height);
+      context.drawImage(genesisCloudCanvas,width-drift,0,width,height);
+      context.restore();
+    }
+
+    const twilight=Math.max(0,Math.min(1,Number(state.twilightStrength)||0));
+    const horizonGlow=Math.max(stars*.28,twilight*.82);
+    if(horizonGlow>.005){
+      context.save();context.globalCompositeOperation='screen';
+      const glow=context.createRadialGradient(width*.54,height*.515,2,width*.54,height*.515,height*.28);
+      glow.addColorStop(0,'rgba(255,184,129,'+(horizonGlow*.22).toFixed(3)+')');
+      glow.addColorStop(.32,'rgba(231,132,119,'+(horizonGlow*.14).toFixed(3)+')');
+      glow.addColorStop(.68,'rgba(125,95,137,'+(horizonGlow*.055).toFixed(3)+')');
+      glow.addColorStop(1,'rgba(54,66,105,0)');
+      context.fillStyle=glow;context.fillRect(0,height*.30,width,height*.42);
       context.restore();
     }
     genesisSkyTexture.needsUpdate=true;
@@ -6560,7 +6511,7 @@ void main(){
 
   function disposeGenesisSkyBackground(){
     genesisSkyTexture?.dispose?.();
-    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;
+    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;genesisCloudCanvas=null;genesisSkyQuality=null;
     genesisLastSkyUpdateAt=0;
   }
 
