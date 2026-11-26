@@ -7202,6 +7202,22 @@ void main(){
     genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:50,maxX:104,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
     genesisAddPineForest(T,root,materials,0x9d20c15,18,{minX:-8,maxX:80,minZ:-151,maxZ:-126,minHeight:5,maxHeight:11});
 
+    // Foreground Japanese black-pine branch clips into the upper-right frame edge.
+    // It is actual instanced foliage geometry, not a sky-card or a modified sky texture.
+    const pineSprayGeometry=new T.ConeGeometry(1,1,7,2);
+    addBeam(materials.pineTrunk,[43,22,-20],[28,27,-34],.24,12);
+    for(let spray=0;spray<18;spray++){
+      const t=spray/17;
+      const x=41-t*13.5,y=22.5+t*4.1,z=-21-t*11.5;
+      const direction=new T.Vector3(-1,.20+Math.sin(t*Math.PI)*.18,-.34).normalize();
+      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction);
+      addInstance(pineSprayGeometry,materials.pine,x,y,z,null,
+        [.78+t*.22,2.65+t*.55,.82+t*.12],quaternion);
+      if(spray%3===0){
+        addBeam(materials.pineTrunk,[x,y,z],[x-2.7,y+.55,z-1.1],.055,7);
+      }
+    }
+
     // Long stone approach uses instanced irregular slabs instead of dozens of draw calls.
     const pathSlabGeometry=new T.BoxGeometry(1,.20,1);
     const pathStoneGeometry=new T.IcosahedronGeometry(1,1);
