@@ -12,7 +12,8 @@ const modules = Promise.all([
   import('../static/pstudio_rendering_backend.mjs'),
   import('../static/pstudio_rendering_pipeline.mjs'),
   import('../static/pstudio_rendering_environment_tsl.mjs'),
-  import('../static/pstudio_rendering_migration.mjs')
+  import('../static/pstudio_rendering_migration.mjs'),
+  import('../static/pstudio_rendering_toon_tsl.mjs')
 ]);
 
 test('shared WebGPU backend reports capabilities and refuses unavailable GPU contexts', async () => {
@@ -56,6 +57,70 @@ test('legacy MeshStandardMaterial is copied into a TSL NodeMaterial with PBR map
   target.dispose();
   source.dispose();
   texture.dispose();
+});
+
+test('certified NPR Toon hooks convert to a TSL adapter while preserving native PBR lighting', async () => {
+  const [THREE, TSL, materials, , , , , toon] = await modules;
+  const source = new THREE.MeshStandardMaterial({ color: 0xc9b8a6, roughness: 0.42, metalness: 0.08 });
+  source.onBeforeCompile = function pstudioLegacyToonHook() {};
+  source.customProgramCacheKey = () => 'pstudio-npr-toon-v1';
+  source.userData = {
+    pstudioTSLToon: {
+      version: 1,
+      settings: {
+        enabled: true,
+        shadowColor: '#46516f',
+        midColor: '#9eafd0',
+        highlightColor: '#ffffff',
+        shadowThreshold: 0.32,
+        highlightThreshold: 0.68,
+        rimColor: '#b8dcff',
+        rimIntensity: 0.42,
+        rimPower: 2.6,
+        sssColor: '#f0a5a0',
+        sssIntensity: 0.12
+      }
+    }
+  };
+  source.pstudioTSLToonPreflightApproved = true;
+  source.pstudioTSLToonCompileHook = source.onBeforeCompile;
+  source.pstudioTSLToonCacheKey = source.customProgramCacheKey;
+
+  assert.equal(materials.isPStudioLegacyTSLToonMaterial(source), true);
+  const nodeMaterial = materials.createPStudioNodeMaterial(source);
+  assert.equal(nodeMaterial.isMeshStandardNodeMaterial, true);
+  assert.equal(nodeMaterial.pstudioTSLToonPreflightApproved, true);
+  const originalSetup = nodeMaterial.setupLightingModel;
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BoxGeometry();
+  scene.add(new THREE.Mesh(geometry, nodeMaterial));
+
+  const handle = toon.applyPStudioTSLToonMaterials(scene);
+  assert.equal(handle.materialCount, 1);
+  const model = nodeMaterial.setupLightingModel({});
+  assert.equal(typeof model.direct, 'function');
+  assert.equal(typeof model.indirect, 'function');
+  assert.equal(typeof model.finish, 'function');
+  const outgoingLight = TSL.vec3(0.4, 0.5, 0.6).toVar();
+  const builder = {
+    context: {
+      outgoingLight,
+      reflectedLight: {
+        directDiffuse: TSL.vec3(0.2, 0.25, 0.3).toVar(),
+        indirectDiffuse: TSL.vec3(0.05, 0.06, 0.07).toVar(),
+        directSpecular: TSL.vec3(0.08, 0.08, 0.08).toVar(),
+        indirectSpecular: TSL.vec3(0.04, 0.04, 0.04).toVar()
+      }
+    }
+  };
+  model.finish(builder);
+  assert.equal(handle.dispose(), true);
+  assert.equal(nodeMaterial.setupLightingModel, originalSetup);
+  assert.equal(handle.dispose(), false);
+
+  nodeMaterial.dispose();
+  source.dispose();
+  geometry.dispose();
 });
 
 test('built-in Basic, Lambert, Phong, Toon and Matcap materials convert to matching TSL NodeMaterials', async () => {
