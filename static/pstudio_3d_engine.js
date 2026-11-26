@@ -708,6 +708,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
     else if(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0)add('terrain-parity','地形レイヤー／トライプラナーTSLは接続済みですが、遠景・法線・継ぎ目の実機比較が未完了です。');
     if(!supportsSurfaceTSL&&Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
+    else if(Number(fx.parallaxMaterials)>0)add('parallax-parity','パララックスTSLは接続済みですが、視差遮蔽・シルエット・遠距離品質の実機検証が未完了です。');
     let hasLegacyMirrorWater=false;
     scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
     if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
@@ -749,6 +750,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(particleSystems.length>0&&particleSystems.every(effect=>effect?.system?.material?.isNodeMaterial===true))add('gpu-particles-parity','TSLインスタンス粒子は接続済みですが、密度・寿命境界・GPU負荷の実機検証が未完了です。');
     if(temporalAAEnabled||taaPass?.enabled||smaaPass?.enabled)add('temporal-aa','TAA／SMAAの既存WebGLパスはRenderPipelineへ未移植のため、AA使用中はWebGL2を維持します。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
+    else if(csm)add('csm-parity','TSL CSMShadowNodeは接続済みですが、カスケード境界・影バイアス・遠距離安定性の実機検証が未完了です。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
       for(const list of commandsByObject.values()){
         for(const command of list||[]){
