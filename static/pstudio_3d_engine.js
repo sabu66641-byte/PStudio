@@ -6767,7 +6767,6 @@ void main(){
       plaster:new T.MeshStandardMaterial({color:'#D7C6AA',roughness:.86}),
       gold:new T.MeshStandardMaterial({color:'#D2A45D',roughness:.31,metalness:.72}),
       glow:new T.MeshStandardMaterial({color:'#FFE0AA',emissive:'#FF9A45',emissiveIntensity:2.9,roughness:.28}),
-      glowGlass:new T.MeshBasicMaterial({color:'#FFD9A3',toneMapped:false,side:T.DoubleSide}),
       paper:new T.MeshStandardMaterial({color:'#EACFA8',roughness:.88,...textures.paper,emissive:'#A65A32',emissiveIntensity:.34,side:T.DoubleSide}),
       pine:new T.MeshStandardMaterial({color:'#101D27',roughness:1}),
       pineTrunk:new T.MeshStandardMaterial({color:'#342720',roughness:1,...textures.wood}),
@@ -6904,7 +6903,6 @@ void main(){
         const shojiLamp=new T.PointLight('#FFB36F',1.05,16,2);
         shojiLamp.position.set(x,3.72,frontZ-1.15);shojiLamp.castShadow=false;root.add(shojiLamp);
       }
-      addBox(materials.glowGlass,x,3.82,frontZ-.075,3.18,3.80,.025);
       for(const dx of [-1.82,1.82]){
         addBox(materials.darkWood,x+dx,3.82,frontZ+.09,.17,4.45,.22);
       }
