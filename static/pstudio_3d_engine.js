@@ -1775,7 +1775,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
       // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
-      try{serviceDynamicRadianceCache(now);}catch(error){dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);}
+      void serviceDynamicRadianceCache(now).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
     }
   }
 
@@ -2281,8 +2281,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
     return true;
   }
-  function serviceDynamicRadianceCache(now){
-    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene)return;
+  async function serviceDynamicRadianceCache(now){
+    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene||probeBakeInFlight||dynamicProbeCaptureInFlight)return;
     if(now-lastDynamicProbeSignatureAt>=600){
       lastDynamicProbeSignatureAt=now;
       const snapshots=collectDynamicLightSnapshots(),signature=dynamicLightCacheSignature(snapshots);
@@ -2340,7 +2340,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(now-lastDynamicProbeUpdateAt<captureInterval)return;
     if(recentRenderMs>(gpuFresh?12:7))return;
     const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
-    if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    if(!generator?.fromCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    const {renderer:captureRenderer,Target}=getSHProbeCaptureContext(T);
+    if(typeof Target!=='function'){dynamicGIStatus='unavailable';return;}
     const nextProbe=window.PStudioRenderingGI?.nextDirtyProbeIndex;
     let index=typeof nextProbe==='function'?nextProbe(dynamicProbeDirty,dynamicProbeCursor):-1;
     if(index<0&&!window.PStudioRenderingGI){
@@ -2352,13 +2354,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(index<0){dynamicGIStatus='ready';return;}
     const resolveProbeResolution=window.PStudioRenderingGI?.dynamicProbeCaptureResolution;
     const resolution=typeof resolveProbeResolution==='function'?resolveProbeResolution(qualityPreset):(qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64);
-    const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
+    const target=new Target(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
     const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
-    const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
-    const oldEnvironment=scene.environment,oldBackground=scene.background,oldClear=renderer.getClearColor(new T.Color()).clone();
-    const oldClearAlpha=renderer.getClearAlpha(),oldAutoClear=renderer.autoClear,oldShadowAuto=renderer.shadowMap?.autoUpdate;
-    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],uniformSnapshots=[],savedVisibility=[];
-    const seenMaterials=new Set();
+    const position=bakedLightProbeVolume[index].position,oldTarget=captureRenderer.getRenderTarget?.()||null;
+    const oldEnvironment=scene.environment,oldBackground=scene.background;
+    const oldClear=captureRenderer.getClearColor?.(new T.Color())?.clone?.()||null;
+    const oldClearAlpha=captureRenderer.getClearAlpha?.()??1,oldAutoClear=captureRenderer.autoClear,oldShadowAuto=captureRenderer.shadowMap?.autoUpdate;
+    const oldCaptureActive=probeCaptureActive,restoreProbeUniforms=suppressProbeLightingForCapture();
+    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],savedVisibility=[];
+    dynamicProbeCaptureInFlight=true;
     try{
       scene.traverse(object=>{
         if(object.isLight){
@@ -2366,20 +2370,12 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           else if(object.visible){hiddenLights.push([object,object.visible]);object.visible=false;}
         }
         if(!object.isMesh)return;
-        const materials=Array.isArray(object.material)?object.material:[object.material];
-        for(const material of materials){
-          if(!material||seenMaterials.has(material))continue;seenMaterials.add(material);
-          const uniforms=material.userData?.pstudioProbeUniforms;
-          if(!uniforms)continue;
-          const saved=uniforms.map(value=>value.clone());uniformSnapshots.push([uniforms,saved]);
-          for(const value of uniforms)value.set(0,0,0);
-        }
       });
       probeCaptureActive=true;
-      scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);renderer.autoClear=true;
-      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
-      cube.position.copy(position);scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
-      const light=generator.fromCubeRenderTarget(renderer,target),coefficients=light?.sh?.coefficients;
+      scene.environment=null;scene.background=new T.Color(0x000000);captureRenderer.setClearColor?.(0x000000,1);captureRenderer.autoClear=true;
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=false;
+      cube.position.copy(position);scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
+      const light=await generator.fromCubeRenderTarget(captureRenderer,target),coefficients=light?.sh?.coefficients;
       if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
       const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0};
       const captured=new Float32Array(27);
@@ -2402,13 +2398,14 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     }catch(error){
       dynamicGIStatus='error';console.warn('[PStudio] Dynamic SH probe update skipped:',error);
     }finally{
-      scene.remove(cube);probeCaptureActive=false;target.dispose();
-      for(const [uniforms,saved] of uniformSnapshots)for(let i=0;i<uniforms.length;i++)uniforms[i].copy(saved[i]);
+      scene.remove(cube);target.dispose();restoreProbeUniforms();
       for(const [light,visible] of hiddenLights)light.visible=visible;
       for(const [light,visible] of savedVisibility)light.visible=visible;
-      scene.environment=oldEnvironment;scene.background=oldBackground;renderer.setClearColor(oldClear,oldClearAlpha);
-      renderer.autoClear=oldAutoClear;if(renderer.shadowMap)renderer.shadowMap.autoUpdate=oldShadowAuto;
-      renderer.setRenderTarget(oldTarget);lastDynamicProbeUpdateAt=now;
+      scene.environment=oldEnvironment;scene.background=oldBackground;
+      if(oldClear)captureRenderer.setClearColor?.(oldClear,oldClearAlpha);
+      captureRenderer.autoClear=oldAutoClear;if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldShadowAuto;
+      captureRenderer.setRenderTarget?.(oldTarget);
+      probeCaptureActive=oldCaptureActive;dynamicProbeCaptureInFlight=false;lastDynamicProbeUpdateAt=now;
     }
   }
   async function bakeLightProbeVolume(o={}){
