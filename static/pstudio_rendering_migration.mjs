@@ -25,7 +25,7 @@ export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === '
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '実機WebGPUでフレーム時間・メモリ・長時間動作・WebGL2復旧を回帰検証' }),
-  Object.freeze({ id: 'legacy-materials', label: '残存GLSLを個別TSL移植：NPR Toon、Backface Outline Shell、外部ShaderMaterial／独自onBeforeCompile材質' }),
+  Object.freeze({ id: 'legacy-materials', label: '残存GLSLを個別TSL移植：NPR Toon、外部ShaderMaterial／独自onBeforeCompile材質（Backface Outline ShellはTSL移植済み）' }),
   Object.freeze({ id: 'environment-effects', label: 'TSL体積雲・体積フォグは接続済み。実機で深度交差・散乱・ノイズ・時間変化の視覚品質を比較' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'ClusteredLightsNode PBR・9係数SH・WebGPU CubeRenderTarget読出しを接続済み。反射視点・影・SH係数の実機等価性を検証' }),
   Object.freeze({ id: 'gpu-particles-trails', label: 'TSL NodeMaterialのInstanced GPU Particle／Ribbon Trailを接続済み。粒子密度・透明合成・負荷・寿命境界を実機検証' }),
