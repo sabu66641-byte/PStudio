@@ -973,6 +973,7 @@ function syncGenesisEnvironmentControls(){
  if(cycle)cycle.checked=sceneEnvironment.timeScale>0;
 }
 function syncGenesisEnvironmentToRenderer(){
+ if(sceneEnvironment.preset==='studio')return window.PStudio3D?.clearGenesisEnvironment?.()===true;
  const api=window.PStudio3D?.setGenesisEnvironment;
  if(typeof api!=='function')return false;
  const result=api(normalizeSceneEnvironment(sceneEnvironment));
@@ -1005,7 +1006,9 @@ function setSceneEnvironmentPreset(preset){
   timeOfDay:name==='dusk'?19:name==='night'?23:12,
   timeScale:0
  });
- commitGenesisEnvironment();
+ if(name==='studio'){
+  syncSceneEnvironmentPresetButtons();persistProject();window.PStudio3D?.clearGenesisEnvironment?.();window.PStudioEngine?.refreshSceneView?.();
+ }else commitGenesisEnvironment();
  toast('シーン環境: '+({day:'昼',dusk:'夕方',night:'夜',studio:'スタジオ'}[sceneEnvironment.preset]));
 }
 function setGenesisEnvironmentTime(value){
