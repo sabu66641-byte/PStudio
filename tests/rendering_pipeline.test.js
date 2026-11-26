@@ -1424,7 +1424,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
   for(const token of [
     'new THREE.RenderPipeline(renderer)',
     'pass(scene, camera)',
-    'bloom(sceneColor',
+    'bloom(output',
     'renderPipeline.render()',
     'renderPipeline.dispose()'
   ])assert.ok(webgpuPipeline.includes(token),token);
@@ -1715,7 +1715,12 @@ test('WebGPU TSL scene pass exposes shared beauty, depth and packed view-normal 
   assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('normal')"));
   assert.ok(webgpuPipeline.includes('normalTexture.type = THREE.UnsignedByteType'));
   assert.ok(webgpuPipeline.includes('getFrameResources()'));
-  assert.ok(webgpuPipeline.includes("normalEncoding: 'packed-rgb-unorm8'"));
+  assert.ok(webgpuPipeline.includes("normalEncoding: 'packed-rgb-unorm8-decoded-to-view-normal'"));
+  assert.ok(webgpuPipeline.includes("metalRoughEncoding: 'rg-unorm8'"));
+  assert.ok(webgpuPipeline.includes("metalrough: TSL.vec2(TSL.metalness, TSL.roughness)"));
+  assert.ok(webgpuPipeline.includes("import { ssao } from 'three/addons/tsl/display/SSAONode.js'"));
+  assert.ok(webgpuPipeline.includes("import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js'"));
+  assert.ok(webgpuPipeline.includes("import { ssr } from 'three/addons/tsl/display/SSRNode.js'"));
 });
 
 test('pinned Three.js r187 exports the required TSL MRT and normal packing APIs',async()=>{
