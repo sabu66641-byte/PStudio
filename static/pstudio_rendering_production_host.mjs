@@ -33,6 +33,7 @@ export function createPStudioProductionRendererHost(options = {}) {
     render: runtime.render,
     resize: runtime.resize,
     setEnvironment: runtime.setEnvironment,
+    setWaterEnvironment: runtime.setWaterEnvironment,
     setBloom: runtime.setBloom,
     setAntiAliasing: runtime.setAntiAliasing,
     setAmbientOcclusion: runtime.setAmbientOcclusion,
