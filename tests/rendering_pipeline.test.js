@@ -1610,6 +1610,27 @@ test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fall
   assert.match(renderer,/updateDynamicResolutionFromMetrics\(now,hasRecentGpuSample\)/);
 });
 
+test('GENESIS renderer applies one continuous environment state to lighting, water, cloud and rain systems',()=>{
+  for(const token of [
+    'window.PStudioGenesisEnvironment?.createGenesisEnvironmentController',
+    'genesisEnvironmentController.update(deltaSeconds)',
+    'window.PStudioEnvironmentFX?.update?.(particleClock)',
+    "applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.5)",
+    'productionRendererBridge.setEnvironment?.(state)',
+    'uMirrorWindDirection','uMirrorWindSpeed','uMirrorRain',
+    "createGpuParticleSystem(384,'#C7E3F8',.11)",
+    'spawnGpuParticle(genesisRainSystem',
+    'disposeGpuParticleSystem(genesisRainSystem)'
+  ])assert.ok(renderer.includes(token),token);
+  for(const token of [
+    'uniform vec2 uPStudioWaterWindDirection',
+    'uPStudioWaterRainIntensity',
+    'pStudioWaterRainLocal',
+    'rainRing*=uPStudioWaterRainIntensity',
+    'applyScalar(u.amplitude,settings.waterWaveAmplitude'
+  ])assert.ok(environmentFX.includes(token),token);
+});
+
 test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{
   assert.ok(renderer.includes("let postProcessingFailed=false,postProcessingFailureReason=''"));
   assert.ok(renderer.includes('function resetPostProcessingFailure(){'));
