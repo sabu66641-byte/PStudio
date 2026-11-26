@@ -3,12 +3,13 @@ import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial
 import { createPStudioRenderPipeline } from './pstudio_rendering_pipeline.mjs?v=20261126-shared-frame-resources-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
-import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v7';
+import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
 import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-tsl-v2';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
+export const supportsPStudioTSLCaustics = supportsPStudioTSLSurfaceFeatures;
 export const supportsPStudioTSLClusteredLighting = typeof createPStudioTSLClusterStorage === 'function' && typeof applyPStudioTSLClusteredLighting === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
@@ -16,7 +17,7 @@ export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === '
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '本番WebGPUの実機負荷・長時間動作・WebGL2復旧の回帰検証' }),
   Object.freeze({ id: 'legacy-materials', label: '認定済みTSLアダプター対象外の独自GLSL・拡張材質を移植' }),
-  Object.freeze({ id: 'environment-effects', label: '体積雲・高度フォグ・水中コースティクスのTSL移植' }),
+  Object.freeze({ id: 'environment-effects', label: '体積雲・高度フォグのTSL移植' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'クラスタ照明・静的／動的SH GI・プローブキャプチャのTSL／WebGPU移植' }),
   Object.freeze({ id: 'post-processing', label: 'EffectComposer依存のGTAO・SSR・霧・雲・AA等をRenderPipelineへ移植' }),
   Object.freeze({ id: 'resource-profiling', label: 'GPUリソース管理・タイミング計測・デバイスロスト復旧の統合' }),
@@ -143,7 +144,8 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL clustered point-light irradiance with revisioned StorageBuffer uploads and native-light overflow fallback',
       'TSL SH irradiance nodes preserving PStudio 9xRGB probe coefficients and temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
-      'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass'
+      'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
+      'TSL underwater caustics with the legacy diffuse-light response preserved'
     ]),
     blockers: Object.freeze(blockers)
   });
