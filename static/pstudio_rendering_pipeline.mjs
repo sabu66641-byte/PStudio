@@ -53,6 +53,12 @@ function createVolumetricFogNode(inputColor, sceneDepth, settings) {
   const anisotropy = TSL.uniform(settings.anisotropy);
   const steps = TSL.uniform(settings.steps);
   const time = TSL.uniform(settings.time);
+  const noise3 = TSL.Fn(([p]) => {
+    const phase = p.x.mul(0.73)
+      .add(TSL.sin(p.y.mul(0.51).add(p.z.mul(0.91)).mul(1.7)))
+      .add(time.mul(0.025));
+    return TSL.float(0.5).add(TSL.sin(phase).mul(0.5));
+  }, { p: 'vec3', return: 'float' });
 
   const node = TSL.Fn(() => {
     const uv = TSL.screenUV;
@@ -83,14 +89,8 @@ function createVolumetricFogNode(inputColor, sceneDepth, settings) {
       const height = worldPosition.y.sub(baseHeight);
       const vertical = TSL.exp(TSL.max(height, 0).mul(heightFalloff).negate());
       const groundHaze = TSL.float(1).add(TSL.exp(height.abs().mul(-0.022)).mul(0.24));
-      const animated = worldPosition.x.mul(0.73)
-        .add(TSL.sin(worldPosition.y.mul(0.51).add(worldPosition.z.mul(0.91)).mul(1.7)))
-        .add(time.mul(0.025));
-      const noiseA = TSL.float(0.5).add(TSL.sin(animated).mul(0.5));
-      const animatedB = worldPosition.x.mul(0.73 * 0.11)
-        .add(TSL.sin(worldPosition.y.mul(0.51 * 0.11).add(worldPosition.z.mul(0.91 * 0.11)).mul(1.7)))
-        .add(time.mul(0.025));
-      const noiseB = TSL.float(0.5).add(TSL.sin(animatedB).mul(0.5));
+      const noiseA = noise3(worldPosition.mul(0.035));
+      const noiseB = noise3(worldPosition.mul(0.11));
       const detail = TSL.mix(noiseA, noiseB, 0.32);
       const localDensity = density.mul(vertical).mul(groundHaze).mul(TSL.mix(0.82, 1.14, detail));
       const segmentOptical = localDensity.mul(segmentLength);
@@ -107,7 +107,7 @@ function createVolumetricFogNode(inputColor, sceneDepth, settings) {
     const finalTransmittance = TSL.exp(optical.negate());
     const fogged = source.rgb.mul(finalTransmittance).add(scatter);
     const result = TSL.vec4(fogged, source.a);
-    return TSL.isBackgroundDepth(depth).select(source, TSL.float(1).sub(TSL.isBackgroundDepth(depth)).select(result, source));
+    return TSL.isBackgroundDepth(depth).select(source, result);
   })();
 
   return Object.freeze({
