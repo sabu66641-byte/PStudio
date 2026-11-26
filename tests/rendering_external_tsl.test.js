@@ -111,8 +111,10 @@ test('unknown external ShaderMaterial remains fail-closed without a registered s
   assert.equal(material.isShaderMaterial, true);
 });
 
-test('external TSL adapter registration is explicit, validated and rolls back failed conversions', async () => {
-  const [THREE, adapters] = await modules;
+test('external TSL adapter registration is public, explicit, validated and rolls back failed conversions', async () => {
+  const [THREE, adapters, , migration] = await modules;
+  assert.equal(migration.registerPStudioTSLMaterialAdapter, adapters.registerPStudioTSLMaterialAdapter);
+  assert.deepEqual(migration.listPStudioTSLMaterialAdapters(), adapters.listPStudioTSLMaterialAdapters());
   assert.throws(() => adapters.registerPStudioTSLMaterialAdapter('invalid-test-adapter', {}), /must provide create/);
 
   const registration = adapters.registerPStudioTSLMaterialAdapter('test.invalid-adapter', {
