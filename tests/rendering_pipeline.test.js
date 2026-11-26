@@ -1617,17 +1617,22 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
     'window.PStudioEnvironmentFX?.update?.(particleClock)',
     "applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375)",
     'productionRendererBridge.setEnvironment?.(state)',
-    'productionRendererBridge.setWaterEnvironment?.(state)',
-    'const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true',
-    'function updateEnvironment(profile = {})',
-    'const amplitude = TSL.uniform(settings.amplitude)',
-    'const rainIntensity = TSL.uniform(0)',
-    'reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple)',
     'uMirrorWindDirection','uMirrorWindSpeed','uMirrorRain',
     "createGpuParticleSystem(384,'#C7E3F8',.11)",
     'spawnGpuParticle(genesisRainSystem',
     'disposeGpuParticleSystem(genesisRainSystem)'
   ])assert.ok(renderer.includes(token),token);
+  assert.ok(webgpuMigration.includes('const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true'));
+  assert.ok(webgpuMigration.includes('setWaterEnvironment(profile)'));
+  for(const token of [
+    'function updateEnvironment(profile = {})',
+    'const amplitude = TSL.uniform(settings.amplitude)',
+    'const waveStrength = TSL.uniform(settings.waveStrength)',
+    'const windDirection = TSL.uniform(new THREE.Vector2(1, 0))',
+    'const rainIntensity = TSL.uniform(0)',
+    'reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple)',
+    'uniform float rainIntensity'
+  ])assert.ok(webgpuWater.includes(token),token);
   for(const token of [
     'uniform vec2 uPStudioWaterWindDirection',
     'uPStudioWaterRainIntensity',
