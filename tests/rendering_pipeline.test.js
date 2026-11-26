@@ -1440,9 +1440,19 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
     'genesisSkyQuality===selected',
     'const updateInterval=selected===\'mobile\'?125:selected===\'balanced\'?100:80',
     'buildGenesisShrineDemo',
-    'GENESIS Sakura Blossom Canopy',
-    'GENESIS Mirror Lake',
+    'genesisCreateDetailTexture',
+    'genesisCreateCurvedRoofGeometry',
+    'genesisAddCurvedJapaneseRoof',
+    'GENESIS Hand-Laid Ceramic Roof Tiles',
+    'shoji',
+    'GENESIS Sakura | 8,200 sculpted blossoms',
+    'GENESIS Sakura golden stamens',
+    'GENESIS Volumetric Mountain Ridge',
+    'genesisAddPineForest',
+    'GENESIS Mirror Lake | Full planar reflection',
     'GENESIS Floating Sakura Petals',
+    'boxGeometryCache',
+    'for(const texture of owned.textures||[])texture?.dispose?.()',
     'genesisAddMountainRange',
     'setGenesisShrineDemo'
   ])assert.ok(renderer.includes(token),token);
@@ -1450,6 +1460,7 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
+  assert.ok(html.includes("set_camera(0, 17, 88, 0, 8, -45)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 

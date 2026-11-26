@@ -1003,7 +1003,7 @@ function setGenesisEnvironmentAutoCycle(enabled){
 }
 function openGenesisDemo(){
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
- const cameraScript='func update(dt)\n    set_camera(0, 16, 76, 0, 8, -39)\n';
+ const cameraScript='func update(dt)\n    set_camera(0, 17, 88, 0, 8, -45)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
   {id:'shrine-camera',name:'Night Shrine Camera',x:480,y:260,z:0,rotationX:0,rotationY:0,rotationZ:0,w:32,h:32,sprite:'',script:'shrine_camera.ps',color:'#FFFFFF',shape:'rect'}
@@ -1022,7 +1022,7 @@ function openGenesisDemo(){
  window.PStudioEngine?.setViewMode?.('3d');
  const sceneLabel=document.getElementById('scene-name-label');
  if(sceneLabel)sceneLabel.textContent='night_shrine_mirror_lake.scene';
- toast('夜景神社・桜・山並み・水鏡を統合したGENESISデモを開きました。');
+ toast('月夜の神社・五重塔・桜並木・水鏡シーンを開きました。');
  window.startPStudioGame?.();
 }
 function persistProject(){
