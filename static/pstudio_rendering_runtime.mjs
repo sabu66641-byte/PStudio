@@ -151,6 +151,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           render: () => webgpu.render(),
           resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
           setEnvironment: (profile) => webgpu.setEnvironment?.(profile) === true,
+          setWaterEnvironment: (profile) => webgpu.setWaterEnvironment?.(profile) === true,
           setBloom: (settings) => webgpu.setBloom?.(settings) === true,
           setAntiAliasing: (settings) => webgpu.setAntiAliasing?.(settings) === true,
           setAmbientOcclusion: (settings) => webgpu.setAmbientOcclusion?.(settings) === true,
@@ -202,6 +203,10 @@ export function createPStudioProductionRendererRuntime(options = {}) {
     setEnvironment(profile) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
       return active.setEnvironment?.(profile) === true;
+    },
+    setWaterEnvironment(profile) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setWaterEnvironment?.(profile) === true;
     },
     setBloom(settings) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
