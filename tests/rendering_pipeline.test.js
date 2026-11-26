@@ -12,7 +12,6 @@ const ecs = fs.readFileSync(path.join(root, 'static/pstudio_ecs.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'app.py'), 'utf8');
 const selectUI = fs.readFileSync(path.join(root, 'static/pstudio_selects.js'), 'utf8');
 const selectCSS = fs.readFileSync(path.join(root, 'static/pstudio_selects.css'), 'utf8');
-const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs'), 'utf8');
 const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
@@ -1387,31 +1386,18 @@ test('tablet and mobile workspace use a single main column with accessible proje
   ])assert.ok(html.includes(token),token);
 });
  
-test('WebGPU PBR and TSL pilot uses the shared production scene-session modules',()=>{
+test('standalone WebGPU Lab UI is removed while production WebGPU/TSL migration remains intact',()=>{
+  for(const token of ['webgpu-lab-open','webgpu-lab-overlay','webgpu-lab-canvas','pstudio_webgpu_lab.mjs']){
+    assert.equal(html.includes(token),false,token+' must not appear in the application UI');
+  }
+  assert.equal(fs.existsSync(path.join(root,'static/pstudio_webgpu_lab.mjs')),false,'standalone compatibility demo module is retired');
   for(const token of [
-    'id="webgpu-lab-open"',
-    'id="webgpu-lab-overlay"',
-    'id="webgpu-lab-canvas"',
-    'pstudio_webgpu_lab.mjs?v=20261126-cluster-sh-vfx-v2',
-    '既存プロジェクト',
-    '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
+    "import('three/webgpu')",
+    "import('three/tsl')",
+    'PStudioWebGPURenderer',
+    'PStudioTSL',
     'pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'
   ])assert.ok(html.includes(token),token);
-  for(const token of [
-    "import * as THREE from 'three/webgpu'",
-    "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'",
-    'createPStudioWebGPUSceneSession({',
-    'sessionHandle.render()',
-    'sessionHandle.dispose()',
-    'new THREE.MeshStandardMaterial',
-    'new THREE.MeshPhysicalMaterial',
-    'new THREE.MeshStandardNodeMaterial',
-    'TSL.mix(',
-    'new THREE.CanvasTexture',
-    'keyLight.castShadow = true',
-    'configureRenderer:'
-  ])assert.ok(webgpuLab.includes(token),token);
   for(const token of [
     "await renderer.init()",
     "renderer?.backend?.isWebGPUBackend",
@@ -1440,28 +1426,27 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'createPStudioTSLEnvironment(scene',
     'environmentHandle.updateCamera(camera)',
     'environmentHandle?.setProfile?.(profile)',
-    'pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1',
-
     'device.lost',
     'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE'
   ])assert.ok(webgpuMigration.includes(token),token);
+});
+
+test('GENESIS scene and day-to-night sky use one continuous environment and authored shrine fixture',()=>{
   for(const token of [
-    'generatePStudioEnvironmentPixels',
-    'MeshBasicNodeMaterial',
-    'EquirectangularReflectionMapping',
-    'scene.environment=environmentTexture',
-    'TSL.equirectUV(direction)',
-    'TSL.texture(environmentTexture,skyUV)',
-    'periodicValueNoise(u,v',
-    'cloudEnabled',
-    'cloudCoverage',
-    'radianceSource',
-    String.raw`radianceSource:'shared-sky-and-pbr-ibl'`,
-    'updateCamera(camera)'
-  ])assert.ok(webgpuEnvironmentTSL.includes(token),token);
-  assert.doesNotMatch(webgpuLab,/window\.PStudio3D/);
-  assert.doesNotMatch(webgpuLab,/new THREE\.WebGLRenderer/);
-  assert.doesNotMatch(webgpuLab,/rendererCandidate\.render\(scene, camera\)/);
+    'updateGenesisSkyBackground(state,forceSky,now)',
+    'createGenesisStarCanvas',
+    'buildGenesisShrineDemo',
+    'GENESIS Sakura Blossom Canopy',
+    'GENESIS Mirror Lake',
+    'GENESIS Floating Sakura Petals',
+    'genesisAddMountainRange',
+    'setGenesisShrineDemo'
+  ])assert.ok(renderer.includes(token),token);
+  assert.doesNotMatch(renderer,/now-genesisLastSkyUpdateAt>=1200/);
+  assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
+  assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
+  assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
+  assert.equal(html.includes('WebGPU Lab'),false);
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
