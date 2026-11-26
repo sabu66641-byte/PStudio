@@ -44,6 +44,75 @@ function normalizeSSR(options) {
   };
 }
 
+function normalizeGodRays(options) {
+  if (options === false || options?.enabled === false || options == null) return null;
+  const source = options === true ? {} : options;
+  const position = Array.isArray(source.lightPosition) ? source.lightPosition : [0.5, 0.78];
+  return {
+    enabled: true,
+    intensity: Math.max(0, Math.min(2, Number.isFinite(Number(source.intensity)) ? Number(source.intensity) : 0)),
+    lightPosition: [
+      Math.max(-2, Math.min(3, Number.isFinite(Number(position[0])) ? Number(position[0]) : 0.5)),
+      Math.max(-2, Math.min(3, Number.isFinite(Number(position[1])) ? Number(position[1]) : 0.78))
+    ],
+    density: Math.max(0, Math.min(1.5, Number.isFinite(Number(source.density)) ? Number(source.density) : 0.92)),
+    decay: Math.max(0, Math.min(1, Number.isFinite(Number(source.decay)) ? Number(source.decay) : 0.965)),
+    weight: Math.max(0, Math.min(2, Number.isFinite(Number(source.weight)) ? Number(source.weight) : 0.82)),
+    threshold: Math.max(0, Math.min(1, Number.isFinite(Number(source.threshold)) ? Number(source.threshold) : 0.58))
+  };
+}
+
+function createGodRaysNode(sceneColor, settings) {
+  const lightPosition = TSL.uniform(new THREE.Vector2(...settings.lightPosition));
+  const intensity = TSL.uniform(settings.intensity);
+  const density = TSL.uniform(settings.density);
+  const decay = TSL.uniform(settings.decay);
+  const weight = TSL.uniform(settings.weight);
+  const threshold = TSL.uniform(settings.threshold);
+  const node = TSL.Fn(() => {
+    const source = sceneColor.sample(TSL.screenUV);
+    const delta = TSL.screenUV.sub(lightPosition).mul(density.div(20));
+    const coord = TSL.screenUV.toVar();
+    const illuminationDecay = TSL.float(1).toVar();
+    const shafts = TSL.vec3(0).toVar();
+    TSL.Loop({ start: 0, end: 20 }, () => {
+      coord.subAssign(delta);
+      const sampleColor = sceneColor.sample(TSL.clamp(coord, TSL.vec2(0.001), TSL.vec2(0.999)));
+      const luminance = sampleColor.rgb.dot(TSL.vec3(0.2126, 0.7152, 0.0722));
+      const bright = TSL.smoothstep(threshold, threshold.add(0.38), luminance);
+      shafts.addAssign(sampleColor.rgb.mul(bright).mul(illuminationDecay));
+      illuminationDecay.mulAssign(decay);
+    });
+    const rays = shafts.mul(weight.div(20)).mul(intensity);
+    return TSL.vec4(source.rgb.add(rays), source.a);
+  })();
+  return Object.freeze({
+    node,
+    set(settings) {
+      if (!settings) {
+        intensity.value = 0;
+        return;
+      }
+      lightPosition.value.set(settings.lightPosition[0], settings.lightPosition[1]);
+      intensity.value = settings.intensity;
+      density.value = settings.density;
+      decay.value = settings.decay;
+      weight.value = settings.weight;
+      threshold.value = settings.threshold;
+    },
+    getState() {
+      return Object.freeze({
+        intensity: intensity.value,
+        density: density.value,
+        decay: decay.value,
+        weight: weight.value,
+        threshold: threshold.value,
+        lightPosition: Object.freeze([lightPosition.value.x, lightPosition.value.y])
+      });
+    }
+  });
+}
+
 /**
  * Creates the r187 TSL RenderPipeline used by PStudio's WebGPU path.
  * Beauty, projection depth, packed view normals and packed metal/roughness
@@ -67,6 +136,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let bloomSettings = normalizeBloom(options.bloom);
   let aoSettings = normalizeAO(options.ambientOcclusion ?? options.ao);
   let ssrSettings = normalizeSSR(options.ssr);
+  let godRaysSettings = normalizeGodRays(options.godRays);
+  let godRaysHandle = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
@@ -117,6 +188,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
       output = output.add(glow);
     }
+    if (godRaysHandle) output = godRaysHandle.node;
     renderPipeline.outputNode = output;
     renderPipeline.needsUpdate = true;
   }
@@ -162,6 +234,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     }
 
     renderPipeline = new THREE.RenderPipeline(renderer);
+    if (godRaysSettings) godRaysHandle = createGodRaysNode(sceneColor, godRaysSettings);
     rebuildOutput();
   } catch (error) {
     releaseScreenSpaceNodes();
@@ -208,6 +281,19 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       rebuildOutput();
       return true;
     },
+    setGodRays(nextOptions) {
+      if (disposed) return false;
+      godRaysSettings = normalizeGodRays(nextOptions);
+      if (!godRaysSettings) {
+        godRaysHandle?.set(null);
+        rebuildOutput();
+        return true;
+      }
+      if (!godRaysHandle) godRaysHandle = createGodRaysNode(sceneColor, godRaysSettings);
+      else godRaysHandle.set(godRaysSettings);
+      rebuildOutput();
+      return true;
+    },
     getFrameResources() {
       return disposed ? null : frameResources;
     },
@@ -217,6 +303,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
         bloom: bloomSettings ? { ...bloomSettings } : null,
         ambientOcclusion: aoSettings ? { ...aoSettings } : null,
         ssr: ssrSettings ? { ...ssrSettings } : null,
+        godRays: godRaysHandle ? godRaysHandle.getState() : null,
         frameResources: disposed ? null : Object.freeze({
           attachments: frameResources.attachments,
           normalEncoding: frameResources.normalEncoding,
