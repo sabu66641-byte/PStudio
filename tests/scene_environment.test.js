@@ -132,6 +132,32 @@ test('large editor workspace grid and selected environment are sent to the 3D re
   assert.match(html, /window\.PStudioEngine\?\.refreshSceneView\?\.\(\)/);
 });
 
+test('GENESIS reference night showcase uses detailed Japanese architecture, matched framing, warm lighting and the existing environment sky',()=>{
+  const start=renderer.indexOf('function buildGenesisShrineDemo(T)');
+  const end=renderer.indexOf('function removeGenesisShrineDemo()',start);
+  assert.ok(start>=0&&end>start,'reference showcase builder is present');
+  const demo=renderer.slice(start,end);
+  for(const token of [
+    "Reference Night Shrine, Five-Storey Pagoda and Mirror Lake",
+    "GENESIS Exposed Japanese roof rafters",
+    "Three individually framed glowing shoji bays per storey",
+    "const gateX=32,gateZ=-60,postSpacing=12.2",
+    "const deerX=70,deerZ=13",
+    "GENESIS Foreground Black Pine Silhouette",
+    "PlaneGeometry(220,176,1,1)",
+    "addLantern(-88,24,1.42,true)",
+    "addLantern(88,24,1.42,true)"
+  ])assert.ok(demo.includes(token),token);
+  assert.ok(renderer.includes("const tileGeometry=new T.BufferGeometry()"),'roof tiles use curved custom geometry');
+  assert.ok(renderer.includes("const rafterGeometry=new T.CylinderGeometry(.075,.075,1,8,1,false)"),'roof rafters use instanced geometry');
+  assert.ok(renderer.includes("emissiveIntensity:.72,side:T.DoubleSide"),'shoji panels emit warm interior light');
+  assert.ok(html.includes("set_camera(0, 22, 43, 0, 9, -60)"),'camera uses the reference composition');
+  assert.ok(html.includes("set_postprocessing(true, true, 0.52)"),'reference shot enables bloom and ambient occlusion');
+  assert.ok(html.includes("preset:'night',timeOfDay:23.25"),'reference scene still selects the existing night preset');
+  assert.ok(renderer.includes("function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false,profileOverride=null,skyResolutionScale=1)"),'existing day/dusk/night sky pipeline remains the environment owner');
+  assert.ok(renderer.includes("scene.background=scenePresetTexture"),'authored scene sky remains unchanged');
+});
+
 test('runtime scene environment does not force a 2D-only game into the 3D renderer', () => {
   assert.match(engine, /commands\.set\('__scene__',\[\{type:'environment',preset:sceneEnvironment\?\.preset\|\|'day'\}\]\)/);
   assert.match(engine, /const drawCommands=new Map\(\[\.\.\.activeCommands\]\.filter\(\(\[id\]\)=>id!=='__scene__'\)\)/);
