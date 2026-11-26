@@ -7036,7 +7036,7 @@ void main(){
     }
 
     // Right-bank deer in profile, matching the reference image's quiet foreground silhouette.
-    const deerX=24,deerZ=-40;
+    const deerX=28,deerZ=-40;
     const deerBodyGeometry=new T.SphereGeometry(1,24,16);
     const deerJointGeometry=new T.SphereGeometry(1,16,12);
     const deerEarGeometry=new T.ConeGeometry(.15,.42,8,2);
@@ -7182,10 +7182,10 @@ void main(){
     for(let i=0;i<7;i++){
       const z=26-i*11;
       addLantern(-17-(i%2)*4,z,.92,i===1||i===5);
-      addLantern(27+(i%2)*4,z,.92,i===3);
+      if(i<6)addLantern(27+(i%2)*4,z,.92,i===3);
     }
     addLantern(-58,-32,1.18,true);
-    addLantern(24,-40,1.18,true);
+    addLantern(36,-52,1.18,true);
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
     const stoneRandom=()=>{stoneSeed=(Math.imul(stoneSeed,1664525)+1013904223)>>>0;return stoneSeed/4294967296;};
