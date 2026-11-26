@@ -49,6 +49,7 @@
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
+  let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const renderingFrameBudgetController=window.PStudioRenderingBudget?.createPStudioFrameBudgetController?.()||null;
@@ -5746,9 +5747,10 @@ void main(){
     context.restore();
     return true;
   }
-  function createProceduralSkyTexture(T,profile){
+  function createProceduralSkyTexture(T,profile,resolutionScale=1){
     const canvas=document.createElement('canvas');
-    const width=2048,height=1024;
+    const scale=Math.max(0.25,Math.min(1,Number(resolutionScale)||1));
+    const width=Math.max(512,Math.round(2048*scale)),height=Math.max(256,Math.round(1024*scale));
     canvas.width=width;canvas.height=height;
     const context=canvas.getContext('2d');
     if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
@@ -6195,9 +6197,9 @@ void main(){
     try{return pmremGenerator.fromScene(skyScene,0.04);}
     finally{skyScene.remove(probe);}
   }
-  function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false){
+  function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false,profileOverride=null,skyResolutionScale=1){
     const api=window.PStudioSceneEnvironment;
-    const profile=api?.getPreset?.(presetName)||{
+    const profile=profileOverride||api?.getPreset?.(presetName)||{
       name:'day',skyTop:'#347CB7',skyMid:'#79BCE0',horizon:'#D7EDF7',ground:'#89977A',
       fogColor:'#B9D9E8',fogNear:55,fogFar:1450,lightColor:'#FFF1D6',
       lightIntensity:2.35,lightX:-0.35,lightY:-0.89,lightZ:-0.28,
@@ -6211,15 +6213,17 @@ void main(){
     const cloudTierActive=!memorySafetyApplied;
     volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!!(cloudTier?.clouds&&cloudTierActive&&volumetricCloudPass);
     if(volumetricCloudPass){volumetricCloudPass.enabled=volumetricCloudsEnabled;volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);}
-    const signature=String(profile.name||'day');
+    const signature=profileOverride
+      ?JSON.stringify([profile.name,profile.skyTop,profile.skyMid,profile.horizon,profile.ground,profile.skySunX,profile.skySunY,profile.skySunZ,profile.moonDirectionX,profile.moonDirectionY,profile.moonDirectionZ,profile.sunIntensity,profile.moonIntensity,profile.starBrightness,profile.cloudCoverage,profile.cloudDensity,profile.cloudWindX,profile.cloudWindZ])
+      :String(profile.name||'day');
     const changed=signature!==scenePresetSignature;
     if(changed){
       let nextTexture=null,nextTarget=null;
-      try{nextTexture=createProceduralSkyTexture(T,profile);}
+      try{nextTexture=createProceduralSkyTexture(T,profile,skyResolutionScale);}
       catch(error){console.warn('[PStudio] Procedural atmosphere texture creation failed; a solid horizon fallback will be used.',error);}
       // The physical Sky shader is retained for high-dynamic-range environment lighting,
       // but the editor background always uses the authored panorama to avoid exposure blowout.
-      const physicalSkyReady=profile.name!=='night'&&updatePhysicalSkyPreset(T,profile);
+      const physicalSkyReady=!profileOverride&&profile.name!=='night'&&updatePhysicalSkyPreset(T,profile);
       if(physicalSkyReady&&pmremGenerator){
         try{nextTarget=createPhysicalSkyEnvironmentTarget(T);}
         catch(error){console.warn('[PStudio] Physical sky PMREM generation failed; using the matching procedural environment.',error);}
@@ -6274,7 +6278,7 @@ void main(){
       Number.isFinite(Number(profile.skySunZ))?Number(profile.skySunZ):-Number(profile.lightZ||0)
     ];
     const atmosphericLightDirection=[-Number(profile.lightX||0),-Number(profile.lightY||-1),-Number(profile.lightZ||0)];
-    const environmentState=window.PStudioRenderingEnvironment?.resolvePStudioEnvironmentState?.(profile)||{
+    const environmentState=Object.assign({},window.PStudioRenderingEnvironment?.resolvePStudioEnvironmentState?.(profile)||{
       sunDirection:skySunDirection,
       lightDirection:atmosphericLightDirection,
       sunColor:profile.atmosphereSunColor||profile.lightColor,
@@ -6289,9 +6293,143 @@ void main(){
       cloudDetail:Number.isFinite(Number(profile.cloudDetail))?Number(profile.cloudDetail):0.58,
       cloudBase:Number.isFinite(Number(profile.cloudBase))?Number(profile.cloudBase):54,
       cloudTop:Number.isFinite(Number(profile.cloudTop))?Number(profile.cloudTop):108
-    };
+    },{
+      windDirection:Array.isArray(profile.windDirection)?profile.windDirection:[1,0],
+      windSpeed:Number(profile.windSpeed)||0,windStrength:Number(profile.windStrength)||0,
+      cloudWindX:Number(profile.cloudWindX)||0,cloudWindZ:Number(profile.cloudWindZ)||0,
+      rainIntensity:Number(profile.rainIntensity)||0,wetness:Number(profile.wetness)||0,
+      waterWaveAmplitude:Number(profile.waterWaveAmplitude)||0.08,waterRippleStrength:Number(profile.waterRippleStrength)||0
+    });
     window.PStudioEnvironmentFX?.configureAtmosphere?.(environmentState);
     return profile;
+  }
+
+  function applyGenesisLiveLighting(state){
+    if(!renderer||!scene||!state)return false;
+    const T=window.THREE,profile=state;
+    activeEnvironmentPreset=String(profile.visualPreset||profile.name||'day');
+    configureMoonSky(T,profile);
+    configureSunSky(T,profile);
+    if(!(scene.fog instanceof T.Fog))scene.fog=new T.Fog(profile.fogColor||'#C7DFEA',profile.fogNear||55,profile.fogFar||1450);
+    else{
+      scene.fog.color.set(profile.fogColor||'#C7DFEA');
+      scene.fog.near=Math.max(0,Number(profile.fogNear)||0);
+      scene.fog.far=Math.max(scene.fog.near+1,Number(profile.fogFar)||1450);
+    }
+    if('environmentIntensity' in scene)scene.environmentIntensity=Math.max(0,Number(profile.environmentIntensity)||0);
+    if(hemisphereLight){
+      hemisphereLight.color.set(profile.hemisphereSky||'#D9EEFF');
+      hemisphereLight.groundColor.set(profile.hemisphereGround||'#68725C');
+      hemisphereLight.intensity=Math.max(0,Number(profile.hemisphereIntensity)||0);
+    }
+    const lx=Number.isFinite(Number(profile.lightX))?Number(profile.lightX):-.35;
+    const ly=Number.isFinite(Number(profile.lightY))?Number(profile.lightY):-.89;
+    const lz=Number.isFinite(Number(profile.lightZ))?Number(profile.lightZ):-.28;
+    if(csm){
+      if(csm.lightDirection)csm.lightDirection.set(lx,ly,lz).normalize();
+      for(const light of csm.lights||[]){
+        light.color.set(profile.lightColor||'#FFF1D6');
+        light.intensity=Math.max(0,Number(profile.lightIntensity)||0);
+        light.castShadow=true;
+      }
+    }else if(keyLight){
+      keyLight.position.set(-lx*80,-ly*80,-lz*80);
+      keyLight.color.set(profile.lightColor||'#FFF1D6');
+      keyLight.intensity=Math.max(0,Number(profile.lightIntensity)||0);
+      keyLight.castShadow=true;
+    }
+    const environmentState=Object.assign({},window.PStudioRenderingEnvironment?.resolvePStudioEnvironmentState?.(profile)||{},{
+      windDirection:Array.isArray(profile.windDirection)?profile.windDirection:[1,0],
+      windSpeed:Number(profile.windSpeed)||0,windStrength:Number(profile.windStrength)||0,
+      cloudWindX:Number(profile.cloudWindX)||0,cloudWindZ:Number(profile.cloudWindZ)||0,
+      rainIntensity:Number(profile.rainIntensity)||0,wetness:Number(profile.wetness)||0,
+      waterWaveAmplitude:Number(profile.waterWaveAmplitude)||.08,waterRippleStrength:Number(profile.waterRippleStrength)||0
+    });
+    window.PStudioEnvironmentFX?.configureAtmosphere?.(environmentState);
+    const cloudTier=QUALITY_PROFILES[resolveQualityPreset(qualityPreset)];
+    volumetricCloudsEnabled=activeEnvironmentPreset!=='studio'&&!memorySafetyApplied&&!!(cloudTier?.clouds&&volumetricCloudPass)&&Number(profile.cloudDensity)>.015;
+    if(volumetricCloudPass){
+      volumetricCloudPass.enabled=volumetricCloudsEnabled;
+      volumetricCloudPass.setQuality?.(resolveQualityPreset(qualityPreset),adaptiveQualityLevel);
+    }
+    const wind=Array.isArray(profile.windDirection)?profile.windDirection:[1,0];
+    const windSpeed=Math.max(0,Number(profile.windSpeed)||0);
+    const rain=Math.max(0,Math.min(1,Number(profile.rainIntensity)||0));
+    scene.traverse(object=>{
+      if(!object?.userData?.pstudioMirrorWater)return;
+      const mirror=object.userData.pstudioMirrorWater;
+      mirror.waveStrength=Math.max(mirror.waveStrength||0,Math.min(1,windSpeed*.055+rain*.72));
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        const uniforms=material?.userData?.pstudioMirrorUniforms;
+        if(!uniforms)continue;
+        if(uniforms.uMirrorTime)uniforms.uMirrorTime.value=particleClock;
+        if(uniforms.uMirrorWaveStrength)uniforms.uMirrorWaveStrength.value=mirror.waveStrength;
+        if(uniforms.uMirrorWindDirection?.value?.set)uniforms.uMirrorWindDirection.value.set(wind[0],wind[1]).normalize();
+        if(uniforms.uMirrorWindSpeed)uniforms.uMirrorWindSpeed.value=windSpeed;
+        if(uniforms.uMirrorRain)uniforms.uMirrorRain.value=rain;
+      }
+    });
+    return true;
+  }
+
+  function applyGenesisEnvironmentState(state,forceSky=false,now=window.performance?.now?.()??Date.now()){
+    if(!state||!renderer||!scene)return false;
+    genesisEnvironmentState=state;
+    applyGenesisLiveLighting(state);
+    if(forceSky||now-genesisLastSkyUpdateAt>=650){
+      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.5);
+      genesisLastSkyUpdateAt=now;
+    }
+    if(productionRendererBridge?.getState?.().backend==='webgpu'&&now-genesisLastWebGPUUpdateAt>=250){
+      productionRendererBridge.setEnvironment?.(state);
+      genesisLastWebGPUUpdateAt=now;
+    }
+    return true;
+  }
+
+  function nextGenesisRainRandom(){
+    genesisRainSeed=(Math.imul(genesisRainSeed,1664525)+1013904223)>>>0;
+    return genesisRainSeed/4294967296;
+  }
+
+  function updateGenesisRainParticles(state,dt){
+    const rain=Math.max(0,Math.min(1,Number(state?.rainIntensity)||0));
+    if(rain<.015||!renderer||!camera||!primitiveGroup){
+      if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
+      genesisRainAccumulator=0;
+      return false;
+    }
+    if(!genesisRainSystem){
+      genesisRainSystem=createGpuParticleSystem(384,'#C7E3F8',.018);
+      genesisRainSystem.uniforms.uGravity.value=.18;
+      primitiveGroup.add(genesisRainSystem.points);
+    }
+    const wind=Array.isArray(state.windDirection)?state.windDirection:[1,0];
+    const windSpeed=Math.max(0,Number(state.windSpeed)||0);
+    genesisRainAccumulator=Math.min(48,genesisRainAccumulator+Math.max(0,dt)*240*rain);
+    const spawnCount=Math.min(48,Math.floor(genesisRainAccumulator));
+    genesisRainAccumulator-=spawnCount;
+    const centre=camera.getWorldPosition(new window.THREE.Vector3());
+    for(let i=0;i<spawnCount;i++){
+      const x=(nextGenesisRainRandom()-.5)*48;
+      const z=(nextGenesisRainRandom()-.5)*48;
+      const y=10+nextGenesisRainRandom()*16;
+      const driftX=wind[0]*windSpeed*.72+(nextGenesisRainRandom()-.5)*.55;
+      const driftZ=wind[1]*windSpeed*.72+(nextGenesisRainRandom()-.5)*.55;
+      spawnGpuParticle(genesisRainSystem,[centre.x+x,centre.y+y,centre.z+z],[driftX,-18-nextGenesisRainRandom()*5,driftZ],1.35);
+    }
+    genesisRainSystem.uniforms.uColor.value.set('#C7E3F8');
+    return true;
+  }
+
+  function updateGenesisEnvironment(deltaSeconds,now=window.performance?.now?.()??Date.now()){
+    if(!genesisEnvironmentController)return null;
+    if(!window.PStudioEngine?.isRunning?.())particleClock+=Math.max(0,Math.min(.1,Number(deltaSeconds)||0));
+    const state=genesisEnvironmentController.update(deltaSeconds);
+    applyGenesisEnvironmentState(state,false,now);
+    updateGenesisRainParticles(state,deltaSeconds);
+    return state;
   }
 
   function applyModelMaterial(instance, state) {
