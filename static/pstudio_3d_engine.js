@@ -5798,7 +5798,7 @@ void main(){
       else if(x>width-margin)draw(x-width);
     };
 
-    if(name==='night'){
+    if(name==='night'||(continuous&&Number(profile.starBrightness)>.015)){
       // A dark, periodic starfield with a structured Milky Way rather than a smooth painted stripe.
       // Four seeded noise octaves create clouds, filaments and dark molecular dust lanes.
       const makeNoiseGrid=(gridWidth,gridHeight)=>{
@@ -5949,7 +5949,7 @@ void main(){
 
       // Fine stars dominate; only a tiny fraction are bright enough to bloom or sparkle.
       // Density and brightness rise gently inside the galactic band.
-      const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
+      const starBrightness=continuous?Math.max(0,Math.min(1.8,Number(profile.starBrightness)||0)):Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
       for(let i=0;i<12000;i++){
         const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
         const angle=u*Math.PI*2;
@@ -6085,7 +6085,7 @@ void main(){
           context.restore();
         });
       }
-      if(name==='day')drawDaytimeCloudField(context,width,height,profile,sun);
+      if(name==='day'||(continuous&&Number(profile.cloudDensity)>.025&&Number(profile.cloudCoverage)>.04))drawDaytimeCloudField(context,width,height,profile,sun);
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:260);i++){
         const x=random()*width,y=height*(dusk?.12:.095)+random()*height*(dusk?.34:.31),length=60+random()*(dusk?360:250);
