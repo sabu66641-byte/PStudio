@@ -6677,7 +6677,8 @@ void main(){
       godRaysIntensity=Math.max(0,Math.min(2,Number.isFinite(Number(intensity))?Number(intensity):1));
       if(requested&&!renderer&&window.THREE)ensureRenderer();
       const webgpuRaysAvailable=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
-      godRaysEnabled=requested&&(!!godRaysPass||webgpuRaysAvailable);
+      const webgpuRaysActive=productionRendererBridge?.getState?.().backend==='webgpu';
+      godRaysEnabled=requested&&(!!godRaysPass||(webgpuRaysActive&&webgpuRaysAvailable));
       godRaysFallbackEnabled=requested&&!godRaysEnabled&&!!bloomPass;
       if(productionRendererBridge?.getState?.().backend==='webgpu')productionRendererBridge.setGodRays?.(godRaysEnabled?getPStudioGodRaysSettings():false);
       if(!requested){godRaysEnabled=false;godRaysFallbackEnabled=false;}
