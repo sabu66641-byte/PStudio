@@ -49,8 +49,7 @@
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
-  let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisAppliedEnvironmentPreset=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
-  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null,genesisCloudCanvas=null,genesisSkyQuality=null;
+  let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisAppliedEnvironmentPreset=null,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
   let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
@@ -6399,127 +6398,6 @@ void main(){
     return true;
   }
 
-  function createGenesisStarCanvas(T,width=1024,height=512){
-    // Reuse the renderer's authored high-detail Milky Way/star generator rather
-    // than drawing a cheaper substitute for GENESIS transitions.
-    const nightProfile=window.PStudioGenesisEnvironment?.profileForTime?.(23.4)||
-      window.PStudioSceneEnvironment?.getPreset?.('night')||{name:'night',starBrightness:1.62};
-    const profile={...nightProfile,name:'night',visualPreset:'night',
-      // Light-only layer: a black base prevents SCREEN blending from lifting
-      // the whole sky and washing out the Milky Way against the live gradient.
-      skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000',
-      starBrightness:1.62,cloudDensity:0,cloudCoverage:0,sunIntensity:0};
-    const sourceTexture=createProceduralSkyTexture(T,profile,width/2048,true);
-    const canvas=document.createElement('canvas');
-    canvas.width=width;canvas.height=height;
-    const context=canvas.getContext('2d');
-    if(context&&sourceTexture?.image)context.drawImage(sourceTexture.image,0,0,width,height);
-    sourceTexture?.dispose?.();
-    return canvas;
-  }
-
-  function ensureGenesisSkyBackground(T){
-    const selected=resolveQualityPreset(qualityPreset);
-    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas&&genesisCloudCanvas&&genesisSkyQuality===selected)return true;
-    if(genesisSkyTexture)disposeGenesisSkyBackground();
-    const dimensions=({
-      mobile:[768,384],balanced:[1024,512],high:[1536,768],maximum:[1792,896],ultra:[2048,1024]
-    })[selected]||[1024,512];
-    const [width,height]=dimensions;
-    genesisSkyCanvas=document.createElement('canvas');
-    genesisSkyCanvas.width=width;genesisSkyCanvas.height=height;
-    genesisSkyContext=genesisSkyCanvas.getContext('2d');
-    if(!genesisSkyContext)return false;
-    genesisStarCanvas=createGenesisStarCanvas(T,width,height);
-    genesisCloudCanvas=document.createElement('canvas');
-    genesisCloudCanvas.width=width;genesisCloudCanvas.height=height;
-    const cloudContext=genesisCloudCanvas.getContext('2d');
-    if(cloudContext){
-      const dayProfile=window.PStudioGenesisEnvironment?.profileForTime?.(13)||
-        window.PStudioSceneEnvironment?.getPreset?.('day')||{};
-      drawDaytimeCloudField(cloudContext,width,height,{...dayProfile,cloudCoverage:.52,cloudDetail:.96},{x:width*.48,y:height*.3});
-    }
-    genesisSkyTexture=new T.CanvasTexture(genesisSkyCanvas);
-    genesisSkyQuality=selected;
-    genesisSkyTexture.mapping=T.EquirectangularReflectionMapping;
-    genesisSkyTexture.colorSpace=T.SRGBColorSpace;
-    genesisSkyTexture.wrapS=T.RepeatWrapping;
-    genesisSkyTexture.wrapT=T.ClampToEdgeWrapping;
-    genesisSkyTexture.generateMipmaps=true;
-    genesisSkyTexture.minFilter=T.LinearMipmapLinearFilter;
-    genesisSkyTexture.magFilter=T.LinearFilter;
-    genesisSkyTexture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
-    genesisSkyTexture.needsUpdate=true;
-    return true;
-  }
-
-  function updateGenesisSkyBackground(state,force=false,now=window.performance?.now?.()??Date.now()){
-    if(!renderer||!scene||!state)return false;
-    const selected=resolveQualityPreset(qualityPreset);
-    const updateInterval=selected==='mobile'?125:selected==='balanced'?100:80;
-    if(!force&&now-genesisLastSkyUpdateAt<updateInterval)return false;
-    const T=window.THREE;
-    if(!ensureGenesisSkyBackground(T))return false;
-    const context=genesisSkyContext,width=genesisSkyCanvas.width,height=genesisSkyCanvas.height;
-    const gradient=context.createLinearGradient(0,0,0,height);
-    gradient.addColorStop(0,state.skyTop||'#080D22');
-    gradient.addColorStop(.16,state.skyTop||'#080D22');
-    gradient.addColorStop(.31,state.skyMid||'#111A34');
-    gradient.addColorStop(.445,state.horizon||'#C88B68');
-    gradient.addColorStop(.495,state.fogColor||state.horizon||'#C88B68');
-    gradient.addColorStop(.535,state.fogColor||state.horizon||'#C88B68');
-    gradient.addColorStop(1,state.ground||'#11131D');
-    context.globalAlpha=1;context.globalCompositeOperation='source-over';
-    context.fillStyle=gradient;context.fillRect(0,0,width,height);
-
-    // The original high-resolution GENESIS Milky Way is blended additively so
-    // solar-altitude changes reveal stars/nebulae continuously without replacing
-    // or disposing the underlying texture.
-    const stars=Math.max(0,Math.min(1,Number(state.starBrightness||0)/1.62));
-    if(stars>.002&&genesisStarCanvas){
-      context.save();context.globalCompositeOperation='screen';context.globalAlpha=stars;
-      context.drawImage(genesisStarCanvas,0,0,width,height);
-      context.restore();
-    }
-
-    // Keep the authored panorama cloud field as a static fallback only. When the
-    // world-space volumetric pass is active it owns cloud motion and shading;
-    // layering a drifting equirectangular sheet over it creates conflicting
-    // motion cues and the false upward-converging look.
-    const cloudDensity=Math.max(0,Math.min(1,Number(state.cloudDensity||0)/1.3));
-    const cloudCoverage=Math.max(0,Math.min(1,Number(state.cloudCoverage||0)/.62));
-    const cloudVisibility=cloudDensity*cloudCoverage;
-    if(!volumetricCloudsEnabled&&cloudVisibility>.012&&genesisCloudCanvas){
-      context.save();context.globalCompositeOperation='source-over';
-      context.globalAlpha=Math.min(.88,cloudVisibility*.92);
-      context.drawImage(genesisCloudCanvas,0,0,width,height);
-      context.restore();
-    }
-
-    const twilight=Math.max(0,Math.min(1,Number(state.twilightStrength)||0));
-    const horizonGlow=Math.max(stars*.28,twilight*.82);
-    if(horizonGlow>.005){
-      context.save();context.globalCompositeOperation='screen';
-      const glow=context.createRadialGradient(width*.54,height*.515,2,width*.54,height*.515,height*.28);
-      glow.addColorStop(0,'rgba(255,184,129,'+(horizonGlow*.22).toFixed(3)+')');
-      glow.addColorStop(.32,'rgba(231,132,119,'+(horizonGlow*.14).toFixed(3)+')');
-      glow.addColorStop(.68,'rgba(125,95,137,'+(horizonGlow*.055).toFixed(3)+')');
-      glow.addColorStop(1,'rgba(54,66,105,0)');
-      context.fillStyle=glow;context.fillRect(0,height*.30,width,height*.42);
-      context.restore();
-    }
-    genesisSkyTexture.needsUpdate=true;
-    scene.background=genesisSkyTexture;
-    genesisLastSkyUpdateAt=now;
-    return true;
-  }
-
-  function disposeGenesisSkyBackground(){
-    genesisSkyTexture?.dispose?.();
-    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;genesisCloudCanvas=null;genesisSkyQuality=null;
-    genesisLastSkyUpdateAt=0;
-  }
-
   function genesisAddMesh(T,parent,geometry,material,x,y,z,rotation=null){
     const mesh=new T.Mesh(geometry,material);
     mesh.position.set(x,y,z);
@@ -7310,30 +7188,27 @@ void main(){
     return true;
   }
 
-  function applyGenesisEnvironmentState(state,forceSky=false,now=window.performance?.now?.()??Date.now()){
+  function applyGenesisEnvironmentState(state,_forceSky=false,now=window.performance?.now?.()??Date.now()){
     if(!state||!renderer||!scene)return false;
     genesisEnvironmentState=state;
     const T=window.THREE,presetName=String(state.visualPreset||state.name||'day');
-    // Rebuild the environment PMREM only when the named preset changes. The
-    // scene background is then replaced by the high-resolution GENESIS panorama,
-    // while PBR/IBL reflections use the matching physical/procedural preset map.
-    if(!genesisSkyTexture||genesisAppliedEnvironmentPreset!==presetName){
-      applySceneEnvironmentPreset(T,presetName,false,null,.375);
+    // Use the original single authored panorama for both the visible sky and
+    // the PMREM/IBL source. GENESIS must not replace it with a second,
+    // lower-resolution CanvasTexture or upload a simplified sky atlas every frame.
+    // This restores the full-resolution day/dusk/night preset path used on 2026-11-24.
+    if(genesisAppliedEnvironmentPreset!==presetName){
+      applySceneEnvironmentPreset(T,presetName,false);
       genesisAppliedEnvironmentPreset=presetName;
-      if(!genesisSkyTexture)ensureGenesisSkyBackground(T);
     }
-    // Apply the named preset's PBR environment first, then the exact GENESIS
-    // profile for live sun, moon, fog, water, wind and volumetric effects.
+    // Keep the shared GENESIS state for live sun/moon, lighting, fog, clouds,
+    // wind, rain and water uniforms without replacing the authored sky texture.
     applyGenesisLiveLighting(state);
-    updateGenesisSkyBackground(state,forceSky,now);
     if(genesisShrineDemoRequested&&!genesisShrineDemoGroup)buildGenesisShrineDemo(window.THREE);
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       if(now-genesisLastWebGPUUpdateAt>=250){
         productionRendererBridge.setEnvironment?.(state);
         genesisLastWebGPUUpdateAt=now;
       }
-      // TSL water uniforms are inexpensive to update per frame; keep wind,
-      // wave amplitude and rain ripples in lockstep with the WebGL2 path.
       productionRendererBridge.setWaterEnvironment?.(state);
     }
     return true;
@@ -8065,18 +7940,16 @@ void main(){
       if(!genesisEnvironmentController)genesisEnvironmentController=create(config||{});
       if(typeof genesisEnvironmentController.setImmediate!=='function')return{available:true,enabled:false,reason:'Immediate environment state application is unavailable.'};
       genesisEnvironmentState=genesisEnvironmentController.setImmediate(config||{});
-      genesisLastSkyUpdateAt=0;
       if(renderer&&scene&&camera)applyGenesisEnvironmentState(genesisEnvironmentState,true);
       return{available:true,enabled:true,state:genesisEnvironmentState,config:genesisEnvironmentController.getConfig()};
     },
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
     setGenesisShrineDemo,
     clearGenesisEnvironment:()=>{
-      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisAppliedEnvironmentPreset=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
+      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisAppliedEnvironmentPreset=null;genesisLastWebGPUUpdateAt=0;
       if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
       genesisRainAccumulator=0;
       genesisShrineDemoRequested=false;removeGenesisShrineDemo();
-      disposeGenesisSkyBackground();
       const studioProfile=window.PStudioSceneEnvironment?.getPreset?.('studio');
       if(productionRendererBridge?.getState?.().backend==='webgpu'&&studioProfile){
         productionRendererBridge.setEnvironment?.(studioProfile);
