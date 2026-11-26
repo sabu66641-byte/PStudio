@@ -1461,7 +1461,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(0, 17, 88, 0, 8, -45)"));
+  assert.ok(html.includes("set_camera(0, 22, 43, 0, 9, -60)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
