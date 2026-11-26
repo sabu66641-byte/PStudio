@@ -663,8 +663,12 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
           }else if(type==='model_material'&&command?.toon&&command.toon.enabled!==false){
             add('toon-model-material','モデルのトゥーンマテリアルはTSL移植後に有効化してください。');
-          }else if(type==='postfx'&&(command?.ssao||command?.ssr)){
-            add('postfx-command','SSAO／SSRを含むポストプロセスはTSL移植後に有効化してください。');
+          }else if(type==='postfx'&&(
+            (command?.ssao&&!supportsSelectedAOTSL)
+            ||(command?.gtao&&!window.PStudioRenderingMigration?.supportsPStudioTSLGTAO)
+            ||(command?.ssr&&!supportsSSRNode)
+          )){
+            add('postfx-command','未対応のポストプロセス機能がシーンに含まれています。');
           }
         }
       }
