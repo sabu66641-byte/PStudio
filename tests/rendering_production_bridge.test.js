@@ -258,3 +258,38 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
     assert.ok(html.includes(token), 'application bootstrap: ' + token);
   }
 });
+
+
+test('production bridge forwards every post-processing control to the active WebGPU session',async()=>{
+  const [THREE,bridgeModule]=await modules;
+  const {legacyCanvas}=makeCanvasDOM();
+  const {scene,camera}=makeScene(THREE);
+  const updates=[];
+  const methods=[
+    ['setEnvironment','environment'],
+    ['setBloom','bloom'],
+    ['setAmbientOcclusion','ambientOcclusion'],
+    ['setSSR','ssr'],
+    ['setGodRays','godRays'],
+    ['setContactShadows','contactShadows'],
+    ['setVolumetricFog','volumetricFog'],
+    ['setVolumetricClouds','volumetricClouds']
+  ];
+  const createWebGPU=async()=>Object.fromEntries([
+    ['render',()=>true],
+    ['dispose',()=>{}],
+    ...methods.map(([method,key])=>[method,value=>{updates.push([key,value]);return true;}])
+  ]);
+  const bridge=bridgeModule.createPStudioProductionRenderingBridge({
+    legacyCanvas,scene,camera,canPromote:()=>true,createWebGPU
+  });
+  await bridge.initialize();
+  const values=methods.map(([method,key])=>[key,{enabled:true,token:key}]);
+  for(const [method] of methods)assert.equal(bridge[method](values.find(([key])=>key===methods.find(x=>x[0]===method)[1])[1]),true,method);
+  assert.deepEqual(updates,values);
+  assert.equal(bridge.render(),true);
+  assert.equal(await bridge.useFallback(new Error('verify fallback routing')),true);
+  assert.equal(bridge.setBloom({enabled:false}),false);
+  assert.equal(bridge.setVolumetricFog(false),false);
+  bridge.dispose();
+});
