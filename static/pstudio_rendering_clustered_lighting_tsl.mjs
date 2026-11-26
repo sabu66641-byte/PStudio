@@ -1,3 +1,4 @@
+import ClusteredLightsNode from 'three/addons/tsl/lighting/ClusteredLightsNode.js';
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 
@@ -429,6 +430,219 @@ export function applyPStudioTSLClusteredLighting(root,options={}) {
         if(entry.material.lightsNode===entry.lightsNode)entry.material.lightsNode=entry.originalLightsNode;
         entry.material.needsUpdate=true;
       }
+      return true;
+    }
+  });
+}
+
+
+/**
+ * Uses Three.js r187's Forward+ ClusteredLightsNode so clustered point/spot
+ * lights run through the same Standard/Physical BRDF and light-shadow system
+ * as ordinary lights. Lights beyond the configured cluster budget stay in
+ * materialLights and are therefore evaluated by the native PBR lighting path.
+ */
+class PStudioNativeClusteredLightsNode extends ClusteredLightsNode {
+  constructor(maxLights, tileSize, zSlices, maxLightsPerCluster) {
+    super(maxLights, tileSize, zSlices, maxLightsPerCluster);
+    this._pstudioClusterableLights = new Set();
+  }
+
+  _isClusteredLight(light) {
+    return this._pstudioClusterableLights.has(light) && super._isClusteredLight(light);
+  }
+
+  setPStudioLights(lights) {
+    const candidates = lights.filter(light => super._isClusteredLight(light));
+    this._pstudioClusterableLights = new Set(candidates.slice(0, this.maxLights));
+    return super.setLights(lights);
+  }
+}
+
+function pstudioVisibleForCluster(light, forcedClustered) {
+  for (let parent = light?.parent; parent; parent = parent.parent) {
+    if (parent.visible === false) return false;
+  }
+  return light?.visible !== false || forcedClustered.has(light);
+}
+
+function pstudioLightSignature(lights) {
+  return lights.map(light => String(light?.uuid || light?.id || light?.type || 'light')).join('|');
+}
+
+function estimatePStudioClusterBufferBytes(renderer, tileSize, zSlices, maxLightsPerCluster) {
+  let width = 1280, height = 720;
+  try {
+    const size = renderer?.getDrawingBufferSize?.(new THREE.Vector2());
+    if (Number(size?.x) > 0 && Number(size?.y) > 0) {
+      width = Number(size.x);
+      height = Number(size.y);
+    }
+  } catch (_) {}
+  const clusters = Math.ceil(width / tileSize) * Math.ceil(height / tileSize) * zSlices;
+  const chunks = Math.ceil(maxLightsPerCluster / 4);
+  // r187 allocates 1.5x headroom and four 32-bit indices per chunk.
+  return Math.ceil(clusters * chunks * 1.5) * 16;
+}
+
+/**
+ * Installs the official r187 clustered PBR lighting node on converted
+ * NodeMaterials. It is updated only when light membership changes; transforms,
+ * color, intensity and range are refreshed by ClusteredLightsNode every render.
+ */
+export function applyPStudioTSLNativeClusteredLighting(root, options = {}) {
+  if (!root?.traverse) throw new TypeError('A Three.js Object3D or Scene is required.');
+  const renderer = options.renderer;
+  if (renderer?.backend?.isWebGPUBackend !== true) {
+    throw new TypeError('Native PStudio clustered lighting requires an initialized WebGPU backend.');
+  }
+
+  const maxLights = Math.max(1, Math.min(1024, Math.floor(finite(options.maxLights, 96))));
+  const tileSize = Math.max(16, Math.min(128, Math.floor(finite(options.tileSize, 64))));
+  const zSlices = Math.max(8, Math.min(32, Math.floor(finite(options.zSlices, 16))));
+  // Every selected light can fit in every cluster. If the corresponding GPU
+  // buffer would exceed the device budget, the function uses native PBR lights.
+  const maxLightsPerCluster = maxLights;
+  const estimatedBufferBytes = estimatePStudioClusterBufferBytes(renderer, tileSize, zSlices, maxLightsPerCluster);
+  const limits = renderer.backend.device?.limits || {};
+  const bindingLimit = Number(limits.maxStorageBufferBindingSize);
+  const bufferLimit = Number(limits.maxBufferSize);
+  const deviceLimit = Math.min(
+    Number.isFinite(bindingLimit) && bindingLimit > 0 ? bindingLimit : Infinity,
+    Number.isFinite(bufferLimit) && bufferLimit > 0 ? bufferLimit : Infinity
+  );
+  const withinDeviceBudget = !Number.isFinite(deviceLimit) || estimatedBufferBytes <= deviceLimit * 0.75;
+
+  const entries = [];
+  const nodes = new Map();
+  let disposed = false;
+  let lastSceneSignature = '';
+  let lastClusteredCount = 0;
+  let lastFallbackCount = 0;
+  let mode = withinDeviceBudget ? 'clustered-pbr' : 'native-pbr-safe-fallback';
+
+  root.traverse(object => {
+    if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
+    const assigned = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of assigned) {
+      if (material?.isNodeMaterial !== true || entries.some(entry => entry.material === material)) continue;
+      const originalLightsNode = material.lightsNode ?? null;
+      const originalLights = originalLightsNode?.getLights?.();
+      entries.push({
+        material,
+        originalLightsNode,
+        customLights: Array.isArray(originalLights) ? originalLights.slice() : null,
+        installedNode: null,
+        signature: ''
+      });
+    }
+  });
+
+  function collectSceneLights(snapshot) {
+    const forcedClustered = snapshot?.clusteredLights instanceof Set
+      ? snapshot.clusteredLights
+      : new Set();
+    const lights = [];
+    root.traverse(object => {
+      if (!object?.isLight || !pstudioVisibleForCluster(object, forcedClustered)) return;
+      if (!lights.includes(object)) lights.push(object);
+    });
+    return lights;
+  }
+
+  function install(snapshot = null) {
+    if (disposed) return false;
+    const sceneLights = collectSceneLights(snapshot);
+    const created = [];
+    let clusteredCount = 0;
+    let fallbackCount = 0;
+
+    for (const entry of entries) {
+      const sourceLights = entry.customLights
+        ? [...entry.customLights]
+        : sceneLights.slice();
+      const signature = pstudioLightSignature(sourceLights);
+      if (entry.signature === signature && entry.installedNode) {
+        clusteredCount += entry.installedNode.clusteredLights?.length || 0;
+        fallbackCount += entry.installedNode.materialLights?.length || 0;
+        continue;
+      }
+
+      let node;
+      if (withinDeviceBudget && sourceLights.length > 0) {
+        node = new PStudioNativeClusteredLightsNode(maxLights, tileSize, zSlices, maxLightsPerCluster);
+        node.setPStudioLights(sourceLights);
+      } else {
+        node = new THREE.LightsNode().setLights(sourceLights);
+      }
+
+      const previousNode = entry.installedNode;
+      entry.material.lightsNode = node;
+      entry.material.needsUpdate = true;
+      entry.installedNode = node;
+      entry.signature = signature;
+      if (previousNode && previousNode !== node) created.push(previousNode);
+      clusteredCount += node.clusteredLights?.length || 0;
+      fallbackCount += node.materialLights?.length || (node.isClusteredLightsNode ? 0 : sourceLights.length);
+    }
+
+    for (const node of created) {
+      try { node.dispose?.(); } catch (_) {}
+    }
+    lastSceneSignature = sceneLights.map(light => String(light.uuid || light.id)).join('|');
+    lastClusteredCount = clusteredCount;
+    lastFallbackCount = fallbackCount;
+    return true;
+  }
+
+  try {
+    install(options.snapshot || null);
+  } catch (error) {
+    for (const entry of entries) {
+      if (entry.installedNode && entry.material.lightsNode === entry.installedNode) {
+        entry.material.lightsNode = entry.originalLightsNode;
+        entry.material.needsUpdate = true;
+      }
+      try { entry.installedNode?.dispose?.(); } catch (_) {}
+    }
+    throw new Error('PStudio native clustered PBR attachment failed; all material lighting nodes were restored.', { cause: error });
+  }
+
+  return Object.freeze({
+    kind: 'pstudio-tsl-native-clustered-pbr',
+    materialCount: entries.length,
+    update(snapshot = null) {
+      if (disposed) return false;
+      const nextLights = collectSceneLights(snapshot);
+      const signature = nextLights.map(light => String(light.uuid || light.id)).join('|');
+      if (signature === lastSceneSignature) return false;
+      return install(snapshot);
+    },
+    getState() {
+      return Object.freeze({
+        disposed,
+        mode,
+        materialCount: entries.length,
+        clusteredLightCount: lastClusteredCount,
+        nativePBRFallbackCount: lastFallbackCount,
+        maxLights,
+        maxLightsPerCluster,
+        tileSize,
+        zSlices,
+        estimatedBufferBytes
+      });
+    },
+    dispose() {
+      if (disposed) return false;
+      disposed = true;
+      for (const entry of entries) {
+        if (entry.material.lightsNode === entry.installedNode) {
+          entry.material.lightsNode = entry.originalLightsNode;
+          entry.material.needsUpdate = true;
+        }
+        try { entry.installedNode?.dispose?.(); } catch (_) {}
+      }
+      nodes.clear();
       return true;
     }
   });
