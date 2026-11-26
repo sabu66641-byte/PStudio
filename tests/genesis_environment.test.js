@@ -25,15 +25,19 @@ test('GENESIS time model interpolates day, golden dusk and night continuously', 
   assert.ok(Number.isFinite(dusk.starBrightness));
 });
 
-test('GENESIS preset changes use a responsive but smooth default transition',()=>{
+test('GENESIS named presets apply immediately and keep the moon fixed without an automatic clock',()=>{
   const controller=genesis.createGenesisEnvironmentController({timeOfDay:12,timeScale:0});
-  assert.equal(controller.getConfig().transitionSeconds,.15);
-  controller.set({preset:'night'});
-  const first=controller.update(.1);
-  assert.ok(first.timeOfDay>12&&first.timeOfDay<23);
-  let state=first;
-  for(let i=0;i<12;i++)state=controller.update(.1);
-  assert.ok(Math.abs(state.timeOfDay-23)<.08);
+  assert.equal(controller.getConfig().transitionSeconds,2.4);
+  const night=controller.setImmediate({preset:'night',timeScale:.25});
+  assert.equal(night.timeOfDay,23);
+  assert.equal(night.visualPreset,'night');
+  assert.equal(night.timeScale,0);
+  assert.ok(night.moonIntensity>0);
+  const next=controller.update(.1);
+  assert.equal(next.timeOfDay,23);
+  assert.equal(next.moonDirectionX,night.moonDirectionX);
+  assert.equal(next.moonDirectionY,night.moonDirectionY);
+  assert.equal(next.moonDirectionZ,night.moonDirectionZ);
 });
 
 test('GENESIS time controller eases toward target time without a one-frame jump', () => {
