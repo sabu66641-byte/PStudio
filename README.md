@@ -726,4 +726,6 @@ Open **Scene Environment → GENESIS 鳥居・水鏡デモを開く**, then pres
 
 The ordinary `draw_water` PBR path keeps its existing depth-aware absorption/transmission and shoreline handling. `draw_mirror_water` retains the planar reflection render target and now receives wind/rain ripple inputs. These are raster/TSL rendering approximations, not path tracing or a full fluid solver.
 
+The GENESIS sky path retains the original full-resolution day/dusk/night panorama and matching PBR environment map. Its duplicate simplified Canvas sky overlay and frequent background uploads have been removed, so GENESIS no longer replaces the authored preset sky.
+
 **Validation boundary:** automated controller, shader-contract, scene-fixture and CI tests do not establish physical-device image quality or stable frame pacing. WebGL2/WebGPU visual parity, real GPU timings, camera-path capture, adapter/device-loss recovery and 60-minute hardware soak testing remain hardware qualification tasks.

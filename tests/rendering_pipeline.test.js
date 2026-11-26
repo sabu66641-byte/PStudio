@@ -1437,49 +1437,34 @@ test('standalone WebGPU Lab UI is removed while production WebGPU/TSL migration 
   ])assert.ok(webgpuMigration.includes(token),token);
 });
 
-test('GENESIS scene and day-to-night sky use one continuous environment and authored shrine fixture',()=>{
+test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL preset without a secondary sky canvas',()=>{
   for(const token of [
-    'updateGenesisSkyBackground(state,forceSky,now)',
     'genesisEnvironmentController.setImmediate(config||{})',
-    'genesisAppliedEnvironmentPreset=null,genesisLastSkyUpdateAt=0',
     'genesisAppliedEnvironmentPreset!==presetName',
-    'applySceneEnvironmentPreset(T,presetName,false,null,.375)',
+    'applySceneEnvironmentPreset(T,presetName,false);',
     'genesisAppliedEnvironmentPreset=presetName',
-    'createGenesisStarCanvas',
-    'function createGenesisStarCanvas(T,width=1024,height=512)',
-    'createProceduralSkyTexture(T,profile,width/2048,true)',
-    "skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000'",
-    'drawDaytimeCloudField(cloudContext,width,height',
-    'cloudCoverage:.52,cloudDetail:.96',
-    'if(!volumetricCloudsEnabled&&cloudVisibility>.012&&genesisCloudCanvas)',
-    'context.drawImage(genesisCloudCanvas,0,0,width,height)',
-    'genesisSkyQuality===selected',
-    'const updateInterval=selected===\'mobile\'?125:selected===\'balanced\'?100:80',
-    'buildGenesisShrineDemo',
-    'genesisCreateDetailTexture',
-    'genesisCreateCurvedRoofGeometry',
-    'genesisAddCurvedJapaneseRoof',
-    'GENESIS Hand-Laid Ceramic Roof Tiles',
-    'shoji',
-    'GENESIS Sakura | 8,200 sculpted blossoms',
-    'GENESIS Sakura golden stamens',
-    'GENESIS Volumetric Mountain Ridge',
-    'genesisAddPineForest',
-    'GENESIS Mirror Lake | Full planar reflection',
-    'GENESIS Floating Sakura Petals',
-    'boxGeometryCache',
-    'for(const texture of owned.textures||[])texture?.dispose?.()',
-    'genesisAddMountainRange',
-    'setGenesisShrineDemo'
+    'applyGenesisLiveLighting(state)',
+    'productionRendererBridge.setEnvironment?.(state)'
   ])assert.ok(renderer.includes(token),token);
-  assert.doesNotMatch(renderer,/now-genesisLastSkyUpdateAt>=1200/);
-  assert.doesNotMatch(renderer,/const drift=\(\(windX\*Math\.max/);
+  for(const token of [
+    'genesisSkyCanvas','genesisSkyContext','genesisSkyTexture','genesisStarCanvas',
+    'genesisCloudCanvas','genesisSkyQuality','createGenesisStarCanvas',
+    'ensureGenesisSkyBackground','updateGenesisSkyBackground','disposeGenesisSkyBackground'
+  ])assert.equal(renderer.includes(token),false,token+' must not create a second GENESIS background');
+  assert.match(renderer,/function applyGenesisEnvironmentState\(state,_forceSky=false/);
+  assert.match(renderer,/function createProceduralSkyTexture\(T,profile,resolutionScale=1,continuous=false\)/);
+  assert.match(renderer,/function applySceneEnvironmentPreset\(T,presetName,hasCustomEnvironment=false,profileOverride=null,skyResolutionScale=1\)/);
+  assert.match(renderer,/const width=Math\.max\(512,Math\.round\(2048\*scale\)\),height=Math\.max\(256,Math\.round\(1024\*scale\)\)/);
+  assert.ok(renderer.includes('scene.background=scenePresetTexture'));
+  assert.ok(renderer.includes('pmremGenerator.fromEquirectangular(nextTexture)'));
+  assert.doesNotMatch(renderer,/applySceneEnvironmentPreset\(T,presetName,false,null,\.375\)/);
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
   assert.ok(html.includes("set_camera(0, 17, 88, 0, 8, -45)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
+
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
   assert.ok(webgpuMaterials.includes("function hasCustomShaderHook(material)"));
@@ -1491,7 +1476,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-render-state-v3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-nov24-authored-sky-r1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
@@ -1633,9 +1618,8 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
     'window.PStudioGenesisEnvironment?.createGenesisEnvironmentController',
     'genesisEnvironmentController.update(deltaSeconds)',
     'window.PStudioEnvironmentFX?.update?.(particleClock)',
-    'applySceneEnvironmentPreset(T,presetName,false,null,.375)',
-    'updateGenesisSkyBackground(state,forceSky,now)',
-    'ensureGenesisSkyBackground(T)',
+    'applySceneEnvironmentPreset(T,presetName,false);',
+    'applyGenesisLiveLighting(state)',
     'productionRendererBridge.setEnvironment?.(state)',
     'uMirrorWindDirection','uMirrorWindSpeed','uMirrorRain',
     "createGpuParticleSystem(384,'#C7E3F8',.11)",
