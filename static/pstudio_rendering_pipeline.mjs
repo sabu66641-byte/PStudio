@@ -9,6 +9,7 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 export const supportsPStudioTSLSSAO = typeof ssao === 'function';
 export const supportsPStudioTSLGTAO = typeof gtao === 'function';
 export const supportsPStudioTSLSSR = typeof ssr === 'function';
+export const supportsPStudioTSLGodRays = typeof TSL.Fn === 'function' && typeof TSL.Loop === 'function' && typeof TSL.smoothstep === 'function' && typeof TSL.screenUV !== 'undefined';
 
 function normalizeBloom(options) {
   if (options === false || options?.enabled === false) return null;
