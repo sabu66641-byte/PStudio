@@ -99,7 +99,7 @@ test('GENESIS controller clamps unsafe parameters and ignores unknown weather la
   let state = initial;
   for (let i = 0; i < 40; i += 1) state = controller.update(0.1);
   assert.equal(state.weatherName, 'storm');
-  assert.equal(state.weather.intensity, 1);
+  assert.ok(state.weather.intensity > 0.8, 'weather intensity eases smoothly instead of snapping to the target');
   assert.ok(state.windSpeed >= 0 && state.windSpeed <= 12);
   assert.ok(state.windDirection.every(Number.isFinite));
 });
@@ -129,7 +129,7 @@ test('wind direction reversals follow a continuous shortest angular path', () =>
   });
   controller.set({ windDirection: [-1, 0] });
   let previous = controller.getState().windDirection;
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     const current = controller.update(0.05).windDirection;
     const dot = previous[0] * current[0] + previous[1] * current[1];
     assert.ok(dot > 0.9, 'wind direction must not flip between adjacent frames');
