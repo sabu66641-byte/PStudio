@@ -50,7 +50,7 @@
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
-  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null,genesisCloudCanvas=null;
+  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null,genesisCloudCanvas=null,genesisSkyQuality=null;
   let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
@@ -6413,8 +6413,9 @@ void main(){
   }
 
   function ensureGenesisSkyBackground(T){
-    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas&&genesisCloudCanvas)return true;
     const selected=resolveQualityPreset(qualityPreset);
+    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas&&genesisCloudCanvas&&genesisSkyQuality===selected)return true;
+    if(genesisSkyTexture)disposeGenesisSkyBackground();
     const dimensions=({
       mobile:[768,384],balanced:[1024,512],high:[1536,768],maximum:[1792,896],ultra:[2048,1024]
     })[selected]||[1024,512];
@@ -6433,6 +6434,7 @@ void main(){
       drawDaytimeCloudField(cloudContext,width,height,{...dayProfile,cloudCoverage:.52,cloudDetail:.96},{x:width*.48,y:height*.3});
     }
     genesisSkyTexture=new T.CanvasTexture(genesisSkyCanvas);
+    genesisSkyQuality=selected;
     genesisSkyTexture.mapping=T.EquirectangularReflectionMapping;
     genesisSkyTexture.colorSpace=T.SRGBColorSpace;
     genesisSkyTexture.wrapS=T.RepeatWrapping;
@@ -6509,7 +6511,7 @@ void main(){
 
   function disposeGenesisSkyBackground(){
     genesisSkyTexture?.dispose?.();
-    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;genesisCloudCanvas=null;
+    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;genesisCloudCanvas=null;genesisSkyQuality=null;
     genesisLastSkyUpdateAt=0;
   }
 
