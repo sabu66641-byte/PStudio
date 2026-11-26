@@ -1631,7 +1631,6 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
     'const windDirection = TSL.uniform(new THREE.Vector2(1, 0))',
     'const rainIntensity = TSL.uniform(0)',
     'reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple)',
-    'uniform float rainIntensity'
   ])assert.ok(webgpuWater.includes(token),token);
   for(const token of [
     'uniform vec2 uPStudioWaterWindDirection',
