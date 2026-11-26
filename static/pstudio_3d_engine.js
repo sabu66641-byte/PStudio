@@ -6527,16 +6527,6 @@ void main(){
     return genesisAddMesh(T,parent,new T.BoxGeometry(sx,sy,sz),material,x,y,z,rotation);
   }
 
-  function genesisAddCylinderBetween(T,parent,material,a,b,radiusTop,radiusBottom,segments=10){
-    const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
-    const direction=end.clone().sub(start),length=direction.length();
-    if(length<1e-4)return null;
-    const mesh=genesisAddMesh(T,parent,new T.CylinderGeometry(radiusTop,radiusBottom,length,segments),material,
-      (start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5);
-    mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
-    return mesh;
-  }
-
   function genesisCreateSakuraFlowerGeometry(T){
     const positions=[],indices=[];
     const petalCount=5,segments=16,petalLength=.17,petalWidth=.105;
