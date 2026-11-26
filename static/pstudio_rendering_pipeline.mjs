@@ -311,7 +311,7 @@ function createVolumetricCloudNode(inputColor, sceneDepth, settings) {
             const silverLining = TSL.pow(TSL.clamp(TSL.float(1).sub(lightTransmittance), 0, 1), 0.38).mul(0.22);
             const cloudMultipleScatter = TSL.float(1).sub(lightTransmittance)
               .mul(TSL.float(0.12).add(TSL.pow(powder, 0.6).mul(0.10)));
-            const densityTerm = TSL.float(1).sub(TSL.pow(TSL.float(1).sub(localDensity).pow(2), 2));
+            const densityTerm = TSL.float(1).sub(TSL.pow(TSL.float(1).sub(TSL.pow(TSL.float(1).sub(localDensity), 2)), 2));
             const ambientShape = TSL.pow(densityTerm, 2);
             const cloudLight = ambient.mul(
               TSL.float(0.58).add(TSL.float(0.22).mul(ambientShape)).add(cloudMultipleScatter)
