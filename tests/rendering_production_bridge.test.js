@@ -215,6 +215,9 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
 
   for (const token of [
     'window.PStudioProductionRenderingBridgeFactory',
+    'function getSHProbeCaptureContext',
+    'productionRendererBridge.getRenderer?.()',
+    'async function bakeLightProbe(options={})',
     'function getProductionWebGPUFeatureBlockers',
     'function requestProductionWebGPUMigration',
     "if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps'",
