@@ -42,7 +42,7 @@
   let lastProbeCameraPosition=null;
   let probeVolumeGeneration=0,probeRadianceCacheHits=0,probeRadianceCacheMisses=0,probeRadianceCacheRecomputes=0;
   const objectProbeRadianceCache=new WeakMap();
-  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
+  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false,dynamicProbeCaptureInFlight=false,probeBakeInFlight=false;
   let dynamicProbeSnapshots=[],dynamicProbeFadeLastPublishAt=0;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
@@ -1963,33 +1963,99 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return{loaded:true,width:texture.image?.width||0,height:texture.image?.height||0};
   }
 
-  function bakeLightProbe(options={}) {
+  function getSHProbeCaptureContext(T=window.THREE){
+    const activeBackend=productionRendererBridge?.getState?.().backend||'webgl2';
+    if(activeBackend==='webgpu'){
+      const captureRenderer=productionRendererBridge?.getRenderer?.();
+      if(!captureRenderer||captureRenderer.backend?.isWebGPUBackend!==true){
+        throw new Error('The active WebGPU renderer is unavailable for SH probe capture; no WebGL renderer substitution is permitted.');
+      }
+      if(typeof T?.CubeRenderTarget!=='function')throw new Error('Three.js CubeRenderTarget is unavailable for WebGPU SH capture.');
+      return Object.freeze({renderer:captureRenderer,Target:T.CubeRenderTarget,backend:'webgpu'});
+    }
+    if(!renderer||typeof T?.WebGLCubeRenderTarget!=='function')throw new Error('The WebGL2 SH capture renderer is unavailable.');
+    return Object.freeze({renderer,Target:T.WebGLCubeRenderTarget,backend:'webgl2'});
+  }
+
+  function suppressProbeLightingForCapture(){
+    const snapshots=[],seen=new Set();
+    scene?.traverse(object=>{
+      if(!object?.isMesh)return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        if(!material||seen.has(material))continue;
+        seen.add(material);
+        const legacy=Array.isArray(material.userData?.pstudioProbeUniforms)?material.userData.pstudioProbeUniforms:null;
+        const tsl=Array.isArray(material.userData?.pstudioTSLProbeUniforms)?material.userData.pstudioTSLProbeUniforms:null;
+        const legacyValues=legacy?.map(uniform=>uniform.clone())||null;
+        const tslValues=tsl?.map(uniform=>uniform?.value?.clone?.()||null)||null;
+        snapshots.push({legacy,legacyValues,tsl,tslValues});
+        for(const uniform of legacy||[])uniform?.set?.(0,0,0);
+        for(const uniform of tsl||[])uniform?.value?.set?.(0,0,0);
+      }
+    });
+    return ()=>{
+      for(const snapshot of snapshots){
+        for(let i=0;i<(snapshot.legacy||[]).length;i++){
+          const uniform=snapshot.legacy[i],value=snapshot.legacyValues[i];
+          if(value&&uniform?.copy)uniform.copy(value);
+        }
+        for(let i=0;i<(snapshot.tsl||[]).length;i++){
+          const uniform=snapshot.tsl[i],value=snapshot.tslValues[i];
+          if(value&&uniform?.value?.copy)uniform.value.copy(value);
+        }
+      }
+    };
+  }
+
+  async function bakeLightProbe(options={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
     if(window.PStudioEngine?.isRunning?.())throw new Error('Stop Play before baking static global illumination.');
+    if(probeBakeInFlight||dynamicProbeCaptureInFlight)throw new Error('Another SH probe capture is already active.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
     if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
-    const T=window.THREE,size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
-    const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+    const T=window.THREE,{renderer:captureRenderer,Target,backend}=getSHProbeCaptureContext(T);
+    const size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
+    const target=new Target(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
     const cubeCamera=new T.CubeCamera(0.1,Math.max(50,Number(options.far)||300),target);
     cubeCamera.position.set(Number(options.x)||0,Number(options.y)||1.5,Number(options.z)||0);
-    if(bakedLightProbe)scene.remove(bakedLightProbe);
-    if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume)scene.remove(item.light);bakedLightProbeVolume=null;}
-    const oldAutoUpdate=renderer.shadowMap.autoUpdate;
-    renderer.shadowMap.autoUpdate=true;
+    const previousSingle=bakedLightProbe,previousVolume=bakedLightProbeVolume,previousBounces=bakedGIBounces;
+    const previousCaptureActive=probeCaptureActive,oldTarget=captureRenderer.getRenderTarget?.()||null;
+    const oldAutoUpdate=captureRenderer.shadowMap?.autoUpdate,restoreProbeUniforms=suppressProbeLightingForCapture();
+    let nextProbe=null;
+    probeBakeInFlight=true;probeCaptureActive=true;
     try{
+      if(previousSingle)scene.remove(previousSingle);
+      if(previousVolume)for(const item of previousVolume)scene.remove(item.light);
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=true;
       scene.add(cubeCamera);
-      cubeCamera.update(renderer,scene);
+      cubeCamera.update(captureRenderer,scene);
       scene.remove(cubeCamera);
-      bakedLightProbe=generator.fromCubeRenderTarget(renderer,target);
-      bakedLightProbe.intensity=Math.max(0,Math.min(3,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
-      scene.add(bakedLightProbe);
-      renderer.setRenderTarget(null);
+      nextProbe=await generator.fromCubeRenderTarget(captureRenderer,target);
+      if(!nextProbe?.sh?.coefficients||nextProbe.sh.coefficients.length<9){
+        throw new Error('The asynchronous SH probe capture returned invalid coefficients.');
+      }
+      nextProbe.intensity=Math.max(0,Math.min(3,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
+      scene.add(nextProbe);
+      bakedLightProbe=nextProbe;bakedLightProbeVolume=null;bakedGIBounces=0;
+      updateProbeVolumeBlend();
+      for(const item of previousVolume||[])item.light.dispose?.();
+      previousSingle?.dispose?.();
+      captureRenderer.setRenderTarget?.(oldTarget);
       drawFrame();
-      return{baked:true,resolution:size,kind:'global-diffuse-light-probe',note:'単一のグローバル照明プローブです。面ごとのライトマップではありません。'};
+      return{baked:true,resolution:size,backend,kind:'global-diffuse-light-probe',note:'単一のグローバル照明プローブです。面ごとのライトマップではありません。'};
+    }catch(error){
+      if(nextProbe){scene.remove(nextProbe);nextProbe.dispose?.();}
+      bakedLightProbe=previousSingle;bakedLightProbeVolume=previousVolume;bakedGIBounces=previousBounces;
+      if(previousSingle)scene.add(previousSingle);
+      for(const item of previousVolume||[])scene.add(item.light);
+      updateProbeVolumeBlend();
+      throw error;
     }finally{
-      scene.remove(cubeCamera);
-      renderer.shadowMap.autoUpdate=oldAutoUpdate;
-      target.dispose();
+      scene.remove(cubeCamera);target.dispose();restoreProbeUniforms();
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldAutoUpdate;
+      captureRenderer.setRenderTarget?.(oldTarget);
+      probeCaptureActive=previousCaptureActive;probeBakeInFlight=false;
     }
   }
 
