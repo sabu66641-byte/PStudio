@@ -205,6 +205,10 @@ export function createPStudioProductionRenderingBridge(options = {}) {
       if (disposed || !host || host.getState().backend !== 'webgpu') return false;
       return host.setEnvironment?.(profile) === true;
     },
+    setWaterEnvironment(profile) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setWaterEnvironment?.(profile) === true;
+    },
     setBloom(settings) {
       if (disposed || !host || host.getState().backend !== 'webgpu') return false;
       return host.setBloom?.(settings) === true;
