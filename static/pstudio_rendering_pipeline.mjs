@@ -636,6 +636,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let sceneDepth = null;
   let sceneNormal = null;
   let sceneMetalRough = null;
+  let sceneVelocity = null;
   let bloomSettings = normalizeBloom(options.bloom);
   let aoSettings = normalizeAO(options.ambientOcclusion ?? options.ao);
   let ssrSettings = normalizeSSR(options.ssr);
@@ -782,7 +783,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     sceneColor = scenePass.getTextureNode('output');
     sceneDepth = scenePass.getTextureNode('depth');
     sceneMetalRough = scenePass.getTextureNode('metalrough');
-    const sceneVelocity = antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa'
+    sceneVelocity = antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa'
       ? scenePass.getTextureNode('velocity')
       : null;
     sceneNormal = TSL.sample((uvNode) => TSL.unpackRGBToNormal(sceneNormalPacked.sample(uvNode)));
