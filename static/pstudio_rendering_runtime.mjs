@@ -194,6 +194,10 @@ export function createPStudioProductionRendererRuntime(options = {}) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
       return active.setClusteredLightingSnapshot?.(snapshot) === true;
     },
+    getRenderer() {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return null;
+      return active.handle?.renderer || null;
+    },
     useFallback(cause = new Error('PStudio requested the WebGL2 compatibility renderer.')) {
       if (disposed || !allowFallback || typeof createFallback !== 'function') return Promise.resolve(false);
       const error = cause instanceof Error ? cause : new Error(String(cause || 'WebGL2 fallback requested.'));
