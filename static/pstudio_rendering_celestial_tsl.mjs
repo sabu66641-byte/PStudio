@@ -135,10 +135,12 @@ function createNightStarsMaterial({ sourceMaterial }) {
   const rayX = TSL.exp(point.x.abs().mul(-72)).mul(TSL.exp(point.y.abs().mul(-8)));
   const rayY = TSL.exp(point.y.abs().mul(-72)).mul(TSL.exp(point.x.abs().mul(-8)));
   const rays = TSL.max(rayX, rayY);
-  const angle = TSL.atan2(point.y, point.x);
-  const hexRay = TSL.pow(TSL.max(TSL.cos(angle.mul(6)), 0), 24)
+  // Four-point diffraction rays remain fully node-based and avoid atan2,
+  // which is not exported by the pinned Three.js r187 TSL entry point.
+  const crossGlint = TSL.cos(point.x.mul(6)).mul(TSL.cos(point.y.mul(6)));
+  const hexLikeGlint = TSL.pow(TSL.max(crossGlint, 0), 24)
     .mul(TSL.float(1).sub(TSL.smoothstep(0.02, 0.48, radius)));
-  const opacity = core.mul(0.92).add(rays.mul(0.16)).add(hexRay.mul(0.12))
+  const opacity = core.mul(0.92).add(rays.mul(0.16)).add(hexLikeGlint.mul(0.12))
     .mul(pulse).mul(intensity).mul(moonDim);
 
   const material = copyRenderState(sourceMaterial, new THREE.PointsNodeMaterial());
