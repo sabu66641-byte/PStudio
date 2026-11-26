@@ -613,6 +613,21 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     occlusionRaycaster=new T.Raycaster();occlusionRaycaster.firstHitOnly=true;applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
+  function getPStudioGodRaysSettings(){
+    if(!camera||!window.THREE)return{enabled:true,intensity:godRaysIntensity,lightPosition:[0.5,0.78]};
+    camera.updateMatrixWorld?.(true);
+    const Three=window.THREE;
+    const sunDirection=keyLight?.position?.clone?.()||new Three.Vector3(5,9,6);
+    if(sunDirection.lengthSq()<1e-8)sunDirection.set(5,9,6);else sunDirection.normalize();
+    const sunWorld=camera.position.clone().addScaledVector(sunDirection,1000);
+    const sunScreen=sunWorld.project(camera);
+    const x=Number(sunScreen.x)*0.5+0.5,y=Number(sunScreen.y)*0.5+0.5;
+    return{
+      enabled:true,intensity:godRaysIntensity,
+      lightPosition:[Number.isFinite(x)?x:0.5,Number.isFinite(y)?y:0.78]
+    };
+  }
+
   function getProductionWebGPUFeatureBlockers(commandsByObject=null){
     const blockers=[];
     const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
@@ -624,6 +639,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       ?window.PStudioRenderingMigration?.supportsPStudioTSLGTAO===true
       :window.PStudioRenderingMigration?.supportsPStudioTSLSSAO===true;
     const supportsSSRNode=window.PStudioRenderingMigration?.supportsPStudioTSLSSR===true;
+    const supportsGodRaysNode=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
     const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
     if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
@@ -646,7 +662,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(contactShadowsEnabled)add('contact-shadows','コンタクトシャドウのTSL移植が未完了です。');
     if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
     if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
-    if(godRaysEnabled||godRaysFallbackEnabled)add('god-rays','God RaysのTSL移植が未完了です。');
+    if(godRaysEnabled&&!supportsGodRaysNode)add('god-rays','God RaysのTSL RenderPipelineアダプターが利用できません。');
     if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
     if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
     if(trailEffects.size>0)add('trails','トレイルVFXのTSL移植が未完了です。');
@@ -736,7 +752,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           pipelineOptions:{
             bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false,
             ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
-            ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false
+            ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false,
+            godRays:godRaysEnabled?getPStudioGodRaysSettings():false
           },
           configureRenderer:webgpuRenderer=>{
             webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
@@ -1576,6 +1593,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       try{
         const clusterSnapshot=getPStudioClusteredLightingSnapshot();
         if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
+        if(godRaysEnabled)productionRendererBridge.setGodRays?.(getPStudioGodRaysSettings());
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
@@ -6658,11 +6676,13 @@ void main(){
       const requested=!!enabled;
       godRaysIntensity=Math.max(0,Math.min(2,Number.isFinite(Number(intensity))?Number(intensity):1));
       if(requested&&!renderer&&window.THREE)ensureRenderer();
-      godRaysEnabled=requested&&!!godRaysPass;
-      godRaysFallbackEnabled=requested&&!godRaysPass&&!!bloomPass;
+      const webgpuRaysAvailable=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
+      godRaysEnabled=requested&&(!!godRaysPass||webgpuRaysAvailable);
+      godRaysFallbackEnabled=requested&&!godRaysEnabled&&!!bloomPass;
+      if(productionRendererBridge?.getState?.().backend==='webgpu')productionRendererBridge.setGodRays?.(godRaysEnabled?getPStudioGodRaysSettings():false);
       if(!requested){godRaysEnabled=false;godRaysFallbackEnabled=false;}
       if(renderer&&scene&&camera)drawFrame();
-      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
+      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass||webgpuRaysAvailable,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
     },
     getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
