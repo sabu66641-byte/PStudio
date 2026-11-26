@@ -6950,11 +6950,11 @@ void main(){
 
     // Main shrine: raised granite platform, layered steps, timber veranda and framed shoji.
     const shrineX=-27,shrineZ=-43,shrineHalfW=11,shrineHalfD=7.6;
-    addBox(materials.darkStone,shrineX,.12,shrineZ,27,.8,20);
-    addBox(materials.stone,shrineX,.58,shrineZ,24,.28,17);
+    addBox(materials.darkStone,shrineX,.6,shrineZ,27,.8,20);
+    addBox(materials.stone,shrineX,1.06,shrineZ,24,.28,17);
     for(let step=0;step<4;step++){
       const width=19-step*1.55,depth=1.1,frontZ=shrineZ+9.6+step*.24;
-      addBox(materials.wetStone,shrineX,.12+step*.2,frontZ,width,.2,depth);
+      addBox(materials.wetStone,shrineX,.38+step*.2,frontZ,width,.2,depth);
     }
     addBox(materials.darkWood,shrineX,1.18,shrineZ,21,.42,14.6);
     addBox(materials.wood,shrineX,1.43,shrineZ,20.6,.12,14.2);
@@ -7011,8 +7011,8 @@ void main(){
 
     // Five-storey pagoda: tiered bodies, bracket sets, curved roofs and a brass sorin finial.
     const pagodaX=-60,pagodaZ=-55;
-    addBox(materials.darkStone,pagodaX,.25,pagodaZ,16,.62,16);
-    addBox(materials.stone,pagodaX,.72,pagodaZ,13.8,.22,13.8);
+    addBox(materials.darkStone,pagodaX,.65,pagodaZ,16,.62,16);
+    addBox(materials.stone,pagodaX,.82,pagodaZ,13.8,.22,13.8);
     for(let tier=0;tier<5;tier++){
       const width=11.8-tier*1.48,depth=11.2-tier*1.35,baseY=1.0+tier*3.85,wallHeight=2.35;
       addBox(materials.darkWood,pagodaX,baseY+wallHeight*.5,pagodaZ,width*.82,wallHeight,depth*.82);
@@ -7050,7 +7050,7 @@ void main(){
     const gateX=15,gateZ=-60,postSpacing=12.2;
     for(const side of [-1,1]){
       const x=gateX+side*postSpacing*.5;
-      const foot=add(new T.CylinderGeometry(.61,.76,1.0,20),materials.darkStone,x,.5,gateZ);
+      const foot=add(new T.CylinderGeometry(.61,.76,.85,20),materials.darkStone,x,.72,gateZ);
       const post=genesisAddCylinderBetween(T,root,materials.red,
         [x-side*.55,.92,gateZ],[x+side*.2,9.15,gateZ],.40,.62,20);
       if(post)post.name='GENESIS Torii Splayed Pillar';
@@ -7075,7 +7075,7 @@ void main(){
 
     // Secondary waterside shrine and a row of warm interior screens on the right bank.
     const secondaryX=49,secondaryZ=-48;
-    addBox(materials.darkStone,secondaryX,.24,secondaryZ,17,.48,14);
+    addBox(materials.darkStone,secondaryX,.50,secondaryZ,17,.48,14);
     addBox(materials.plaster,secondaryX,2.75,secondaryZ,12,4.3,9);
     for(let i=0;i<4;i++){
       const x=secondaryX-4.5+i*3;
