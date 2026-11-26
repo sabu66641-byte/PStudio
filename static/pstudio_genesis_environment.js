@@ -105,7 +105,7 @@
     let windDirection=direction.slice(),targetWindDirection=direction.slice();
     let windSpeed=clamp(options.windSpeed,0,8,.35),targetWindSpeed=windSpeed;
     let timeScale=clamp(options.timeScale,0,.5,0);
-    let transitionSeconds=clamp(options.transitionSeconds,.05,60,2.4);
+    let transitionSeconds=clamp(options.transitionSeconds,.05,60,.15);
     let windTransitionSeconds=clamp(options.windTransitionSeconds,.05,60,1.6);
     let revision=0,elapsedSeconds=0;
     let snapshot=null;

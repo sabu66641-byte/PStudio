@@ -242,6 +242,9 @@ test('night moon is a real spherical mesh with one-time surface texture creation
   assert.match(renderer,/new T\.SphereGeometry\(1,64,48\)/);
   assert.match(renderer,/if\(moonMesh\?\.parent===scene\)return moonMesh/);
   assert.match(renderer,/function configureMoonSky\(T,profile\)/);
+  assert.match(renderer,/let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0,moonVisibilityAllowed=false/);
+  assert.match(renderer,/moonVisibilityAllowed=moonIntensity>\.015&&Number\.isFinite\(Number\(profile\.starBrightness\)\)&&Number\(profile\.starBrightness\)>=\.035/);
+  assert.match(renderer,/moonMesh\.visible=moonVisibilityAllowed&&moonIntensity>\.015&&!hdrBackgroundVisible/);
   assert.match(renderer,/function updateMoonSkyMesh\(\)/);
   assert.match(renderer,/moonMesh\.position\.copy\(camera\.position\)\.addScaledVector\(moonDirection,distance\)/);
   assert.match(renderer,/moonMesh\.scale\.setScalar\(radius\)/);

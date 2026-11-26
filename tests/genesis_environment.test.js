@@ -4,6 +4,7 @@ const presets = require('../static/pstudio_scene_environment.js');
 const genesis = require('../static/pstudio_genesis_environment.js');
 
 test('GENESIS time model interpolates day, golden dusk and night continuously', () => {
+  const noon = genesis.profileForTime(12);
   const beforeDusk = genesis.profileForTime(17.1);
   const dusk = genesis.profileForTime(18.2);
   const afterDusk = genesis.profileForTime(20.5);
@@ -16,10 +17,23 @@ test('GENESIS time model interpolates day, golden dusk and night continuously', 
   assert.ok(Math.hypot(dusk.skySunX, dusk.skySunY, dusk.skySunZ) > 0.999);
   assert.ok(Math.hypot(dusk.moonDirectionX, dusk.moonDirectionY, dusk.moonDirectionZ) > 0.999);
   assert.ok(dusk.skyTop !== presets.getPreset('day').skyTop);
+  assert.equal(noon.starBrightness, 0, 'midday must not show night stars');
+  assert.equal(noon.moonIntensity, 0, 'midday must not show the moon');
   assert.equal(beforeDusk.starBrightness, 0, 'daytime must not leak a visible night starfield');
   assert.ok(dusk.starBrightness >= 0 && dusk.starBrightness <= 1.62, 'twilight star brightness stays bounded');
   assert.ok(afterDusk.starBrightness > 1.45, 'late twilight/night must reveal the dense starfield');
   assert.ok(Number.isFinite(dusk.starBrightness));
+});
+
+test('GENESIS preset changes use a responsive but smooth default transition',()=>{
+  const controller=genesis.createGenesisEnvironmentController({timeOfDay:12,timeScale:0});
+  assert.equal(controller.getConfig().transitionSeconds,.15);
+  controller.set({preset:'night'});
+  const first=controller.update(.1);
+  assert.ok(first.timeOfDay>12&&first.timeOfDay<23);
+  let state=first;
+  for(let i=0;i<12;i++)state=controller.update(.1);
+  assert.ok(Math.abs(state.timeOfDay-23)<.08);
 });
 
 test('GENESIS time controller eases toward target time without a one-frame jump', () => {
