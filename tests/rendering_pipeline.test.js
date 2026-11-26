@@ -169,7 +169,7 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
   assert.ok(shader.includes("pstudio-planar-mirror-water-v2"));
   assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
-  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity, 0.0, 1.0) * pStudioMirrorInside"));
+  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity * mix(0.78, 1.0, pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside"));
   assert.ok(renderer.includes("reflectivity:1.0"));
   assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
   assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
@@ -1468,7 +1468,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
 
 test('GENESIS reference showcase uses detailed Japanese architecture, a fixed photographic composition and the existing sky presets',()=>{
   for(const token of [
-    'function addRoofStructure(',
+    'const addRoofStructure=(',
     'function addShingleRidge(',
     'addRoofStructure(shrineX,shrineZ,mainRoof,.78)',
     'addRoofStructure(pagodaX,pagodaZ,roofDims,.78)',
@@ -1479,6 +1479,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'addLantern(-88,12,1.18,true)',
     'addLantern(88,10,1.18,true)',
     'root.scale.set(1.30,1,1)',
+    'frontZ=shrineZ+7.03',
     'root.userData.pstudioReferenceComposition',
     'camera.fov=36',
     'genesisShrinePreviousCameraFov=camera.fov',
