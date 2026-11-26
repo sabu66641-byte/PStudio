@@ -1009,6 +1009,18 @@
       if(Number.isFinite(Number(settings.cloudDetail)))uniforms.uCloudDetail.value=Math.max(0,Math.min(1,Number(settings.cloudDetail)));
       if(Number.isFinite(Number(settings.cloudBase)))uniforms.uCloudBase.value=Math.max(0,Number(settings.cloudBase));
       if(Number.isFinite(Number(settings.cloudTop)))uniforms.uCloudTop.value=Math.max((Number(uniforms.uCloudBase.value)||0)+1,Number(settings.cloudTop));
+      // GENESIS supplies a world-space wind vector in metres per second. Feed it
+      // to the cloud density field so it follows the same direction as water/foliage
+      // instead of the shader's unrelated hard-coded default.
+      const cloudWindX=Number(settings.cloudWindX),cloudWindZ=Number(settings.cloudWindZ);
+      if(Number.isFinite(cloudWindX)&&Number.isFinite(cloudWindZ)){
+        uniforms.uCloudWind.value.set(Math.max(-12,Math.min(12,cloudWindX)),Math.max(-12,Math.min(12,cloudWindZ)));
+      }else if(Array.isArray(settings.windDirection)&&settings.windDirection.length>=2){
+        const windX=Number(settings.windDirection[0]),windZ=Number(settings.windDirection[1]),windSpeed=Number(settings.windSpeed);
+        if(Number.isFinite(windX)&&Number.isFinite(windZ)&&Number.isFinite(windSpeed)){
+          uniforms.uCloudWind.value.set(Math.max(-12,Math.min(12,windX*windSpeed)),Math.max(-12,Math.min(12,windZ*windSpeed)));
+        }
+      }
       return true;
     };
     pass.setQuality('high',2);
