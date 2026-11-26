@@ -49,7 +49,7 @@
   const worldRenderConfig={maxDrawDistance:2400,lodDistances:[25,70,150],shadowDistance:900,probeBlendCount:4,maxConcurrentChunkLoads:4};
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
-  let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
+  let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisAppliedEnvironmentPreset=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
   let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null,genesisCloudCanvas=null,genesisSkyQuality=null;
   let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
@@ -7313,14 +7313,18 @@ void main(){
   function applyGenesisEnvironmentState(state,forceSky=false,now=window.performance?.now?.()??Date.now()){
     if(!state||!renderer||!scene)return false;
     genesisEnvironmentState=state;
-    applyGenesisLiveLighting(state);
-    // Build the expensive baseline only once. The visible environment panorama is
-    // then updated in-place from the continuous shared state, without disposing and
-    // recreating a 360-degree texture every 1.2 seconds.
-    if(!genesisSkyTexture){
-      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,null,.375);
-      ensureGenesisSkyBackground(window.THREE);
+    const T=window.THREE,presetName=String(state.visualPreset||state.name||'day');
+    // Rebuild the environment PMREM only when the named preset changes. The
+    // scene background is then replaced by the high-resolution GENESIS panorama,
+    // while PBR/IBL reflections use the matching physical/procedural preset map.
+    if(!genesisSkyTexture||genesisAppliedEnvironmentPreset!==presetName){
+      applySceneEnvironmentPreset(T,presetName,false,null,.375);
+      genesisAppliedEnvironmentPreset=presetName;
+      if(!genesisSkyTexture)ensureGenesisSkyBackground(T);
     }
+    // Apply the named preset's PBR environment first, then the exact GENESIS
+    // profile for live sun, moon, fog, water, wind and volumetric effects.
+    applyGenesisLiveLighting(state);
     updateGenesisSkyBackground(state,forceSky,now);
     if(genesisShrineDemoRequested&&!genesisShrineDemoGroup)buildGenesisShrineDemo(window.THREE);
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
@@ -8068,7 +8072,7 @@ void main(){
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
     setGenesisShrineDemo,
     clearGenesisEnvironment:()=>{
-      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
+      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisAppliedEnvironmentPreset=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
       if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
       genesisRainAccumulator=0;
       genesisShrineDemoRequested=false;removeGenesisShrineDemo();
