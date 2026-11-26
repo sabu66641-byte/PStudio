@@ -637,6 +637,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let sceneNormal = null;
   let sceneMetalRough = null;
   let sceneVelocity = null;
+  let frameResources = null;
   let bloomSettings = normalizeBloom(options.bloom);
   let aoSettings = normalizeAO(options.ambientOcclusion ?? options.ao);
   let ssrSettings = normalizeSSR(options.ssr);
@@ -661,6 +662,56 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     aoPass = null;
     ssrPass = null;
     aaPass = null;
+  }
+
+  function refreshFrameResources() {
+    frameResources = Object.freeze({
+      kind: 'pstudio-scene-frame-resources',
+      color: sceneColor,
+      depth: sceneDepth,
+      normal: sceneNormal,
+      metalRough: sceneMetalRough,
+      normalEncoding: 'packed-rgb-unorm8-decoded-to-view-normal',
+      metalRoughEncoding: 'rg-unorm8',
+      normalSpace: 'view',
+      depthSpace: 'projection',
+      attachments: Object.freeze(['output', 'depth', 'normal', 'metalrough', ...(sceneVelocity ? ['velocity'] : [])])
+    });
+  }
+
+  // Velocity is attached only while TRAA is active. This lets the runtime
+  // switch SMAA <-> TRAA without allocating a velocity MRT for spatial-only AA.
+  function configureSceneAttachments(includeVelocity) {
+    if (includeVelocity && TSL.velocity === undefined) {
+      throw new Error('Three.js r187 does not expose the TSL velocity output required by TRAA.');
+    }
+    const mrtNodes = {
+      output: TSL.output,
+      normal: TSL.packNormalToRGB(TSL.normalView),
+      metalrough: TSL.vec2(TSL.metalness, TSL.roughness)
+    };
+    if (includeVelocity) mrtNodes.velocity = TSL.velocity;
+    scenePass.setMRT(TSL.mrt(mrtNodes));
+
+    const normalTexture = scenePass.getTexture('normal');
+    const metalRoughTexture = scenePass.getTexture('metalrough');
+    const velocityTexture = includeVelocity ? scenePass.getTexture('velocity') : null;
+    if (!normalTexture || !metalRoughTexture || (includeVelocity && !velocityTexture)) {
+      throw new Error('The TSL scene pass did not create the requested frame attachments.');
+    }
+    normalTexture.type = THREE.UnsignedByteType;
+    metalRoughTexture.type = THREE.UnsignedByteType;
+
+    const packedNormal = scenePass.getTextureNode('normal');
+    sceneColor = scenePass.getTextureNode('output');
+    sceneDepth = scenePass.getTextureNode('depth');
+    sceneMetalRough = scenePass.getTextureNode('metalrough');
+    sceneVelocity = includeVelocity ? scenePass.getTextureNode('velocity') : null;
+    sceneNormal = TSL.sample((uvNode) => TSL.unpackRGBToNormal(packedNormal.sample(uvNode)));
+    if (!sceneColor || !sceneDepth || !sceneNormal || !sceneMetalRough || (includeVelocity && !sceneVelocity)) {
+      throw new Error('The TSL scene pass did not expose all requested frame-resource nodes.');
+    }
+    refreshFrameResources();
   }
 
   function rebuildOutput() {
@@ -764,33 +815,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       throw new Error('Three.js r187 does not expose the required TSL scene-frame attachment APIs.');
     }
 
-    scenePass.setMRT(TSL.mrt({
-      output: TSL.output,
-      normal: TSL.packNormalToRGB(TSL.normalView),
-      metalrough: TSL.vec2(TSL.metalness, TSL.roughness),
-      ...(antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' ? { velocity: TSL.velocity } : {})
-    }));
-
-    const normalTexture = scenePass.getTexture('normal');
-    const metalRoughTexture = scenePass.getTexture('metalrough');
-    if (!normalTexture || !metalRoughTexture) {
-      throw new Error('The TSL scene pass did not create its normal and metal/roughness attachments.');
-    }
-    normalTexture.type = THREE.UnsignedByteType;
-    metalRoughTexture.type = THREE.UnsignedByteType;
-
-    const sceneNormalPacked = scenePass.getTextureNode('normal');
-    sceneColor = scenePass.getTextureNode('output');
-    sceneDepth = scenePass.getTextureNode('depth');
-    sceneMetalRough = scenePass.getTextureNode('metalrough');
-    sceneVelocity = antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa'
-      ? scenePass.getTextureNode('velocity')
-      : null;
-    sceneNormal = TSL.sample((uvNode) => TSL.unpackRGBToNormal(sceneNormalPacked.sample(uvNode)));
-    if (!sceneColor || !sceneDepth || !sceneNormal || !sceneMetalRough
-      || (antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' && !sceneVelocity)) {
-      throw new Error('The TSL scene pass did not expose all required frame attachments, including velocity for TRAA.');
-    }
+    configureSceneAttachments(antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa');
 
     renderPipeline = new THREE.RenderPipeline(renderer);
     rebuildOutput();
@@ -800,19 +825,6 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     try { renderPipeline?.dispose?.(); } catch (_) {}
     throw error;
   }
-
-  const frameResources = Object.freeze({
-    kind: 'pstudio-scene-frame-resources',
-    color: sceneColor,
-    depth: sceneDepth,
-    normal: sceneNormal,
-    metalRough: sceneMetalRough,
-    normalEncoding: 'packed-rgb-unorm8-decoded-to-view-normal',
-    metalRoughEncoding: 'rg-unorm8',
-    normalSpace: 'view',
-    depthSpace: 'projection',
-    attachments: Object.freeze(['output', 'depth', 'normal', 'metalrough', ...(sceneVelocity ? ['velocity'] : [])])
-  });
 
   return Object.freeze({
     kind: 'webgpu-tsl-render-pipeline',
@@ -833,9 +845,24 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       if (disposed) return false;
       const next = normalizePStudioAntiAliasingOptions(nextOptions);
       if (sameRenderSettings(next, antiAliasingSettings)) return true;
-      antiAliasingSettings = next;
-      rebuildOutput();
-      return true;
+      const previous = antiAliasingSettings;
+      const previousVelocity = !!sceneVelocity;
+      const nextVelocity = next.enabled && next.mode === 'traa';
+      try {
+        if (nextVelocity !== previousVelocity) configureSceneAttachments(nextVelocity);
+        antiAliasingSettings = next;
+        rebuildOutput();
+        return true;
+      } catch (error) {
+        antiAliasingSettings = previous;
+        try {
+          configureSceneAttachments(previousVelocity);
+          rebuildOutput();
+        } catch (rollbackError) {
+          error.rollbackError = rollbackError;
+        }
+        throw error;
+      }
     },
     setAmbientOcclusion(nextOptions) {
       if (disposed) return false;
