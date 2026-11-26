@@ -760,6 +760,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     else if(csm)add('csm-parity','TSL CSMShadowNodeは接続済みですが、カスケード境界・影バイアス・遠距離安定性の実機検証が未完了です。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
+      const registeredTSLAdapterIds=window.PStudioRenderingMigration?.listPStudioTSLMaterialAdapters?.()||[];
       for(const list of commandsByObject.values()){
         for(const command of list||[]){
           const type=String(command?.type||'');
@@ -769,8 +770,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             || (type==='terrain'&&!supportsSurfaceTSL);
           if(unsupportedDrawCommand){
             add('unported-command-'+type,'未移植の描画コマンドがシーンに含まれています: '+type);
-          }else if(type==='material'&&String(command?.shader||'')==='custom'){
-            add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
+          }else if(type==='material'&&String(command?.shader||'')==='custom'
+            &&!registeredTSLAdapterIds.includes(String(command?.tslAdapterId||'').trim())){
+            add('custom-shader-command','独自GLSLマテリアルには登録済みのTSLアダプターが必要です。');
           }else if(type==='model_material'&&command?.toon&&command.toon.enabled!==false){
             if(!supportsToonTSL)add('toon-model-material','モデルのNPR Toon用TSLアダプターが利用できません。');
             else add('toon-parity','モデルNPR ToonはTSLへ接続済みですが、実機の材質別スペキュラ／リム品質を検証するまで本番昇格を保留します。');
@@ -6576,7 +6578,7 @@ void main(){
           if(light.target){light.target.position.set(Number(d.targetX)||0,Number(d.targetY)||0,Number(d.targetZ)||0);light.target.updateMatrixWorld();}
           usedLights.add(key);continue;
         }
-        if (d.type==='material') { ownerMaterial=Object.assign(ownerMaterial||{},{roughness:d.roughness===undefined?(ownerMaterial?.roughness??0.72):Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:d.metalness===undefined?(ownerMaterial?.metalness??0.04):Math.max(0,Math.min(1,Number(d.metalness)||0)),shader:d.shader||ownerMaterial?.shader||'standard',fragmentShader:d.fragmentShader||ownerMaterial?.fragmentShader||''}); continue; }
+        if (d.type==='material') { ownerMaterial=Object.assign(ownerMaterial||{},{roughness:d.roughness===undefined?(ownerMaterial?.roughness??0.72):Math.max(0,Math.min(1,Number(d.roughness)||0)),metalness:d.metalness===undefined?(ownerMaterial?.metalness??0.04):Math.max(0,Math.min(1,Number(d.metalness)||0)),shader:d.shader||ownerMaterial?.shader||'standard',fragmentShader:d.fragmentShader||ownerMaterial?.fragmentShader||'',tslAdapterId:d.tslAdapterId===undefined?(ownerMaterial?.tslAdapterId||''):String(d.tslAdapterId||'').trim()}); continue; }
         if (d.type==='animation') continue;
         if (d.type==='model') {
           let instance=modelInstances.get(key);
@@ -6732,7 +6734,8 @@ void main(){
         let mesh=meshCache.get(key);
         const shaderMode=ownerMaterial?.shader||'standard';
         const fragmentShader=ownerMaterial?.fragmentShader||'';
-        if(!mesh||mesh.userData.signature!==signature||mesh.userData.shader!==shaderMode||mesh.userData.fragmentShader!==fragmentShader){
+        const tslAdapterId=shaderMode==='custom'?String(ownerMaterial?.tslAdapterId||'').trim():'';
+        if(!mesh||mesh.userData.signature!==signature||mesh.userData.shader!==shaderMode||mesh.userData.fragmentShader!==fragmentShader||mesh.userData.tslAdapterId!==tslAdapterId){
           if(mesh)disposeMesh(mesh);
           const geometry=createGeometry(d);
           if(!geometry)continue;
@@ -6754,6 +6757,7 @@ void main(){
             material=configureMirrorWaterMaterial(new T.MeshPhysicalMaterial({color:'#0b3d52',roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008,ior:1.333,side:T.DoubleSide,depthWrite:true}));
           }else if(shaderMode==='custom'){
             material=new T.ShaderMaterial({uniforms:{uColor:{value:new T.Color(d.color||'#d1d5db')}},vertexShader,fragmentShader:fragmentShader||'uniform vec3 uColor; varying vec2 vUv; void main(){gl_FragColor=vec4(uColor,1.0);}',side:T.DoubleSide});
+            if(tslAdapterId)material.userData.pstudioTSLAdapterId=tslAdapterId;
           }else if(shaderMode==='toon')material=new T.MeshStandardMaterial({color:d.color||'#d1d5db',roughness:ownerMaterial?.roughness??0.72,metalness:ownerMaterial?.metalness??0.04,side:T.DoubleSide});
           else if(shaderMode==='unlit')material=new T.MeshBasicMaterial({color:d.color||'#d1d5db',side:T.DoubleSide});
           else if(shaderMode==='normal')material=new T.MeshNormalMaterial({side:T.DoubleSide});
@@ -6761,7 +6765,7 @@ void main(){
           mesh=new T.Mesh(geometry,material);if(d.type==='terrain')window.PStudioEnvironmentFX?.configureTerrain?.(material,mesh);setupLightingMaterial(material);bindObjectProbeLighting(mesh);setupClusteredLightingMaterial(material);scheduleAutoLOD(mesh,geometry);
           mesh.castShadow=d.type!=='plane'&&d.type!=='water'&&d.type!=='mirror_water';
           mesh.receiveShadow=true;
-          mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.primitiveType=d.type;
+          mesh.userData.signature=signature;mesh.userData.shader=shaderMode;mesh.userData.fragmentShader=fragmentShader;mesh.userData.tslAdapterId=tslAdapterId;mesh.userData.primitiveType=d.type;
           if(d.type==='water'){
             mesh.userData.pstudioWaterSurface=true;
             geometry.computeBoundingBox?.();
