@@ -224,6 +224,8 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
     "if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))",
     "if(activeClusterLighting)add('clustered-lighting-pbr-parity'",
     "if(bakedLightProbe||bakedLightProbeVolume?.length)add('static-gi-probe-capture'",
+    "if(contactShadowsEnabled&&!supportsContactShadowsNode)",
+    "if(godRaysEnabled&&!supportsGodRaysNode)",
     "if(dynamicGIEnabled||probeCaptureActive)",
     "productionRendererBridge.render()",
     'productionRendererBridge.resize(width,height,bridgePixelRatio)',
