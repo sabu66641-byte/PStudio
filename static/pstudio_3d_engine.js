@@ -6435,7 +6435,7 @@ void main(){
         positions.push(
           centerX+(Math.cos(angle)*radial-Math.sin(angle)*tangent)*edge,
           centerY+(Math.sin(angle)*radial+Math.cos(angle)*tangent)*edge,
-          .006+Math.sin(theta)*.012
+          .006+Math.sin(theta)*.032+Math.max(0,Math.cos(theta))*.018
         );
       }
       for(let segment=0;segment<segments;segment++){
@@ -6792,7 +6792,7 @@ void main(){
   function buildGenesisShrineDemo(T){
     if(!scene||!renderer)return false;
     if(genesisShrineDemoGroup?.parent===scene)return true;
-    const root=new T.Group();root.name='PStudio | Moonlit Sakura Shrine and Mirror Lake';
+    const root=new T.Group();root.name='PStudio | Reference Night Shrine, Five-Storey Pagoda and Mirror Lake';
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
     const textures={
       wood:genesisCreateDetailTexture(T,'wood',textureSet),
@@ -7055,8 +7055,10 @@ void main(){
     kasagi.castShadow=true;root.add(kasagi);
     addBeam(materials.red,[gateX-postSpacing*.58,8.05,gateZ],[gateX+postSpacing*.58,8.05,gateZ],.28);
     addBox(materials.red,gateX,8.7,gateZ,.9,.38,1.3);
-    addBox(materials.darkWood,gateX,8.72,gateZ-.70,2.35,.78,.14);
-    addBox(materials.gold,gateX,8.72,gateZ-.79,1.72,.055,.045);
+    addBox(materials.darkWood,gateX,8.72,gateZ+.70,2.35,.78,.14);
+    addBox(materials.gold,gateX,8.72,gateZ+.79,1.72,.055,.045);
+    addWarmLight(gateX-7.5,2.0,gateZ+2.0,.42,15);
+    addWarmLight(gateX+7.5,2.0,gateZ+2.0,.42,15);
     for(const side of [-1,1]){
       addBeam(materials.gold,[gateX+side*postSpacing*.5,7.0,gateZ+.65],[gateX+side*postSpacing*.5,7.8,gateZ+.65],.055);
     }
