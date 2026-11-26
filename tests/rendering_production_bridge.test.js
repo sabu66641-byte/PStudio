@@ -216,7 +216,7 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
   for (const token of [
     'window.PStudioProductionRenderingBridgeFactory',
     'function getSHProbeCaptureContext',
-    'productionRendererBridge.getRenderer?.()',
+    'productionRendererBridge?.getRenderer?.()',
     'async function bakeLightProbe(options={})',
     'function getProductionWebGPUFeatureBlockers',
     'function requestProductionWebGPUMigration',
