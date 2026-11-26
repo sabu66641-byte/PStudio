@@ -1553,7 +1553,7 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
     'frameP95Ms',
     'frameP99Ms',
     'cpuRenderSubmitP50Ms',
-    'cpuRenderP99Ms',
+    'cpuRenderSubmitP99Ms',
     'gpuRenderP50Ms',
     'gpuRenderP99Ms',
     'frameIntervalSampleCount',
