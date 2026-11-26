@@ -63,11 +63,12 @@ test('production host activates WebGPU surface only after successful async initi
     primaryCanvas, scene, camera,
     createWebGPU: async ({ canvas }) => {
       assert.equal(canvas, primaryCanvas);
-      return { capabilities: { backend: 'webgpu' }, render: () => true, dispose() {} };
+      return { capabilities: { backend: 'webgpu' }, render: () => true, setWaterEnvironment: () => true, dispose() {} };
     }
   });
   await host.initialize();
   assert.equal(host.getState().backend, 'webgpu');
+  assert.equal(host.setWaterEnvironment({ rainIntensity: 0.8 }), true);
   assert.equal(host.getState().canvasHost.activeBackend, 'webgpu');
   assert.equal(host.getCanvas('webgpu'), primaryCanvas);
   assert.equal(host.render(), true);
