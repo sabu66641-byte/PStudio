@@ -87,6 +87,7 @@ test('constrained touch Maximum and Ultra preserve configured effects while appl
   assert.ok(renderer.includes("adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity"));
   assert.ok(renderer.includes("mobileResolutionBudget:adaptiveTouchResolutionBudget"));
   assert.ok(renderer.includes("touchResolutionBudget:adaptiveTouchResolutionBudget"));
+  assert.ok(renderer.includes("effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null"));
   assert.ok(renderer.includes("volumetricFogEnabled=!!enabled&&!memorySafetyApplied"));
   assert.ok(renderer.includes("volumetricCloudsEnabled=!!enabled&&!memorySafetyApplied&&!!volumetricCloudPass"));
   assert.ok(renderer.includes("contactShadowsEnabled=!!contactShadowPass&&!memorySafetyApplied&&"));
