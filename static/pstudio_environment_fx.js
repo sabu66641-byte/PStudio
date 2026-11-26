@@ -725,7 +725,8 @@
           &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey)
         ||(previousUserData.pstudioCSMOnlyHook===true
           &&previousUserData.pstudioProbeShaderSetup!==true
-          &&previousUserData.pstudioCSMHook===previousCompile)
+          &&previousUserData.pstudioCSMHook===previousCompile
+          &&!hadOwnCacheKey)
         ||(previousUserData.pstudioTSLOutline?.version===1
           &&material.pstudioTSLOutlineCompileHook===previousCompile
           &&material.pstudioTSLOutlineCacheKey===material.customProgramCacheKey);
