@@ -216,7 +216,7 @@ function createVolumetricCloudNode(inputColor, sceneDepth, settings) {
   const fbm = TSL.Fn(([p]) => {
     const n0 = noise(p).mul(0.55);
     const n1 = noise(p.mul(2.03).add(TSL.vec3(7.1, 3.7, 5.3))).mul(0.275);
-    const n2 = noise(p.mul(4.0609).add(TSL.vec3(21.513, 11.201, 16.009))).mul(0.1375);
+    const n2 = noise(p.mul(4.1209).add(TSL.vec3(21.513, 11.211, 16.059))).mul(0.1375);
     return n0.add(n1).add(n2).div(0.9625);
   }, { p: 'vec3', return: 'float' });
 
@@ -618,6 +618,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let contactShadowsHandle = null;
   let volumetricFogSettings = normalizeVolumetricFog(options.volumetricFog);
   let volumetricFogHandle = null;
+  let volumetricCloudSettings = normalizeVolumetricClouds(options.volumetricClouds);
+  let volumetricCloudHandle = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
@@ -681,6 +683,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     if (bloomSettings && bloomSettings.strength > 0) {
       const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
       output = output.add(glow);
+    }
+
+    if (volumetricCloudSettings) {
+      volumetricCloudHandle = createVolumetricCloudNode(output, sceneDepth, volumetricCloudSettings);
+      output = volumetricCloudHandle.node;
+    } else {
+      volumetricCloudHandle = null;
     }
 
     if (godRaysSettings) {
@@ -818,6 +827,19 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       else volumetricFogHandle.set(volumetricFogSettings);
       return true;
     },
+    setVolumetricClouds(nextOptions) {
+      if (disposed) return false;
+      const nextSettings = normalizeVolumetricClouds(nextOptions);
+      if (!nextSettings && !volumetricCloudSettings && !volumetricCloudHandle) return true;
+      volumetricCloudSettings = nextSettings;
+      if (!volumetricCloudSettings) {
+        rebuildOutput();
+        return true;
+      }
+      if (!volumetricCloudHandle) rebuildOutput();
+      else volumetricCloudHandle.set(volumetricCloudSettings);
+      return true;
+    },
     getFrameResources() {
       return disposed ? null : frameResources;
     },
@@ -830,6 +852,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
         godRays: godRaysHandle ? godRaysHandle.getState() : null,
         contactShadows: contactShadowsHandle ? contactShadowsHandle.getState() : null,
         volumetricFog: volumetricFogHandle ? volumetricFogHandle.getState() : null,
+        volumetricClouds: volumetricCloudHandle ? volumetricCloudHandle.getState() : null,
         frameResources: disposed ? null : Object.freeze({
           attachments: frameResources.attachments,
           normalEncoding: frameResources.normalEncoding,
