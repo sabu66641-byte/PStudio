@@ -51,7 +51,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'));
   assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-npr-toon-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
@@ -1400,7 +1400,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1635,7 +1635,7 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
   for(const token of [
     'uniform vec2 uPStudioWaterWindDirection',
     'uPStudioWaterRainIntensity',
-    'pStudioWaterRainLocal',
+    'rainLocal',
     'rainRing*=uPStudioWaterRainIntensity',
     'applyScalar(u.amplitude,settings.waterWaveAmplitude'
   ])assert.ok(environmentFX.includes(token),token);
