@@ -6586,6 +6586,35 @@ void main(){
     return mesh;
   }
 
+  function genesisCreateSakuraFlowerGeometry(T){
+    const positions=[],indices=[];
+    const petalCount=5,segments=12;
+    for(let petal=0;petal<petalCount;petal++){
+      const angle=-Math.PI/2+petal*Math.PI*2/petalCount;
+      const centerX=Math.cos(angle)*.105,centerY=Math.sin(angle)*.105;
+      const centerIndex=positions.length/3;
+      positions.push(centerX,centerY,.004);
+      for(let segment=0;segment<segments;segment++){
+        const theta=segment/segments*Math.PI*2;
+        const radial=Math.cos(theta)*.205;
+        const tangent=Math.sin(theta)*.112;
+        positions.push(
+          centerX+Math.cos(angle)*radial-Math.sin(angle)*tangent,
+          centerY+Math.sin(angle)*radial+Math.cos(angle)*tangent,
+          .004+Math.sin(theta)*.001
+        );
+      }
+      for(let segment=0;segment<segments;segment++){
+        indices.push(centerIndex,centerIndex+1+segment,centerIndex+1+(segment+1)%segments);
+      }
+    }
+    const geometry=new T.BufferGeometry();
+    geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
   function genesisAddMountainRange(T,parent,options){
     const count=180,vertices=[],indices=[];
     const {z,baseY,rangeX,peaks,color}=options;
@@ -6643,6 +6672,7 @@ void main(){
       red:new T.MeshStandardMaterial({color:'#AD3439',roughness:.42,metalness:.08}),
       redLight:new T.MeshStandardMaterial({color:'#D24D45',roughness:.38}),
       roof:new T.MeshStandardMaterial({color:'#172235',roughness:.34,metalness:.12}),
+      roofTile:new T.MeshStandardMaterial({color:'#253448',roughness:.38,metalness:.18}),
       roofEdge:new T.MeshStandardMaterial({color:'#344153',roughness:.4,metalness:.16}),
       plaster:new T.MeshStandardMaterial({color:'#D5C3A6',roughness:.88}),
       gold:new T.MeshStandardMaterial({color:'#B88B50',roughness:.34,metalness:.68}),
@@ -6682,10 +6712,28 @@ void main(){
       addBox(materials.darkWood,x+1.16,3.35,-36.35,.12,2.9,.16);
       addBox(materials.darkWood,x,2.02,-36.35,2.4,.12,.16);
       addBox(materials.darkWood,x,4.68,-36.35,2.4,.12,.16);
+      const interiorGlow=new T.PointLight('#FFB36D',1.35,27,2);
+      interiorGlow.position.set(x,3.28,-38.7);root.add(interiorGlow);
     }
     // Deep overhanging, tiled gable roof with ridge and raised eaves.
     addBox(materials.roof,-32.2,6.42,-42,9.2,.58,14.5,[0,0,.39]);
     addBox(materials.roof,-23.8,6.42,-42,9.2,.58,14.5,[0,0,-.39]);
+    // Individually overlapped slate courses catch moonlight along the broad shrine roof.
+    const roofTileGeometry=new T.BoxGeometry(1.32,.075,1.72);
+    const roofTiles=new T.InstancedMesh(roofTileGeometry,materials.roofTile,96);
+    roofTiles.name='GENESIS Shrine Slate Roof Courses';
+    const roofTileDummy=new T.Object3D();let roofTileIndex=0;
+    for(const side of [-1,1])for(let column=0;column<6;column++)for(let row=0;row<8;row++){
+      const x=-28+side*(.86+column*1.28);
+      const y=7.42-column*.43;
+      const z=-48.15+row*1.76+(column%2)*.18;
+      roofTileDummy.position.set(x,y,z);
+      roofTileDummy.rotation.set(0,0,side<0?.39:-.39);
+      roofTileDummy.scale.set(1,1,1);
+      roofTileDummy.updateMatrix();roofTiles.setMatrixAt(roofTileIndex++,roofTileDummy.matrix);
+    }
+    roofTiles.instanceMatrix.needsUpdate=true;roofTiles.castShadow=true;roofTiles.receiveShadow=true;
+    root.add(roofTiles);
     addBox(materials.roofEdge,-28,7.92,-42,.54,.46,15.1);
     for(const x of [-37.3,-18.7])for(const z of [-48.4,-35.6]){
       add(new T.SphereGeometry(.34,12,8),materials.gold,x,5.76,z);
@@ -6702,6 +6750,8 @@ void main(){
       roof.rotation.y=Math.PI/4;
       const eaves=add(new T.CylinderGeometry(width*.88,width*.98,.22,4),materials.roofEdge,pagodaX,level+2.16,pagodaZ);
       eaves.rotation.y=Math.PI/4;
+      const pagodaWindowLight=new T.PointLight('#FFB86E',.78,22,2);
+      pagodaWindowLight.position.set(pagodaX,level+1.0,pagodaZ+width*.38);root.add(pagodaWindowLight);
       for(const side of [-1,1]){
         addBox(materials.gold,pagodaX+side*width*.42,level+2.2,pagodaZ,.10,.16,width*.95);
       }
@@ -6740,7 +6790,7 @@ void main(){
     genesisAddLantern(T,root,materials,-17,-25,1.0,true);
     genesisAddLantern(T,root,materials,25,-29,.92,true);
     // Cherry trees: sculpted trunks, articulated branches, dense instanced blossom crowns.
-    const blossomGeometry=new T.DodecahedronGeometry(.25,0);
+    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T);
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,1880);
     blossomMesh.name='GENESIS Sakura Blossom Canopy';
     blossomMesh.castShadow=true;blossomMesh.receiveShadow=true;
