@@ -1493,7 +1493,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
-  assert.ok(html.includes('20261127-moonlit-reference-scene-r1'));
+  assert.ok(html.includes('20261127-moonlit-reference-scene-r2'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1506,7 +1506,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r2'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
