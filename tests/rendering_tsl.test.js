@@ -590,3 +590,70 @@ test('underwater caustics migrate to a reversible TSL diffuse-color graph', asyn
   assert.equal(handle.dispose(), true);
   assert.equal(material.colorNode, previousColorNode);
 });
+
+
+test('approved Backface Outline Shell hooks convert to reversible TSL position and alpha nodes',async()=>{
+  const [THREE,,materials,,,,migration]=await modules;
+  const map=new THREE.Texture();
+  const alphaMap=new THREE.Texture();
+  const source=new THREE.MeshBasicMaterial({
+    color:0x26354b,map,alphaMap,opacity:0.82,alphaTest:0.18,
+    transparent:true,depthWrite:false,depthTest:true,side:THREE.BackSide,
+    polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1,vertexColors:true
+  });
+  const compileHook=function approvedPStudioOutlineCompileHook(){};
+  const cacheKey=function approvedPStudioOutlineCacheKey(){return 'pstudio-backface-outline-shell-v1';};
+  source.onBeforeCompile=compileHook;
+  source.customProgramCacheKey=cacheKey;
+  source.userData.pstudioTSLOutline={
+    version:1,expansion:0.12,useMapAlpha:true,useAlphaMapAlpha:true,useVertexAlpha:true
+  };
+  source.pstudioTSLOutlineCompileHook=compileHook;
+  source.pstudioTSLOutlineCacheKey=cacheKey;
+
+  const scene=new THREE.Scene();
+  const geometry=new THREE.BoxGeometry(1,1,1,2,2,2);
+  const shell=new THREE.Mesh(geometry,source);
+  scene.add(shell);
+  const inspection=migration.inspectPStudioWebGPUSceneMaterials(scene);
+  assert.equal(inspection.compatible,true);
+  assert.equal(inspection.unsupportedMaterials,0);
+
+  const converted=materials.convertPStudioScenePBRMaterials(scene);
+  assert.equal(converted.convertedMaterials,1);
+  assert.equal(shell.material.isMeshBasicNodeMaterial,true);
+  assert.ok(shell.material.positionNode?.isNode);
+  assert.ok(shell.material.opacityNode?.isNode);
+  assert.ok(shell.material.colorNode?.isNode);
+  assert.equal(shell.material.map,null);
+  assert.equal(shell.material.alphaMap,null);
+  assert.equal(shell.material.vertexColors,false);
+  assert.equal(shell.material.side,THREE.BackSide);
+  assert.equal(shell.material.transparent,true);
+  assert.equal(shell.material.depthWrite,false);
+  assert.equal(shell.material.alphaTest,0.18);
+  assert.equal(shell.material.userData.pstudioTSLOutlineTSL,true);
+  assert.equal(converted.restore(),true);
+  assert.equal(shell.material,source);
+
+  converted.dispose?.();
+  shell.material.dispose();geometry.dispose();map.dispose();alphaMap.dispose();
+});
+
+test('outline TSL approval is bound to its exact hooks and cannot authorize replacement custom GLSL',async()=>{
+  const [THREE,,materials,,,,migration]=await modules;
+  const source=new THREE.MeshBasicMaterial({side:THREE.BackSide});
+  const approvedHook=function approvedOutlineHook(){};
+  const approvedKey=function approvedOutlineKey(){return 'pstudio-outline';};
+  source.onBeforeCompile=approvedHook;
+  source.customProgramCacheKey=approvedKey;
+  source.userData.pstudioTSLOutline={version:1,expansion:0.1};
+  source.pstudioTSLOutlineCompileHook=approvedHook;
+  source.pstudioTSLOutlineCacheKey=approvedKey;
+  assert.equal(materials.createPStudioNodeMaterial(source).isMeshBasicNodeMaterial,true);
+  source.onBeforeCompile=function unrelatedCustomGLSL(){};
+  assert.throws(()=>materials.createPStudioNodeMaterial(source),/custom GLSL hooks/);
+  const scene=new THREE.Scene();scene.add(new THREE.Mesh(new THREE.BoxGeometry(),source));
+  assert.equal(migration.inspectPStudioWebGPUSceneMaterials(scene).compatible,false);
+  source.dispose();
+});
