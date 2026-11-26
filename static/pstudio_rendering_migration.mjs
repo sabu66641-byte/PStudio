@@ -1,5 +1,5 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v6';
+import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-outline-tsl-v1';
 import { createPStudioRenderPipeline, supportsPStudioTSLSSAO as pipelineSupportsSSAO, supportsPStudioTSLGTAO as pipelineSupportsGTAO, supportsPStudioTSLSSR as pipelineSupportsSSR, supportsPStudioTSLGodRays as pipelineSupportsGodRays, supportsPStudioTSLContactShadows as pipelineSupportsContactShadows, supportsPStudioTSLVolumetricFog as pipelineSupportsVolumetricFog, supportsPStudioTSLVolumetricClouds as pipelineSupportsVolumetricClouds } from './pstudio_rendering_pipeline.mjs?v=20261126-volumetrics-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
@@ -43,6 +43,15 @@ function hasCustomShaderHooks(material) {
     && userData.pstudioCSMHook === material.onBeforeCompile
     && !Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey');
   if (csmOnly) return false;
+  const outline = userData.pstudioTSLOutline;
+  const approvedOutline = outline?.version === 1
+    && Number.isFinite(Number(outline.expansion))
+    && Number(outline.expansion) > 0
+    && material.pstudioTSLOutlineCompileHook === material.onBeforeCompile
+    && material.pstudioTSLOutlineCacheKey === material.customProgramCacheKey
+    && typeof material.onBeforeCompile === 'function'
+    && typeof material.customProgramCacheKey === 'function';
+  if (approvedOutline) return false;
   return Boolean(
     (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
     || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
@@ -277,7 +286,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
       const assigned = Array.isArray(object.material) ? object.material : [object.material];
       for (const material of assigned) {
-        if (material?.isNodeMaterial === true && !Array.isArray(material.userData?.pstudioTSLProbeUniforms)) {
+        if (material?.isNodeMaterial === true && material.lights !== false && !Array.isArray(material.userData?.pstudioTSLProbeUniforms)) {
           shMaterials.add(material);
         }
       }
