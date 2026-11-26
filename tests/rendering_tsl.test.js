@@ -314,11 +314,28 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.throws(() => pipelineModule.normalizePStudioAntiAliasingOptions('unknown'), /must be none, traa, or smaa/);
   assert.equal(pipeline.getState().antiAliasing.mode, 'traa');
   assert.equal(pipeline.getFrameResources().attachments.includes('velocity'), true);
-  assert.equal(pipeline.setAntiAliasing(false), true);
-  assert.equal(pipeline.getState().antiAliasing.mode, 'none');
-  // SMAA support and mode normalization are verified above; browser image-backed
-  // lookup textures are covered by real-browser validation rather than Node globals.
-  assert.equal(pipeline.setAntiAliasing('traa'), true);
+  const originalImage = globalThis.Image;
+  if (typeof originalImage !== 'function') {
+    // SMAANode creates HTMLImageElements for its immutable lookup textures.
+    // This stub permits graph-construction coverage in Node; image decoding remains a browser test.
+    globalThis.Image = class TestImage {
+      set src(value) { this._src = value; }
+    };
+  }
+  try {
+    assert.equal(pipeline.setAntiAliasing('smaa'), true);
+    assert.equal(pipeline.getState().antiAliasing.mode, 'smaa');
+    assert.equal(pipeline.getFrameResources().attachments.includes('velocity'), false);
+    assert.equal(pipeline.setAntiAliasing(false), true);
+    assert.equal(pipeline.getState().antiAliasing.mode, 'none');
+    assert.equal(pipeline.getFrameResources().attachments.includes('velocity'), false);
+    assert.equal(pipeline.setAntiAliasing('traa'), true);
+    assert.equal(pipeline.getState().antiAliasing.mode, 'traa');
+    assert.equal(pipeline.getFrameResources().attachments.includes('velocity'), true);
+  } finally {
+    if (originalImage === undefined) delete globalThis.Image;
+    else globalThis.Image = originalImage;
+  }
   assert.equal(pipeline.kind, 'webgpu-tsl-render-pipeline');
   assert.equal(pipeline.getState().bloom.strength, 0.2);
   assert.equal(pipeline.getState().bloom.radius, 0.3);
@@ -453,6 +470,49 @@ test('WebGPU scene sessions reject unsupported materials before requesting a GPU
   geometry.dispose();
 });
 
+
+test('registered external ShaderMaterial adapters pass WebGPU preflight and restore atomically', async () => {
+  const [THREE, TSL, , , , , migration] = await modules;
+  const external = await import('../static/pstudio_rendering_external_tsl.mjs');
+  const adapterId = 'test.external-shader-material';
+  const scene = new THREE.Scene();
+  const geometry = new THREE.BoxGeometry();
+  const source = new THREE.ShaderMaterial();
+  source.userData.pstudioTSLAdapterId = adapterId;
+  const mesh = new THREE.Mesh(geometry, source);
+  scene.add(mesh);
+  let registration = null;
+  let conversion = null;
+
+  try {
+    registration = migration.registerPStudioTSLMaterialAdapter(adapterId, {
+      matches: material => material?.isShaderMaterial === true,
+      create: context => {
+        assert.equal(context.sourceMaterial, source);
+        const target = new THREE.MeshBasicNodeMaterial();
+        target.colorNode = TSL.color(0x5da8ff);
+        return target;
+      }
+    });
+    const preflight = migration.inspectPStudioWebGPUSceneMaterials(scene);
+    assert.equal(preflight.compatible, true);
+    assert.equal(preflight.externalTSLAdapterMaterials, 1);
+    assert.equal(preflight.unsupportedMaterials, 0);
+
+    conversion = external.applyPStudioTSLMaterialAdapters(scene);
+    assert.equal(conversion.convertedMaterials, 1);
+    assert.equal(conversion.convertedObjects, 1);
+    assert.equal(mesh.material.isNodeMaterial, true);
+    assert.equal(mesh.material.userData.pstudioExternalTSLAdapter, adapterId);
+    assert.equal(conversion.dispose(), true);
+    assert.equal(mesh.material, source);
+  } finally {
+    conversion?.dispose?.();
+    registration?.unregister?.();
+    source.dispose();
+    geometry.dispose();
+  }
+});
 
 test('TSL environment generates deterministic equirectangular sky radiance for day and night', async () => {
   const [THREE, , , , , environmentTSL] = await modules;
