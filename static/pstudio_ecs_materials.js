@@ -26,6 +26,13 @@
     Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : fallback));
   const color = (value, fallback) =>
     typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+  const normalizeTSLAdapterId = (value, strict = false) => {
+    const id = String(value || '').trim();
+    if (!id) return '';
+    if (/^[a-z0-9][a-z0-9._-]{1,95}$/i.test(id)) return id;
+    if (strict) throw new TypeError('TSL adapter id must be 2-96 URL-safe characters.');
+    return '';
+  };
   const clone = value => JSON.parse(JSON.stringify(value));
 
   function register(type, schema, create, label, description) {
@@ -63,9 +70,10 @@
 
     register(TYPES.ShaderMaterial, {
       enabled: { type: 'boolean', default: true, label: 'Enabled' },
-      fragmentShader: { type: 'string', default: '', maxLength: 12000, label: 'Fragment shader source' }
-    }, () => ({ enabled: true, fragmentShader: '' }), 'Shader Material',
-    'Persistent custom fragment-shader source. Compiled programs and uniforms remain renderer-owned.');
+      fragmentShader: { type: 'string', default: '', maxLength: 12000, label: 'Fragment shader source' },
+      tslAdapterId: { type: 'string', default: '', maxLength: 96, label: 'Registered TSL adapter id (optional)' }
+    }, () => ({ enabled: true, fragmentShader: '', tslAdapterId: '' }), 'Shader Material',
+    'Persistent custom fragment-shader source. An optional registered TSL adapter id selects an explicit semantic WebGPU port; compiled programs and uniforms remain renderer-owned.');
 
     register(TYPES.MeshCollider, {
       enabled: { type: 'boolean', default: true, label: 'Enabled' }
@@ -343,7 +351,12 @@
             });
           }
         } else if (type === 'ShaderMaterial' && entry.config.enabled && entry.config.fragmentShader) {
-          pending.push({ type: 'material', shader: 'custom', fragmentShader: entry.config.fragmentShader });
+          pending.push({
+            type: 'material',
+            shader: 'custom',
+            fragmentShader: entry.config.fragmentShader,
+            tslAdapterId: normalizeTSLAdapterId(entry.config.tslAdapterId)
+          });
         }
         added += prependOwnerCommands(commands, entry.ownerId, pending);
       }
@@ -369,10 +382,15 @@
     const component = get(ownerId, TYPES.ShaderMaterial, objects);
     return component ? clone(component) : null;
   }
-  function setShaderMaterial(ownerId, fragmentShader, objects) {
+  function setShaderMaterial(ownerId, fragmentShader, objects, tslAdapterId = '') {
     const source = String(fragmentShader || '');
     if (source.length > 12000) throw new RangeError('Fragment shader source must be 12 KB or less.');
-    return attach(ownerId, TYPES.ShaderMaterial, { enabled: !!source, fragmentShader: source }, objects);
+    const adapterId = normalizeTSLAdapterId(tslAdapterId, true);
+    return attach(ownerId, TYPES.ShaderMaterial, {
+      enabled: !!source,
+      fragmentShader: source,
+      tslAdapterId: adapterId
+    }, objects);
   }
   function resetShaderMaterial(ownerId, objects) {
     const list = objects || window.sceneObjects;
