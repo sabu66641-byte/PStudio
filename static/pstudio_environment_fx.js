@@ -644,6 +644,20 @@
           if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
         };
         material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+        material.userData={
+          ...material.userData,
+          pstudioTSLOutline:{
+            version:1,
+            expansion:width,
+            useMapAlpha:!!map,
+            useAlphaMapAlpha:!!alphaMap,
+            useVertexAlpha:!!sourceMaterial?.vertexColors
+          }
+        };
+        // Approval is bound to these exact callbacks; unrelated custom shader hooks
+        // cannot bypass the WebGPU material preflight by copying only userData.
+        material.pstudioTSLOutlineCompileHook=material.onBeforeCompile;
+        material.pstudioTSLOutlineCacheKey=material.customProgramCacheKey;
         return material;
       });
       const material=Array.isArray(object.material)?materials:materials[0];
