@@ -721,6 +721,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     else if(hasBakedSHGI)add('sh-gi-capture-parity','9係数SHとWebGPU CubeRenderTarget読出しは接続済みですが、係数方向・強度・複数プローブ合成の実機一致が未確認です。');
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     else if(Number(fx.causticMaterials)>0)add('caustics-parity','水中コースティクスTSLは接続済みですが、屈折光・水深・時間変化の実機比較が未完了です。');
+    if(Number(fx.outlineMaterials)>0)add('outline-parity','Backface Outline ShellはTSL頂点押し出し／アルファマスクへ移植済みですが、スキン・Instancing・複数材質の実機パリティが未確認です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled){
       if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricFog!==true)add('volumetric-fog-tsl','体積フォグのTSLノード機能が利用できません。');
