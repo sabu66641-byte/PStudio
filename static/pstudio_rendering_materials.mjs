@@ -26,7 +26,19 @@ function cloneUserData(value) {
   }
 }
 
+export function isPStudioLegacyTSLToonMaterial(material) {
+  const metadata = material?.userData || {};
+  const toon = metadata.pstudioTSLToon;
+  return material?.pstudioTSLToonPreflightApproved === true
+    && toon?.version === 1
+    && toon.settings && typeof toon.settings === 'object'
+    && material.pstudioTSLToonCompileHook === material.onBeforeCompile
+    && material.pstudioTSLToonCacheKey === material.customProgramCacheKey
+    && metadata.pstudioTSLPortHasForeignHook !== true;
+}
+
 function hasCustomShaderHook(material) {
+  if (isPStudioLegacyTSLToonMaterial(material)) return false;
   if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
   const userData = material?.userData || {};
   const csmOnly = userData.pstudioCSMOnlyHook === true
@@ -80,6 +92,7 @@ export function createPStudioNodeMaterial(source, options = {}) {
   const { MaterialClass, nodeType } = resolved;
   const target = new MaterialClass();
   const approvedSurfaceFeatures = isPStudioTSLSurfaceFeatureMaterial(source);
+  const approvedToonMaterial = isPStudioLegacyTSLToonMaterial(source);
   const originalUserData = source.userData;
   const safeMetadata = cloneUserData(originalUserData);
 
@@ -146,6 +159,7 @@ export function createPStudioNodeMaterial(source, options = {}) {
   // Carry the preflight decision across the legacy-to-NodeMaterial boundary;
   // userData alone must never be able to assert this approval.
   target.pstudioTSLSurfacePreflightApproved = approvedSurfaceFeatures;
+  target.pstudioTSLToonPreflightApproved = approvedToonMaterial;
   target.name = options.name ?? (source.name ? source.name + ' [TSL]' : 'PStudio ' + nodeType);
   target.needsUpdate = true;
   return target;
