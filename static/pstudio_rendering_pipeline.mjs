@@ -10,6 +10,12 @@ export const supportsPStudioTSLSSAO = typeof ssao === 'function';
 export const supportsPStudioTSLGTAO = typeof gtao === 'function';
 export const supportsPStudioTSLSSR = typeof ssr === 'function';
 export const supportsPStudioTSLGodRays = typeof TSL.Fn === 'function' && typeof TSL.Loop === 'function' && typeof TSL.smoothstep === 'function' && typeof TSL.screenUV !== 'undefined';
+export const supportsPStudioTSLContactShadows = [
+  'getViewPosition', 'getScreenPositionFromClip', 'projectionDepth',
+  'cameraProjectionMatrix', 'cameraProjectionMatrixInverse', 'cameraViewMatrix',
+  'cameraNear', 'cameraFar', 'isBackgroundDepth'
+].every(name => TSL[name] !== undefined);
+
 
 function normalizeBloom(options) {
   if (options === false || options?.enabled === false) return null;
@@ -61,6 +67,122 @@ function normalizeGodRays(options) {
     weight: Math.max(0, Math.min(2, Number.isFinite(Number(source.weight)) ? Number(source.weight) : 0.82)),
     threshold: Math.max(0, Math.min(1, Number.isFinite(Number(source.threshold)) ? Number(source.threshold) : 0.58))
   };
+}
+
+
+function normalizeContactShadows(options) {
+  if (options === false || options?.enabled === false || options == null) return null;
+  const source = options === true ? {} : options;
+  const lightDirection = Array.isArray(source.lightDirectionWorld) ? source.lightDirectionWorld : [0.35, 0.82, 0.44];
+  const vectorLength = Math.hypot(...lightDirection);
+  const direction = vectorLength > 1e-6 ? lightDirection.map(value => Number(value) / vectorLength) : [0.35, 0.82, 0.44];
+  return {
+    enabled: true,
+    intensity: Math.max(0, Math.min(1.5, Number.isFinite(Number(source.intensity)) ? Number(source.intensity) : 0.42)),
+    maxDistance: Math.max(0.01, Math.min(4, Number.isFinite(Number(source.maxDistance)) ? Number(source.maxDistance) : 0.82)),
+    thickness: Math.max(0.001, Math.min(0.5, Number.isFinite(Number(source.thickness)) ? Number(source.thickness) : 0.075)),
+    depthBias: Math.max(0, Math.min(0.25, Number.isFinite(Number(source.depthBias)) ? Number(source.depthBias) : 0.018)),
+    steps: Math.max(4, Math.min(32, Math.round(Number(source.steps) || 12))),
+    fadeStart: Math.max(0, Number.isFinite(Number(source.fadeStart)) ? Number(source.fadeStart) : 28),
+    fadeEnd: Math.max(1, Number.isFinite(Number(source.fadeEnd)) ? Number(source.fadeEnd) : 105),
+    lightDirectionWorld: direction
+  };
+}
+
+function createContactShadowsNode(inputColor, sceneDepth, settings) {
+  const intensity = TSL.uniform(settings.intensity);
+  const maxDistance = TSL.uniform(settings.maxDistance);
+  const thickness = TSL.uniform(settings.thickness);
+  const depthBias = TSL.uniform(settings.depthBias);
+  const steps = TSL.uniform(settings.steps);
+  const fadeStart = TSL.uniform(settings.fadeStart);
+  const fadeEnd = TSL.uniform(Math.max(settings.fadeStart + 1, settings.fadeEnd));
+  const lightDirectionWorld = TSL.uniform(new THREE.Vector3(...settings.lightDirectionWorld));
+
+  const node = TSL.Fn(() => {
+    const uv = TSL.screenUV;
+    const source = inputColor.sample(uv);
+    const depth = sceneDepth.sample(uv).r;
+    const viewDepth = TSL.projectionDepth(depth, TSL.cameraNear, TSL.cameraFar);
+    const origin = TSL.getViewPosition(uv, viewDepth, TSL.cameraProjectionMatrixInverse);
+    const viewDistance = TSL.max(0, origin.z.negate());
+    const distanceFade = TSL.float(1).sub(TSL.smoothstep(fadeStart, fadeEnd, viewDistance));
+    const lightDirection = TSL.normalize(
+      TSL.cameraViewMatrix.mul(TSL.vec4(TSL.normalize(lightDirectionWorld), 0)).xyz
+    );
+    const stepLength = maxDistance.div(steps);
+    const jitter = TSL.fract(
+      TSL.sin(TSL.dot(uv.mul(1000), TSL.vec2(12.9898, 78.233))).mul(43758.5453)
+    );
+    const occlusion = TSL.float(0).toVar();
+
+    TSL.Loop({ start: 0, end: 32 }, ({ i }) => {
+      TSL.If(TSL.float(i).greaterThanEqual(steps), () => TSL.Break());
+      const travel = TSL.float(0.045).add(TSL.float(i).add(jitter).mul(stepLength));
+      const rayPoint = origin.add(lightDirection.mul(travel));
+      TSL.If(rayPoint.z.greaterThan(-0.02), () => TSL.Break());
+
+      const projected = TSL.cameraProjectionMatrix.mul(TSL.vec4(rayPoint, 1));
+      TSL.If(projected.w.lessThanEqual(0.0001), () => TSL.Break());
+      const sampleUV = TSL.getScreenPositionFromClip(projected);
+      const outside = sampleUV.x.lessThan(0.002)
+        .or(sampleUV.x.greaterThan(0.998))
+        .or(sampleUV.y.lessThan(0.002))
+        .or(sampleUV.y.greaterThan(0.998));
+      TSL.If(outside, () => TSL.Break());
+
+      const hitDepth = sceneDepth.sample(sampleUV).r;
+      const hitViewDepth = TSL.projectionDepth(hitDepth, TSL.cameraNear, TSL.cameraFar);
+      const hitPoint = TSL.getViewPosition(sampleUV, hitViewDepth, TSL.cameraProjectionMatrixInverse);
+      const separation = hitPoint.z.sub(rayPoint.z);
+      const nearIntersection = TSL.float(1).sub(
+        TSL.smoothstep(thickness.mul(0.35), thickness, separation.abs())
+      );
+      const foreground = TSL.step(depthBias, separation).mul(
+        TSL.float(1).sub(TSL.smoothstep(depthBias, depthBias.add(thickness.mul(2)), separation))
+      );
+      const hitValid = TSL.isBackgroundDepth(hitDepth).select(0, 1);
+      const candidate = TSL.max(nearIntersection, foreground.mul(0.72)).mul(hitValid);
+      occlusion.assign(TSL.max(occlusion, candidate));
+      TSL.If(occlusion.greaterThan(0.94), () => TSL.Break());
+    });
+
+    const shadow = TSL.clamp(occlusion.mul(intensity).mul(distanceFade), 0, 0.78);
+    const visible = TSL.isBackgroundDepth(depth).select(1, TSL.float(1).sub(shadow));
+    return TSL.vec4(source.rgb.mul(visible), source.a);
+  })();
+
+  return Object.freeze({
+    node,
+    set(next) {
+      if (!next) {
+        intensity.value = 0;
+        return;
+      }
+      intensity.value = next.intensity;
+      maxDistance.value = next.maxDistance;
+      thickness.value = next.thickness;
+      depthBias.value = next.depthBias;
+      steps.value = next.steps;
+      fadeStart.value = next.fadeStart;
+      fadeEnd.value = Math.max(next.fadeStart + 1, next.fadeEnd);
+      lightDirectionWorld.value.set(...next.lightDirectionWorld);
+    },
+    getState() {
+      return Object.freeze({
+        intensity: intensity.value,
+        maxDistance: maxDistance.value,
+        thickness: thickness.value,
+        depthBias: depthBias.value,
+        steps: steps.value,
+        fadeStart: fadeStart.value,
+        fadeEnd: fadeEnd.value,
+        lightDirectionWorld: Object.freeze([
+          lightDirectionWorld.value.x, lightDirectionWorld.value.y, lightDirectionWorld.value.z
+        ])
+      });
+    }
+  });
 }
 
 function createGodRaysNode(sceneColor, settings) {
@@ -139,6 +261,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let ssrSettings = normalizeSSR(options.ssr);
   let godRaysSettings = normalizeGodRays(options.godRays);
   let godRaysHandle = null;
+  let contactShadowsSettings = normalizeContactShadows(options.contactShadows);
+  let contactShadowsHandle = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
@@ -183,6 +307,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       // SSRNode returns premultiplied reflection radiance; Three.js r187's
       // reference composition adds its RGB result over the beauty contribution.
       output = output.add(ssrPass.rgb);
+    }
+
+    if (contactShadowsSettings) {
+      contactShadowsHandle = createContactShadowsNode(output, sceneDepth, contactShadowsSettings);
+      output = contactShadowsHandle.node;
+    } else {
+      contactShadowsHandle = null;
     }
 
     if (godRaysSettings) {
@@ -299,6 +430,17 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       else godRaysHandle.set(godRaysSettings);
       return true;
     },
+    setContactShadows(nextOptions) {
+      if (disposed) return false;
+      contactShadowsSettings = normalizeContactShadows(nextOptions);
+      if (!contactShadowsSettings) {
+        rebuildOutput();
+        return true;
+      }
+      if (!contactShadowsHandle) rebuildOutput();
+      else contactShadowsHandle.set(contactShadowsSettings);
+      return true;
+    },
     getFrameResources() {
       return disposed ? null : frameResources;
     },
@@ -309,6 +451,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
         ambientOcclusion: aoSettings ? { ...aoSettings } : null,
         ssr: ssrSettings ? { ...ssrSettings } : null,
         godRays: godRaysHandle ? godRaysHandle.getState() : null,
+        contactShadows: contactShadowsHandle ? contactShadowsHandle.getState() : null,
         frameResources: disposed ? null : Object.freeze({
           attachments: frameResources.attachments,
           normalEncoding: frameResources.normalEncoding,
