@@ -1388,7 +1388,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'id="webgpu-lab-open"',
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
-    'pstudio_webgpu_lab.mjs?v=20261126-cluster-live-v1',
+    'pstudio_webgpu_lab.mjs?v=20261126-cluster-sh-vfx-v2',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
     'pstudio_rendering_migration.mjs?v=20261126-clustered-sh-vfx-v2'
