@@ -2930,8 +2930,8 @@ try {
   try { const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js'); window.PStudioDRACOLoader = DRACOLoader; }
   catch (error) { console.warn('[PStudio] Draco decoder unavailable:', error); }
   const SkeletonUtils = await import('three/addons/utils/SkeletonUtils.js');
-  // r187 exposes TSL and WebGPU through dedicated entry points. Keep them isolated
-  // from the production WebGL renderer until the custom material parity port is ready.
+  // r187 exposes TSL node materials and the WebGPU renderer through dedicated entry points.
+  // Loading these constructors does not promote the active renderer; the compatibility gate owns that transition.
   try {
     window.PStudioWebGPU = await import('three/webgpu');
     window.PStudioWebGPURenderer = window.PStudioWebGPU.WebGPURenderer;
@@ -2991,7 +2991,7 @@ try {
   }
 
   try {
-    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-volumetrics-v1');
+    window.PStudioRenderingMigration = await import('/static/pstudio_rendering_migration.mjs?v=20261126-clustered-sh-vfx-v2');
   } catch (error) {
     window.PStudioRenderingMigration = null;
     console.warn('[PStudio] Shared WebGPU migration session unavailable; the production WebGL2 path remains active.', error);
@@ -3041,7 +3041,7 @@ try {
 <script src="/static/pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2"></script>
 <script src="/static/pstudio_environment_fx.js?v=20261126-tsl-water-v3"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261126-cluster-live-v1"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261126-cluster-sh-particles-v2"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
