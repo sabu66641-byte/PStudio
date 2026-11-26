@@ -367,6 +367,10 @@ export const supportsPStudioTSLContactShadows = [
 ].every(name => TSL[name] !== undefined);
 
 
+function sameRenderSettings(a, b) {
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch (_) { return false; }
+}
+
 function normalizeBloom(options) {
   if (options === false || options?.enabled === false) return null;
   const source = options === true || options === undefined ? {} : (options || {});
@@ -776,25 +780,33 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     },
     setBloom(nextOptions) {
       if (disposed) return false;
-      bloomSettings = normalizeBloom(nextOptions);
+      const next = normalizeBloom(nextOptions);
+      if (sameRenderSettings(next, bloomSettings)) return true;
+      bloomSettings = next;
       rebuildOutput();
       return true;
     },
     setAmbientOcclusion(nextOptions) {
       if (disposed) return false;
-      aoSettings = normalizeAO(nextOptions);
+      const next = normalizeAO(nextOptions);
+      if (sameRenderSettings(next, aoSettings)) return true;
+      aoSettings = next;
       rebuildOutput();
       return true;
     },
     setSSR(nextOptions) {
       if (disposed) return false;
-      ssrSettings = normalizeSSR(nextOptions);
+      const next = normalizeSSR(nextOptions);
+      if (sameRenderSettings(next, ssrSettings)) return true;
+      ssrSettings = next;
       rebuildOutput();
       return true;
     },
     setGodRays(nextOptions) {
       if (disposed) return false;
-      godRaysSettings = normalizeGodRays(nextOptions);
+      const next = normalizeGodRays(nextOptions);
+      if (sameRenderSettings(next, godRaysSettings)) return true;
+      godRaysSettings = next;
       if (!godRaysSettings) {
         rebuildOutput();
         return true;
