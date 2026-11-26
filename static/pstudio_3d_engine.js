@@ -749,7 +749,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       ||(trailEffects.size>0&&!supportsParticleTSL))add('trails','トレイルVFXがTSL NodeMaterialへ移植されていません。');
     else if(trailEffects.size>0)add('trails-parity','TSLリボントレイルは接続済みですが、透明重なり・速度変化・点数上限の実機検証が未完了です。');
     if(particleSystems.length>0&&particleSystems.every(effect=>effect?.system?.material?.isNodeMaterial===true))add('gpu-particles-parity','TSLインスタンス粒子は接続済みですが、密度・寿命境界・GPU負荷の実機検証が未完了です。');
-    if(temporalAAEnabled||taaPass?.enabled||smaaPass?.enabled)add('temporal-aa','TAA／SMAAの既存WebGLパスはRenderPipelineへ未移植のため、AA使用中はWebGL2を維持します。');
+    const aaModeSupported=temporalAAEnabled
+      ?window.PStudioRenderingMigration?.supportsPStudioTSLTRAA===true
+      :window.PStudioRenderingMigration?.supportsPStudioTSLSMAA===true;
+    if(!aaModeSupported)add('anti-aliasing-tsl','選択中のTRAA／SMAAモードに対応するTSLノードが利用できません。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     else if(csm)add('csm-parity','TSL CSMShadowNodeは接続済みですが、カスケード境界・影バイアス・遠距離安定性の実機検証が未完了です。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
@@ -835,6 +838,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             shadowRadius:keyLight?.shadow?.radius
           }:null,
           pipelineOptions:{
+            // TSL SMAA is the default spatial mode; opt-in temporal mode uses velocity reprojection.
+            antiAliasing:{mode:temporalAAEnabled?'traa':'smaa'},
             bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false,
             ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
             ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false,
@@ -6986,7 +6991,25 @@ void main(){
       if(status)status.textContent=result.enabled?'Live GI: '+result.status:(result.reason||'Live GI disabled');
       return result;
     },
-    setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};resetPostProcessingFailure();temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
+    setTemporalAA:enabled=>{
+      const next=!!enabled;
+      resetPostProcessingFailure();
+      if(productionRendererBridge?.getState?.().backend==='webgpu'){
+        const applied=productionRendererBridge.setAntiAliasing?.({mode:next?'traa':'smaa'})===true;
+        if(!applied)return{enabled:false,reason:'The active WebGPU renderer could not update its TSL anti-aliasing graph.'};
+        temporalAAEnabled=next;
+        if(taaPass){taaPass.accumulate=next;taaPass.accumulateIndex=-1;}
+        if(renderer&&scene&&camera)drawFrame();
+        return{enabled:temporalAAEnabled,mode:next?'tsl-temporal-reprojection':'tsl-smaa-spatial'};
+      }
+      const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
+      if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'The WebGL2 fallback uses static-scene temporal accumulation and does not provide motion-vector reprojection for animated water/foliage.'};
+      if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};
+      temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;
+      if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};
+    },
     setContactShadows:(enabled,options={})=>{
       resetPostProcessingFailure();
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;
