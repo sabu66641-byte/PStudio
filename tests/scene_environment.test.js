@@ -65,17 +65,20 @@ test('Inspector exposes all four scene presets with explicit accessible active s
   assert.match(html, /\.environment-preset-btn\.active/);
 });
 
-test('GENESIS Inspector persists time, weather, wind and automatic-cycle controls',()=>{
+test('GENESIS Inspector uses fixed named presets with weather and wind, not a manual clock',()=>{
   for(const token of [
-    'genesis-time-of-day','genesis-weather','genesis-wind-speed','genesis-wind-direction',
-    'genesis-auto-cycle','openGenesisDemo()','syncGenesisEnvironmentToRenderer()',
-    'setGenesisEnvironmentWeather','setGenesisEnvironmentWind','setGenesisEnvironmentAutoCycle',
-    'timeScale:enabled?0.0125:0'
+    'genesis-weather','genesis-wind-speed','genesis-wind-direction',
+    'openGenesisDemo()','syncGenesisEnvironmentToRenderer()',
+    'setGenesisEnvironmentWeather','setGenesisEnvironmentWind'
   ])assert.ok(html.includes(token),token);
+  for(const token of ['genesis-time-of-day','genesis-auto-cycle','setGenesisEnvironmentTime','setGenesisEnvironmentAutoCycle']){
+    assert.equal(html.includes(token),false,token+' must not be exposed');
+  }
+  assert.match(html,/timeOfDay:presetTime/);
+  assert.match(html,/timeScale:0/);
   for(const token of [
-    'setGenesisEnvironment:config=>','getGenesisEnvironment:','clearGenesisEnvironment:',
-    'function applyGenesisLiveLighting','function updateGenesisRainParticles',
-    'function applyGenesisEnvironmentState','uMirrorWindDirection','uMirrorRain'
+    'setGenesisEnvironment:config=>','setImmediate(config||{})','getGenesisEnvironment:',
+    'function applyGenesisLiveLighting','function updateGenesisRainParticles'
   ])assert.ok(renderer.includes(token),token);
   const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
   for(const token of [
