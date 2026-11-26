@@ -181,8 +181,8 @@ test('day sky palette removes the green-gray lower hemisphere and softens the bl
   const start=renderer.indexOf("day:[[");
   const end=renderer.indexOf("dusk:[[",start);
   const dayPalette=renderer.slice(start,end);
-  assert.ok(dayPalette.includes('#1A4F86')&&dayPalette.includes('#4798D0'),'day sky is slightly bluer');
-  assert.ok(dayPalette.includes('#B5D0DB')&&dayPalette.includes('#405969'),'horizon and lower hemisphere use blue-gray tones');
+  assert.ok(dayPalette.includes('#164B8A')&&dayPalette.includes('#3489C8'),'day sky keeps a stronger clear-blue range');
+  assert.ok(dayPalette.includes('#A7CDE1')&&dayPalette.includes('#40596D'),'horizon and lower hemisphere remain blue-gray without a blown white band');
   assert.doesNotMatch(dayPalette,/#879998|#4B595A|#313B3D/i);
 });
 
@@ -1476,7 +1476,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-nov24-authored-sky-r1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-sky-horizon-clouds-r1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
