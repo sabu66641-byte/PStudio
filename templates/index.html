@@ -2997,7 +2997,7 @@ try {
   try {
     const productionRendererHost = await import('/static/pstudio_rendering_production_host.mjs?v=20261126-cluster-live-v1');
     window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost;
-    const productionBridge = await import('/static/pstudio_rendering_production_bridge.mjs?v=20261126-cluster-live-v1');
+    const productionBridge = await import('/static/pstudio_rendering_production_bridge.mjs?v=20261126-sh-probe-capture-v1');
     window.PStudioProductionRenderingBridgeFactory = productionBridge.createPStudioProductionRenderingBridge;
   } catch (error) {
     window.PStudioProductionRendererHostFactory = null;
