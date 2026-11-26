@@ -2149,3 +2149,20 @@ test('TSL Mirror Water uses a native reflector node without the legacy mirror GL
   geometry.dispose();
   depthTexture.dispose();
 });
+
+
+test('TSL production post-processing composes clouds and shafts before bloom and final fog',()=>{
+  const root=path.join(__dirname,'..');
+  const source=fs.readFileSync(path.join(root,'static/pstudio_rendering_pipeline.mjs'),'utf8');
+  const start=source.indexOf('function rebuildOutput()');
+  const end=source.indexOf('renderPipeline.outputNode = output;',start);
+  assert.ok(start>=0&&end>start,'pipeline output composition block');
+  const composite=source.slice(start,end);
+  const index=token=>composite.indexOf(token);
+  assert.ok(index('createVolumetricCloudNode')>=0);
+  assert.ok(index('createGodRaysNode')>index('createVolumetricCloudNode'));
+  assert.ok(index('bloom(output')>index('createGodRaysNode'));
+  assert.ok(index('createVolumetricFogNode')>index('bloom(output'));
+  assert.ok(index('createContactShadowsNode')<index('createVolumetricCloudNode'));
+  assert.ok(source.includes('function sameRenderSettings(a, b)'));
+});
