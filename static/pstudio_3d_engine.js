@@ -637,6 +637,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const hasReflectorCamera=waterMaterials.size>0||Number(fx.waterMaterials)>0||hasLegacyMirrorWater;
     if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','クラスタ照明のTSL／Storage Bufferアダプターが利用できません。');
     else if(activeClusterLighting&&hasReflectorCamera)add('clustered-lighting-reflector-camera','反射カメラ別のクラスタ照明データ更新が未完了です。');
+    else if(activeClusterLighting)add('clustered-lighting-pbr-parity','現行TSLクラスタ照明は拡散寄与までです。PBRスペキュラ・影・全反射カメラの一致検証が終わるまでWebGL2を維持します。');
+    if(bakedLightProbe||bakedLightProbeVolume?.length)add('static-gi-probe-capture','既存の静的SHプローブ生成はWebGL CubeCamera経路です。WebGPUキャプチャと係数の同等性検証が未完了です。');
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
