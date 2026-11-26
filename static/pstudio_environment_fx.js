@@ -1252,6 +1252,7 @@
         applyColor(u.deep,settings.waterDeep);
         applyColor(u.foam,settings.waterFoam);
         applyScalar(u.absorption,settings.waterAbsorption,0,2);
+        applyScalar(u.amplitude,settings.waterWaveAmplitude,0,.34);
         if(u.windDirection?.value?.set&&Array.isArray(settings.windDirection))u.windDirection.value.set(settings.windDirection[0],settings.windDirection[1]).normalize();
         applyScalar(u.windSpeed,settings.windSpeed,0,12);
         applyScalar(u.rainIntensity,settings.rainIntensity,0,1);
