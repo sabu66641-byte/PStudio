@@ -1068,11 +1068,17 @@ test('volumetric cloud pass constructs and updates atmosphere/quality uniforms a
   assert.equal(pass.setQuality('ultra',0).steps,45);
   assert.equal(pass.setQuality('maximum',2).steps,52);
   assert.equal(pass.setQuality('high',2).steps,34);
-  assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7}),true);
+  assert.equal(pass.configureAtmosphere({sunDirection:[0,1,0],sunColor:'#ffd0a0',fogColor:'#9fc9e8',cloudDensity:.7,cloudWindX:2.5,cloudWindZ:-1.25}),true);
   assert.equal(pass.uniforms.uSunDirection.value.y,1);
   assert.equal(pass.uniforms.uSunColor.value.value,'#ffd0a0');
   assert.equal(pass.uniforms.uFogColor.value.value,'#9fc9e8');
   assert.equal(pass.uniforms.uCloudDensity.value,.7);
+  assert.equal(pass.uniforms.uCloudWind.value.x,2.5);
+  assert.equal(pass.uniforms.uCloudWind.value.y,-1.25);
+  pass.configureAtmosphere({windDirection:[0,1],windSpeed:4});
+  assert.equal(pass.uniforms.uCloudWind.value.x,0);
+  assert.equal(pass.uniforms.uCloudWind.value.y,4);
+  assert.ok(pass.shader.fragmentShader.includes('uCloudWind.x*uTime*.0008,0.0,uCloudWind.y*uTime*.0008'));
   assert.ok(pass.shader.fragmentShader.includes('lightTransmittance'));
 });
 test('volumetric quality scales from its preset baseline without compounding across frames',()=>{
@@ -1436,7 +1442,10 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
     'updateGenesisSkyBackground(state,forceSky,now)',
     'createGenesisStarCanvas',
     'createProceduralSkyTexture(T,profile,width/2048,true)',
+    "skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000'",
     'drawDaytimeCloudField(cloudContext,width,height',
+    'if(!volumetricCloudsEnabled&&cloudVisibility>.012&&genesisCloudCanvas)',
+    'context.drawImage(genesisCloudCanvas,0,0,width,height)',
     'genesisSkyQuality===selected',
     'const updateInterval=selected===\'mobile\'?125:selected===\'balanced\'?100:80',
     'buildGenesisShrineDemo',
@@ -1457,6 +1466,7 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
     'setGenesisShrineDemo'
   ])assert.ok(renderer.includes(token),token);
   assert.doesNotMatch(renderer,/now-genesisLastSkyUpdateAt>=1200/);
+  assert.doesNotMatch(renderer,/const drift=\(\(windX\*Math\.max/);
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
@@ -1474,9 +1484,9 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-genesis-1-2-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-natural-sky-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-npr-toon-v1'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
