@@ -6820,11 +6820,11 @@ void main(){
           addBeam(materials.darkWood,[centerX,dimensions.ridgeY-.34,centerZ+z],
             [centerX+localX,edgeY,centerZ+z],.055,8);
         }
-        const y=dimensions.eaveY-.26;
-        for(const zSide of [-1,1])addBeam(materials.darkWood,
-          [centerX-side*(halfWidth-.1),y,centerZ+zSide*halfDepth],
-          [centerX+side*(halfWidth-.1),y,centerZ+zSide*halfDepth],.13,10);
       }
+      const y=dimensions.eaveY-.26;
+      for(const zSide of [-1,1])addBeam(materials.darkWood,
+        [centerX-halfWidth+.1,y,centerZ+zSide*halfDepth],
+        [centerX+halfWidth-.1,y,centerZ+zSide*halfDepth],.13,10);
       const bracketCount=Math.max(5,Math.floor((halfWidth*2)/2.15));
       for(let index=0;index<=bracketCount;index++){
         const x=centerX-halfWidth*.82+(index/bracketCount)*halfWidth*1.64;
