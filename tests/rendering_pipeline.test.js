@@ -1708,7 +1708,8 @@ test('r187 PMREM uses cube-render-target outputs for environment, physical sky a
 
 test('WebGPU TSL scene pass exposes shared beauty, depth and packed view-normal resources',()=>{
   assert.ok(webgpuPipeline.includes("import * as TSL from 'three/tsl'")); 
-  assert.ok(webgpuPipeline.includes('scenePass.setMRT(TSL.mrt({'));
+  assert.ok(webgpuPipeline.includes('function configureSceneAttachments(includeVelocity)'));
+  assert.ok(webgpuPipeline.includes('scenePass.setMRT(TSL.mrt(mrtNodes))'));
   assert.ok(webgpuPipeline.includes('output: TSL.output'));
   assert.ok(webgpuPipeline.includes('normal: TSL.packNormalToRGB(TSL.normalView)'));
   assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('depth')"));
