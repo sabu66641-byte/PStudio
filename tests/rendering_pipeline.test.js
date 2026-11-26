@@ -1441,9 +1441,12 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
   for(const token of [
     'updateGenesisSkyBackground(state,forceSky,now)',
     'createGenesisStarCanvas',
-    'createProceduralSkyTexture(T,profile,width/2048,true)',
-    "skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000'",
+    'const resolutionScale=width/768',
+    'const areaScale=(width*height)/(768*384)',
+    'for(let i=0;i<Math.round(4600*areaScale);i++)',
+    'const center=.325+.115*Math.sin(angle-.72)',
     'drawDaytimeCloudField(cloudContext,width,height',
+    'cloudCoverage:.64,cloudDetail:1',
     'if(!volumetricCloudsEnabled&&cloudVisibility>.012&&genesisCloudCanvas)',
     'context.drawImage(genesisCloudCanvas,0,0,width,height)',
     'genesisSkyQuality===selected',
@@ -1484,7 +1487,8 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-natural-sky-v2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-sky-time-v1'));
+  assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-time-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
