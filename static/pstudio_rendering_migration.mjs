@@ -6,6 +6,7 @@ import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
 import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting, applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
+import { createPStudioTSLSHProbeNode, attachPStudioTSLSHProbeToMaterial, blendPStudioTSHCoefficients } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
@@ -149,7 +150,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL atmospheric sky and shared equirectangular PBR IBL',
       'shared frame-budget and environment-state modules',
       'Three.js r187 ClusteredLightsNode Forward+ PBR with native Standard/Physical BRDF, spot attenuation, shadow-light retention and overflow-safe native-light fallback',
-      'TSL SH irradiance nodes preserving PStudio 9xRGB probe coefficients and temporal blending',
+      'TSL SH probe irradiance attached per NodeMaterial, preserving PStudio 9xRGB coefficients and object-local temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
       'TSL underwater caustics with the legacy diffuse-light response preserved'
@@ -187,6 +188,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let waterSurfaceHandle = null;
   let clusterStorageHandle = null;
   let clusteredLightingHandle = null;
+  let shProbeHandles = [];
   let disposed = false;
   let deviceLoss = null;
   let deviceLostPromise = Promise.resolve(null);
@@ -256,6 +258,26 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     const environmentProfile = options.environmentProfile || globalThis.PStudioSceneEnvironment?.getPreset?.('day');
     reportStage('porting-surface-features', { materialCount: materialConversion.convertedMaterials || 0 });
     surfaceHandle = applyPStudioTSLSurfaceFeatures(scene, { environmentProfile });
+
+    // Attach per-material SH irradiance before clustered lighting so the official
+    // ClusteredLightsNode retains the extra IrradianceNode in its native-light list.
+    reportStage('attaching-sh-irradiance');
+    const sceneLights = [];
+    const shMaterials = new Set();
+    scene.traverse(object => {
+      if (object?.isLight) sceneLights.push(object);
+      if (!(object?.isMesh || object?.isLine || object?.isPoints || object?.isSprite) || !object.material) return;
+      const assigned = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of assigned) {
+        if (material?.isNodeMaterial === true && !Array.isArray(material.userData?.pstudioTSLProbeUniforms)) {
+          shMaterials.add(material);
+        }
+      }
+    });
+    shProbeHandles = [];
+    for (const material of shMaterials) {
+      shProbeHandles.push(attachPStudioTSLSHProbeToMaterial(material, sceneLights));
+    }
 
     const initialClusterSnapshot = typeof options.getClusteredLightingSnapshot === 'function'
       ? options.getClusteredLightingSnapshot()
@@ -394,6 +416,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           environment: environmentHandle?.getState?.() || null,
           csm: csmHandle?.getState?.() || null,
           clusteredLighting: clusteredLightingHandle?.getState?.() || null,
+          shGI: Object.freeze({ mode: 'per-material-nine-coefficient-irradiance', materialCount: shProbeHandles.length }),
           surfaceFeatures: Object.freeze({
             materialCount: surfaceHandle?.materialCount || 0,
             features: surfaceHandle?.features || Object.freeze([])
@@ -418,6 +441,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { environmentHandle?.dispose?.(); } catch (_) {}
         try { csmHandle?.dispose?.(); } catch (_) {}
         try { clusteredLightingHandle?.dispose?.(); } catch (_) {}
+        for (const handle of shProbeHandles) { try { handle.dispose?.(); } catch (_) {} }
+        shProbeHandles = [];
         try { clusterStorageHandle?.dispose?.(); } catch (_) {}
         try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
         try { waterDepthHandle?.dispose?.(); } catch (_) {}
@@ -434,6 +459,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { environmentHandle?.dispose?.(); } catch (_) {}
     try { csmHandle?.dispose?.(); } catch (_) {}
     try { clusteredLightingHandle?.dispose?.(); } catch (_) {}
+    for (const handle of shProbeHandles) { try { handle.dispose?.(); } catch (_) {} }
+    shProbeHandles = [];
     try { clusterStorageHandle?.dispose?.(); } catch (_) {}
     try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
     try { waterDepthHandle?.dispose?.(); } catch (_) {}
