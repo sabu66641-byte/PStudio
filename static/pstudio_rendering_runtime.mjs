@@ -150,6 +150,14 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           handle: webgpu,
           render: () => webgpu.render(),
           resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
+          setEnvironment: (profile) => webgpu.setEnvironment?.(profile) === true,
+          setBloom: (settings) => webgpu.setBloom?.(settings) === true,
+          setAmbientOcclusion: (settings) => webgpu.setAmbientOcclusion?.(settings) === true,
+          setSSR: (settings) => webgpu.setSSR?.(settings) === true,
+          setGodRays: (settings) => webgpu.setGodRays?.(settings) === true,
+          setContactShadows: (settings) => webgpu.setContactShadows?.(settings) === true,
+          setVolumetricFog: (settings) => webgpu.setVolumetricFog?.(settings) === true,
+          setVolumetricClouds: (settings) => webgpu.setVolumetricClouds?.(settings) === true,
           setClusteredLightingSnapshot: (snapshot) => webgpu.setClusteredLightingSnapshot?.(snapshot) === true,
           dispose: () => webgpu.dispose?.()
         });
@@ -189,6 +197,38 @@ export function createPStudioProductionRendererRuntime(options = {}) {
     resize(width, height, pixelRatio) {
       if (disposed || !active || state !== 'ready') return false;
       return active.resize?.(width, height, pixelRatio) !== false;
+    },
+    setEnvironment(profile) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setEnvironment?.(profile) === true;
+    },
+    setBloom(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setBloom?.(settings) === true;
+    },
+    setAmbientOcclusion(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setAmbientOcclusion?.(settings) === true;
+    },
+    setSSR(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setSSR?.(settings) === true;
+    },
+    setGodRays(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setGodRays?.(settings) === true;
+    },
+    setContactShadows(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setContactShadows?.(settings) === true;
+    },
+    setVolumetricFog(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setVolumetricFog?.(settings) === true;
+    },
+    setVolumetricClouds(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setVolumetricClouds?.(settings) === true;
     },
     setClusteredLightingSnapshot(snapshot) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
