@@ -107,5 +107,5 @@ test('application bootstraps the production renderer host factory without changi
   assert.ok(html.includes('/static/pstudio_rendering_production_host.mjs?v=20261126-cluster-live-v1'));
   assert.ok(html.includes('window.PStudioProductionRendererHostFactory = productionRendererHost.createPStudioProductionRendererHost'));
   assert.ok(html.includes('window.PStudioProductionRendererHostFactory = null'));
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-npr-toon-aa-v2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-genesis-1-2-v1'));
 });
