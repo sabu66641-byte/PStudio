@@ -1490,10 +1490,17 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'camera.fov=genesisShrinePreviousCameraFov',
     'mix(0.78, 1.0, pStudioMirrorFresnel)'
   ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('const tileGeometry=new T.BufferGeometry()'),'roof tiles are individual curved ceramic meshes');
+  assert.ok(renderer.includes('const tileRow=(layer,row,column)=>layer*18+row*9+column'),'ceramic tile geometry includes a closed underside');
+  assert.ok(renderer.includes('tiles.name=\'GENESIS Hand-Laid Ceramic Roof Tiles\''),'roof tile instances remain a dedicated instanced batch');
+  assert.ok(renderer.includes('Math.max(0,Math.cos(theta))*.018'),'sakura petals have a shallow cupped surface');
+  assert.ok(renderer.includes('Foreground Japanese black-pine branch clips into the upper-right frame edge.'),'composition includes the upper-right pine silhouette');
+  assert.ok(renderer.includes('const pineSprayGeometry=new T.ConeGeometry(1,1,7,2)'),'pine sprays are real instanced foliage geometry');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
-  assert.ok(html.includes('20261127-moonlit-reference-scene-r1'));
+  assert.ok(html.includes("set_postprocessing(true, true, 0.52)"),'the showcase enables controlled bloom and AO');
+  assert.ok(html.includes('20261127-moonlit-reference-scene-r2'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1506,7 +1513,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r2'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));

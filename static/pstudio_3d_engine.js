@@ -6435,7 +6435,7 @@ void main(){
         positions.push(
           centerX+(Math.cos(angle)*radial-Math.sin(angle)*tangent)*edge,
           centerY+(Math.sin(angle)*radial+Math.cos(angle)*tangent)*edge,
-          .006+Math.sin(theta)*.012
+          .006+Math.sin(theta)*.032+Math.max(0,Math.cos(theta))*.018
         );
       }
       for(let segment=0;segment<segments;segment++){
@@ -6584,7 +6584,39 @@ void main(){
     const roof=genesisAddMesh(T,parent,geometry,materials.roof,centerX,0,centerZ);
     roof.name='GENESIS Curved Japanese Roof';
     roof.material.side=T.DoubleSide;
-    const tileGeometry=new T.BoxGeometry(.82,.075,1.10);
+    // Individual ceramic kawara tiles use a shallow crowned cross-section, bevelled
+    // edge returns and a real underside instead of repeated rectangular blocks.
+    const tileGeometry=new T.BufferGeometry();
+    const tilePositions=[],tileIndices=[],tileColumnsAcross=8;
+    for(let layer=0;layer<2;layer++){
+      for(let row=0;row<2;row++){
+        const z=row===0?-.575:.575;
+        for(let column=0;column<=tileColumnsAcross;column++){
+          const u=column/tileColumnsAcross,px=(u-.5)*.86;
+          const crown=.042+.072*Math.sin(Math.PI*u);
+          tilePositions.push(px,layer===0?crown:crown-.072,z);
+        }
+      }
+    }
+    const tileRow=(layer,row,column)=>layer*18+row*9+column;
+    for(let column=0;column<tileColumnsAcross;column++){
+      const a=tileRow(0,0,column),b=a+1,c=tileRow(0,1,column),d=c+1;
+      tileIndices.push(a,c,b,b,c,d);
+      const ba=tileRow(1,0,column),bb=ba+1,bc=tileRow(1,1,column),bd=bc+1;
+      tileIndices.push(ba,bb,bc,bb,bd,bc);
+    }
+    for(const edge of [0,tileColumnsAcross]){
+      const a=tileRow(0,0,edge),b=tileRow(0,1,edge),c=tileRow(1,0,edge),d=tileRow(1,1,edge);
+      tileIndices.push(a,c,b,b,c,d);
+    }
+    for(const row of [0,1]){
+      for(let column=0;column<tileColumnsAcross;column++){
+        const a=tileRow(0,row,column),b=a+1,c=tileRow(1,row,column),d=c+1;
+        tileIndices.push(a,b,c,b,d,c);
+      }
+    }
+    tileGeometry.setAttribute('position',new T.Float32BufferAttribute(tilePositions,3));
+    tileGeometry.setIndex(tileIndices);tileGeometry.computeVertexNormals();
     const tileColumns=Math.floor(dimensions.halfWidth/.9);
     const tileRows=Math.floor(dimensions.halfDepth/1.15);
     const tileCount=tileColumns*tileRows*2;
@@ -7169,6 +7201,22 @@ void main(){
     genesisAddPineForest(T,root,materials,0x5a821b1,36,{minX:-142,maxX:-92,minZ:-118,maxZ:-89,minHeight:6,maxHeight:13});
     genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:50,maxX:104,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
     genesisAddPineForest(T,root,materials,0x9d20c15,18,{minX:-8,maxX:80,minZ:-151,maxZ:-126,minHeight:5,maxHeight:11});
+
+    // Foreground Japanese black-pine branch clips into the upper-right frame edge.
+    // It is actual instanced foliage geometry, not a sky-card or a modified sky texture.
+    const pineSprayGeometry=new T.ConeGeometry(1,1,7,2);
+    addBeam(materials.pineTrunk,[43,22,-20],[28,27,-34],.24,12);
+    for(let spray=0;spray<18;spray++){
+      const t=spray/17;
+      const x=41-t*13.5,y=22.5+t*4.1,z=-21-t*11.5;
+      const direction=new T.Vector3(-1,.20+Math.sin(t*Math.PI)*.18,-.34).normalize();
+      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction);
+      addInstance(pineSprayGeometry,materials.pine,x,y,z,null,
+        [.78+t*.22,2.65+t*.55,.82+t*.12],quaternion);
+      if(spray%3===0){
+        addBeam(materials.pineTrunk,[x,y,z],[x-2.7,y+.55,z-1.1],.055,7);
+      }
+    }
 
     // Long stone approach uses instanced irregular slabs instead of dozens of draw calls.
     const pathSlabGeometry=new T.BoxGeometry(1,.20,1);
