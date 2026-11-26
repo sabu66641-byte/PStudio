@@ -118,3 +118,25 @@ test('GENESIS sky panorama generation is deterministic and has correct RGBA dime
   assert.deepEqual(a.data, b.data);
   assert.ok(a.data.some((value, index) => index % 4 === 3 && value === 255));
 });
+
+
+test('wind direction reversals follow a continuous shortest angular path', () => {
+  const controller = genesis.createGenesisEnvironmentController({
+    timeOfDay: 12,
+    windDirection: [1, 0],
+    windSpeed: 1,
+    windTransitionSeconds: 0.7
+  });
+  controller.set({ windDirection: [-1, 0] });
+  let previous = controller.getState().windDirection;
+  for (let i = 0; i < 60; i += 1) {
+    const current = controller.update(0.05).windDirection;
+    const dot = previous[0] * current[0] + previous[1] * current[1];
+    assert.ok(dot > 0.9, 'wind direction must not flip between adjacent frames');
+    assert.ok(current.every(Number.isFinite));
+    assert.ok(Math.abs(Math.hypot(...current) - 1) < 0.001);
+    previous = current;
+  }
+  assert.ok(previous[0] < -0.999);
+  assert.ok(Math.abs(previous[1]) < 0.001);
+});
