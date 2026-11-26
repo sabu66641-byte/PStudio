@@ -52,7 +52,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
   assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-clustered-sh-vfx-v2'));
-  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-surface-hook-safe-v6'));
+  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-outline-tsl-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
@@ -1472,7 +1472,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
   assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-cluster-sh-particles-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-tsl-water-v3'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-outline-tsl-v1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
