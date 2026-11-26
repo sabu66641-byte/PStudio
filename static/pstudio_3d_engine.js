@@ -5761,7 +5761,7 @@ void main(){
     context.restore();
     return true;
   }
-  function createProceduralSkyTexture(T,profile,resolutionScale=1){
+  function createProceduralSkyTexture(T,profile,resolutionScale=1,continuous=false){
     const canvas=document.createElement('canvas');
     const scale=Math.max(0.25,Math.min(1,Number(resolutionScale)||1));
     const width=Math.max(512,Math.round(2048*scale)),height=Math.max(256,Math.round(1024*scale));
@@ -5776,7 +5776,12 @@ void main(){
       studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
     };
     const gradient=context.createLinearGradient(0,0,0,height);
-    for(const [stop,color] of (palettes[name]||palettes.day))gradient.addColorStop(stop,color);
+    const dynamicPalette=continuous?[
+      [0,profile.skyTop||'#1c5a92'],[.30,profile.skyMid||'#438fc3'],
+      [.47,profile.horizon||'#cde5ef'],[.52,profile.fogColor||profile.horizon||'#cde5ef'],
+      [1,profile.ground||'#313b3d']
+    ]:null;
+    for(const [stop,color] of (dynamicPalette||palettes[name]||palettes.day))gradient.addColorStop(stop,color);
     context.fillStyle=gradient;context.fillRect(0,0,width,height);
 
     let seed=(name==='night'?0x73a9d1:name==='dusk'?0x36d91b:name==='studio'?0x492731:0x19c0ffee)>>>0;
@@ -6233,7 +6238,7 @@ void main(){
     const changed=signature!==scenePresetSignature;
     if(changed){
       let nextTexture=null,nextTarget=null;
-      try{nextTexture=createProceduralSkyTexture(T,profile,skyResolutionScale);}
+      try{nextTexture=createProceduralSkyTexture(T,profile,skyResolutionScale,!!profileOverride);}
       catch(error){console.warn('[PStudio] Procedural atmosphere texture creation failed; a solid horizon fallback will be used.',error);}
       // The physical Sky shader is retained for high-dynamic-range environment lighting,
       // but the editor background always uses the authored panorama to avoid exposure blowout.
@@ -6391,8 +6396,8 @@ void main(){
     if(!state||!renderer||!scene)return false;
     genesisEnvironmentState=state;
     applyGenesisLiveLighting(state);
-    if(forceSky||now-genesisLastSkyUpdateAt>=650){
-      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.5);
+    if(forceSky||now-genesisLastSkyUpdateAt>=1200){
+      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375);
       genesisLastSkyUpdateAt=now;
     }
     if(productionRendererBridge?.getState?.().backend==='webgpu'&&now-genesisLastWebGPUUpdateAt>=250){
