@@ -757,6 +757,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       ?window.PStudioRenderingMigration?.supportsPStudioTSLTRAA===true
       :window.PStudioRenderingMigration?.supportsPStudioTSLSMAA===true;
     if(!aaModeSupported)add('anti-aliasing-tsl','選択中のTRAA／SMAAモードに対応するTSLノードが利用できません。');
+    else add('anti-aliasing-parity',temporalAAEnabled
+      ?'TRAAの速度MRT・履歴蓄積・動的オブジェクトのゴーストを実機WebGPUで検証するまで本番昇格を保留します。'
+      :'SMAAのエッジ検出・Lookup Texture・動的解像度時の画質を実機WebGPUで検証するまで本番昇格を保留します。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     else if(csm)add('csm-parity','TSL CSMShadowNodeは接続済みですが、カスケード境界・影バイアス・遠距離安定性の実機検証が未完了です。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
