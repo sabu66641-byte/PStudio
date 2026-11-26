@@ -1490,6 +1490,12 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'camera.fov=genesisShrinePreviousCameraFov',
     'mix(0.78, 1.0, pStudioMirrorFresnel)'
   ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('const tileGeometry=new T.BufferGeometry()'),'roof tiles are individual curved ceramic meshes');
+  assert.ok(renderer.includes('const tileRow=(layer,row,column)=>layer*18+row*9+column'),'ceramic tile geometry includes a closed underside');
+  assert.ok(renderer.includes('tiles.name=\'GENESIS Hand-Laid Ceramic Roof Tiles\''),'roof tile instances remain a dedicated instanced batch');
+  assert.ok(renderer.includes('Math.max(0,Math.cos(theta))*.018'),'sakura petals have a shallow cupped surface');
+  assert.ok(renderer.includes('Foreground Japanese black-pine branch clips into the upper-right frame edge.'),'composition includes the upper-right pine silhouette');
+  assert.ok(renderer.includes('const pineSprayGeometry=new T.ConeGeometry(1,1,7,2)'),'pine sprays are real instanced foliage geometry');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
