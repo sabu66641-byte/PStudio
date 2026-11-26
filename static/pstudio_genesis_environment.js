@@ -80,8 +80,12 @@
     const sun=normalize3(result.skySunX,result.skySunY,result.skySunZ,[.35,.89,.28]);
     const moon=normalize3(result.moonDirectionX,result.moonDirectionY,result.moonDirectionZ,[0,1,0]);
     const solarVisibility=smoothstep(clamp((sun[1]-.02)/.63,0,1,0));
+    const nightWeight=smoothstep(clamp((.20-sun[1])/.46,0,1,0));
     result.sunIntensity=clamp(result.sunIntensity*(.72+.28*solarVisibility),0,8,0);
-    result.starBrightness=clamp((.10-sun[1])/.56,0,1.5,0);
+    // Stars are driven by solar altitude, not preset labels. This removes the
+    // daytime star leakage and makes the dusk-to-night fade continuous.
+    result.starBrightness=clamp(nightWeight*1.62,0,1.62,0);
+    result.twilightStrength=clamp(Number(result.twilightStrength||0)+solarVisibility*(1-solarVisibility)*.22,0,1,0);
     result.skySunX=sun[0];result.skySunY=sun[1];result.skySunZ=sun[2];
     result.lightX=-sun[0];result.lightY=-sun[1];result.lightZ=-sun[2];
     result.moonDirectionX=moon[0];result.moonDirectionY=moon[1];result.moonDirectionZ=moon[2];
