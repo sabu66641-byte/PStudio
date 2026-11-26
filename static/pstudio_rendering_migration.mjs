@@ -5,7 +5,7 @@ import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
-import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting, applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
+import { applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
@@ -19,6 +19,7 @@ export const supportsPStudioTSLContactShadows = pipelineSupportsContactShadows;
 export const supportsPStudioTSLVolumetricFog = pipelineSupportsVolumetricFog;
 export const supportsPStudioTSLVolumetricClouds = pipelineSupportsVolumetricClouds;
 export const supportsPStudioTSLClusteredLighting = typeof applyPStudioTSLNativeClusteredLighting === 'function';
+export const supportsPStudioTSLSHGI = typeof attachPStudioTSLSHProbeToMaterial === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
