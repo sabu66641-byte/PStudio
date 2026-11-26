@@ -1,5 +1,5 @@
 import { createPStudioWebGPUBackend, isPStudioWebGPUAvailable } from './pstudio_rendering_backend.mjs';
-import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial } from './pstudio_rendering_materials.mjs?v=20261126-outline-tsl-v1';
+import { convertPStudioScenePBRMaterials, isPStudioLegacyNodeConvertibleMaterial, isPStudioLegacyTSLToonMaterial } from './pstudio_rendering_materials.mjs?v=20261126-npr-toon-v1';
 import { createPStudioRenderPipeline, normalizePStudioAntiAliasingOptions, supportsPStudioTSLTRAA as pipelineSupportsTRAA, supportsPStudioTSLSMAA as pipelineSupportsSMAA, supportsPStudioTSLSSAO as pipelineSupportsSSAO, supportsPStudioTSLGTAO as pipelineSupportsGTAO, supportsPStudioTSLSSR as pipelineSupportsSSR, supportsPStudioTSLGodRays as pipelineSupportsGodRays, supportsPStudioTSLContactShadows as pipelineSupportsContactShadows, supportsPStudioTSLVolumetricFog as pipelineSupportsVolumetricFog, supportsPStudioTSLVolumetricClouds as pipelineSupportsVolumetricClouds } from './pstudio_rendering_pipeline.mjs?v=20261126-tsl-aa-v1';
 import { createPStudioTSLEnvironment } from './pstudio_rendering_environment_tsl.mjs?v=20261125-unified-sky-cloud-ibl-v1';
 import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?v=20261126-tsl-csm-v1';
@@ -7,6 +7,7 @@ import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } fr
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
 import { applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
+import { applyPStudioTSLToonMaterials } from './pstudio_rendering_toon_tsl.mjs?v=20261126-npr-toon-v1';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
@@ -22,12 +23,13 @@ export const supportsPStudioTSLVolumetricFog = pipelineSupportsVolumetricFog;
 export const supportsPStudioTSLVolumetricClouds = pipelineSupportsVolumetricClouds;
 export const supportsPStudioTSLClusteredLighting = typeof applyPStudioTSLNativeClusteredLighting === 'function';
 export const supportsPStudioTSLSHGI = typeof attachPStudioTSLSHProbeToMaterial === 'function';
+export const supportsPStudioTSLToon = typeof applyPStudioTSLToonMaterials === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '実機WebGPUでフレーム時間・メモリ・長時間動作・WebGL2復旧を回帰検証' }),
-  Object.freeze({ id: 'legacy-materials', label: '残存GLSLを個別TSL移植：NPR Toon、外部ShaderMaterial／独自onBeforeCompile材質（Backface Outline ShellはTSL移植済み）' }),
+  Object.freeze({ id: 'legacy-materials', label: 'PStudioのNPR ToonはTSL移植済み。未登録の外部ShaderMaterial／独自GLSLフックは個別TSLアダプターが必要' }),
   Object.freeze({ id: 'environment-effects', label: 'TSL体積雲・体積フォグは接続済み。実機で深度交差・散乱・ノイズ・時間変化の視覚品質を比較' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'ClusteredLightsNode PBR・9係数SH・WebGPU CubeRenderTarget読出しを接続済み。反射視点・影・SH係数の実機等価性を検証' }),
   Object.freeze({ id: 'gpu-particles-trails', label: 'TSL NodeMaterialのInstanced GPU Particle／Ribbon Trailを接続済み。粒子密度・透明合成・負荷・寿命境界を実機検証' }),
@@ -38,6 +40,7 @@ const PRODUCTION_BLOCKERS = Object.freeze([
 ]);
 
 function hasCustomShaderHooks(material) {
+  if (isPStudioLegacyTSLToonMaterial(material)) return false;
   if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
   const userData = material?.userData || {};
   const csmOnly = userData.pstudioCSMOnlyHook === true
@@ -167,6 +170,7 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL SH probe irradiance attached per NodeMaterial, preserving PStudio 9xRGB coefficients and object-local temporal blending',
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
+      'TSL NPR Toon diffuse ramp, rim and pseudo-SSS layered over native Standard/Physical specular lighting',
       'TSL underwater caustics with the legacy diffuse-light response preserved',
       'TSL InstancedMesh billboard GPU particles with per-instance ballistic motion and lifetime shading',
       'TSL ribbon trail materials with per-vertex lifetime fading',
@@ -204,6 +208,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
   let pipelineHandle = null;
   let csmHandle = null;
   let surfaceHandle = null;
+  let toonHandle = null;
   let waterDepthHandle = null;
   let waterSurfaceHandle = null;
   let clusterStorageHandle = null;
@@ -282,6 +287,9 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     const environmentProfile = options.environmentProfile || globalThis.PStudioSceneEnvironment?.getPreset?.('day');
     reportStage('porting-surface-features', { materialCount: materialConversion.convertedMaterials || 0 });
     surfaceHandle = applyPStudioTSLSurfaceFeatures(scene, { environmentProfile });
+
+    reportStage('porting-npr-toon');
+    toonHandle = applyPStudioTSLToonMaterials(scene);
 
     // Attach per-material SH irradiance before clustered lighting so the official
     // ClusteredLightsNode retains the extra IrradianceNode in its native-light list.
@@ -445,6 +453,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           csm: csmHandle?.getState?.() || null,
           clusteredLighting: clusteredLightingHandle?.getState?.() || null,
           shGI: Object.freeze({ mode: 'per-material-nine-coefficient-irradiance', materialCount: shProbeHandles.length }),
+          toon: Object.freeze({ materialCount: toonHandle?.materialCount || 0 }),
           surfaceFeatures: Object.freeze({
             materialCount: surfaceHandle?.materialCount || 0,
             features: surfaceHandle?.features || Object.freeze([])
@@ -475,6 +484,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
         try { waterDepthHandle?.dispose?.(); } catch (_) {}
         try { surfaceHandle?.dispose?.(); } catch (_) {}
+        try { toonHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
         reportStage('disposed');
@@ -493,6 +503,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { waterSurfaceHandle?.dispose?.(); } catch (_) {}
     try { waterDepthHandle?.dispose?.(); } catch (_) {}
     try { surfaceHandle?.dispose?.(); } catch (_) {}
+    try { toonHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
     try { backendHandle?.dispose?.(); } catch (_) {}
     throw error;
