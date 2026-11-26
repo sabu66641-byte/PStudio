@@ -2375,7 +2375,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       scene.environment=null;scene.background=new T.Color(0x000000);captureRenderer.setClearColor?.(0x000000,1);captureRenderer.autoClear=true;
       if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=false;
       cube.position.copy(position);scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
-      const light=await generator.fromCubeRenderTarget(captureRenderer,target),coefficients=light?.sh?.coefficients;
+      let capturedLight=null;
+      capturedLight=await generator.fromCubeRenderTarget(captureRenderer,target);
+      const coefficients=capturedLight?.sh?.coefficients;
       if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
       const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0};
       const captured=new Float32Array(27);
@@ -2393,9 +2395,10 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       cached.valid=true;cached.updatedAt=now;cached.smoothedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
       dynamicProbeCursor=(index+1)%dynamicProbeDirty.length;dynamicProbeUpdates++;probeVolumeGeneration++;
       dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
-      light.dispose?.();
+      capturedLight.dispose?.();capturedLight=null;
       try{window.PStudioEvents?.emit('gi.dynamic-probe.updated',{index,total:dynamicProbeCache.length,resolution,status:dynamicGIStatus});}catch(_){}
     }catch(error){
+      capturedLight?.dispose?.();
       dynamicGIStatus='error';console.warn('[PStudio] Dynamic SH probe update skipped:',error);
     }finally{
       scene.remove(cube);target.dispose();restoreProbeUniforms();
@@ -2432,7 +2435,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.42));
     const intensity=Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1));
     const minBounceEnergy=Math.max(0,Math.min(0.1,Number.isFinite(Number(o.minBounceEnergy))?Number(o.minBounceEnergy):0.0005));
-    const allocated=new Set(),oldAuto=captureRenderer.shadowMap?.autoUpdate,oldEnvironment=scene.environment,oldBackground=scene.background;
+    const allocated=new Set(),oldAuto=captureRenderer.shadowMap?.autoUpdate,oldTarget=captureRenderer.getRenderTarget?.()||null,oldEnvironment=scene.environment,oldBackground=scene.background;
     const oldCaptureActive=probeCaptureActive,restoreProbeUniforms=suppressProbeLightingForCapture();
     let directProbes=[],sourceProbes=[],finalProbes=[],completedBounces=0,lastBounceEnergy=0;
     probeBakeInFlight=true;probeCaptureActive=true;
@@ -2441,8 +2444,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const item of previous||[])scene.remove(item.light);
     const capture=async(position,sources,includeDirect,probeIntensity)=>{
       const target=new Target(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
-      let cube=null;
-      const oldTarget=captureRenderer.getRenderTarget?.()||null;
+      let cube=null,capturedLight=null,retainCapturedLight=false;
+      const targetBefore=captureRenderer.getRenderTarget?.()||null;
       const temporary=[],hiddenLights=[],environmentBefore=scene.environment,backgroundBefore=scene.background;
       const clearColorBefore=captureRenderer.getClearColor?.(new T.Color())?.clone?.()||null;
       const clearAlphaBefore=captureRenderer.getClearAlpha?.()??1;
@@ -2461,17 +2464,19 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           scene.traverse(object=>{if(object.isLight&&!object.userData?.pstudioBounceSource){hiddenLights.push([object,object.visible]);object.visible=false;}});
         }
         scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
-        const light=await generator.fromCubeRenderTarget(captureRenderer,target);
-        if(!light?.sh?.coefficients||light.sh.coefficients.length<9)throw new Error('Static SH probe capture returned invalid coefficients.');
-        light.position.copy(position);
-        const item={position:position.clone(),light,baseIntensity:probeIntensity};allocated.add(item);return item;
+        capturedLight=await generator.fromCubeRenderTarget(captureRenderer,target);
+        if(!capturedLight?.sh?.coefficients||capturedLight.sh.coefficients.length<9)throw new Error('Static SH probe capture returned invalid coefficients.');
+        capturedLight.position.copy(position);
+        const item={position:position.clone(),light:capturedLight,baseIntensity:probeIntensity};
+        allocated.add(item);retainCapturedLight=true;return item;
       }finally{
         if(cube)scene.remove(cube);target.dispose();
+        if(!retainCapturedLight)capturedLight?.dispose?.();
         for(const light of temporary){scene.remove(light);delete light.userData.pstudioBounceSource;}
         for(const [light,visible] of hiddenLights)light.visible=visible;
         scene.environment=environmentBefore;scene.background=backgroundBefore;
         if(clearColorBefore)captureRenderer.setClearColor?.(clearColorBefore,clearAlphaBefore);
-        captureRenderer.setRenderTarget?.(oldTarget);
+        captureRenderer.setRenderTarget?.(targetBefore);
       }
     };
     try{
@@ -2506,15 +2511,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       for(const item of allocated)item.light.dispose?.();
       bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;bakedGIBounces=previousBounces;
       if(previousSingle)scene.add(previousSingle);
+      for(const item of previous||[])scene.add(item.light);
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
       updateProbeVolumeBlend();
       throw error;
     }finally{
       scene.environment=oldEnvironment;scene.background=oldBackground;
-      if(previousSingle)scene.add(previousSingle);
       if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldAuto;
-      captureRenderer.setRenderTarget?.(null);
+      captureRenderer.setRenderTarget?.(oldTarget);
       restoreProbeUniforms();probeCaptureActive=oldCaptureActive;probeBakeInFlight=false;
     }
   }
