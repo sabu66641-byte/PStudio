@@ -1,4 +1,4 @@
-import { createPStudioProductionRendererHost } from './pstudio_rendering_production_host.mjs?v=20261126-sh-probe-capture-v1';
+import { createPStudioProductionRendererHost } from './pstudio_rendering_production_host.mjs?v=20261126-genesis-water-live-v1';
 import { inspectPStudioWebGPUSceneMaterials } from './pstudio_rendering_migration.mjs';
 
 /**
