@@ -1,6 +1,6 @@
 # GENESIS_TORII_MIRROR_V1
 
-A deterministic starter fixture for the PStudio WebGL2 renderer. The fixture is assembled from separate Game Objects because each Game Object supplies its own base material color.
+A deterministic torii/mirror-water fixture for the PStudio renderer. The easiest path is **Scene Environment → GENESIS 鳥居・水鏡デモを開く** in the Inspector, then press Play. That action creates the separate scripts and Game Objects for you. The manual assembly route below remains available for a clean baseline or customized fixture.
 
 ## Build the scene
 
@@ -17,7 +17,7 @@ Create six Game Objects in a new 3D scene and attach the matching `.ps` script f
 
 The scripts issue fixed world-space draw commands. Their 3D geometry does not depend on the Game Object's 2D canvas position. Attach the supplied source file as the Game Object script; do not combine the files into one script because each Game Object's color is used as its primitive material color.
 
-Set the scene viewport to 960×540, use the High profile for the first baseline, keep the render scale unchanged, and leave the browser tab in the foreground. Set the scene environment from the editor to Day, Dusk, and Night for the three lighting captures. The Water script keeps the water surface at a fixed position and amplitude.
+Set the scene viewport to 960×540, use the High profile for the first baseline, keep the render scale unchanged, and leave the browser tab in the foreground. The Scene Environment inspector now provides a continuous time slider, weather selector (Clear / Cloudy / Overcast / Rain / Storm), wind speed/direction, and optional automatic time progression. Those controls drive the shared atmosphere, lighting, fog, cloud drift, foliage sway, mirror-water waves and rain-impact ripples. The Water script keeps the reference surface at a fixed position; the environment controller supplies its runtime wave amplitude.
 
 ## Capture discipline
 
@@ -30,4 +30,4 @@ Set the scene viewport to 960×540, use the High profile for the first baseline,
 
 ## Scope and known omissions
 
-This is the first fixed core fixture, not a completed full qualification scene. It covers opaque torii geometry, terrain, foliage proxies, planar water reflection, and a one-shot particle burst. It does not yet include a standardized transparent imported asset, rain input, a wind controller, an automated camera path, golden-reference screenshots, or a browser-side capture/metadata exporter. Those remain explicit GENESIS 0 acceptance gaps; do not report the fixture as a full pass until they are added and tested.
+This is the integrated GENESIS demo fixture, but not yet a full visual qualification harness. It covers opaque torii geometry, terrain, foliage proxies, planar mirror reflection, depth-aware ordinary water, camera-local GPU rain particles, wind-driven waves, weather-driven ripple rings and shared sky/light/fog updates. It still lacks a standardized transparent imported reference asset, a repeatable automated camera path, golden-reference screenshots and a browser-side capture/metadata exporter. Physical-device visual and performance baselines also remain outstanding.
