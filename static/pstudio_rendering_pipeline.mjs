@@ -184,6 +184,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       output = output.add(ssrPass.rgb);
     }
 
+    if (godRaysSettings) {
+      godRaysHandle = createGodRaysNode(output, godRaysSettings);
+      output = godRaysHandle.node;
+    } else {
+      godRaysHandle = null;
+    }
+
     if (bloomSettings && bloomSettings.strength > 0) {
       const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
       output = output.add(glow);
@@ -234,7 +241,6 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     }
 
     renderPipeline = new THREE.RenderPipeline(renderer);
-    if (godRaysSettings) godRaysHandle = createGodRaysNode(sceneColor, godRaysSettings);
     rebuildOutput();
   } catch (error) {
     releaseScreenSpaceNodes();
@@ -285,13 +291,11 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       if (disposed) return false;
       godRaysSettings = normalizeGodRays(nextOptions);
       if (!godRaysSettings) {
-        godRaysHandle?.set(null);
         rebuildOutput();
         return true;
       }
-      if (!godRaysHandle) godRaysHandle = createGodRaysNode(sceneColor, godRaysSettings);
+      if (!godRaysHandle) rebuildOutput();
       else godRaysHandle.set(godRaysSettings);
-      rebuildOutput();
       return true;
     },
     getFrameResources() {
