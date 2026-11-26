@@ -105,7 +105,7 @@
     let windDirection=direction.slice(),targetWindDirection=direction.slice();
     let windSpeed=clamp(options.windSpeed,0,8,.35),targetWindSpeed=windSpeed;
     let timeScale=clamp(options.timeScale,0,.5,0);
-    let transitionSeconds=clamp(options.transitionSeconds,.05,60,.15);
+    let transitionSeconds=clamp(options.transitionSeconds,.05,60,2.4);
     let windTransitionSeconds=clamp(options.windTransitionSeconds,.05,60,1.6);
     let revision=0,elapsedSeconds=0;
     let snapshot=null;
@@ -204,8 +204,19 @@
 
     configure(options);
     update(0);
+    const setImmediate=config=>{
+      configure({...config,timeScale:0});
+      timeOfDay=targetTimeOfDay;
+      weatherIntensity=targetWeatherIntensity;
+      windSpeed=targetWindSpeed;
+      windDirection=targetWindDirection.slice();
+      for(const name of Object.keys(currentWeights))currentWeights[name]=targetWeights[name];
+      return update(0);
+    };
+
     return Object.freeze({
       set:configure,
+      setImmediate,
       update,
       getState:()=>snapshot,
       getConfig:()=>Object.freeze({timeOfDay,targetTimeOfDay,timeScale,weatherIntensity,targetWeatherIntensity,windDirection:Object.freeze(windDirection.slice()),windSpeed,targetWindSpeed,transitionSeconds,windTransitionSeconds})
