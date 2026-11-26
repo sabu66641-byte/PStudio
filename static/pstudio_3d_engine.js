@@ -698,6 +698,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const supportsGodRaysNode=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
     const supportsContactShadowsNode=window.PStudioRenderingMigration?.supportsPStudioTSLContactShadows===true;
     const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
+    const supportsToonTSL=window.PStudioRenderingMigration?.supportsPStudioTSLToon===true;
     const hasWater=(waterMaterials.size>0||Number(fx.waterMaterials)>0);
     if(hasWater&&!supportsWaterTSL)add('water','水面TSLアダプターが利用できません。');
     else if(hasWater)add('water-reflection-parity','TSL水深プリパス／ReflectorNodeは接続済みですが、複数反射面・深度・カメラ切替の実機パリティが未確認です。');
@@ -722,7 +723,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     else if(Number(fx.causticMaterials)>0)add('caustics-parity','水中コースティクスTSLは接続済みですが、屈折光・水深・時間変化の実機比較が未完了です。');
     if(Number(fx.outlineMaterials)>0)add('outline-parity','Backface Outline ShellはTSL頂点押し出し／アルファマスクへ移植済みですが、スキン・Instancing・複数材質の実機パリティが未確認です。');
-    if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
+    if(Number(fx.toonMaterials)>0){
+      if(!supportsToonTSL)add('toon','NPR ToonのTSL NodeMaterialアダプターが利用できません。');
+      else add('toon-parity','NPR ToonのTSL 3色ランプ・リム・擬似SSSは接続済みですが、実機の輪郭・スペキュラ・複数ライト品質を検証するまで本番昇格を保留します。');
+    }
     if(volumetricFogEnabled){
       if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricFog!==true)add('volumetric-fog-tsl','体積フォグのTSLノード機能が利用できません。');
       else add('volumetric-fog-parity','体積フォグTSLは実装済みですが、実機WebGPUでの散乱・深度・色差パリティ検証が未完了のためWebGL2を維持します。');
@@ -760,7 +764,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         for(const command of list||[]){
           const type=String(command?.type||'');
           const unsupportedDrawCommand =
-            ['toon_material'].includes(type)
+            (type==='toon_material'&&!supportsToonTSL)
             || (type==='water'&&!supportsWaterTSL)
             || (type==='terrain'&&!supportsSurfaceTSL);
           if(unsupportedDrawCommand){
@@ -768,7 +772,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           }else if(type==='material'&&String(command?.shader||'')==='custom'){
             add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
           }else if(type==='model_material'&&command?.toon&&command.toon.enabled!==false){
-            add('toon-model-material','モデルのトゥーンマテリアルはTSL移植後に有効化してください。');
+            if(!supportsToonTSL)add('toon-model-material','モデルのNPR Toon用TSLアダプターが利用できません。');
+            else add('toon-parity','モデルNPR ToonはTSLへ接続済みですが、実機の材質別スペキュラ／リム品質を検証するまで本番昇格を保留します。');
           }else if(type==='postfx'&&(
             (command?.ssao&&!supportsSelectedAOTSL)
             ||(command?.gtao&&!window.PStudioRenderingMigration?.supportsPStudioTSLGTAO)
