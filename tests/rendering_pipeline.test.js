@@ -1469,12 +1469,12 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
 test('GENESIS reference showcase uses detailed Japanese architecture, a fixed photographic composition and the existing sky presets',()=>{
   for(const token of [
     'const addRoofStructure=(',
-    'function addShingleRidge(',
+    'const addShingleRidge=(',
     'addRoofStructure(shrineX,shrineZ,mainRoof,.78)',
     'addRoofStructure(pagodaX,pagodaZ,roofDims,.78)',
     'const pagodaWindowCount=3',
     'const shojiLamp=new T.PointLight',
-    'const storeyLight=new T.PointLight',
+    'const lanternGlow=new T.PointLight',
     'const toriiUplight=new T.PointLight',
     'addLantern(-88,12,1.18,true)',
     'addLantern(88,10,1.18,true)',
