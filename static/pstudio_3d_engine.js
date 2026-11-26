@@ -1191,6 +1191,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       plane:new T.Plane(),
       reflectivity:1.0,
       waveStrength:0.05,
+      baseWaveStrength:0.05,
       hasRendered:false,
       material
     };
@@ -6371,7 +6372,7 @@ void main(){
     scene.traverse(object=>{
       if(!object?.userData?.pstudioMirrorWater)return;
       const mirror=object.userData.pstudioMirrorWater;
-      mirror.waveStrength=Math.max(mirror.waveStrength||0,Math.min(1,windSpeed*.055+rain*.72));
+      mirror.waveStrength=Math.max(mirror.baseWaveStrength||0,Math.min(1,(mirror.baseWaveStrength||.05)+windSpeed*.055+rain*.72));
       const materials=Array.isArray(object.material)?object.material:[object.material];
       for(const material of materials){
         const uniforms=material?.userData?.pstudioMirrorUniforms;
@@ -6414,8 +6415,12 @@ void main(){
       return false;
     }
     if(!genesisRainSystem){
-      genesisRainSystem=createGpuParticleSystem(384,'#C7E3F8',.018);
+      genesisRainSystem=createGpuParticleSystem(384,'#C7E3F8',.11);
       genesisRainSystem.uniforms.uGravity.value=.18;
+      const rainPositions=genesisRainSystem.geometry.attributes.position;
+      for(let index=0;index<rainPositions.count;index++)rainPositions.setY(index,rainPositions.getY(index)*3.2);
+      rainPositions.needsUpdate=true;
+      genesisRainSystem.geometry.computeBoundingSphere?.();
       primitiveGroup.add(genesisRainSystem.points);
     }
     const wind=Array.isArray(state.windDirection)?state.windDirection:[1,0];
@@ -6440,8 +6445,10 @@ void main(){
     if(!genesisEnvironmentController)return null;
     if(!window.PStudioEngine?.isRunning?.())particleClock+=Math.max(0,Math.min(.1,Number(deltaSeconds)||0));
     const state=genesisEnvironmentController.update(deltaSeconds);
+    window.PStudioEnvironmentFX?.update?.(particleClock);
     applyGenesisEnvironmentState(state,false,now);
     updateGenesisRainParticles(state,deltaSeconds);
+    updateGpuParticleSystems();
     return state;
   }
 
@@ -6958,7 +6965,8 @@ void main(){
           const state=mesh.userData.pstudioMirrorWater;
           if(state){
             state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));
-            state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));
+            state.baseWaveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));
+            state.waveStrength=state.baseWaveStrength;
             const tslSettings=mesh.material?.userData?.pstudioWaterTSLSettings;
             if(tslSettings){tslSettings.reflectivity=state.reflectivity;tslSettings.waveStrength=state.waveStrength;}
           }
