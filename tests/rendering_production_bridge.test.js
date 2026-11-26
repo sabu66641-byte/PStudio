@@ -240,7 +240,8 @@ test('production 3D render loop is wired to a fail-closed WebGPU bridge with res
     "volumetric-fog-parity",
     "volumetric-clouds-parity",
     "if(dynamicGIEnabled&&!supportsSHGI)",
-    "if(temporalAAEnabled||taaPass?.enabled||smaaPass?.enabled)",
+    'const aaModeSupported=temporalAAEnabled',
+    'productionRendererBridge.setAntiAliasing?.('
     "else if(hasWater)add('water-reflection-parity'",
     "else if(activeClusterLighting&&clusteredLightSet.size>0)add('clustered-lighting-pbr-parity'",
     "else if(hasBakedSHGI)add('sh-gi-capture-parity'",
