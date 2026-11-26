@@ -952,6 +952,7 @@ function normalizeSceneEnvironment(value){
   windTransitionSeconds:clamp(source.windTransitionSeconds,.05,60,1.6)
  };
 }
+window.addEventListener('load',()=>{syncSceneEnvironmentPresetButtons();syncGenesisEnvironmentToRenderer();});
 function syncGenesisEnvironmentControls(){
  const time=document.getElementById('genesis-time-of-day');
  const timeOutput=document.getElementById('genesis-time-output');
@@ -1028,10 +1029,11 @@ function setGenesisEnvironmentWindDirection(value){
  commitGenesisEnvironment();
 }
 function setGenesisEnvironmentAutoCycle(enabled){
- sceneEnvironment={...sceneEnvironment,timeScale:enabled?.0125:0};
+ sceneEnvironment={...sceneEnvironment,timeScale:enabled?0.0125:0};
  commitGenesisEnvironment();
 }
 function openGenesisDemo(){
+ if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
  const scripts={
   'genesis_camera.ps':'func update(dt)\n    set_camera(0, 13, 42, 0, 4, -18)\n',
   'genesis_ground.ps':'func update(dt)\n    set_material(0.92, 0.0)\n    draw_terrain(0, -1.0, -50, 220, 110, 64, 0.8)\n',
@@ -1055,7 +1057,7 @@ function openGenesisDemo(){
  window.PStudio3D?.setGenesisEnvironment?.(sceneEnvironment);
  window.PStudioEngine?.setViewMode?.('3d');
  toast('GENESIS 鳥居・水鏡デモを作成しました。Playで時間・天候・水面の統合表現を体験できます。');
- startPStudioGame();
+ window.startPStudioGame?.();
 }
 function persistProject(){
  try{
@@ -1185,6 +1187,7 @@ async function importProjectBackup(file){
   sceneObjects=next.objects;
   sceneEnvironment=next.environment;
   syncSceneEnvironmentPresetButtons();
+  syncGenesisEnvironmentToRenderer();
   activeProjectFile=next.active;
   selectedObjectId=sceneObjects[0]?.id||null;
   isDirty=false;
@@ -1840,7 +1843,7 @@ function updateSelectedObject(key,value){
  if((getSceneRenderableAsset(object)||object.mirrorWater)&&workspaceView==='game')window.setPStudioViewMode?.('3d');
 }
 function serializeScene(){return JSON.stringify({width:960,height:540,objects:sceneObjects,environment:normalizeSceneEnvironment(sceneEnvironment)},null,2)}
-function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects;sceneEnvironment=normalizeSceneEnvironment(data.environment)}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}syncSceneEnvironmentPresetButtons();syncEcsSceneMaterials();selectSceneObject(selectedObjectId)}
+function loadSceneText(text){if(text&&text.trim()){try{const data=JSON.parse(text);if(Array.isArray(data.objects))sceneObjects=data.objects;sceneEnvironment=normalizeSceneEnvironment(data.environment)}catch(e){setOutput('Scene file JSON is invalid: '+e.message,'error')}}syncSceneEnvironmentPresetButtons();syncGenesisEnvironmentToRenderer();syncEcsSceneMaterials();selectSceneObject(selectedObjectId)}
 function renderGamePreview(){
  const canvas=document.getElementById('game-canvas');if(!canvas)return;
  const ctx=canvas.getContext('2d');
