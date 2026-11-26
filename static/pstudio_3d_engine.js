@@ -6883,24 +6883,35 @@ void main(){
       blossomCenter:new T.MeshBasicMaterial({color:'#F3D18D',toneMapped:false}),
       petal:new T.MeshStandardMaterial({color:'#F7BBD0',roughness:.8,side:T.DoubleSide})
     };
-    const boxGeometryCache=new Map(),cylinderGeometryCache=new Map();
+    const boxGeometryCache=new Map(),cylinderGeometryCache=new Map(),instanceBatches=new Map();
     const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    const addInstance=(geometry,material,x,y,z,rotation=null,scale=[1,1,1],quaternion=null)=>{
+      const key=String(geometry.id)+'|'+String(material.id);
+      let batch=instanceBatches.get(key);
+      if(!batch){batch={geometry,material,matrices:[]};instanceBatches.set(key,batch);}
+      const transform=new T.Object3D();
+      transform.position.set(x,y,z);
+      if(quaternion)transform.quaternion.copy(quaternion);
+      else if(rotation)transform.rotation.set(rotation[0]||0,rotation[1]||0,rotation[2]||0);
+      transform.scale.set(scale[0],scale[1],scale[2]);
+      transform.updateMatrix();
+      batch.matrices.push(transform.matrix.clone());
+    };
     const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>{
       const key=[sx,sy,sz].map(value=>Number(value).toFixed(3)).join(':');
       let geometry=boxGeometryCache.get(key);
       if(!geometry){geometry=new T.BoxGeometry(sx,sy,sz);boxGeometryCache.set(key,geometry);}
-      return genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+      addInstance(geometry,material,x,y,z,rotation);
     };
     const addBeam=(material,a,b,radius=.12,segments=12)=>{
       const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
       const direction=end.clone().sub(start),length=direction.length();
-      if(length<1e-4)return null;
+      if(length<1e-4)return;
       const key=[radius,segments].map(value=>Number(value).toFixed(3)).join(':');
       let geometry=cylinderGeometryCache.get(key);
       if(!geometry){geometry=new T.CylinderGeometry(radius,radius,1,segments,1,false);cylinderGeometryCache.set(key,geometry);}
-      const mesh=genesisAddMesh(T,root,geometry,material,(start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5);
-      mesh.scale.y=length;mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
-      return mesh;
+      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
+      addInstance(geometry,material,(start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5,null,[1,length,1],quaternion);
     };
     const addLantern=(x,z,scale=1,addLight=false)=>{
       const y=.4*scale;
@@ -6914,8 +6925,8 @@ void main(){
         addBox(materials.darkWood,x,y+2.08*scale,z+side*.31*scale,.72*scale,.9*scale,.075*scale);
       }
       addBox(materials.stone,x,y+2.56*scale,z,1.1*scale,.16*scale,1.1*scale);
-      const cap=add(new T.ConeGeometry(.78*scale,.52*scale,4),materials.darkStone,x,y+2.91*scale,z);
-      cap.rotation.y=Math.PI/4;
+      const capGeometry=new T.ConeGeometry(1,1,4);
+      addInstance(capGeometry,materials.darkStone,x,y+2.91*scale,z,[0,Math.PI/4,0],[.78*scale,.52*scale,.78*scale]);
       addBeam(materials.gold,[x,y+3.16*scale,z],[x,y+3.50*scale,z],.05*scale,8);
       if(addLight){
         const light=new T.PointLight('#FFB879',2.35*scale,15*scale,2);
@@ -7142,13 +7153,14 @@ void main(){
     genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:88,maxX:142,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
     genesisAddPineForest(T,root,materials,0x9d20c15,18,{minX:-8,maxX:80,minZ:-151,maxZ:-126,minHeight:5,maxHeight:11});
 
-    // Long stone approach with irregular slabs and carefully spaced granite lanterns.
+    // Long stone approach uses instanced irregular slabs instead of dozens of draw calls.
+    const pathSlabGeometry=new T.BoxGeometry(1,.20,1);
+    const pathStoneGeometry=new T.IcosahedronGeometry(1,1);
     for(let i=0;i<34;i++){
       const z=34-i*2.5;
       const x=Math.sin(i*1.91)*2.7;
-      const slab=add(new T.BoxGeometry(1.8+(i%3)*.22,.20,1.16+(i%4)*.16),materials.path,x,.13,z);
-      slab.rotation.y=Math.sin(i*1.1)*.16;
-      if(i%5===0)add(new T.IcosahedronGeometry(.46+(i%3)*.16,1),materials.darkStone,x+Math.sin(i)*2,.25,z-.65);
+      addInstance(pathSlabGeometry,materials.path,x,.13,z,[0,Math.sin(i*1.1)*.16,0],[1.8+(i%3)*.22,1,1.16+(i%4)*.16]);
+      if(i%5===0)addInstance(pathStoneGeometry,materials.darkStone,x+Math.sin(i)*2,.25,z-.65,[0,i*.2,0],[.46+(i%3)*.16,.46+(i%3)*.16,.46+(i%3)*.16]);
     }
     for(let i=0;i<7;i++){
       const z=26-i*11;
@@ -7158,16 +7170,18 @@ void main(){
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
     const stoneRandom=()=>{stoneSeed=(Math.imul(stoneSeed,1664525)+1013904223)>>>0;return stoneSeed/4294967296;};
+    const shorelineRockGeometry=new T.IcosahedronGeometry(1,2);
+    const shorelineGrassGeometry=new T.ConeGeometry(1,1,5,2);
     for(let i=0;i<100;i++){
       const side=i%2===0?-1:1;
       const x=side*(49+stoneRandom()*48);
       const z=-73+stoneRandom()*116;
       const radius=.48+stoneRandom()*1.75;
-      const rock=add(new T.IcosahedronGeometry(radius,2),i%4===0?materials.wetStone:materials.darkStone,x,.26+radius*.24,z);
-      rock.scale.set(1.3,.58,.9);rock.rotation.set(stoneRandom()*.22,stoneRandom()*Math.PI,stoneRandom()*.16);
+      addInstance(shorelineRockGeometry,i%4===0?materials.wetStone:materials.darkStone,
+        x,.26+radius*.24,z,[stoneRandom()*.22,stoneRandom()*Math.PI,stoneRandom()*.16],[radius*1.3,radius*.58,radius*.9]);
       if(i%7===0){
-        const grass=add(new T.ConeGeometry(.42+stoneRandom()*.4,1.1+stoneRandom()*1.5,5),materials.pine,x+side*.7,.65,z+.5);
-        grass.rotation.z=side*.12;
+        const height=1.1+stoneRandom()*1.5,width=.42+stoneRandom()*.4;
+        addInstance(shorelineGrassGeometry,materials.pine,x+side*.7,.65,z+.5,[0,0,side*.12],[width,height,width]);
       }
     }
 
@@ -7185,12 +7199,13 @@ void main(){
     genesisShrineDemoWaterState.waveStrength=.022;
     water.userData.pstudioMirrorWater=genesisShrineDemoWaterState;
     // Thin shoreline highlights and reflection-friendly foreground stones.
+    const shorelinePebbleGeometry=new T.IcosahedronGeometry(1,1);
     for(const side of [-1,1]){
       for(let i=0;i<24;i++){
         const z=38-i*4.8;
         const x=side*(103+Math.sin(i*.7)*3.5);
-        const pebble=add(new T.IcosahedronGeometry(.35+(i%4)*.13,1),materials.wetStone,x,.22,z);
-        pebble.scale.set(1.6,.48,.85);
+        const radius=.35+(i%4)*.13;
+        addInstance(shorelinePebbleGeometry,materials.wetStone,x,.22,z,[0,i*.4,0],[radius*1.6,radius*.48,radius*.85]);
       }
     }
 
@@ -7211,6 +7226,16 @@ void main(){
     }
     root.add(petals);genesisShrinePetalInstances=petals;
 
+    // Collapse all repeated static architectural parts into material/geometry batches.
+    for(const batch of instanceBatches.values()){
+      const mesh=new T.InstancedMesh(batch.geometry,batch.material,batch.matrices.length);
+      mesh.name='GENESIS Static Geometry Batch ('+batch.matrices.length+')';
+      for(let i=0;i<batch.matrices.length;i++)mesh.setMatrixAt(i,batch.matrices[i]);
+      mesh.instanceMatrix.needsUpdate=true;
+      mesh.castShadow=true;mesh.receiveShadow=true;
+      mesh.computeBoundingSphere?.();
+      root.add(mesh);
+    }
     root.traverse(object=>{
       if(object.geometry)geometrySet.add(object.geometry);
       const assigned=Array.isArray(object.material)?object.material:[object.material];
