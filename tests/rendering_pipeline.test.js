@@ -169,7 +169,7 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
   assert.ok(shader.includes("pstudio-planar-mirror-water-v2"));
   assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
-  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity, 0.0, 1.0) * pStudioMirrorInside"));
+  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity * mix(0.78, 1.0, pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside"));
   assert.ok(renderer.includes("reflectivity:1.0"));
   assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
   assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
@@ -1461,10 +1461,40 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(0, 17, 88, 0, 8, -45)"));
+  assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
+
+test('GENESIS reference showcase uses detailed Japanese architecture, a fixed photographic composition and the existing sky presets',()=>{
+  for(const token of [
+    'const addRoofStructure=(',
+    'const addShingleRidge=(',
+    'addRoofStructure(shrineX,shrineZ,mainRoof,.78)',
+    'addRoofStructure(pagodaX,pagodaZ,roofDims,.78)',
+    'const pagodaWindowCount=3',
+    'const shojiLamp=new T.PointLight',
+    'const lanternGlow=new T.PointLight',
+    'const toriiUplight=new T.PointLight',
+    'addLantern(-58,-32,1.18,true)',
+    'addLantern(36,-52,1.18,true)',
+    'root.scale.set(1.30,1,1)',
+    'frontZ=shrineZ+7.03',
+    'const deerBodyGeometry=new T.SphereGeometry(1,24,16)',
+    'const deerX=28,deerZ=-40',
+    'materials.antler',
+    'addBeam(materials.antler,base,fork,.045,7)',
+    'root.userData.pstudioReferenceComposition',
+    'camera.fov=36',
+    'genesisShrinePreviousCameraFov=camera.fov',
+    'camera.fov=genesisShrinePreviousCameraFov',
+    'mix(0.78, 1.0, pStudioMirrorFresnel)'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
+  assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
+  assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
+  assert.ok(html.includes('20261127-moonlit-reference-scene-r1'));
+});
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
   assert.ok(webgpuMaterials.includes("function hasCustomShaderHook(material)"));
@@ -1476,7 +1506,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-sky-horizon-clouds-r1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));

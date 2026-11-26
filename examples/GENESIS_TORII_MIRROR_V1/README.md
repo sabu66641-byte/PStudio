@@ -1,6 +1,6 @@
 # GENESIS_TORII_MIRROR_V1
 
-A deterministic torii/mirror-water fixture for the PStudio renderer. The easiest path is **Scene Environment → GENESIS 鳥居・水鏡デモを開く** in the Inspector, then press Play. That action creates the separate scripts and Game Objects for you. The manual assembly route below remains available for a clean baseline or customized fixture.
+A deterministic, manually assembled torii/mirror-water benchmark fixture for the PStudio renderer. This six-object reference fixture is intentionally separate from the one-click **Scene Environment → GENESIS 鳥居・水鏡デモを開く** procedural moonlit shrine showcase. Use this folder when a small, fixed script-based baseline is needed; the Inspector showcase is renderer-owned geometry and does not load these six scripts.
 
 ## Build the scene
 
