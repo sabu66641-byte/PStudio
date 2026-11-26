@@ -1118,6 +1118,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       uMirrorTextureMatrix:{value:new T.Matrix4()},
       uMirrorReflectivity:{value:1.0},
       uMirrorWaveStrength:{value:0.05},
+      uMirrorWindDirection:{value:new T.Vector2(1,0)},
+      uMirrorWindSpeed:{value:0.35},
+      uMirrorRain:{value:0},
       uMirrorTime:{value:0}
     };
     material.userData.pstudioMirrorUniforms=uniforms;
@@ -1128,18 +1131,25 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         '#include <project_vertex>',
         '#include <project_vertex>\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);'
       );
-      shader.fragmentShader='uniform sampler2D uMirrorReflection;\nuniform float uMirrorReflectivity;\nuniform float uMirrorWaveStrength;\nuniform float uMirrorTime;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.fragmentShader;
+      shader.fragmentShader='uniform sampler2D uMirrorReflection;\nuniform float uMirrorReflectivity;\nuniform float uMirrorWaveStrength;\nuniform vec2 uMirrorWindDirection;\nuniform float uMirrorWindSpeed;\nuniform float uMirrorRain;\nuniform float uMirrorTime;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.fragmentShader;
       shader.fragmentShader=shader.fragmentShader.replace(
         '#include <opaque_fragment>',
         '#include <opaque_fragment>\n'+
         'vec2 pStudioMirrorUv = vPStudioMirrorCoord.xy / max(vPStudioMirrorCoord.w, 0.0001);\n'+
-        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\n'+
+        'vec2 pStudioMirrorWindUv = pStudioMirrorUv + uMirrorWindDirection * (uMirrorTime * uMirrorWindSpeed * 0.0007);\n'+
+        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorWindUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorWindUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\n'+
+        'vec2 pStudioMirrorRainCell = floor(pStudioMirrorUv * 42.0);\n'+
+        'vec2 pStudioMirrorRainLocal = fract(pStudioMirrorUv * 42.0) - 0.5;\n'+
+        'float pStudioMirrorRainSeed = fract(sin(dot(pStudioMirrorRainCell, vec2(127.1,311.7))) * 43758.5453);\n'+
+        'float pStudioMirrorRainRadius = fract(uMirrorTime * 1.35 + pStudioMirrorRainSeed) * 0.48;\n'+
+        'float pStudioMirrorRainRing = (1.0-smoothstep(0.02,0.08,abs(length(pStudioMirrorRainLocal)-pStudioMirrorRainRadius))) * smoothstep(0.02,0.14,pStudioMirrorRainRadius) * (1.0-smoothstep(0.38,0.48,pStudioMirrorRainRadius)) * uMirrorRain;\n'+
+        'pStudioMirrorRipple += pStudioMirrorRainRing * vec2(0.003,-0.003);\n'+
         'vec2 pStudioMirrorSampleUv = pStudioMirrorUv + pStudioMirrorRipple;\n'+
         'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\n'+
         'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\n'+
         'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\n'+
         'float pStudioMirrorAmount = clamp(uMirrorReflectivity, 0.0, 1.0) * pStudioMirrorInside;\n'+
-        'vec3 pStudioMirrorTinted = pStudioMirrorSample;\n'+
+        'vec3 pStudioMirrorTinted = pStudioMirrorSample + vec3(0.12,0.18,0.24) * pStudioMirrorRainRing * 0.12;\n'+
         'gl_FragColor.rgb = mix(gl_FragColor.rgb, pStudioMirrorTinted, pStudioMirrorAmount);'
       );
     };
@@ -1685,11 +1695,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
     applyCameraShake();camera.updateMatrixWorld(true);
     const frameStarted=window.performance?.now?.()??Date.now();
+    let genesisDelta=1/60;
     if(lastDrawFrameStartedAt){
       const interval=frameStarted-lastDrawFrameStartedAt;
-      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);}
+      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
     }
     lastDrawFrameStartedAt=frameStarted;
+    if(genesisEnvironmentController)updateGenesisEnvironment(genesisDelta,frameStarted);
     // Update the camera's world matrix before positioning camera-relative celestial meshes.
     camera.updateMatrixWorld(true);
     if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
@@ -2061,6 +2073,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     };
     for(const emitter of particleEmitters.values())update(emitter?.system);
     for(const effect of particleBursts.values())update(effect?.system);
+    if(genesisRainSystem)update(genesisRainSystem);
   }
   function configureWaterMaterial(material,object=null) {
     if(window.PStudioEnvironmentFX?.configureWater)return window.PStudioEnvironmentFX.configureWater(material,object,false);
@@ -6968,7 +6981,8 @@ void main(){
     for(const [key,light] of dynamicLights){if(!usedLights.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':'))){scene.remove(light);if(light.target)scene.remove(light.target);dynamicLights.delete(key);}}
     for(const [key,grid] of gridCache){if(!usedGrids.has(key)){gridGroup.remove(grid);disposeGrid(grid);gridCache.delete(key);}}
     for(const [key,instance] of modelInstances){if(!usedModels.has(key)&&!preservedOwners.has(instance.ownerId))removeModelInstance(key);else if(preservedOwners.has(instance.ownerId))instance.root.visible=false;}
-    applySceneEnvironmentPreset(T,environment?.preset||'day',!!(environment?.environmentSky&&environment?.environmentGround));
+    if(genesisEnvironmentController&&genesisEnvironmentState)applyGenesisEnvironmentState(genesisEnvironmentState,false);
+    else applySceneEnvironmentPreset(T,environment?.preset||'day',!!(environment?.environmentSky&&environment?.environmentGround));
     if(environment){
       if(environment.background){if(physicalSky)physicalSky.visible=false;scene.background=new T.Color(environment.background);hdrShowBackground=false;}
       if(environment.environmentSky&&environment.environmentGround){
@@ -7026,6 +7040,8 @@ void main(){
     for(const effect of particleBursts.values())disposeGpuParticleSystem(effect.system);particleBursts.clear();
     for(const trail of trailEffects.values())disposeTrailEffect(trail);trailEffects.clear();
     cameraShakeState=null;godRaysEnabled=false;godRaysFallbackEnabled=false;godRaysIntensity=0;
+    if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
+    genesisRainAccumulator=0;
     particleClock=0;
     selectionSignature='';
     if(renderer)drawFrame();
@@ -7095,6 +7111,17 @@ void main(){
   }
   window.PStudio3D = {
     render,
+    setGenesisEnvironment:config=>{
+      const create=window.PStudioGenesisEnvironment?.createGenesisEnvironmentController;
+      if(typeof create!=='function')return{available:false,enabled:false,reason:'GENESIS environment module is unavailable.'};
+      if(!genesisEnvironmentController)genesisEnvironmentController=create(config||{});
+      else genesisEnvironmentController.set(config||{});
+      genesisEnvironmentState=genesisEnvironmentController.update(0);
+      genesisLastSkyUpdateAt=0;
+      if(renderer&&scene&&camera)applyGenesisEnvironmentState(genesisEnvironmentState,true);
+      return{available:true,enabled:true,state:genesisEnvironmentState,config:genesisEnvironmentController.getConfig()};
+    },
+    getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
     getRenderingBackendStatus:renderingBackendStatus,
     requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true}),
     getWebGPUMigrationDiagnostics:()=>Object.freeze({
