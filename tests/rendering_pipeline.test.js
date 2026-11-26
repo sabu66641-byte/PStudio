@@ -1625,7 +1625,7 @@ test('GENESIS renderer applies one continuous environment state to lighting, wat
   assert.ok(webgpuMigration.includes('const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true'));
   assert.ok(webgpuMigration.includes('setWaterEnvironment(profile)'));
   for(const token of [
-    'function updateEnvironment(profile = {})',
+    'updateEnvironment(profile = {}) {',
     'const amplitude = TSL.uniform(settings.amplitude)',
     'const waveStrength = TSL.uniform(settings.waveStrength)',
     'const windDirection = TSL.uniform(new THREE.Vector2(1, 0))',
