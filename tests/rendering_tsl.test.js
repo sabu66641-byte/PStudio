@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const surfaceModule = import('../static/pstudio_rendering_surface_tsl.mjs');
+
 const modules = Promise.all([
   import('three/webgpu'),
   import('three/tsl'),
@@ -508,4 +510,29 @@ test('WebGPU scene preflight accepts CSM-only hooks and rejects a layered custom
 
   csmMaterial.dispose();
   geometry.dispose();
+});
+
+
+test('underwater caustics migrate to a reversible TSL diffuse-color graph', async () => {
+  const [THREE] = await Promise.all([import('three/webgpu')]);
+  const { applyPStudioTSLSurfaceFeatures, isPStudioTSLSurfaceFeatureMaterial } = await surfaceModule;
+  const material = new THREE.MeshStandardNodeMaterial();
+  material.userData = {
+    pstudioTSLPortVersion: 1,
+    pstudioTSLPortHasForeignHook: false,
+    pstudioTSLFeatures: ['caustics'],
+    pstudioTSLSurfacePreflightApproved: true,
+    pstudioCausticsHQ: { strength: { value: 0.30 } }
+  };
+  const scene = new THREE.Scene();
+  scene.add(new THREE.Mesh(new THREE.BufferGeometry(), material));
+  const previousColorNode = material.colorNode;
+
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(material), true);
+  const handle = applyPStudioTSLSurfaceFeatures(scene);
+  assert.equal(handle.materialCount, 1);
+  assert.equal(handle.features.includes('caustics'), true);
+  assert.ok(material.colorNode?.isNode);
+  assert.equal(handle.dispose(), true);
+  assert.equal(material.colorNode, previousColorNode);
 });
