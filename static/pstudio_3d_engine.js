@@ -6741,6 +6741,7 @@ void main(){
 
   function buildGenesisShrineDemo(T){
     if(!scene||!renderer)return false;
+    if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=36;camera.updateProjectionMatrix();}
     if(genesisShrineDemoGroup?.parent===scene)return true;
     const root=new T.Group();root.name='PStudio | Moonlit Sakura Shrine and Mirror Lake';
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
@@ -6899,8 +6900,10 @@ void main(){
     for(let bay=0;bay<5;bay++){
       const x=shrineX-8+bay*4;
       addBox(materials.paper,x,3.82,frontZ,3.55,4.15,.095);
-      const shojiLamp=new T.PointLight('#FFB36F',1.05,16,2);
-      shojiLamp.position.set(x,3.72,frontZ-1.15);shojiLamp.castShadow=false;root.add(shojiLamp);
+      if(bay%2===0){
+        const shojiLamp=new T.PointLight('#FFB36F',1.05,16,2);
+        shojiLamp.position.set(x,3.72,frontZ-1.15);shojiLamp.castShadow=false;root.add(shojiLamp);
+      }
       addBox(materials.glowGlass,x,3.82,frontZ-.075,3.18,3.80,.025);
       for(const dx of [-1.82,1.82]){
         addBox(materials.darkWood,x+dx,3.82,frontZ+.09,.17,4.45,.22);
@@ -6980,8 +6983,6 @@ void main(){
       genesisAddCurvedJapaneseRoof(T,root,materials,pagodaX,pagodaZ,roofDims,textureSet);
       addRoofStructure(pagodaX,pagodaZ,roofDims,.78);
       addShingleRidge(pagodaX,pagodaZ,roofDims);
-      const storeyLight=new T.PointLight('#FFB46D',tier===0?1.05:.62,17,2);
-      storeyLight.position.set(pagodaX,baseY+1.35,pagodaFrontZ-1.0);storeyLight.castShadow=false;root.add(storeyLight);
       for(const side of [-1,1]){
         for(const zSide of [-1,1]){
           addInstance(goldOrnamentGeometry,materials.gold,
