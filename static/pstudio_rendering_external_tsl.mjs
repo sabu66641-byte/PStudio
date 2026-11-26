@@ -133,7 +133,7 @@ export function applyPStudioTSLMaterialAdapters(root, options = {}) {
     for (const target of createdTargets) {
       try { target.dispose?.(); } catch (_) {}
     }
-    throw new Error('PStudio rolled back a partial external GLSL-to-TSL material conversion.', { cause: error });
+    throw new Error('PStudio rolled back a partial external GLSL-to-TSL material conversion: ' + String(error?.message || error), { cause: error });
   }
 
   function restore() {
