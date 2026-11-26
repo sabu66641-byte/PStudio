@@ -6893,14 +6893,50 @@ void main(){
       blossomCenter:new T.MeshBasicMaterial({color:'#F3D18D',toneMapped:false}),
       petal:new T.MeshStandardMaterial({color:'#F7BBD0',roughness:.8,side:T.DoubleSide})
     };
+    const boxGeometryCache=new Map(),cylinderGeometryCache=new Map();
     const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
-    const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>genesisAddBox(T,root,material,x,y,z,sx,sy,sz,rotation);
-    const addBeam=(material,a,b,radius=.12)=>genesisAddCylinderBetween(T,root,material,a,b,radius,radius,12);
+    const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>{
+      const key=[sx,sy,sz].map(value=>Number(value).toFixed(3)).join(':');
+      let geometry=boxGeometryCache.get(key);
+      if(!geometry){geometry=new T.BoxGeometry(sx,sy,sz);boxGeometryCache.set(key,geometry);}
+      return genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    };
+    const addBeam=(material,a,b,radius=.12,segments=12)=>{
+      const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
+      const direction=end.clone().sub(start),length=direction.length();
+      if(length<1e-4)return null;
+      const key=[radius,segments].map(value=>Number(value).toFixed(3)).join(':');
+      let geometry=cylinderGeometryCache.get(key);
+      if(!geometry){geometry=new T.CylinderGeometry(radius,radius,1,segments,1,false);cylinderGeometryCache.set(key,geometry);}
+      const mesh=genesisAddMesh(T,root,geometry,material,(start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5);
+      mesh.scale.y=length;mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
+      return mesh;
+    };
+    const addLantern=(x,z,scale=1,addLight=false)=>{
+      const y=.4*scale;
+      addBox(materials.stone,x,y,z,.9*scale,.36*scale,.9*scale);
+      addBox(materials.darkStone,x,y+.29*scale,z,.66*scale,.18*scale,.66*scale);
+      addBeam(materials.stone,[x,y+.38*scale,z],[x,y+1.43*scale,z],.25*scale,10);
+      addBox(materials.stone,x,y+1.62*scale,z,.88*scale,.18*scale,.88*scale);
+      addBox(materials.glow,x,y+2.08*scale,z,.58*scale,.78*scale,.58*scale);
+      for(const side of [-1,1]){
+        addBox(materials.darkWood,x+side*.31*scale,y+2.08*scale,z,.075*scale,.9*scale,.72*scale);
+        addBox(materials.darkWood,x,y+2.08*scale,z+side*.31*scale,.72*scale,.9*scale,.075*scale);
+      }
+      addBox(materials.stone,x,y+2.56*scale,z,1.1*scale,.16*scale,1.1*scale);
+      const cap=add(new T.ConeGeometry(.78*scale,.52*scale,4),materials.darkStone,x,y+2.91*scale,z);
+      cap.rotation.y=Math.PI/4;
+      addBeam(materials.gold,[x,y+3.16*scale,z],[x,y+3.50*scale,z],.05*scale,8);
+      if(addLight){
+        const light=new T.PointLight('#FFB879',2.35*scale,15*scale,2);
+        light.position.set(x,y+2.05*scale,z);light.castShadow=false;root.add(light);
+      }
+    };
 
     // Broad terrain foundations and irregular stone banks around the mirror lake.
     add(new T.PlaneGeometry(310,270),materials.soil,0,-.72,-70,[-Math.PI/2,0,0]);
-    genesisCreateGroundShape(T,[[-118,-3],[-104,26],[-91,42],[-68,38],[-53,20],[-50,-10],[-58,-40],[-83,-67],[-112,-59]],materials.ground,root);
-    genesisCreateGroundShape(T,[[112,8],[105,34],[88,46],[65,36],[51,12],[53,-18],[70,-54],[97,-63],[117,-38]],materials.ground,root);
+    genesisCreateGroundShape(T,[[-118,-3],[-104,26],[-91,42],[-68,38],[-53,20],[-50,-10],[-58,-40],[-83,-67],[-112,-59]],materials.ground,root).position.y=.26;
+    genesisCreateGroundShape(T,[[112,8],[105,34],[88,46],[65,36],[51,12],[53,-18],[70,-54],[97,-63],[117,-38]],materials.ground,root).position.y=.26;
 
     // Three overlapping volumetric mountain ridges recede into atmospheric blue haze.
     genesisAddMountainRange(T,root,{z:-225,depth:52,baseY:1,rangeX:340,color:'#151E32',peaks:[[-142,24,37],[-90,38,30],[-28,27,35],[38,42,36],[116,27,30]]});
@@ -7126,8 +7162,8 @@ void main(){
     }
     for(let i=0;i<7;i++){
       const z=26-i*11;
-      genesisAddLantern(T,root,materials,-17-(i%2)*4,z,.92,i===1||i===5);
-      genesisAddLantern(T,root,materials,27+(i%2)*4,z,.92,i===3);
+      addLantern(-17-(i%2)*4,z,.92,i===1||i===5);
+      addLantern(27+(i%2)*4,z,.92,i===3);
     }
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
@@ -7137,7 +7173,7 @@ void main(){
       const x=side*(49+stoneRandom()*48);
       const z=-73+stoneRandom()*116;
       const radius=.48+stoneRandom()*1.75;
-      const rock=add(new T.IcosahedronGeometry(radius,2),i%4===0?materials.wetStone:materials.darkStone,x,.04+radius*.24,z);
+      const rock=add(new T.IcosahedronGeometry(radius,2),i%4===0?materials.wetStone:materials.darkStone,x,.26+radius*.24,z);
       rock.scale.set(1.3,.58,.9);rock.rotation.set(stoneRandom()*.22,stoneRandom()*Math.PI,stoneRandom()*.16);
       if(i%7===0){
         const grass=add(new T.ConeGeometry(.42+stoneRandom()*.4,1.1+stoneRandom()*1.5,5),materials.pine,x+side*.7,.65,z+.5);
@@ -7200,8 +7236,12 @@ void main(){
     if(!root)return false;
     root.parent?.remove(root);
     const owned=root.userData.pstudioGenesisOwned||{};
-    for(const material of owned.materials||[])material?.dispose?.();
+    for(const material of owned.materials||[]){
+      window.PStudioEnvironmentFX?.releaseMaterial?.(material);
+      material?.dispose?.();
+    }
     for(const geometry of owned.geometries||[])geometry?.dispose?.();
+    for(const texture of owned.textures||[])texture?.dispose?.();
     genesisShrineDemoWaterState?.target?.dispose?.();
     genesisShrineDemoWaterState?.cloudTarget?.dispose?.();
     genesisShrineDemoWaterState=null;genesisShrinePetalInstances=null;genesisShrinePetalMotion=[];
@@ -7216,7 +7256,11 @@ void main(){
     for(let i=0;i<genesisShrinePetalMotion.length;i++){
       const petal=genesisShrinePetalMotion[i];
       petal.y-=dt*petal.speed;
-      if(petal.y<.35){petal.y=7+Math.abs(Math.sin(i*2.43))*6;petal.x=(Math.sin((now+i)*1.7)*.5+.5)*112-56;}
+      if(petal.y<.32){
+        petal.y=5+Math.abs(Math.sin(i*2.43))*7;
+        petal.x=(Math.sin((now+i)*1.7)*.5+.5)*184-92;
+        petal.z=-68+((i*17)%105);
+      }
       const x=petal.x+Math.sin(now*.42+petal.phase)*1.9;
       const z=petal.z+Math.cos(now*.31+petal.phase)*1.5;
       dummy.position.set(x,petal.y,z);
