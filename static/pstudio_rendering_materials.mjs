@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import * as TSL from 'three/tsl';
 import { isPStudioTSLSurfaceFeatureMaterial } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
@@ -33,6 +34,15 @@ function hasCustomShaderHook(material) {
     && userData.pstudioCSMHook === material.onBeforeCompile
     && !Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey');
   if (csmOnly) return false;
+  const outline = userData.pstudioTSLOutline;
+  const approvedOutline = outline?.version === 1
+    && Number.isFinite(Number(outline.expansion))
+    && Number(outline.expansion) > 0
+    && material.pstudioTSLOutlineCompileHook === material.onBeforeCompile
+    && material.pstudioTSLOutlineCacheKey === material.customProgramCacheKey
+    && typeof material.onBeforeCompile === 'function'
+    && typeof material.customProgramCacheKey === 'function';
+  if (approvedOutline) return false;
   return Boolean(
     (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
     || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
@@ -94,6 +104,36 @@ export function createPStudioNodeMaterial(source, options = {}) {
       delete target.defines.CSM_CASCADES;
       delete target.defines.CSM_FADE;
     }
+  }
+
+  const outline = safeMetadata.pstudioTSLOutline;
+  if (outline?.version === 1
+    && Number.isFinite(Number(outline.expansion))
+    && Number(outline.expansion) > 0
+    && source.pstudioTSLOutlineCompileHook === source.onBeforeCompile
+    && source.pstudioTSLOutlineCacheKey === source.customProgramCacheKey) {
+    let alpha = TSL.float(1);
+    if (outline.useMapAlpha === true && source.map) {
+      alpha = alpha.mul(TSL.texture(source.map, TSL.uv()).a);
+    }
+    if (outline.useAlphaMapAlpha === true && source.alphaMap) {
+      alpha = alpha.mul(TSL.texture(source.alphaMap, TSL.uv()).g);
+    }
+    if (outline.useVertexAlpha === true && source.vertexColors === true) {
+      alpha = alpha.mul(TSL.vertexColor().a);
+    }
+
+    target.colorNode = TSL.uniform(source.color.clone());
+    target.opacityNode = alpha;
+    target.positionNode = TSL.positionLocal.add(
+      TSL.normalLocal.normalize().mul(TSL.float(Number(outline.expansion)))
+    );
+    // Alpha is reconstructed explicitly above to retain the legacy GLSL's
+    // cutout/transparent mask while forcing the shell's RGB to its outline tint.
+    target.map = null;
+    target.alphaMap = null;
+    target.vertexColors = false;
+    target.userData.pstudioTSLOutlineTSL = true;
   }
   target.userData = {
     ...safeMetadata,
