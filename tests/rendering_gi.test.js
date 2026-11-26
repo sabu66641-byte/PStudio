@@ -319,6 +319,7 @@ test('clustered TSL attachment preserves native lights and restores light lists 
 test('native r187 clustered PBR routes point/spot lights through the full material lighting model',async()=>{
   const THREE=await import('three/webgpu');
   const {applyPStudioTSLNativeClusteredLighting}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const {attachPStudioTSLSHProbeToMaterial}=await import('../static/pstudio_rendering_gi_tsl.mjs');
   const scene=new THREE.Scene();
   const point=new THREE.PointLight(0xffaa66,2,22,2);
   point.position.set(0,2,-5);
@@ -332,6 +333,8 @@ test('native r187 clustered PBR routes point/spot lights through the full materi
   const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),material);
   scene.add(mesh);
   const originalLightsNode=material.lightsNode??null;
+  const shHandle=attachPStudioTSLSHProbeToMaterial(material,[point,spot,shadowPoint,sun]);
+  shHandle.setCoefficients(new Float32Array(27).fill(0.025));
   const renderer={
     backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:64*1024*1024,maxBufferSize:64*1024*1024}}},
     getDrawingBufferSize(target){return target.set(1280,720);}
@@ -349,9 +352,12 @@ test('native r187 clustered PBR routes point/spot lights through the full materi
   assert.ok(clustered.clusteredLights.includes(spot));
   assert.ok(clustered.materialLights.includes(shadowPoint));
   assert.ok(clustered.materialLights.includes(sun));
+  assert.ok(clustered.materialLights.some(item=>item instanceof THREE.IrradianceNode));
   assert.equal(handle.getState().mode,'clustered-pbr');
   assert.equal(handle.getState().clusteredLightCount,2);
   assert.equal(handle.dispose(),true);
+  assert.notEqual(material.lightsNode,originalLightsNode);
+  assert.equal(shHandle.dispose(),true);
   assert.equal(material.lightsNode,originalLightsNode);
   assert.equal(handle.dispose(),false);
   material.dispose();mesh.geometry.dispose();
