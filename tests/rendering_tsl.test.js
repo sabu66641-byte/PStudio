@@ -521,9 +521,10 @@ test('underwater caustics migrate to a reversible TSL diffuse-color graph', asyn
     pstudioTSLPortVersion: 1,
     pstudioTSLPortHasForeignHook: false,
     pstudioTSLFeatures: ['caustics'],
-    pstudioTSLSurfacePreflightApproved: true,
     pstudioCausticsHQ: { strength: { value: 0.30 } }
   };
+  // Mirrors the converter's non-userData preflight approval certificate.
+  material.pstudioTSLSurfacePreflightApproved = true;
   const scene = new THREE.Scene();
   scene.add(new THREE.Mesh(new THREE.BufferGeometry(), material));
   const previousColorNode = material.colorNode;
