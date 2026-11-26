@@ -209,6 +209,10 @@ export function createPStudioProductionRenderingBridge(options = {}) {
       if (disposed || !host || host.getState().backend !== 'webgpu') return false;
       return host.setBloom?.(settings) === true;
     },
+    setAntiAliasing(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setAntiAliasing?.(settings) === true;
+    },
     setAmbientOcclusion(settings) {
       if (disposed || !host || host.getState().backend !== 'webgpu') return false;
       return host.setAmbientOcclusion?.(settings) === true;
