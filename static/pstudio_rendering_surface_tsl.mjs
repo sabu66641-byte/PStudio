@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-tsl-sh-gi-v1';
 
-const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail', 'sh-gi', 'clustered-lighting']);
+const SUPPORTED_FEATURES = new Set(['terrain', 'triplanar', 'parallax', 'foliage', 'water', 'water-detail', 'caustics', 'sh-gi', 'clustered-lighting']);
 const EPSILON = 1e-5;
 
 function finite(value, fallback) {
@@ -49,7 +49,8 @@ function requiredNodeFunctions() {
     'positionWorld', 'positionLocal', 'normalWorld', 'normalWorldGeometry',
     'positionView', 'positionViewDirection', 'modelWorldMatrixInverse',
     'materialColor', 'materialRoughness', 'materialMetalness', 'materialEmissive',
-    'materialOpacity', 'materialAlphaTest', 'time', 'vertexColor', 'select', 'bool', 'cameraViewMatrix'
+    'materialOpacity', 'materialAlphaTest', 'time', 'vertexColor', 'select', 'bool', 'cameraViewMatrix',
+    'max', 'abs', 'pow', 'sin'
   ];
   return names.filter((name) => TSL[name] === undefined);
 }
@@ -288,6 +289,27 @@ function applyWaterDetail(material, metadata) {
   material.side = THREE.DoubleSide;
 }
 
+function applyCaustics(material, metadata) {
+  const settings = metadata?.pstudioCausticsHQ || {};
+  const strength = Math.max(0, Math.min(2, recordValue(settings, 'strength', 0.30)));
+  if (strength <= EPSILON) return;
+
+  const world = TSL.positionWorld;
+  const time = TSL.time;
+  const cuvX = world.x.mul(0.29);
+  const cuvY = world.z.mul(0.29);
+  const ca = cuvX.add(cuvY.add(time.mul(0.34)).sin().mul(2.1)).sin();
+  const cb = cuvY.mul(1.31)
+    .sub(cuvX.mul(0.83).sub(time.mul(0.28)).sin().mul(1.8))
+    .sin();
+  const lines = TSL.float(1).sub(ca.mul(cb).abs()).max(0).pow(11);
+  const additive = TSL.vec3(0.16, 0.43, 0.39).mul(lines).mul(0.30 * strength);
+
+  // The legacy pass adds caustic radiance to the diffuse albedo before lighting.
+  // Preserve that response instead of switching it to unlit emissive brightness.
+  material.colorNode = (material.colorNode || TSL.materialColor).add(additive);
+}
+
 function resolveSunDirection(profile = {}) {
   const x = finite(profile.skySunX ?? profile.sunDirection?.[0], 0.35);
   const y = finite(profile.skySunY ?? profile.sunDirection?.[1], 0.89);
@@ -414,6 +436,7 @@ export function applyPStudioTSLSurfaceFeatures(root, options = {}) {
       if (features.includes('terrain')) applyTerrain(material, material.userData);
       if (features.includes('foliage')) foliageRole = applyFoliage(material, material.userData, options);
       if (features.includes('water-detail')) applyWaterDetail(material, material.userData);
+      if (features.includes('caustics')) applyCaustics(material, material.userData);
       if (features.includes('sh-gi')) shHandle = attachPStudioTSLSHProbeToMaterial(material, options.sceneLights || sceneLights);
       material.userData = {
         ...material.userData,
