@@ -6819,7 +6819,7 @@ void main(){
       glowGlass:new T.MeshBasicMaterial({color:'#FFD9A3',toneMapped:false,side:T.DoubleSide}),
       paper:new T.MeshStandardMaterial({color:'#EACFA8',roughness:.88,...textures.paper,emissive:'#8F4A25',emissiveIntensity:.22,side:T.DoubleSide}),
       shoji:new T.MeshStandardMaterial({color:'#F4D7A5',roughness:.76,...textures.paper,emissive:'#FF9B48',emissiveIntensity:.72,side:T.DoubleSide}),
-      deer:new T.MeshStandardMaterial({color:'#73513B',roughness:.91,...textures.wood}),
+      deer:new T.MeshStandardMaterial({color:'#73513B',roughness:.91}),
       deerLight:new T.MeshStandardMaterial({color:'#A57B55',roughness:.88}),
       deerDark:new T.MeshStandardMaterial({color:'#241D1A',roughness:.84}),
       antler:new T.MeshStandardMaterial({color:'#A9977A',roughness:.72}),
