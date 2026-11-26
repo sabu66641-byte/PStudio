@@ -1435,6 +1435,10 @@ test('GENESIS scene and day-to-night sky use one continuous environment and auth
   for(const token of [
     'updateGenesisSkyBackground(state,forceSky,now)',
     'createGenesisStarCanvas',
+    'createProceduralSkyTexture(T,profile,width/2048,true)',
+    'drawDaytimeCloudField(cloudContext,width,height',
+    'genesisSkyQuality===selected',
+    'const updateInterval=selected===\'mobile\'?125:selected===\'balanced\'?100:80',
     'buildGenesisShrineDemo',
     'GENESIS Sakura Blossom Canopy',
     'GENESIS Mirror Lake',
