@@ -1549,6 +1549,15 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
     'dynamicResolutionScale',
     'EXT_disjoint_timer_query_webgl2',
     'gpuFrameBudgetPercent',
+    'frameP50Ms',
+    'frameP95Ms',
+    'frameP99Ms',
+    'cpuRenderSubmitP50Ms',
+    'cpuRenderP99Ms',
+    'gpuRenderP50Ms',
+    'gpuRenderP99Ms',
+    'frameIntervalSampleCount',
+    'gpuTimingFresh',
     'not total GPU utilization',
     'pstudio-render-stats',
     'getPerformanceStats:performanceStatsSnapshot',
@@ -1559,6 +1568,22 @@ test('performance telemetry separates frame pacing, CPU submission, GPU timer sa
   assert.ok(html.includes('id="gi-bake-button"'));
   assert.ok(html.includes('id="gi-bake-status"'));
   assert.ok(renderer.includes('RENDER_METRIC_HISTORY=120'));
+});
+
+test('nearest-rank percentile helper reports deterministic p50, p95 and p99 without mutating samples',()=>{
+  const start=renderer.indexOf('  function metricPercentile(list,p){');
+  const end=renderer.indexOf('  function captureFrameRenderStats()',start);
+  assert.ok(start>=0&&end>start,'metric percentile helper boundaries');
+  const source=renderer.slice(start,end);
+  const percentile=new Function(source+';return metricPercentile;')();
+  const samples=Array.from({length:100},(_,index)=>index+1);
+  const original=samples.slice();
+  assert.equal(percentile([],95),null);
+  assert.equal(percentile(samples,0),1);
+  assert.equal(percentile(samples,50),50);
+  assert.equal(percentile(samples,95),95);
+  assert.equal(percentile(samples,99),99);
+  assert.deepEqual(samples,original,'percentile calculation must not reorder the live history');
 });
 
 test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fallback',()=>{
