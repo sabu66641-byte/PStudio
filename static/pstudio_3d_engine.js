@@ -1661,10 +1661,17 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       try{
         const clusterSnapshot=getPStudioClusteredLightingSnapshot();
         if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
-        if(godRaysEnabled)productionRendererBridge.setGodRays?.(getPStudioGodRaysSettings());
-        productionRendererBridge.setContactShadows?.(contactShadowsEnabled?getPStudioContactShadowSettings():false);
-        productionRendererBridge.setVolumetricFog?.(volumetricFogEnabled?getPStudioVolumetricFogSettings():false);
-        productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false);
+        const aoActive=ssaoEnabled||qualityAOEnabled;
+        const controlsApplied=[
+          productionRendererBridge.setBloom?.(bloomEnabled?{enabled:true,strength:bloomStrength}:false),
+          productionRendererBridge.setAmbientOcclusion?.(aoActive?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false),
+          productionRendererBridge.setSSR?.(ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false),
+          productionRendererBridge.setGodRays?.(godRaysEnabled?getPStudioGodRaysSettings():false),
+          productionRendererBridge.setContactShadows?.(contactShadowsEnabled?getPStudioContactShadowSettings():false),
+          productionRendererBridge.setVolumetricFog?.(volumetricFogEnabled?getPStudioVolumetricFogSettings():false),
+          productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false)
+        ];
+        if(controlsApplied.some(result=>result!==true))throw new Error('The WebGPU RenderPipeline did not accept every post-processing state update.');
         if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
