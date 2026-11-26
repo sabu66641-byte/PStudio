@@ -13,7 +13,8 @@ export const supportsPStudioTSLGodRays = typeof TSL.Fn === 'function' && typeof 
 export const supportsPStudioTSLContactShadows = [
   'getViewPosition', 'getScreenPositionFromClip', 'projectionDepth',
   'cameraProjectionMatrix', 'cameraProjectionMatrixInverse', 'cameraViewMatrix',
-  'cameraNear', 'cameraFar', 'isBackgroundDepth'
+  'cameraNear', 'cameraFar', 'isBackgroundDepth', 'Loop', 'If', 'Break',
+  'step', 'smoothstep', 'clamp', 'normalize', 'screenUV'
 ].every(name => TSL[name] !== undefined);
 
 
@@ -75,7 +76,11 @@ function normalizeContactShadows(options) {
   const source = options === true ? {} : options;
   const lightDirection = Array.isArray(source.lightDirectionWorld) ? source.lightDirectionWorld : [0.35, 0.82, 0.44];
   const vectorLength = Math.hypot(...lightDirection);
-  const direction = vectorLength > 1e-6 ? lightDirection.map(value => Number(value) / vectorLength) : [0.35, 0.82, 0.44];
+  const direction = vectorLength > 1e-6
+    ? lightDirection.map(value => Number(value) / vectorLength)
+    : [0.35, 0.82, 0.44];
+  const fadeStart = Math.max(0, Number.isFinite(Number(source.fadeStart)) ? Number(source.fadeStart) : 28);
+  const fadeEnd = Math.max(fadeStart + 1, Number.isFinite(Number(source.fadeEnd)) ? Number(source.fadeEnd) : 105);
   return {
     enabled: true,
     intensity: Math.max(0, Math.min(1.5, Number.isFinite(Number(source.intensity)) ? Number(source.intensity) : 0.42)),
@@ -83,8 +88,7 @@ function normalizeContactShadows(options) {
     thickness: Math.max(0.001, Math.min(0.5, Number.isFinite(Number(source.thickness)) ? Number(source.thickness) : 0.075)),
     depthBias: Math.max(0, Math.min(0.25, Number.isFinite(Number(source.depthBias)) ? Number(source.depthBias) : 0.018)),
     steps: Math.max(4, Math.min(32, Math.round(Number(source.steps) || 12))),
-    fadeStart: Math.max(0, Number.isFinite(Number(source.fadeStart)) ? Number(source.fadeStart) : 28),
-    fadeEnd: Math.max(1, Number.isFinite(Number(source.fadeEnd)) ? Number(source.fadeEnd) : 105),
+    fadeStart, fadeEnd,
     lightDirectionWorld: direction
   };
 }
@@ -432,7 +436,9 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     },
     setContactShadows(nextOptions) {
       if (disposed) return false;
-      contactShadowsSettings = normalizeContactShadows(nextOptions);
+      const nextSettings = normalizeContactShadows(nextOptions);
+      if (!nextSettings && !contactShadowsSettings && !contactShadowsHandle) return true;
+      contactShadowsSettings = nextSettings;
       if (!contactShadowsSettings) {
         rebuildOutput();
         return true;
