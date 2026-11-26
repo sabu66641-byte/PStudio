@@ -6,6 +6,15 @@
   const canvas = document.getElementById('game-3d-canvas');
   if (!canvas) return;
   let renderer = null;
+  let productionRendererBridge = null;
+  let productionRendererPromotionStarted = false;
+  let productionRendererPromotionPromise = null;
+  let productionRendererFallbackRequested = false;
+  let lastWebGPUBridgePixelRatio = 0;
+  let productionWebGPUCompileStage = null;
+  let productionWebGPUBlockers = [];
+  let productionPendingCommands = null;
+  let productionPendingRenderRevision = 0;
   let rendererInitializationFailed=false;
   let postProcessingFailed=false,postProcessingFailureReason='';
   let composer=null,bloomPass=null,ssaoPass=null,gtaoPass=null,ssrPass=null,outputPass=null,taaPass=null,smaaPass=null,volumetricFogPass=null,volumetricCloudPass=null,contactShadowPass=null,godRaysPass=null;
@@ -33,7 +42,7 @@
   let lastProbeCameraPosition=null;
   let probeVolumeGeneration=0,probeRadianceCacheHits=0,probeRadianceCacheMisses=0,probeRadianceCacheRecomputes=0;
   const objectProbeRadianceCache=new WeakMap();
-  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false;
+  let dynamicGIEnabled=false,dynamicGIStatus='disabled',dynamicProbeCache=[],dynamicProbeDirty=null,dynamicProbeCursor=0,dynamicProbeSignature='',lastDynamicProbeSignatureAt=0,lastDynamicProbeUpdateAt=0,dynamicProbeUpdates=0,probeCaptureActive=false,dynamicProbeCaptureInFlight=false,probeBakeInFlight=false;
   let dynamicProbeSnapshots=[],dynamicProbeFadeLastPublishAt=0;
   let hdrTexture=null,hdrEnvironmentTarget=null,hdrShowBackground=false,bakedLightProbe=null,bakedLightProbeVolume=null,bakedGIBounces=0;
   const worldChunks=new Map(),objectChunkAssignments=new Map();
@@ -76,7 +85,7 @@
   const CLUSTER_GRID_X=16,CLUSTER_GRID_Y=9,CLUSTER_GRID_Z=16;
   const CLUSTER_MAX_LIGHTS=96,CLUSTER_MAX_PER_CELL=24;
   let clusteredLightingEnabled=true,clusteredLightingActive=false,clusteredLightingResources=null;
-  let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0;
+  let clusteredLightingLastUpdate=0,clusteredLightingLastSignature='',clusteredLightingUpdatedClusters=0,clusteredLightingSnapshotRevision=0;
   let clusteredLightSet=new Set();
   let modelBuildGeneration=0;
   const modelLoadErrors = new Map();
@@ -604,6 +613,337 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     occlusionRaycaster=new T.Raycaster();occlusionRaycaster.firstHitOnly=true;applyQualityPreset(qualityPreset);setupControls();return true;
   }
 
+  function getPStudioGodRaysSettings(){
+    if(!camera||!window.THREE)return{enabled:true,intensity:godRaysIntensity,lightPosition:[0.5,0.78]};
+    camera.updateMatrixWorld?.(true);
+    const Three=window.THREE;
+    const sunDirection=keyLight?.position?.clone?.()||new Three.Vector3(5,9,6);
+    if(sunDirection.lengthSq()<1e-8)sunDirection.set(5,9,6);else sunDirection.normalize();
+    const sunWorld=camera.position.clone().addScaledVector(sunDirection,1000);
+    const sunScreen=sunWorld.project(camera);
+    const x=Number(sunScreen.x)*0.5+0.5,y=Number(sunScreen.y)*0.5+0.5;
+    return{
+      enabled:true,intensity:godRaysIntensity,
+      lightPosition:[Number.isFinite(x)?x:0.5,Number.isFinite(y)?y:0.78]
+    };
+  }
+
+  function getPStudioContactShadowSettings(){
+    const uniforms=contactShadowPass?.uniforms||{};
+    const direction=uniforms.uLightDirectionWorld?.value;
+    return{
+      enabled:true,
+      intensity:Number(uniforms.uIntensity?.value??0.42),
+      maxDistance:Number(uniforms.uMaxDistance?.value??0.82),
+      thickness:Number(uniforms.uThickness?.value??0.075),
+      depthBias:Number(uniforms.uDepthBias?.value??0.018),
+      steps:Number(uniforms.uSteps?.value??12),
+      fadeStart:Number(uniforms.uFadeStart?.value??28),
+      fadeEnd:Number(uniforms.uFadeEnd?.value??105),
+      lightDirectionWorld:direction?.toArray?.()||[Number(direction?.x??0.35),Number(direction?.y??0.82),Number(direction?.z??0.44)]
+    };
+  }
+
+  function getPStudioVolumetricFogSettings(){
+    const uniforms=volumetricFogPass?.uniforms||{};
+    const toArray=(value,fallback)=>value?.toArray?.()||fallback;
+    return{
+      enabled:true,
+      fogColor:toArray(uniforms.uFogColor?.value,[0.725,0.847,0.851]),
+      fogAmbientColor:toArray(uniforms.uFogAmbientColor?.value,[0.851,0.933,1]),
+      sunColor:toArray(uniforms.uSunColor?.value,[1,0.945,0.839]),
+      sunDirection:toArray(uniforms.uSunDirection?.value,[-0.35,0.82,-0.44]),
+      density:Number(uniforms.uFogDensity?.value??0.0018),
+      heightFalloff:Number(uniforms.uHeightFalloff?.value??0.018),
+      baseHeight:Number(uniforms.uBaseHeight?.value??0),
+      anisotropy:Number(uniforms.uFogAnisotropy?.value??0.42),
+      steps:Number(uniforms.uFogSteps?.value??16),
+      time:Number(particleClock)||0
+    };
+  }
+
+  function getPStudioVolumetricCloudSettings(){
+    const uniforms=volumetricCloudPass?.uniforms||{};
+    const toArray=(value,fallback)=>value?.toArray?.()||fallback;
+    return{
+      enabled:true,
+      fogColor:toArray(uniforms.uFogColor?.value,[0.75,0.886,0.922]),
+      sunColor:toArray(uniforms.uSunColor?.value,[1,0.941,0.831]),
+      sunDirection:toArray(uniforms.uSunDirection?.value,[-0.42,0.78,-0.46]),
+      time:Number(particleClock)||0,
+      cloudBase:Number(uniforms.uCloudBase?.value??54),
+      cloudTop:Number(uniforms.uCloudTop?.value??108),
+      density:Number(uniforms.uCloudDensity?.value??0.78),
+      scale:Number(uniforms.uCloudScale?.value??0.0095),
+      coverage:Number(uniforms.uCloudCoverage?.value??0.48),
+      detail:Number(uniforms.uCloudDetail?.value??0.58),
+      wind:toArray(uniforms.uCloudWind?.value,[-0.8,0.32]),
+      steps:Number(uniforms.uCloudSteps?.value??34),
+      lightSteps:Number(uniforms.uCloudLightSteps?.value??2),
+      atmosphereStrength:Number(uniforms.uAtmosphereStrength?.value??0.96)
+    };
+  }
+
+  function getProductionWebGPUFeatureBlockers(commandsByObject=null){
+    const blockers=[];
+    const add=(id,message)=>{if(!blockers.some(item=>item.id===id))blockers.push({id,message});};
+    const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
+    const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
+    const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
+    const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
+    const supportsSelectedAOTSL=qualityAOEnabled
+      ?window.PStudioRenderingMigration?.supportsPStudioTSLGTAO===true
+      :window.PStudioRenderingMigration?.supportsPStudioTSLSSAO===true;
+    const supportsSSRNode=window.PStudioRenderingMigration?.supportsPStudioTSLSSR===true;
+    const supportsGodRaysNode=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
+    const supportsContactShadowsNode=window.PStudioRenderingMigration?.supportsPStudioTSLContactShadows===true;
+    const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
+    const supportsToonTSL=window.PStudioRenderingMigration?.supportsPStudioTSLToon===true;
+    const hasWater=(waterMaterials.size>0||Number(fx.waterMaterials)>0);
+    if(hasWater&&!supportsWaterTSL)add('water','水面TSLアダプターが利用できません。');
+    else if(hasWater)add('water-reflection-parity','TSL水深プリパス／ReflectorNodeは接続済みですが、複数反射面・深度・カメラ切替の実機パリティが未確認です。');
+    if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
+    else if(Number(fx.waterDetailMaterials)>0)add('water-detail-parity','水面マイクロリップル／詳細材質のTSLノードは接続済みですが、実機の透明合成・輪郭・遠景品質を未検証です。');
+    if(!supportsSurfaceTSL&&(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0))add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
+    else if(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0)add('foliage-parity','植生の風変形・透過TSLは接続済みですが、GPU頂点変形と透過品質の実機比較が未完了です。');
+    if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
+    else if(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0)add('terrain-parity','地形レイヤー／トライプラナーTSLは接続済みですが、遠景・法線・継ぎ目の実機比較が未完了です。');
+    if(!supportsSurfaceTSL&&Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
+    else if(Number(fx.parallaxMaterials)>0)add('parallax-parity','パララックスTSLは接続済みですが、視差遮蔽・シルエット・遠距離品質の実機検証が未完了です。');
+    let hasLegacyMirrorWater=false;
+    scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
+    if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
+    const activeClusterLighting=clusteredLightingActive||clusteredLightSet.size>0;
+    if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','ClusteredLightsNode Forward+ PBRアダプターが利用できません。');
+    else if(activeClusterLighting&&clusteredLightSet.size>0)add('clustered-lighting-pbr-parity','ClusteredLightsNodeのPBR経路は接続済みですが、多数ライト・反射カメラ・影付きライトの実機一致を確認するまで本番昇格を保留します。');
+    const supportsSHGI=window.PStudioRenderingMigration?.supportsPStudioTSLSHGI===true;
+    const hasBakedSHGI=!!(bakedLightProbe||bakedLightProbeVolume?.length);
+    if(hasBakedSHGI&&!supportsSHGI)add('static-gi-probe-capture','静的SHのTSL IrradianceNodeアダプターが利用できません。');
+    else if(hasBakedSHGI)add('sh-gi-capture-parity','9係数SHとWebGPU CubeRenderTarget読出しは接続済みですが、係数方向・強度・複数プローブ合成の実機一致が未確認です。');
+    if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
+    else if(Number(fx.causticMaterials)>0)add('caustics-parity','水中コースティクスTSLは接続済みですが、屈折光・水深・時間変化の実機比較が未完了です。');
+    if(Number(fx.outlineMaterials)>0)add('outline-parity','Backface Outline ShellはTSL頂点押し出し／アルファマスクへ移植済みですが、スキン・Instancing・複数材質の実機パリティが未確認です。');
+    if(Number(fx.toonMaterials)>0){
+      if(!supportsToonTSL)add('toon','NPR ToonのTSL NodeMaterialアダプターが利用できません。');
+      else add('toon-parity','NPR ToonのTSL 3色ランプ・リム・擬似SSSは接続済みですが、実機の輪郭・スペキュラ・複数ライト品質を検証するまで本番昇格を保留します。');
+    }
+    if(volumetricFogEnabled){
+      if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricFog!==true)add('volumetric-fog-tsl','体積フォグのTSLノード機能が利用できません。');
+      else add('volumetric-fog-parity','体積フォグTSLは実装済みですが、実機WebGPUでの散乱・深度・色差パリティ検証が未完了のためWebGL2を維持します。');
+    }
+    if(volumetricCloudsEnabled){
+      if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricClouds!==true)add('volumetric-clouds-tsl','体積雲のTSLノード機能が利用できません。');
+      else add('volumetric-clouds-parity','体積雲TSLは実装済みですが、実機WebGPUでのノイズ・多重散乱・深度パリティ検証が未完了のためWebGL2を維持します。');
+    }
+    if(contactShadowsEnabled&&!supportsContactShadowsNode)add('contact-shadows','コンタクトシャドウのTSL深度レイマーチアダプターが利用できません。');
+    else if(contactShadowsEnabled)add('contact-shadows-parity','コンタクトシャドウのTSL深度レイマーチは接続済みですが、深度不連続・接地影・負荷の実機検証が未完了です。');
+    if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
+    else if(ssaoEnabled||qualityAOEnabled)add('ambient-occlusion-parity','GTAO／SSAO TSLは接続済みですが、接触領域・ノイズ・時間安定性の実機検証が未完了です。');
+    if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
+    else if(ssrEnabled)add('ssr-parity','SSR TSLは接続済みですが、画面外欠損・ラフネス・動的解像度での実機比較が未完了です。');
+    if(godRaysEnabled&&!supportsGodRaysNode)add('god-rays','God RaysのTSL RenderPipelineアダプターが利用できません。');
+    else if(godRaysEnabled)add('god-rays-parity','God Rays TSLは接続済みですが、太陽位置・遮蔽・Bloomとの合成の実機検証が未完了です。');
+    if(dynamicGIEnabled&&!supportsSHGI)add('dynamic-gi','動的SH GIのTSLプローブ係数アダプターが利用できません。');
+    else if(dynamicGIEnabled)add('dynamic-gi-capture-parity','動的SHのWebGPU捕捉／更新経路は接続済みですが、更新遅延・係数の時間変化・カメラ移動の実機検証が未完了です。');
+    const supportsParticleTSL=!!window.PStudioWebGPU?.MeshBasicNodeMaterial&&!!window.PStudioTSL?.attribute;
+    const particleSystems=[...particleEmitters.values(),...particleBursts.values()];
+    if(particleSystems.some(effect=>effect?.system?.material?.isNodeMaterial!==true)
+      ||(particleSystems.length>0&&!supportsParticleTSL))add('gpu-particles','GPUパーティクルがTSL NodeMaterialへ移植されていません。');
+    if([...trailEffects.values()].some(trail=>trail?.material?.isNodeMaterial!==true)
+      ||(trailEffects.size>0&&!supportsParticleTSL))add('trails','トレイルVFXがTSL NodeMaterialへ移植されていません。');
+    else if(trailEffects.size>0)add('trails-parity','TSLリボントレイルは接続済みですが、透明重なり・速度変化・点数上限の実機検証が未完了です。');
+    if(particleSystems.length>0&&particleSystems.every(effect=>effect?.system?.material?.isNodeMaterial===true))add('gpu-particles-parity','TSLインスタンス粒子は接続済みですが、密度・寿命境界・GPU負荷の実機検証が未完了です。');
+    const aaModeSupported=temporalAAEnabled
+      ?window.PStudioRenderingMigration?.supportsPStudioTSLTRAA===true
+      :window.PStudioRenderingMigration?.supportsPStudioTSLSMAA===true;
+    if(!aaModeSupported)add('anti-aliasing-tsl','選択中のTRAA／SMAAモードに対応するTSLノードが利用できません。');
+    if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
+    else if(csm)add('csm-parity','TSL CSMShadowNodeは接続済みですが、カスケード境界・影バイアス・遠距離安定性の実機検証が未完了です。');
+    if(commandsByObject&&typeof commandsByObject.values==='function'){
+      for(const list of commandsByObject.values()){
+        for(const command of list||[]){
+          const type=String(command?.type||'');
+          const unsupportedDrawCommand =
+            (type==='toon_material'&&!supportsToonTSL)
+            || (type==='water'&&!supportsWaterTSL)
+            || (type==='terrain'&&!supportsSurfaceTSL);
+          if(unsupportedDrawCommand){
+            add('unported-command-'+type,'未移植の描画コマンドがシーンに含まれています: '+type);
+          }else if(type==='material'&&String(command?.shader||'')==='custom'){
+            add('custom-shader-command','独自GLSLマテリアルはTSL移植後に有効化してください。');
+          }else if(type==='model_material'&&command?.toon&&command.toon.enabled!==false){
+            if(!supportsToonTSL)add('toon-model-material','モデルのNPR Toon用TSLアダプターが利用できません。');
+            else add('toon-parity','モデルNPR ToonはTSLへ接続済みですが、実機の材質別スペキュラ／リム品質を検証するまで本番昇格を保留します。');
+          }else if(type==='postfx'&&(
+            (command?.ssao&&!supportsSelectedAOTSL)
+            ||(command?.gtao&&!window.PStudioRenderingMigration?.supportsPStudioTSLGTAO)
+            ||(command?.ssr&&!supportsSSRNode)
+          )){
+            add('postfx-command','未対応のポストプロセス機能がシーンに含まれています。');
+          }
+        }
+      }
+    }
+    return blockers;
+  }
+
+  function publishProductionRendererRuntime(snapshot={}){
+    const backend=snapshot.backend==='webgpu'?'webgpu':'webgl2';
+    const previous=window.PStudioRenderingRuntime||{};
+    window.PStudioRenderingRuntime=Object.freeze({
+      ...previous,
+      activeSceneBackend:backend,
+      webgpuSceneSessionReady:backend==='webgpu'&&snapshot.state==='ready',
+      productionBridgeState:String(snapshot.state||'idle'),
+      productionBridgeStage:snapshot.stage||null,
+      productionBridgeBlockers:Object.freeze([...(snapshot.blockers||productionWebGPUBlockers||[])])
+    });
+    try{
+      window.dispatchEvent(new CustomEvent('pstudio-production-renderer-state-changed',{detail:{
+        backend,state:snapshot.state||'idle',stage:snapshot.stage||null,
+        blockers:snapshot.blockers||productionWebGPUBlockers||[]
+      }}));
+    }catch(_){}
+  }
+
+  function requestProductionWebGPUMigration(options={}){
+    if(!renderer||!scene||!camera)return Promise.resolve(false);
+    if(productionRendererPromotionPromise)return productionRendererPromotionPromise;
+    if(!window.PStudioProductionRenderingBridgeFactory)return Promise.resolve(false);
+
+    const existingState=productionRendererBridge?.getState?.();
+    if(options.retry===true&&productionRendererBridge&&
+       (existingState?.state==='fallback'||existingState?.state==='failed')){
+      try{productionRendererBridge.dispose();}catch(_){}
+      productionRendererBridge=null;
+      productionRendererFallbackRequested=false;
+    }
+
+    if(!productionRendererBridge){
+      try{
+        const factory=window.PStudioProductionRenderingBridgeFactory;
+        productionRendererBridge=factory({
+          legacyCanvas:canvas,scene,camera,documentRef:document,navigatorRef:window.navigator,
+          csm:csm?{
+            enabled:true,
+            cascades:csm.cascades||3,
+            maxFar:csm.maxFar||worldRenderConfig.shadowDistance,
+            mode:csm.mode||'practical',
+            lightMargin:csm.lightMargin,
+            lightDirection:csm.lightDirection?.clone?.()||null,
+            lightIntensity:csm.lightIntensity,
+            fade:csm.fade===true,
+            shadowMapSize:csm.shadowMapSize||2048,
+            shadowBias:csm.shadowBias,
+            lightNear:csm.lightNear,
+            lightFar:csm.lightFar,
+            legacyLights:csm.lights,
+            lightColor:keyLight?.color?.clone?.()||null,
+            normalBias:keyLight?.shadow?.normalBias,
+            shadowRadius:keyLight?.shadow?.radius
+          }:null,
+          pipelineOptions:{
+            // TSL SMAA is the default spatial mode; opt-in temporal mode uses velocity reprojection.
+            antiAliasing:{mode:temporalAAEnabled?'traa':'smaa'},
+            bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false,
+            ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
+            ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false,
+            godRays:godRaysEnabled?getPStudioGodRaysSettings():false,
+            contactShadows:contactShadowsEnabled?getPStudioContactShadowSettings():false,
+            volumetricFog:volumetricFogEnabled?getPStudioVolumetricFogSettings():false,
+            volumetricClouds:volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false
+          },
+          configureRenderer:webgpuRenderer=>{
+            webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
+            webgpuRenderer.toneMapping=window.THREE.ACESFilmicToneMapping;
+            webgpuRenderer.toneMappingExposure=1.12;
+            if(webgpuRenderer.shadowMap)webgpuRenderer.shadowMap.enabled=true;
+            const rect=canvas.getBoundingClientRect();
+            const width=Math.max(1,Math.floor(rect.width||canvas.clientWidth||1));
+            const height=Math.max(1,Math.floor(rect.height||canvas.clientHeight||1));
+            const ratio=Math.max(0.5,Math.min(4.5,Number(renderer.getPixelRatio?.())||1));
+            webgpuRenderer.setPixelRatio?.(ratio);
+            webgpuRenderer.setSize(width,height,false);
+          },
+          environmentProfile:window.PStudioSceneEnvironment?.getPreset?.(activeEnvironmentPreset)||undefined,
+          getClusteredLightingSnapshot:getPStudioClusteredLightingSnapshot,
+          clusteredLightingOptions:{grid:{x:CLUSTER_GRID_X,y:CLUSTER_GRID_Y,z:CLUSTER_GRID_Z},maxLights:CLUSTER_MAX_LIGHTS,maxPerCell:CLUSTER_MAX_PER_CELL},
+          canPromote:()=>{
+            const blockers=getProductionWebGPUFeatureBlockers();
+            productionWebGPUBlockers=blockers;
+            return{allowed:blockers.length===0,blockers};
+          },
+          onStageChange:(stage,details)=>{
+            productionWebGPUCompileStage=stage==='converting-materials'||stage==='compiling'?stage:null;
+            if(stage==='failed'||stage==='ready'||stage==='disposed')productionWebGPUCompileStage=null;
+            publishProductionRendererRuntime({
+              state:stage==='failed'?'failed':'initializing-webgpu',
+              backend:'webgl2',stage,blockers:productionWebGPUBlockers
+            });
+          },
+          onStateChange:snapshot=>{
+            if(snapshot.state==='ready'&&snapshot.backend==='webgpu'){
+              productionWebGPUCompileStage=null;
+              productionRendererFallbackRequested=false;
+            }else if(snapshot.state==='ready'&&snapshot.backend==='webgl2'){
+              productionWebGPUCompileStage=null;
+              productionRendererFallbackRequested=false;
+              window.requestAnimationFrame(()=>{
+                if(productionRendererBridge?.getState?.().backend==='webgl2'&&renderer&&scene&&camera)drawFrame();
+              });
+            }else if(snapshot.state==='fallback'||snapshot.state==='failed'||snapshot.state==='disposed'){
+              productionWebGPUCompileStage=null;
+            }
+            productionWebGPUBlockers=snapshot.blockers||productionWebGPUBlockers;
+            publishProductionRendererRuntime(snapshot);
+            if(snapshot.state==='ready'&&productionPendingCommands){
+              const revision=productionPendingRenderRevision;
+              window.requestAnimationFrame(()=>{
+                if(productionWebGPUCompileStage!==null||!productionPendingCommands||revision!==productionPendingRenderRevision)return;
+                const pending=productionPendingCommands;
+                productionPendingCommands=null;
+                try{render(pending);}catch(error){console.error('[PStudio] Deferred scene update after renderer promotion failed.',error);}
+              });
+            }
+          }
+        });
+      }catch(error){
+        productionWebGPUBlockers=[{id:'bridge-construction',message:String(error?.message||error)}];
+        publishProductionRendererRuntime({state:'failed',backend:'webgl2',blockers:productionWebGPUBlockers});
+        return Promise.resolve(false);
+      }
+    }
+
+    productionWebGPUBlockers=productionRendererBridge.evaluate?.().blockers||productionWebGPUBlockers;
+    productionRendererPromotionPromise=Promise.resolve()
+      .then(()=>productionRendererBridge.initialize())
+      .catch(error=>{
+        productionWebGPUCompileStage=null;
+        productionWebGPUBlockers=[{id:'webgpu-initialization',message:String(error?.message||error)}];
+        console.warn('[PStudio] WebGPU scene promotion failed; the existing WebGL2 renderer remains active.',error);
+        publishProductionRendererRuntime({state:'failed',backend:'webgl2',blockers:productionWebGPUBlockers});
+        return false;
+      })
+      .finally(()=>{productionRendererPromotionPromise=null;});
+    return productionRendererPromotionPromise;
+  }
+
+  function fallbackFromWebGPUForUnsupportedFeatures(commandsByObject){
+    if(!productionRendererBridge||productionRendererFallbackRequested)return;
+    if(productionRendererBridge.getState?.().backend!=='webgpu')return;
+    const blockers=getProductionWebGPUFeatureBlockers(commandsByObject);
+    if(!blockers.length)return;
+    productionRendererFallbackRequested=true;
+    productionWebGPUBlockers=blockers;
+    const error=new Error('The active scene enabled a feature that has not completed its WebGPU/TSL port.');
+    error.code='PSTUDIO_WEBGPU_FEATURE_NOT_PORTED';
+    error.details=blockers;
+    productionRendererBridge.useFallback(error).catch(fallbackError=>{
+      productionRendererFallbackRequested=false;
+      console.error('[PStudio] WebGL2 recovery after an unsupported WebGPU feature failed.',fallbackError);
+    });
+  }
+
   function renderingBackendStatus(){
     let migration=null;
     try{
@@ -611,12 +951,18 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     }catch(error){
       migration={productionReady:false,error:String(error?.message||error)};
     }
+    const bridge=productionRendererBridge?.getState?.()||null;
+    const active=bridge?.backend==='webgpu'?'webgpu':'webgl2';
     return Object.freeze({
-      active:renderer?.backend?.isWebGPUBackend===true?'webgpu':'webgl2',
+      active,
       target:'webgpu-tsl',
       webgpuAvailable:!!migration?.webgpuAvailable,
-      productionReady:migration?.productionReady===true,
+      productionReady:false,
+      sceneSessionReady:active==='webgpu'&&bridge?.state==='ready',
       sceneReady:migration?.sceneReady??null,
+      promotionState:bridge?.state||'not-started',
+      promotionStage:bridge?.stage||null,
+      promotionBlockers:bridge?.blockers||productionWebGPUBlockers,
       blockers:migration?.blockers||[]
     });
   }
@@ -638,7 +984,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, Math.floor(rect.width));
     const height = Math.max(1, Math.floor(rect.height));
-    if (width !== lastSize.width || height !== lastSize.height) {
+    const bridgePixelRatio=Number(renderer.getPixelRatio?.())||1;
+    const bridgeRatioChanged=!!productionRendererBridge&&Math.abs(bridgePixelRatio-lastWebGPUBridgePixelRatio)>.001;
+    if (width !== lastSize.width || height !== lastSize.height || bridgeRatioChanged) {
       // A hidden scene canvas may have had a zero-sized DOM rect when Ultra was selected.
       // Re-evaluate its 2x target against the now-visible buffer dimensions before resizing.
       if(qualityPreset==='ultra'){
@@ -652,6 +1000,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       if(waterDepthTarget){const size=renderer.getDrawingBufferSize(new window.THREE.Vector2());waterDepthTarget.setSize(Math.max(1,size.x),Math.max(1,size.y));}
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      if(productionRendererBridge){
+        productionRendererBridge.resize(width,height,bridgePixelRatio);
+        lastWebGPUBridgePixelRatio=bridgePixelRatio;
+      }
       lastSize = { width, height };
     }
   }
@@ -752,6 +1104,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
+    const hadForeignHook =
+      (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function')
+      || (Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function');
     const uniforms={
       uMirrorReflection:{value:null},
       uMirrorTextureMatrix:{value:new T.Matrix4()},
@@ -784,6 +1139,18 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     };
     material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v2';
     material.userData.pstudioMirrorUniforms=uniforms;
+    const features=new Set(Array.isArray(material.userData.pstudioTSLFeatures)?material.userData.pstudioTSLFeatures:[]);
+    features.add('water');
+    material.userData.pstudioTSLPortVersion=1;
+    material.userData.pstudioTSLPortHasForeignHook=hadForeignHook;
+    material.userData.pstudioTSLFeatures=[...features];
+    material.userData.pstudioWaterTSLSettings={
+      mirrorOnly:true,amplitude:0,waveStrength:0.05,
+      shallow:'#0b3d52',deep:'#0b3d52',foam:'#0b3d52',
+      reflectivity:1,reflectionResolutionScale:0.5,absorption:0.01
+    };
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
     return material;
   }
   function createMirrorWaterState(material){
@@ -1224,6 +1591,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       ].join('\n'),
       transparent:true,depthTest:true,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false
     });
+    material.userData=material.userData||{};
+    material.userData.pstudioTSLAdapterId='pstudio.celestial.twinkle-stars';
     nightTwinkleStars=new T.Points(geometry,material);
     nightTwinkleStars.name='PStudioNightTwinkleStars';
     nightTwinkleStars.frustumCulled=false;
@@ -1291,6 +1660,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
+    // Keep the last valid WebGL frame on screen while legacy PBR materials are
+    // converted and the WebGPU pipeline is compiled; never render mixed material backends.
+    if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')return;
+    if(productionRendererFallbackRequested&&productionRendererBridge?.getState?.().backend==='webgpu')return;
     const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
     applyCameraShake();camera.updateMatrixWorld(true);
     const frameStarted=window.performance?.now?.()??Date.now();
@@ -1310,6 +1683,47 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     updateEditorGridPresentation();
     updateClusteredLighting();
     updateRenderingFrameBudget();
+    if(productionRendererBridge?.getState?.().backend==='webgpu'){
+      const liveBlockers=getProductionWebGPUFeatureBlockers();
+      if(liveBlockers.length){
+        fallbackFromWebGPUForUnsupportedFeatures();
+        return;
+      }
+      const started=window.performance?.now?.()??Date.now();
+      try{
+        const clusterSnapshot=getPStudioClusteredLightingSnapshot();
+        if(clusterSnapshot)productionRendererBridge.setClusteredLightingSnapshot?.(clusterSnapshot);
+        const aoActive=ssaoEnabled||qualityAOEnabled;
+        const controlsApplied=[
+          productionRendererBridge.setBloom?.(bloomEnabled?{enabled:true,strength:bloomStrength}:false),
+          productionRendererBridge.setAmbientOcclusion?.(aoActive?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false),
+          productionRendererBridge.setSSR?.(ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false),
+          productionRendererBridge.setGodRays?.(godRaysEnabled?getPStudioGodRaysSettings():false),
+          productionRendererBridge.setContactShadows?.(contactShadowsEnabled?getPStudioContactShadowSettings():false),
+          productionRendererBridge.setVolumetricFog?.(volumetricFogEnabled?getPStudioVolumetricFogSettings():false),
+          productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false)
+        ];
+        if(controlsApplied.some(result=>result!==true))throw new Error('The WebGPU RenderPipeline did not accept every post-processing state update.');
+        if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
+      }catch(error){
+        productionRendererFallbackRequested=true;
+        productionRendererBridge.useFallback(error).catch(fallbackError=>{
+          productionRendererFallbackRequested=false;
+          console.error('[PStudio] WebGPU frame failure and WebGL2 recovery both failed.',error,fallbackError);
+        });
+      }finally{
+        lastRenderDurationMs=Math.max(0,(window.performance?.now?.()??Date.now())-started);
+        pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
+        const completedAt=window.performance?.now?.()??Date.now();
+        updatePerformanceMonitor(completedAt);
+        // Dynamic SH captures run after the submitted WebGPU frame, using its active backend.
+        void serviceDynamicRadianceCache(completedAt).catch(error=>{
+          dynamicGIStatus='error';
+          console.warn('[PStudio] Dynamic WebGPU SH capture failed safely:',error);
+        });
+      }
+      return;
+    }
     renderer.info?.reset?.();pollGpuTimerQueries();
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     const hiddenStaticSky=[];
@@ -1408,27 +1822,71 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
       // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
-      try{serviceDynamicRadianceCache(now);}catch(error){dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);}
+      void serviceDynamicRadianceCache(now).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
     }
   }
 
   function createGpuParticleSystem(capacity,color,size=0.085){
-    const T=window.THREE,count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
+    const T=window.THREE,W=window.PStudioWebGPU,TSL=window.PStudioTSL;
+    const count=Math.max(1,Math.floor(capacity)),geometry=new T.BufferGeometry();
     const origins=new Float32Array(count*3),velocities=new Float32Array(count*3),births=new Float32Array(count),lifetimes=new Float32Array(count);
-    geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
-    geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
-    geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
-    geometry.setAttribute('aBirth',new T.BufferAttribute(births,1));
-    geometry.setAttribute('aLife',new T.BufferAttribute(lifetimes,1));
+    // A camera-facing instanced quad avoids WebGPU's 1-pixel point-primitive limit.
+    geometry.setAttribute('position',new T.BufferAttribute(new Float32Array([
+      -0.5,-0.5,0, 0.5,-0.5,0, -0.5,0.5,0, 0.5,0.5,0
+    ]),3));
+    geometry.setAttribute('uv',new T.BufferAttribute(new Float32Array([0,0,1,0,0,1,1,1]),2));
+    geometry.setIndex([0,1,2,2,1,3]);
+    geometry.setAttribute('aOrigin',new T.InstancedBufferAttribute(origins,3));
+    geometry.setAttribute('aVelocity',new T.InstancedBufferAttribute(velocities,3));
+    geometry.setAttribute('aBirth',new T.InstancedBufferAttribute(births,1));
+    geometry.setAttribute('aLife',new T.InstancedBufferAttribute(lifetimes,1));
     const uniforms={uTime:{value:particleClock},uColor:{value:new T.Color(color||'#ffffff')},uSize:{value:size},uPixelRatio:{value:renderer?.getPixelRatio?.()||1},uGravity:{value:2.4}};
-    const material=new T.ShaderMaterial({uniforms,transparent:true,depthWrite:false,blending:T.AdditiveBlending,
-      vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
+    let material;
+    if(W?.MeshBasicNodeMaterial&&TSL?.attribute&&TSL?.positionLocal&&TSL?.uniform){
+      const uTime=TSL.uniform(particleClock),uColor=TSL.uniform(new T.Color(color||'#ffffff'));
+      const uSize=TSL.uniform(size),uGravity=TSL.uniform(2.4);
+      const uWorldSize=TSL.uniform(0.04),uCameraRight=TSL.uniform(new T.Vector3(1,0,0)),uCameraUp=TSL.uniform(new T.Vector3(0,1,0));
+      const age=TSL.max(uTime.sub(TSL.attribute('aBirth','float')),TSL.float(0));
+      const lifetime=TSL.max(TSL.attribute('aLife','float'),TSL.float(0.05));
+      const origin=TSL.attribute('aOrigin','vec3');
+      const velocity=TSL.attribute('aVelocity','vec3');
+      const ballistic=origin.add(velocity.mul(age)).add(TSL.vec3(0,uGravity.mul(age.mul(age)).mul(-0.5),0));
+      const billboard=uCameraRight.mul(TSL.positionLocal.x.mul(uWorldSize)).add(uCameraUp.mul(TSL.positionLocal.y.mul(uWorldSize)));
+      const radial=TSL.positionLocal.xy.mul(2);
+      const radialDistance=radial.dot(radial);
+      const alive=TSL.float(1).sub(TSL.step(lifetime,age));
+      const fade=TSL.float(1).sub(TSL.smoothstep(lifetime.mul(0.68),lifetime,age));
+      const soft=TSL.float(1).sub(TSL.smoothstep(0.18,1,radialDistance));
+      material=new W.MeshBasicNodeMaterial();
+      material.positionNode=ballistic.add(billboard);
+      material.colorNode=uColor;
+      material.opacityNode=alive.mul(fade).mul(soft);
+      material.transparent=true;material.depthWrite=false;material.depthTest=true;
+      material.blending=T.AdditiveBlending;material.side=T.DoubleSide;material.toneMapped=true;
+      Object.assign(uniforms,{uTime,uColor,uSize,uGravity,uWorldSize,uCameraRight,uCameraUp});
+    }else{
+      material=new T.ShaderMaterial({uniforms,transparent:true,depthWrite:false,blending:T.AdditiveBlending,
+        vertexShader:`attribute vec3 aOrigin;attribute vec3 aVelocity;attribute float aBirth;attribute float aLife;
 uniform float uTime;uniform float uSize;uniform float uPixelRatio;uniform float uGravity;varying float vAlpha;
 void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3 p=aOrigin+aVelocity*age+vec3(0.0,-0.5*uGravity*age*age,0.0);vec4 mvPosition=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mvPosition;gl_PointSize=clamp(uSize*uPixelRatio*(280.0/max(0.1,-mvPosition.z)),1.0,40.0);vAlpha=alive*(1.0-smoothstep(aLife*0.68,aLife,age));}`,
-      fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);\n#include <tonemapping_fragment>
+        fragmentShader:`uniform vec3 uColor;varying float vAlpha;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0||vAlpha<=0.002)discard;float soft=1.0-smoothstep(0.18,1.0,r);gl_FragColor=vec4(uColor,vAlpha*soft);
+#include <tonemapping_fragment>
 #include <colorspace_fragment>}`
-    });
-    const points=new T.Points(geometry,material);points.frustumCulled=false;points.renderOrder=3;geometry.setDrawRange(0,count);
+      });
+      // The legacy fallback remains available only when the TSL constructors could not load.
+      geometry.setIndex(null);
+      geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+      geometry.setAttribute('aOrigin',new T.BufferAttribute(origins,3));
+      geometry.setAttribute('aVelocity',new T.BufferAttribute(velocities,3));
+      geometry.setAttribute('aBirth',new T.BufferAttribute(births,1));
+      geometry.setAttribute('aLife',new T.BufferAttribute(lifetimes,1));
+    }
+    const points=material.isNodeMaterial===true
+      ?new T.InstancedMesh(geometry,material,count)
+      :new T.Points(geometry,material);
+    points.frustumCulled=false;points.renderOrder=3;
+    if(material.isNodeMaterial===true){points.count=count;geometry.setDrawRange(0,6);}
+    else geometry.setDrawRange(0,count);
     return{points,geometry,material,uniforms,capacity:count,cursor:0};
   }
   function spawnGpuParticle(system,origin,velocity,lifetime){
@@ -1473,7 +1931,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     trail.geometry.setDrawRange(0,(points.length-1)*6);
   }
   function updateTrailEffect(key,command){
-    const T=window.THREE;
+    const T=window.THREE,W=window.PStudioWebGPU,TSL=window.PStudioTSL;
     if(!T||!scene)return;
     const duration=Math.max(0.05,Math.min(10,Number(command.duration)||0.25));
     const width=Math.max(0.001,Math.min(1,Number(command.width)||0.05));
@@ -1492,19 +1950,36 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
       const indices=[];
       for(let i=0;i<MAX_TRAIL_POINTS-1;i++){const a=i*2,b=a+1,c=a+2,d=a+3;indices.push(a,b,c,b,d,c);}
       geometry.setIndex(indices);
-      const material=new T.ShaderMaterial({
-        uniforms:{uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}},
-        vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-        fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
-        transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
-      });
+      let material,uniforms;
+      if(W?.MeshBasicNodeMaterial&&TSL?.attribute&&TSL?.uniform){
+        uniforms={
+          uColor:TSL.uniform(new T.Color('#ffffff')),
+          uTime:TSL.uniform(particleClock),
+          uDuration:TSL.uniform(duration)
+        };
+        const age=TSL.max(uniforms.uTime.sub(TSL.attribute('aBirth','float')),TSL.float(0));
+        const alpha=TSL.clamp(TSL.float(1).sub(age.div(TSL.max(uniforms.uDuration,TSL.float(0.001)))),0,1).mul(0.86);
+        material=new W.MeshBasicNodeMaterial();
+        material.colorNode=uniforms.uColor;
+        material.opacityNode=alpha;
+        material.transparent=true;material.depthWrite=false;material.depthTest=true;
+        material.side=T.DoubleSide;material.blending=T.AdditiveBlending;material.toneMapped=true;
+      }else{
+        uniforms={uColor:{value:new T.Color('#ffffff')},uTime:{value:particleClock},uDuration:{value:duration}};
+        material=new T.ShaderMaterial({
+          uniforms,
+          vertexShader:'attribute float aBirth;varying float vBirth;void main(){vBirth=aBirth;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+          fragmentShader:'uniform vec3 uColor;uniform float uTime;uniform float uDuration;varying float vBirth;void main(){float age=max(0.0,uTime-vBirth);float alpha=clamp(1.0-age/max(0.001,uDuration),0.0,1.0);if(alpha<=0.002)discard;gl_FragColor=vec4(uColor,alpha*0.86);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>}',
+          transparent:true,depthWrite:false,depthTest:true,side:T.DoubleSide,blending:T.AdditiveBlending,toneMapped:true
+        });
+      }
       const mesh=new T.Mesh(geometry,material);mesh.frustumCulled=false;mesh.renderOrder=5;scene.add(mesh);
-      trail={geometry,material,mesh,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
+      trail={geometry,material,mesh,uniforms,points:[],width,duration,lastCalledAt:particleClock,lastSampleAt:-Infinity};
       trailEffects.set(key,trail);
     }
     trail.width=width;trail.duration=duration;trail.lastCalledAt=particleClock;
-    trail.material.uniforms.uDuration.value=duration;
-    try{trail.material.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.material.uniforms.uColor.value.set('#ffffff');}
+    trail.uniforms.uDuration.value=duration;
+    try{trail.uniforms.uColor.value.set(String(command.color||'#ffffff'));}catch(_){trail.uniforms.uColor.value.set('#ffffff');}
     const position=new T.Vector3(Number(command.x)||0,Number(command.y)||0,Number(command.z)||0);
     const last=trail.points[trail.points.length-1];
     if(!last||last.position.distanceToSquared(position)>0.000025||particleClock-trail.lastSampleAt>=0.025){
@@ -1518,7 +1993,7 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
       if(particleClock-trail.lastCalledAt>trail.duration){
         disposeTrailEffect(trail);trailEffects.delete(key);continue;
       }
-      const time=trail.material?.uniforms?.uTime;
+      const time=trail.uniforms?.uTime;
       if(time&&Object.prototype.hasOwnProperty.call(time,'value'))time.value=particleClock;
     }
   }
@@ -1548,12 +2023,27 @@ void main(){float age=max(0.0,uTime-aBirth);float alive=1.0-step(aLife,age);vec3
     camera.updateMatrixWorld(true);
   }
   function updateGpuParticleSystems(){
-    const ratio=renderer?.getPixelRatio?.()||1;
-    const update=system=>{const uniforms=system?.uniforms;if(!uniforms?.uTime||!uniforms?.uPixelRatio)return false;uniforms.uTime.value=particleClock;uniforms.uPixelRatio.value=ratio;return true;};
+    const T=window.THREE,activeRenderer=productionRendererBridge?.getRenderer?.()||renderer;
+    const ratio=activeRenderer?.getPixelRatio?.()||1;
+    const logicalHeight=activeRenderer?.getSize?.(new T.Vector2())?.y||activeRenderer?.domElement?.clientHeight||720;
+    const projectionY=Math.max(0.001,Math.abs(Number(camera?.projectionMatrix?.elements?.[5])||1));
+    const right=camera?new T.Vector3(1,0,0).applyQuaternion(camera.quaternion):new T.Vector3(1,0,0);
+    const up=camera?new T.Vector3(0,1,0).applyQuaternion(camera.quaternion):new T.Vector3(0,1,0);
+    const update=system=>{
+      const uniforms=system?.uniforms;
+      if(!uniforms?.uTime)return false;
+      uniforms.uTime.value=particleClock;
+      if(uniforms.uPixelRatio)uniforms.uPixelRatio.value=ratio;
+      if(uniforms.uWorldSize&&uniforms.uSize){
+        uniforms.uWorldSize.value=560*(Number(uniforms.uSize.value)||0.085)/(projectionY*Math.max(1,logicalHeight));
+      }
+      if(uniforms.uCameraRight?.value?.copy)uniforms.uCameraRight.value.copy(right);
+      if(uniforms.uCameraUp?.value?.copy)uniforms.uCameraUp.value.copy(up);
+      return true;
+    };
     for(const emitter of particleEmitters.values())update(emitter?.system);
     for(const effect of particleBursts.values())update(effect?.system);
   }
-
   function configureWaterMaterial(material,object=null) {
     if(window.PStudioEnvironmentFX?.configureWater)return window.PStudioEnvironmentFX.configureWater(material,object,false);
     const uniforms={uPStudioTime:{value:0},uPStudioWaveAmplitude:{value:0.075}};
@@ -1596,33 +2086,99 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     return{loaded:true,width:texture.image?.width||0,height:texture.image?.height||0};
   }
 
-  function bakeLightProbe(options={}) {
+  function getSHProbeCaptureContext(T=window.THREE){
+    const activeBackend=productionRendererBridge?.getState?.().backend||'webgl2';
+    if(activeBackend==='webgpu'){
+      const captureRenderer=productionRendererBridge?.getRenderer?.();
+      if(!captureRenderer||captureRenderer.backend?.isWebGPUBackend!==true){
+        throw new Error('The active WebGPU renderer is unavailable for SH probe capture; no WebGL renderer substitution is permitted.');
+      }
+      if(typeof T?.CubeRenderTarget!=='function')throw new Error('Three.js CubeRenderTarget is unavailable for WebGPU SH capture.');
+      return Object.freeze({renderer:captureRenderer,Target:T.CubeRenderTarget,backend:'webgpu'});
+    }
+    if(!renderer||typeof T?.WebGLCubeRenderTarget!=='function')throw new Error('The WebGL2 SH capture renderer is unavailable.');
+    return Object.freeze({renderer,Target:T.WebGLCubeRenderTarget,backend:'webgl2'});
+  }
+
+  function suppressProbeLightingForCapture(){
+    const snapshots=[],seen=new Set();
+    scene?.traverse(object=>{
+      if(!object?.isMesh)return;
+      const materials=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of materials){
+        if(!material||seen.has(material))continue;
+        seen.add(material);
+        const legacy=Array.isArray(material.userData?.pstudioProbeUniforms)?material.userData.pstudioProbeUniforms:null;
+        const tsl=Array.isArray(material.userData?.pstudioTSLProbeUniforms)?material.userData.pstudioTSLProbeUniforms:null;
+        const legacyValues=legacy?.map(uniform=>uniform.clone())||null;
+        const tslValues=tsl?.map(uniform=>uniform?.value?.clone?.()||null)||null;
+        snapshots.push({legacy,legacyValues,tsl,tslValues});
+        for(const uniform of legacy||[])uniform?.set?.(0,0,0);
+        for(const uniform of tsl||[])uniform?.value?.set?.(0,0,0);
+      }
+    });
+    return ()=>{
+      for(const snapshot of snapshots){
+        for(let i=0;i<(snapshot.legacy||[]).length;i++){
+          const uniform=snapshot.legacy[i],value=snapshot.legacyValues[i];
+          if(value&&uniform?.copy)uniform.copy(value);
+        }
+        for(let i=0;i<(snapshot.tsl||[]).length;i++){
+          const uniform=snapshot.tsl[i],value=snapshot.tslValues[i];
+          if(value&&uniform?.value?.copy)uniform.value.copy(value);
+        }
+      }
+    };
+  }
+
+  async function bakeLightProbe(options={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
     if(window.PStudioEngine?.isRunning?.())throw new Error('Stop Play before baking static global illumination.');
+    if(probeBakeInFlight||dynamicProbeCaptureInFlight)throw new Error('Another SH probe capture is already active.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
     if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
-    const T=window.THREE,size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
-    const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+    const T=window.THREE,{renderer:captureRenderer,Target,backend}=getSHProbeCaptureContext(T);
+    const size=Math.max(32,Math.min(256,Math.floor(Number(options.resolution)||128)));
+    const target=new Target(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
     const cubeCamera=new T.CubeCamera(0.1,Math.max(50,Number(options.far)||300),target);
     cubeCamera.position.set(Number(options.x)||0,Number(options.y)||1.5,Number(options.z)||0);
-    if(bakedLightProbe)scene.remove(bakedLightProbe);
-    if(bakedLightProbeVolume){for(const item of bakedLightProbeVolume)scene.remove(item.light);bakedLightProbeVolume=null;}
-    const oldAutoUpdate=renderer.shadowMap.autoUpdate;
-    renderer.shadowMap.autoUpdate=true;
+    const previousSingle=bakedLightProbe,previousVolume=bakedLightProbeVolume,previousBounces=bakedGIBounces;
+    const previousCaptureActive=probeCaptureActive,oldTarget=captureRenderer.getRenderTarget?.()||null;
+    const oldAutoUpdate=captureRenderer.shadowMap?.autoUpdate,restoreProbeUniforms=suppressProbeLightingForCapture();
+    let nextProbe=null;
+    probeBakeInFlight=true;probeCaptureActive=true;
     try{
+      if(previousSingle)scene.remove(previousSingle);
+      if(previousVolume)for(const item of previousVolume)scene.remove(item.light);
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=true;
       scene.add(cubeCamera);
-      cubeCamera.update(renderer,scene);
+      cubeCamera.update(captureRenderer,scene);
       scene.remove(cubeCamera);
-      bakedLightProbe=generator.fromCubeRenderTarget(renderer,target);
-      bakedLightProbe.intensity=Math.max(0,Math.min(3,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
-      scene.add(bakedLightProbe);
-      renderer.setRenderTarget(null);
+      nextProbe=await generator.fromCubeRenderTarget(captureRenderer,target);
+      if(!nextProbe?.sh?.coefficients||nextProbe.sh.coefficients.length<9){
+        throw new Error('The asynchronous SH probe capture returned invalid coefficients.');
+      }
+      nextProbe.intensity=Math.max(0,Math.min(3,Number.isFinite(Number(options.intensity))?Number(options.intensity):1));
+      scene.add(nextProbe);
+      bakedLightProbe=nextProbe;bakedLightProbeVolume=null;bakedGIBounces=0;
+      updateProbeVolumeBlend();
+      for(const item of previousVolume||[])item.light.dispose?.();
+      previousSingle?.dispose?.();
+      captureRenderer.setRenderTarget?.(oldTarget);
       drawFrame();
-      return{baked:true,resolution:size,kind:'global-diffuse-light-probe',note:'単一のグローバル照明プローブです。面ごとのライトマップではありません。'};
+      return{baked:true,resolution:size,backend,kind:'global-diffuse-light-probe',note:'単一のグローバル照明プローブです。面ごとのライトマップではありません。'};
+    }catch(error){
+      if(nextProbe){scene.remove(nextProbe);nextProbe.dispose?.();}
+      bakedLightProbe=previousSingle;bakedLightProbeVolume=previousVolume;bakedGIBounces=previousBounces;
+      if(previousSingle)scene.add(previousSingle);
+      for(const item of previousVolume||[])scene.add(item.light);
+      updateProbeVolumeBlend();
+      throw error;
     }finally{
-      scene.remove(cubeCamera);
-      renderer.shadowMap.autoUpdate=oldAutoUpdate;
-      target.dispose();
+      scene.remove(cubeCamera);target.dispose();restoreProbeUniforms();
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldAutoUpdate;
+      captureRenderer.setRenderTarget?.(oldTarget);
+      probeCaptureActive=previousCaptureActive;probeBakeInFlight=false;
     }
   }
 
@@ -1848,8 +2404,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     probeVolumeGeneration++;dynamicGIStatus=signature?'updating':'waiting-for-dynamic-lights';
     return true;
   }
-  function serviceDynamicRadianceCache(now){
-    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene)return;
+  async function serviceDynamicRadianceCache(now){
+    if(!dynamicGIEnabled||!bakedLightProbeVolume?.length||!renderer||!scene||probeBakeInFlight||dynamicProbeCaptureInFlight)return;
     if(now-lastDynamicProbeSignatureAt>=600){
       lastDynamicProbeSignatureAt=now;
       const snapshots=collectDynamicLightSnapshots(),signature=dynamicLightCacheSignature(snapshots);
@@ -1907,7 +2463,9 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(now-lastDynamicProbeUpdateAt<captureInterval)return;
     if(recentRenderMs>(gpuFresh?12:7))return;
     const generator=window.PStudioPostFX?.LightProbeGenerator,T=window.THREE;
-    if(!generator?.fromCubeRenderTarget||!T?.WebGLCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    if(!generator?.fromCubeRenderTarget||!T?.CubeCamera){dynamicGIStatus='unavailable';return;}
+    const {renderer:captureRenderer,Target}=getSHProbeCaptureContext(T);
+    if(typeof Target!=='function'){dynamicGIStatus='unavailable';return;}
     const nextProbe=window.PStudioRenderingGI?.nextDirtyProbeIndex;
     let index=typeof nextProbe==='function'?nextProbe(dynamicProbeDirty,dynamicProbeCursor):-1;
     if(index<0&&!window.PStudioRenderingGI){
@@ -1919,13 +2477,16 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(index<0){dynamicGIStatus='ready';return;}
     const resolveProbeResolution=window.PStudioRenderingGI?.dynamicProbeCaptureResolution;
     const resolution=typeof resolveProbeResolution==='function'?resolveProbeResolution(qualityPreset):(qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64);
-    const target=new T.WebGLCubeRenderTarget(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
+    const target=new Target(resolution,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:false,minFilter:T.LinearFilter});
     const cube=new T.CubeCamera(.1,Math.max(50,worldRenderConfig.maxDrawDistance),target);
-    const position=bakedLightProbeVolume[index].position,oldTarget=renderer.getRenderTarget();
-    const oldEnvironment=scene.environment,oldBackground=scene.background,oldClear=renderer.getClearColor(new T.Color()).clone();
-    const oldClearAlpha=renderer.getClearAlpha(),oldAutoClear=renderer.autoClear,oldShadowAuto=renderer.shadowMap?.autoUpdate;
-    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],uniformSnapshots=[],savedVisibility=[];
-    const seenMaterials=new Set();
+    const position=bakedLightProbeVolume[index].position,oldTarget=captureRenderer.getRenderTarget?.()||null;
+    const oldEnvironment=scene.environment,oldBackground=scene.background;
+    const oldClear=captureRenderer.getClearColor?.(new T.Color())?.clone?.()||null;
+    const oldClearAlpha=captureRenderer.getClearAlpha?.()??1,oldAutoClear=captureRenderer.autoClear,oldShadowAuto=captureRenderer.shadowMap?.autoUpdate;
+    const oldCaptureActive=probeCaptureActive,restoreProbeUniforms=suppressProbeLightingForCapture();
+    const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],savedVisibility=[];
+    let capturedLight=null;
+    dynamicProbeCaptureInFlight=true;
     try{
       scene.traverse(object=>{
         if(object.isLight){
@@ -1933,20 +2494,13 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           else if(object.visible){hiddenLights.push([object,object.visible]);object.visible=false;}
         }
         if(!object.isMesh)return;
-        const materials=Array.isArray(object.material)?object.material:[object.material];
-        for(const material of materials){
-          if(!material||seenMaterials.has(material))continue;seenMaterials.add(material);
-          const uniforms=material.userData?.pstudioProbeUniforms;
-          if(!uniforms)continue;
-          const saved=uniforms.map(value=>value.clone());uniformSnapshots.push([uniforms,saved]);
-          for(const value of uniforms)value.set(0,0,0);
-        }
       });
       probeCaptureActive=true;
-      scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);renderer.autoClear=true;
-      if(renderer.shadowMap)renderer.shadowMap.autoUpdate=false;
-      cube.position.copy(position);scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
-      const light=generator.fromCubeRenderTarget(renderer,target),coefficients=light?.sh?.coefficients;
+      scene.environment=null;scene.background=new T.Color(0x000000);captureRenderer.setClearColor?.(0x000000,1);captureRenderer.autoClear=true;
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=false;
+      cube.position.copy(position);scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
+      capturedLight=await generator.fromCubeRenderTarget(captureRenderer,target);
+      const coefficients=capturedLight?.sh?.coefficients;
       if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
       const cached=dynamicProbeCache[index]||{coefficients:new Float32Array(27),valid:false,updatedAt:0,smoothedAt:0};
       const captured=new Float32Array(27);
@@ -1964,22 +2518,25 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       cached.valid=true;cached.updatedAt=now;cached.smoothedAt=now;dynamicProbeCache[index]=cached;dynamicProbeDirty[index]=0;
       dynamicProbeCursor=(index+1)%dynamicProbeDirty.length;dynamicProbeUpdates++;probeVolumeGeneration++;
       dynamicGIStatus=dynamicProbeDirty.some(Boolean)?'updating':'ready';
-      light.dispose?.();
+      capturedLight.dispose?.();capturedLight=null;
       try{window.PStudioEvents?.emit('gi.dynamic-probe.updated',{index,total:dynamicProbeCache.length,resolution,status:dynamicGIStatus});}catch(_){}
     }catch(error){
+      capturedLight?.dispose?.();
       dynamicGIStatus='error';console.warn('[PStudio] Dynamic SH probe update skipped:',error);
     }finally{
-      scene.remove(cube);probeCaptureActive=false;target.dispose();
-      for(const [uniforms,saved] of uniformSnapshots)for(let i=0;i<uniforms.length;i++)uniforms[i].copy(saved[i]);
+      scene.remove(cube);target.dispose();restoreProbeUniforms();
       for(const [light,visible] of hiddenLights)light.visible=visible;
       for(const [light,visible] of savedVisibility)light.visible=visible;
-      scene.environment=oldEnvironment;scene.background=oldBackground;renderer.setClearColor(oldClear,oldClearAlpha);
-      renderer.autoClear=oldAutoClear;if(renderer.shadowMap)renderer.shadowMap.autoUpdate=oldShadowAuto;
-      renderer.setRenderTarget(oldTarget);lastDynamicProbeUpdateAt=now;
+      scene.environment=oldEnvironment;scene.background=oldBackground;
+      if(oldClear)captureRenderer.setClearColor?.(oldClear,oldClearAlpha);
+      captureRenderer.autoClear=oldAutoClear;if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldShadowAuto;
+      captureRenderer.setRenderTarget?.(oldTarget);
+      probeCaptureActive=oldCaptureActive;dynamicProbeCaptureInFlight=false;lastDynamicProbeUpdateAt=now;
     }
   }
   async function bakeLightProbeVolume(o={}){
     if(!ensureRenderer())throw new Error('The 3D renderer is not available.');
+    if(probeBakeInFlight||dynamicProbeCaptureInFlight)throw new Error('Another SH probe capture is already active.');
     const generator=window.PStudioPostFX?.LightProbeGenerator;
     if(!generator?.fromCubeRenderTarget)throw new Error('LightProbeGenerator is unavailable.');
     const min=o.min||{x:-12,y:0,z:-12},max=o.max||{x:12,y:8,z:12};
@@ -1994,21 +2551,27 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(positions.length>32)throw new RangeError('A probe volume is limited to 32 samples.');
     const giLimit=qualityPreset==='ultra'?192:128;
     const giDefault=qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64;
-    const T=window.THREE,size=Math.max(32,Math.min(giLimit,Math.floor(Number(o.resolution)||giDefault)));
+    const T=window.THREE,{renderer:captureRenderer,Target,backend}=getSHProbeCaptureContext(T);
+    const size=Math.max(32,Math.min(giLimit,Math.floor(Number(o.resolution)||giDefault)));
     const previous=bakedLightProbeVolume,previousSingle=bakedLightProbe,previousBounces=bakedGIBounces;
     const maxBounces=Math.max(0,Math.min(4,Math.floor(Number(o.bounces??(qualityPreset==='ultra'?4:qualityPreset==='maximum'?3:2)))));
     const bounceStrength=Math.max(0,Math.min(0.8,Number.isFinite(Number(o.bounceStrength))?Number(o.bounceStrength):0.42));
     const intensity=Math.max(0,Math.min(3,Number.isFinite(Number(o.intensity))?Number(o.intensity):1));
     const minBounceEnergy=Math.max(0,Math.min(0.1,Number.isFinite(Number(o.minBounceEnergy))?Number(o.minBounceEnergy):0.0005));
-    const allocated=new Set(),oldAuto=renderer.shadowMap.autoUpdate,oldEnvironment=scene.environment,oldBackground=scene.background;
+    const allocated=new Set(),oldAuto=captureRenderer.shadowMap?.autoUpdate,oldTarget=captureRenderer.getRenderTarget?.()||null,oldEnvironment=scene.environment,oldBackground=scene.background;
+    const oldCaptureActive=probeCaptureActive,restoreProbeUniforms=suppressProbeLightingForCapture();
     let directProbes=[],sourceProbes=[],finalProbes=[],completedBounces=0,lastBounceEnergy=0;
-    renderer.shadowMap.autoUpdate=true;
+    probeBakeInFlight=true;probeCaptureActive=true;
+    if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=true;
     if(previousSingle)scene.remove(previousSingle);
+    for(const item of previous||[])scene.remove(item.light);
     const capture=async(position,sources,includeDirect,probeIntensity)=>{
-      const target=new T.WebGLCubeRenderTarget(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
-      let cube=null;
+      const target=new Target(size,{format:T.RGBAFormat,type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+      let cube=null,capturedLight=null,retainCapturedLight=false;
+      const targetBefore=captureRenderer.getRenderTarget?.()||null;
       const temporary=[],hiddenLights=[],environmentBefore=scene.environment,backgroundBefore=scene.background;
-      const clearColorBefore=renderer.getClearColor(new T.Color()).clone(),clearAlphaBefore=renderer.getClearAlpha();
+      const clearColorBefore=captureRenderer.getClearColor?.(new T.Color())?.clone?.()||null;
+      const clearAlphaBefore=captureRenderer.getClearAlpha?.()??1;
       try{
         cube=new T.CubeCamera(0.1,Math.max(50,Number(o.far)||500),target);cube.position.copy(position);
         if(sources.length){
@@ -2020,17 +2583,23 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
           }
         }
         if(!includeDirect){
-          scene.environment=null;scene.background=new T.Color(0x000000);renderer.setClearColor(0x000000,1);
+          scene.environment=null;scene.background=new T.Color(0x000000);captureRenderer.setClearColor?.(0x000000,1);
           scene.traverse(object=>{if(object.isLight&&!object.userData?.pstudioBounceSource){hiddenLights.push([object,object.visible]);object.visible=false;}});
         }
-        scene.add(cube);cube.update(renderer,scene);scene.remove(cube);
-        const light=generator.fromCubeRenderTarget(renderer,target);light.position.copy(position);
-        const item={position:position.clone(),light,baseIntensity:probeIntensity};allocated.add(item);return item;
+        scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
+        capturedLight=await generator.fromCubeRenderTarget(captureRenderer,target);
+        if(!capturedLight?.sh?.coefficients||capturedLight.sh.coefficients.length<9)throw new Error('Static SH probe capture returned invalid coefficients.');
+        capturedLight.position.copy(position);
+        const item={position:position.clone(),light:capturedLight,baseIntensity:probeIntensity};
+        allocated.add(item);retainCapturedLight=true;return item;
       }finally{
         if(cube)scene.remove(cube);target.dispose();
+        if(!retainCapturedLight)capturedLight?.dispose?.();
         for(const light of temporary){scene.remove(light);delete light.userData.pstudioBounceSource;}
         for(const [light,visible] of hiddenLights)light.visible=visible;
-        scene.environment=environmentBefore;scene.background=backgroundBefore;renderer.setClearColor(clearColorBefore,clearAlphaBefore);
+        scene.environment=environmentBefore;scene.background=backgroundBefore;
+        if(clearColorBefore)captureRenderer.setClearColor?.(clearColorBefore,clearAlphaBefore);
+        captureRenderer.setRenderTarget?.(targetBefore);
       }
     };
     try{
@@ -2056,7 +2625,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       bakedLightProbe=null;finalProbes.pstudioGrid=Object.freeze({min:Object.freeze({x:Number(min.x),y:Number(min.y),z:Number(min.z)}),max:Object.freeze({x:Number(max.x),y:Number(max.y),z:Number(max.z)}),dims:Object.freeze(dims.slice()),layout:'x-fastest'});bakedLightProbeVolume=finalProbes;bakedGIBounces=completedBounces;
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
-      updateProbeVolumeBlend();renderer.setRenderTarget(null);drawFrame();
+      updateProbeVolumeBlend();captureRenderer.setRenderTarget?.(null);drawFrame();
       for(const item of previous||[])item.light.dispose?.();
       if(previousSingle)previousSingle.dispose?.();
       for(const item of [...allocated])if(!finalProbes.includes(item)){item.light.dispose?.();allocated.delete(item);}
@@ -2065,13 +2634,16 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       for(const item of allocated)item.light.dispose?.();
       bakedLightProbeVolume=previous;bakedLightProbe=previousSingle;bakedGIBounces=previousBounces;
       if(previousSingle)scene.add(previousSingle);
+      for(const item of previous||[])scene.add(item.light);
       for(const mesh of meshCache.values())bindObjectProbeLighting(mesh);
       for(const instance of modelInstances.values())instance.root.traverse(bindObjectProbeLighting);
       updateProbeVolumeBlend();
       throw error;
     }finally{
       scene.environment=oldEnvironment;scene.background=oldBackground;
-      renderer.shadowMap.autoUpdate=oldAuto;renderer.setRenderTarget(null);
+      if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=oldAuto;
+      captureRenderer.setRenderTarget?.(oldTarget);
+      restoreProbeUniforms();probeCaptureActive=oldCaptureActive;probeBakeInFlight=false;
     }
   }
   function bakeEnvironmentGI(options={}){
@@ -2297,7 +2869,20 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     if(!material||material.userData?.pstudioClusterLightingSetup)return false;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return false;
     const resources=ensureClusteredLightingResources();if(!resources)return false;
-    const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+    const previousCompile=material.onBeforeCompile,previousKeyIdentity=material.customProgramCacheKey,previousKey=previousKeyIdentity?.bind(material);
+    const data=material.userData||(material.userData={});
+    const approvedPrevious=data.pstudioTSLPortVersion===1
+      &&data.pstudioTSLPortHasForeignHook!==true
+      &&material.pstudioTSLPortApprovedCompileHook===previousCompile
+      &&material.pstudioTSLPortApprovedCacheKey===previousKeyIdentity;
+    const csmOnlyPrevious=data.pstudioCSMOnlyHook===true
+      &&data.pstudioProbeShaderSetup!==true
+      &&data.pstudioCSMHook===previousCompile
+      &&!Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+    const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof previousCompile==='function';
+    const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof previousKeyIdentity==='function';
+    const foreignPrevious=data.pstudioTSLPortHasForeignHook===true
+      ||(!approvedPrevious&&!csmOnlyPrevious&&(ownCompile||ownCacheKey));
     const uniforms={
       lights:resources.lightTexture,clusters:resources.clusterTexture,
       viewport:new window.THREE.Vector2(1,1),
@@ -2352,8 +2937,15 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>','#include <lights_fragment_begin>\n'+lighting);
     };
     material.customProgramCacheKey=function(){return(previousKey?previousKey():'')+'|pstudio-clustered-forward-v1';};
-    material.userData.pstudioClusterLightingSetup=true;
-    material.userData.pstudioClusterLightingUniforms=uniforms;
+    data.pstudioClusterLightingSetup=true;
+    data.pstudioClusterLightingUniforms=uniforms;
+    data.pstudioTSLPortVersion=1;
+    data.pstudioTSLPortHasForeignHook=foreignPrevious;
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes('clustered-lighting'))features.push('clustered-lighting');
+    data.pstudioTSLFeatures=features;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
     return true;
   }
   function clusteredDepthSlice(depth,near,far){
@@ -2382,6 +2974,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       );
       if(light.intensity>0&&lights.length<CLUSTER_MAX_LIGHTS)lights.push({light,position,range});
     }
+    signatureParts.push(clusteredLightingEnabled?1:0);
     const signature=signatureParts.join('|')+'|'+[
       Number(camera.position.x.toFixed(2)),Number(camera.position.y.toFixed(2)),Number(camera.position.z.toFixed(2)),
       Number(camera.quaternion.x.toFixed(3)),Number(camera.quaternion.y.toFixed(3)),
@@ -2449,7 +3042,25 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     for(const instance of modelInstances.values())for(const material of instance.materialDefaults.keys())updateMaterial(material);
     for(const mesh of meshCache.values())updateMaterial(mesh.material);
     clusteredLightingUpdatedClusters=counts.reduce((sum,count)=>sum+(count>0?1:0),0);
+    clusteredLightingSnapshotRevision++;
     return active;
+  }
+
+  function getPStudioClusteredLightingSnapshot(){
+    const resources=clusteredLightingResources;
+    if(!resources||!camera)return null;
+    const near=Math.max(0.001,camera.near);
+    const far=Math.max(near*1.01,Math.min(camera.far||worldRenderConfig.maxDrawDistance,worldRenderConfig.maxDrawDistance*2));
+    return Object.freeze({
+      grid:Object.freeze({x:CLUSTER_GRID_X,y:CLUSTER_GRID_Y,z:CLUSTER_GRID_Z}),
+      lightData:resources.lightData,
+      clusterData:resources.clusterData,
+      lightCount:resources.lightCount,
+      clusteredLights:new Set(clusteredLightingEnabled?clusteredLightSet:[]),
+      near,far,
+      enabled:clusteredLightingEnabled===true,
+      revision:clusteredLightingSnapshotRevision
+    });
   }
 
   function updateWorldVisibility(){
@@ -3840,11 +4451,34 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
 
   function setupLightingMaterial(material){
     if(!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
-    if(csm&&!material.userData.pstudioCSMSetup){try{csm.setupMaterial(material);material.userData.pstudioCSMSetup=true;}catch(error){console.warn('[PStudio] CSM material setup failed:',error);}}
+    if(csm&&!material.userData.pstudioCSMSetup){
+      try{
+        const hadCustomShaderHook=
+          (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function')||
+          (Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function');
+        csm.setupMaterial(material);
+        material.userData.pstudioCSMSetup=true;
+        material.userData.pstudioCSMOnlyHook=!hadCustomShaderHook;
+        material.userData.pstudioCSMHook=material.onBeforeCompile;
+      }catch(error){console.warn('[PStudio] CSM material setup failed:',error);}
+    }
     // Keep native GLTF material shaders untouched until an SH probe volume is baked.
     if(!bakedLightProbeVolume?.length)return material;
     if(material.userData.pstudioProbeShaderSetup)return material;
     const oldCompile=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material),probeUniforms=Array.from({length:9},()=>new window.THREE.Vector3());
+    const data=material.userData||(material.userData={});
+    const approvedPrevious=data.pstudioTSLPortVersion===1
+      &&data.pstudioTSLPortHasForeignHook!==true
+      &&material.pstudioTSLPortApprovedCompileHook===oldCompile
+      &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+    const csmOnlyPrevious=data.pstudioCSMOnlyHook===true
+      &&data.pstudioCSMHook===oldCompile
+      &&data.pstudioProbeShaderSetup!==true
+      &&!Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+    const foreignPrevious=!approvedPrevious&&!csmOnlyPrevious&&(
+      (Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof oldCompile==='function')
+      ||(Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function')
+    );
     material.onBeforeCompile=function(shader,rendererRef){if(typeof oldCompile==='function')oldCompile.call(this,shader,rendererRef);shader.uniforms.uPStudioSH={value:probeUniforms};
       shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
 uniform vec3 uPStudioSH[9];
@@ -3852,11 +4486,31 @@ vec3 pstudioEvaluateSH(vec3 n){float x=n.x,y=n.y,z=n.z;vec3 value=uPStudioSH[0]*
       shader.fragmentShader=shader.fragmentShader.replace('#include <lights_fragment_begin>',`#include <lights_fragment_begin>
 reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(viewMatrix))*geometry.normal))*BRDF_Lambert(diffuseColor.rgb);`);
       material.userData.pstudioProbeUniforms=probeUniforms;};
-    material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};material.userData.pstudioProbeShaderSetup=true;return material;
+    material.customProgramCacheKey=function(){return(oldKey?oldKey():'')+'|pstudio-object-sh-v1';};
+    data.pstudioProbeShaderSetup=true;
+    data.pstudioTSLPortVersion=1;
+    data.pstudioTSLPortHasForeignHook=foreignPrevious;
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes('sh-gi'))features.push('sh-gi');
+    data.pstudioTSLFeatures=features;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
+    return material;
   }
   function updateObjectProbeUniforms(object,material){
-    const uniforms=material?.userData?.pstudioProbeUniforms,volume=bakedLightProbeVolume;
-    if(!uniforms||!volume?.length||probeCaptureActive)return;
+    const uniforms=material?.userData?.pstudioProbeUniforms;
+    const tslUniforms=material?.userData?.pstudioTSLProbeUniforms;
+    const volume=bakedLightProbeVolume;
+    if((!Array.isArray(uniforms)||uniforms.length<9)&&(!Array.isArray(tslUniforms)||tslUniforms.length<9))return;
+    if(!volume?.length||probeCaptureActive)return;
+    const publishCoefficients=coefficients=>{
+      for(let i=0;i<9;i++){
+        const offset=i*3,x=coefficients[offset],y=coefficients[offset+1],z=coefficients[offset+2];
+        if(typeof uniforms?.[i]?.set==='function')uniforms[i].set(x,y,z);
+        const value=tslUniforms?.[i]?.value;
+        if(typeof value?.set==='function')value.set(x,y,z);
+      }
+    };
     let cache=objectProbeRadianceCache.get(object);
     if(!cache){
       cache={position:new window.THREE.Vector3(),lastPosition:new window.THREE.Vector3(),coefficients:new Float32Array(27),generation:-1,valid:false};
@@ -3866,7 +4520,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
     const moved=!cache.valid||cache.generation!==probeVolumeGeneration||cache.lastPosition.distanceToSquared(cache.position)>0.0004;
     if(!moved){
       probeRadianceCacheHits++;
-      for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+      publishCoefficients(cache.coefficients);
       return;
     }
     probeRadianceCacheRecomputes++;cache.coefficients.fill(0);
@@ -3921,7 +4575,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       }
     }
     cache.lastPosition.copy(center);cache.generation=probeVolumeGeneration;cache.valid=true;
-    for(let i=0;i<9;i++){const offset=i*3;uniforms[i].set(cache.coefficients[offset],cache.coefficients[offset+1],cache.coefficients[offset+2]);}
+    publishCoefficients(cache.coefficients);
   }
   function bindObjectProbeLighting(object){if(!object?.isMesh)return;const mats=Array.isArray(object.material)?object.material:[object.material];for(const m of mats)setupLightingMaterial(m);object.onBeforeRender=(r,s,c,g,m)=>updateObjectProbeUniforms(object,m);}
   function hasNamedLODParent(object){
@@ -4775,6 +5429,8 @@ void main(){
 }`,
         depthTest:true,depthWrite:true,transparent:false,fog:false
       });
+      material.userData=material.userData||{};
+      material.userData.pstudioTSLAdapterId='pstudio.celestial.moon';
       moonMesh=new T.Mesh(geometry,material);
       moonMesh.name='PStudioMoonSphere';
       moonMesh.frustumCulled=false;
@@ -4936,6 +5592,8 @@ void main(){
         ].join('\n'),
         depthTest:true,depthWrite:false,transparent:false,fog:false,toneMapped:false
       });
+      material.userData=material.userData||{};
+      material.userData.pstudioTSLAdapterId='pstudio.celestial.sun';
       sunMesh=new T.Mesh(geometry,material);
       sunMesh.name='PStudioSunSphere';
       sunMesh.frustumCulled=false;
@@ -5837,6 +6495,13 @@ void main(){
 
   function render(commandsByObject) {
     if (!ensureRenderer()) throw new Error('Three.js could not be loaded. The 3D view needs an internet connection.');
+    if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling'){
+      productionPendingCommands=commandsByObject;
+      productionPendingRenderRevision++;
+      return;
+    }
+    productionPendingCommands=null;
+    productionPendingRenderRevision++;
     const T = window.THREE;
     lastCommands=commandsByObject;
     bloomEnabled=false;ssaoEnabled=qualityAOEnabled;bloomStrength=0.45;
@@ -6121,7 +6786,12 @@ void main(){
         }else if(d.type==='water')mesh.material.transmission=Math.max(0.18,Math.min(0.98,Number(d.opacity)||0.82));
         if(d.type==='mirror_water'){
           const state=mesh.userData.pstudioMirrorWater;
-          if(state){state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));}
+          if(state){
+            state.reflectivity=Math.max(0,Math.min(1,Number.isFinite(Number(d.reflectivity))?Number(d.reflectivity):1.0));
+            state.waveStrength=Math.max(0,Math.min(1,Number.isFinite(Number(d.waveStrength))?Number(d.waveStrength):0.05));
+            const tslSettings=mesh.material?.userData?.pstudioWaterTSLSettings;
+            if(tslSettings){tslSettings.reflectivity=state.reflectivity;tslSettings.waveStrength=state.waveStrength;}
+          }
         }
         mesh.userData.ownerId=ownerId;
         mesh.position.set(Number(d.x)||0,Number(d.y)||0,Number(d.z)||0);
@@ -6174,7 +6844,14 @@ void main(){
     }
     for(const instance of pendingFrameInstances)frameCameraToModel(instance);
     refreshSelectionOutline();
+    fallbackFromWebGPUForUnsupportedFeatures(commandsByObject);
     updateCamera(cameraCommand?.dt ?? 1 / 60,cameraOwnerId);
+    if(!productionRendererPromotionStarted){
+      productionRendererPromotionStarted=true;
+      requestProductionWebGPUMigration({automatic:true}).catch(error=>{
+        console.warn('[PStudio] Automatic WebGPU scene promotion was not completed; WebGL2 remains active.',error);
+      });
+    }
   }
   function clear() {
     if (!renderer) return;
@@ -6262,6 +6939,12 @@ void main(){
   window.PStudio3D = {
     render,
     getRenderingBackendStatus:renderingBackendStatus,
+    requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true}),
+    getWebGPUMigrationDiagnostics:()=>Object.freeze({
+      bridge:productionRendererBridge?.getState?.()||null,
+      blockers:Object.freeze(getProductionWebGPUFeatureBlockers()),
+      compileStage:productionWebGPUCompileStage
+    }),
     clear,
     frameObject,
     adjustZoom:adjustCameraZoom,
@@ -6271,11 +6954,14 @@ void main(){
       const requested=!!enabled;
       godRaysIntensity=Math.max(0,Math.min(2,Number.isFinite(Number(intensity))?Number(intensity):1));
       if(requested&&!renderer&&window.THREE)ensureRenderer();
-      godRaysEnabled=requested&&!!godRaysPass;
-      godRaysFallbackEnabled=requested&&!godRaysPass&&!!bloomPass;
+      const webgpuRaysAvailable=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
+      const webgpuRaysActive=productionRendererBridge?.getState?.().backend==='webgpu';
+      godRaysEnabled=requested&&(!!godRaysPass||(webgpuRaysActive&&webgpuRaysAvailable));
+      godRaysFallbackEnabled=requested&&!godRaysEnabled&&!!bloomPass;
+      if(productionRendererBridge?.getState?.().backend==='webgpu')productionRendererBridge.setGodRays?.(godRaysEnabled?getPStudioGodRaysSettings():false);
       if(!requested){godRaysEnabled=false;godRaysFallbackEnabled=false;}
       if(renderer&&scene&&camera)drawFrame();
-      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
+      return{enabled:godRaysEnabled||godRaysFallbackEnabled,available:!!godRaysPass||webgpuRaysAvailable,fallback:godRaysFallbackEnabled?'bloom':null,intensity:godRaysIntensity};
     },
     getZoom:()=>({distanceMultiplier:zoom,displayPercent:Math.round((1/zoom)*100)}),
     retryModelAsset,
@@ -6316,7 +7002,25 @@ void main(){
       if(status)status.textContent=result.enabled?'Live GI: '+result.status:(result.reason||'Live GI disabled');
       return result;
     },
-    setTemporalAA:enabled=>{const next=!!enabled,fx=window.PStudioEnvironmentFX?.getStats?.()||{};if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'Three.js r160 TAARenderPass has no motion-vector reprojection; freeze animated water/foliage before enabling temporal accumulation.'};if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};resetPostProcessingFailure();temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;if(renderer&&scene&&camera)drawFrame();return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};},
+    setTemporalAA:enabled=>{
+      const next=!!enabled;
+      resetPostProcessingFailure();
+      if(productionRendererBridge?.getState?.().backend==='webgpu'){
+        const applied=productionRendererBridge.setAntiAliasing?.({mode:next?'traa':'smaa'})===true;
+        if(!applied)return{enabled:false,reason:'The active WebGPU renderer could not update its TSL anti-aliasing graph.'};
+        temporalAAEnabled=next;
+        if(taaPass){taaPass.accumulate=next;taaPass.accumulateIndex=-1;}
+        if(renderer&&scene&&camera)drawFrame();
+        return{enabled:temporalAAEnabled,mode:next?'tsl-temporal-reprojection':'tsl-smaa-spatial'};
+      }
+      const fx=window.PStudioEnvironmentFX?.getStats?.()||{};
+      if(next&&(Number(fx.waterMaterials)||0)+(Number(fx.foliageMaterials)||0)>0)return{enabled:false,reason:'The WebGL2 fallback uses static-scene temporal accumulation and does not provide motion-vector reprojection for animated water/foliage.'};
+      if(!taaPass)return{enabled:false,reason:'TAARenderPass is unavailable.'};
+      temporalAAEnabled=next;taaPass.accumulate=next;taaPass.accumulateIndex=-1;
+      if(!next)taaPass.sampleLevel=['maximum','ultra'].includes(resolveQualityPreset(qualityPreset))?2:resolveQualityPreset(qualityPreset)==='high'?1:0;
+      if(renderer&&scene&&camera)drawFrame();
+      return{enabled:temporalAAEnabled,mode:next?'static-scene-temporal-accumulation':'per-frame-spatial-supersampling'};
+    },
     setContactShadows:(enabled,options={})=>{
       resetPostProcessingFailure();
       contactShadowsRequested=enabled===null||enabled===undefined?null:!!enabled;

@@ -5,6 +5,37 @@
   const water = new Set(), waterDetailMaterials = new Set(), foliage = new Set(), toonMaterials = new Set(), outlineMaterialCache = new Map(), foliageTranslucencyMaterials = new Set(), caustics = new Set(), parallaxMaterials = new Set(), triplanarMaterials = new Set(), terrainMaterials = new Set(), cloudPasses = new Set(), fogPasses = new Set(), contactShadowPasses = new Set();
   const has = (text, re) => re.test(String(text || ''));
   const addAfter = (source, token, code) => source.includes(token) ? source.replace(token, token + '\n' + code) : source;
+  function markTSLPortable(material,feature){
+    if(!material)return;
+    const data=material.userData||(material.userData={});
+    const alreadyTagged=data.pstudioTSLPortVersion===1&&Array.isArray(data.pstudioTSLFeatures);
+    if(alreadyTagged){
+      const approvedHookMatches=material.pstudioTSLPortApprovedCompileHook===material.onBeforeCompile
+        &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+      const knownCSM=data.pstudioCSMOnlyHook===true
+        &&data.pstudioProbeShaderSetup!==true
+        &&data.pstudioCSMHook===material.onBeforeCompile
+        &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey;
+      if(!approvedHookMatches&&!knownCSM)data.pstudioTSLPortHasForeignHook=true;
+    }else{
+      const ownCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile')&&typeof material.onBeforeCompile==='function';
+      const ownCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey')&&typeof material.customProgramCacheKey==='function';
+      const knownCSM=data.pstudioCSMOnlyHook===true
+        &&data.pstudioProbeShaderSetup!==true
+        &&data.pstudioCSMHook===material.onBeforeCompile
+        &&!ownCacheKey;
+      data.pstudioTSLPortHasForeignHook=(ownCompile&&!knownCSM)||(ownCacheKey&&!knownCSM);
+      data.pstudioTSLPortVersion=1;
+    }
+    const features=Array.isArray(data.pstudioTSLFeatures)?data.pstudioTSLFeatures:[];
+    if(!features.includes(feature))features.push(feature);
+    data.pstudioTSLFeatures=features;
+  };
+  const sealTSLPortable=(material)=>{
+    if(!material)return;
+    material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
+    material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
+  };
   const WATER = /water|river|lake|ocean|sea|lagoon|cascade|waterfall|foam|spray/i;
   const LEAF = /tree|foliage|leaf|leaves|canopy|grass|meadow|wildflower|pine|bush|shrub/i;
   const UNDER = /submerged|underwater|reef|riverbed|seabed|waterbed/i;
@@ -15,6 +46,7 @@
     const role=String(object?.userData?.pstudioWaterDetail||'micro-ripple');
     const type=role==='spray-particles'?2:role==='shoreline-foam'?1:0;
     const u={time:{value:0},type:{value:type},strength:{value:type === 0 ? 0.72 : type === 1 ? 0.54 : 0.38}};
+    markTSLPortable(material,'water-detail');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -52,7 +84,11 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-water-detail-hq-v1-'+role+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioWaterDetailHQ=u;
+    material.userData.pstudioWaterDetailTSLSettings={
+      role,type,strength:type===0?0.72:type===1?0.54:0.38
+    };
     material.transparent=true;
     material.depthWrite=false;
     material.side=T()?.DoubleSide??material.side;
@@ -80,6 +116,7 @@
       foam:{value:new Three.Color('#e3fff6')},
       mode:{value:waterfall?1:0},reflection:{value:new Three.Color('#b8d9e8')},absorption:{value:0.19}
     };
+    markTSLPortable(material,'water');
     const old = material.onBeforeCompile, oldKey = material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile = function(shader, renderer) {
       if (old) old.call(this,shader,renderer);
@@ -160,7 +197,15 @@
         'roughnessFactor=clamp(roughnessFactor+.035*(.5+.5*sin(vPStudioWaterWorld.x*2.0+vPStudioWaterWorld.z*1.7+uPStudioWaterTime)),.035,.34);');
     };
     material.customProgramCacheKey = () => 'pstudio-water-hq-v3-'+(waterfall?'fall':'surface')+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioWaterHQ = u;
+    material.userData.pstudioWaterTSLSettings = {
+      waterfall:!!waterfall,
+      amplitude:waterfall?0.018:0.105,
+      bounds:{minX,minZ,width,depth},
+      shallow:'#65d9bf',deep:'#08727d',foam:'#e3fff6',
+      reflectivity:0.92,reflectionResolutionScale:0.5,absorption:0.19
+    };
     if(object?.userData)object.userData.pstudioWaterSurface=true;
     material.roughness = waterfall ? 0.12 : 0.075;
     material.metalness = 0.015;
@@ -203,6 +248,7 @@
       translucency:{value:translucency},thickness:{value:thickness},scatteringPower:{value:scatteringPower},
       translucencyColor:{value:new (T().Color)(tint)}
     };
+    markTSLPortable(material,'foliage');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -272,6 +318,7 @@
       }
     };
     material.customProgramCacheKey=()=>'pstudio-foliage-wind-hq-v4-'+role+'-translucency-'+(translucency>0?'on':'off')+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioFoliageHQ={time:u.time,role,strength:u.strength,speed:u.speed,height,base,wind:'world-phased-multi-frequency',translucency,thickness,scatteringPower,translucencyColor:tint};
     material.side=T()?.DoubleSide??material.side;
     if(material.alphaMap)material.alphaTest=Math.max(material.alphaTest||0,.28);
@@ -283,6 +330,7 @@
   function configureUnderwater(material) {
     if(!material || material.userData.pstudioCausticsHQ)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    markTSLPortable(material,'caustics');
     const u={time:{value:0},strength:{value:.30}},old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -299,12 +347,14 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-underwater-caustics-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioCausticsHQ=u;caustics.add(material);return material;
   }
 
   function configureParallax(material) {
     if(!material || material.userData.pstudioParallaxHQ || !material.normalMap || !material.map)return material;
     if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
+    markTSLPortable(material,'parallax');
     const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
     const scale={value:Math.max(0,Math.min(.035,Number(material.userData.pstudioParallaxScale)||.012))};
     material.onBeforeCompile=function(shader,renderer){
@@ -353,6 +403,7 @@
       shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',mapChunk);
     };
     material.customProgramCacheKey=()=>'pstudio-parallax-alpha-height-v2-'+(previousKey?previousKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioParallaxHQ={scale:scale.value,heightSource:'normalTexture alpha',steps:8};
     parallaxMaterials.add(material);
     return material;
@@ -367,6 +418,7 @@
     const authoredSharpness=Number(material.userData?.pstudioTriplanarSharpness);
     const authoredNormalWeight=Number(material.userData?.pstudioTriplanarNormalWeight);
     const u={scale:{value:scaleValue},sharpness:{value:Number.isFinite(authoredSharpness)?Math.max(1,Math.min(12,authoredSharpness)):4.0},normalWeight:{value:Number.isFinite(authoredNormalWeight)?Math.max(0,Math.min(1,authoredNormalWeight)):.72}};
+    markTSLPortable(material,'triplanar');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -435,6 +487,7 @@
       ].join('\n'));
     };
     material.customProgramCacheKey=()=>'pstudio-world-triplanar-pbr-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioTriplanarHQ={scale:scaleValue,sharpness:4.0,normalWeight:.72,projection:'world-space'};
     triplanarMaterials.add(material);
     return material;
@@ -448,8 +501,19 @@
     const bounds=object?.geometry?.boundingBox;
     const localMin=Number.isFinite(bounds?.min?.y)?bounds.min.y:0;
     const localMax=Number.isFinite(bounds?.max?.y)?bounds.max.y:1;
-    const worldBase=(Number(object?.position?.y)||0)+localMin;
-    const heightRange=Math.max(.001,localMax-localMin);
+    let worldBase=(Number(object?.position?.y)||0)+localMin;
+    let heightRange=Math.max(.001,localMax-localMin);
+    const Three=T();
+    if(object&&Three?.Box3){
+      try{
+        object.updateWorldMatrix?.(true,false);
+        const worldBounds=new Three.Box3().setFromObject(object,true);
+        if(!worldBounds.isEmpty()){
+          worldBase=worldBounds.min.y;
+          heightRange=Math.max(.001,worldBounds.max.y-worldBounds.min.y);
+        }
+      }catch(_){}
+    }
     const read=(name,fallback,min,max)=>{
       const value=Number(options[name]??material.userData?.['pstudioTerrain'+name[0].toUpperCase()+name.slice(1)]);
       return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
@@ -461,6 +525,7 @@
       wetness:{value:read('wetness',.035,0,.8)},
       rockThreshold:{value:read('rockThreshold',.38,.08,.92)}
     };
+    markTSLPortable(material,'terrain');
     const old=material.onBeforeCompile,oldKey=material.customProgramCacheKey?.bind(material);
     material.onBeforeCompile=function(shader,renderer){
       if(old)old.call(this,shader,renderer);
@@ -509,6 +574,7 @@
         'roughnessFactor=clamp(roughnessFactor+pStudioRock*.12-uPStudioTerrainWetness*(.05+.12*pStudioNoiseValue),.12,1.0);');
     };
     material.customProgramCacheKey=()=>'pstudio-terrain-layered-pbr-v1-'+(oldKey?oldKey():'');
+    sealTSLPortable(material);
     material.userData.pstudioTerrainHQ=u;
     if(T()?.DoubleSide!==undefined)material.side=T().DoubleSide;
     terrainMaterials.add(material);
@@ -578,6 +644,20 @@
           if(useAlphaTextures)shader.fragmentShader=addAfter(shader.fragmentShader,'#include <color_fragment>','diffuseColor.rgb=vec3(1.0);');
         };
         material.customProgramCacheKey=()=>'pstudio-backface-outline-shell-v1';
+        material.userData={
+          ...material.userData,
+          pstudioTSLOutline:{
+            version:1,
+            expansion:width,
+            useMapAlpha:!!map,
+            useAlphaMapAlpha:!!alphaMap,
+            useVertexAlpha:!!sourceMaterial?.vertexColors
+          }
+        };
+        // Approval is bound to these exact callbacks; unrelated custom shader hooks
+        // cannot bypass the WebGPU material preflight by copying only userData.
+        material.pstudioTSLOutlineCompileHook=material.onBeforeCompile;
+        material.pstudioTSLOutlineCacheKey=material.customProgramCacheKey;
         return material;
       });
       const material=Array.isArray(object.material)?materials:materials[0];
@@ -607,7 +687,22 @@
 
   function configureToon(material,settings={},object=null) {
     const Three=T();
-    if(!Three||!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
+    if(!Three||!material)return material;
+    if(material.isNodeMaterial===true&&typeof material.pstudioTSLToonUpdate==='function'){
+      const defaults={
+        shadowColor:'#46516f',midColor:'#9eafd0',highlightColor:'#ffffff',
+        shadowThreshold:.32,highlightThreshold:.68,rimColor:'#b8dcff',
+        rimIntensity:.42,rimPower:2.6,outlineColor:'#182235',outlineWidth:.12,
+        sssColor:'#f0a5a0',sssIntensity:.12,enabled:true
+      };
+      const value=Object.assign({},defaults,settings||{});
+      material.pstudioTSLToonUpdate(value);
+      material.userData.pstudioTSLToon=material.userData.pstudioTSLToon||{version:1,settings:{}};
+      material.userData.pstudioTSLToon.settings={...value};
+      if(object)configureOutline(object,{enabled:value.enabled!==false,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
+      return material;
+    }
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
     const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):0));
     const defaults={
       shadowColor:'#46516f',midColor:'#9eafd0',highlightColor:'#ffffff',
@@ -637,6 +732,19 @@
         sssIntensity:{value:defaults.sssIntensity}
       };
       const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+      const hadOwnCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile');
+      const hadOwnCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+      const previousUserData=material.userData||{};
+      const previousHooksApproved=(!hadOwnCompile&&!hadOwnCacheKey)
+        ||(material.pstudioTSLPortApprovedCompileHook===previousCompile
+          &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey)
+        ||(previousUserData.pstudioCSMOnlyHook===true
+          &&previousUserData.pstudioProbeShaderSetup!==true
+          &&previousUserData.pstudioCSMHook===previousCompile
+          &&!hadOwnCacheKey)
+        ||(previousUserData.pstudioTSLOutline?.version===1
+          &&material.pstudioTSLOutlineCompileHook===previousCompile
+          &&material.pstudioTSLOutlineCacheKey===material.customProgramCacheKey);
       material.onBeforeCompile=function(shader,renderer){
         if(previousCompile)previousCompile.call(this,shader,renderer);
         Object.assign(shader.uniforms,{
@@ -687,7 +795,7 @@
         ].join('\n'));
       };
       material.customProgramCacheKey=()=>'pstudio-npr-toon-v1'+(previousKey?previousKey():'');
-      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1};
+      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1,tslPreflightApproved:previousHooksApproved};
       toonMaterials.add(material);
       material.needsUpdate=true;
     }
@@ -706,6 +814,26 @@
     u.sssColor.value.set(value.sssColor);
     u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
     record.enabled=u.enabled.value>0.5;
+    const normalizedToonSettings={
+      enabled:record.enabled,
+      shadowColor:String(value.shadowColor||defaults.shadowColor),
+      midColor:String(value.midColor||defaults.midColor),
+      highlightColor:String(value.highlightColor||defaults.highlightColor),
+      shadowThreshold:u.shadowThreshold.value,
+      highlightThreshold:u.highlightThreshold.value,
+      rimColor:String(value.rimColor||defaults.rimColor),
+      rimIntensity:u.rimIntensity.value,
+      rimPower:u.rimPower.value,
+      outlineColor:String(value.outlineColor||defaults.outlineColor),
+      outlineWidth:u.outlineWidth.value,
+      sssColor:String(value.sssColor||defaults.sssColor),
+      sssIntensity:u.sssIntensity.value
+    };
+    material.userData.pstudioTSLToon={version:1,settings:normalizedToonSettings};
+    material.pstudioTSLToonPreflightApproved=record.tslPreflightApproved===true
+      &&material.userData.pstudioTSLPortHasForeignHook!==true;
+    material.pstudioTSLToonCompileHook=material.onBeforeCompile;
+    material.pstudioTSLToonCacheKey=material.customProgramCacheKey;
     if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
     if(object&&settings&&Object.prototype.hasOwnProperty.call(settings,'windStrength'))configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
     return material;
@@ -723,7 +851,7 @@
       else if(WATER.test(tag)){const c=m.clone();configureWater(c,object,/waterfall|cascade|spray|foam/i.test(name));out.push(c);}
       else if(UNDER.test(name)){configureUnderwater(m);out.push(m);}
       else if(object.userData?.pstudioWindPart==='leaf'||object.userData?.pstudioWindPart==='branch'||object.userData?.pstudioWindPart==='trunk'){configureFoliage(m,object);out.push(m);}
-      else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);out.push(c);}
+      else if(m.userData?.pstudioSurfaceMode==='triplanar-pbr'||m.userData?.pstudioRole==='grass'||m.userData?.pstudioRole==='rock'||/limestone|cliff|escarpment|terrain|groundcover|meadow|terraced_emerald|rockface|stonewall/i.test(tag)){const c=m.clone();configureTriplanar(c,object);if(m.userData?.pstudioRole==='terrain'||/terrain|groundcover|meadow|terraced_emerald/i.test(tag))configureTerrain(c,object);out.push(c);}
       else if(/leaf|foliage|canopy|wildflower|bush|shrub|needle/i.test(tag)){const c=m.clone();configureFoliage(c,object);out.push(c);}
       else if(/wood|timber|bark|plank|carpentry|joinery|dock|pier|ship|junk|pagoda|bridge|rock|limestone|cliff|stone|roof|tile/i.test(tag)){
         const c=m.clone();

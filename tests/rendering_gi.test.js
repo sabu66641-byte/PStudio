@@ -70,6 +70,27 @@ test('dynamic SH contributions fade out smoothly and retire below the residual t
   assert.equal(coefficients[0], 0);
 });
 
+test('r187 SH probe readback is async, backend-native and excludes stale legacy/TSL probe lighting', () => {
+  const root = path.resolve(__dirname, '..');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  const runtime = fs.readFileSync(path.join(root, 'static/pstudio_rendering_runtime.mjs'), 'utf8');
+  const host = fs.readFileSync(path.join(root, 'static/pstudio_rendering_production_host.mjs'), 'utf8');
+  const bridge = fs.readFileSync(path.join(root, 'static/pstudio_rendering_production_bridge.mjs'), 'utf8');
+
+  assert.match(engine, /async function bakeLightProbe\(/);
+  assert.match(engine, /async function bakeLightProbeVolume\(/);
+  assert.match(engine, /await generator\.fromCubeRenderTarget\(captureRenderer,target\)/);
+  assert.match(engine, /activeBackend==='webgpu'/);
+  assert.match(engine, /Target:T\.CubeRenderTarget/);
+  assert.match(engine, /Target:T\.WebGLCubeRenderTarget/);
+  assert.match(engine, /pstudioTSLProbeUniforms/);
+  assert.match(engine, /dynamicProbeCaptureInFlight/);
+  assert.match(engine, /void serviceDynamicRadianceCache\(now\)\.catch/);
+  assert.match(runtime, /getRenderer\(\)/);
+  assert.match(host, /getRenderer: runtime\.getRenderer/);
+  assert.match(bridge, /getRenderer\(\)/);
+});
+
 test('GI module is wired into the shared runtime and dynamic probe capture path', () => {
   const root = path.resolve(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
@@ -79,4 +100,316 @@ test('GI module is wired into the shared runtime and dynamic probe capture path'
   assert.match(engine, /blendSHCoefficients/);
   assert.match(engine, /decaySHCoefficients/);
   assert.match(engine, /dynamicProbeSnapshots/);
+});
+
+
+test('clustered light data preserves the 16x9x16 view-space record layout',async()=>{
+  const THREE=await import('three/webgpu');
+  const {buildPStudioClusteredLightData,PSTUDIO_CLUSTER_GRID,PSTUDIO_CLUSTER_MAX_LIGHTS,PSTUDIO_CLUSTER_MAX_PER_CELL}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,100);
+  camera.position.set(0,0,0);
+  camera.lookAt(0,0,-1);
+  camera.updateMatrixWorld(true);
+  const light=new THREE.PointLight(0xff8040,3,20,2);
+  light.position.set(0,0,-8);
+  light.updateMatrixWorld(true);
+  // The production clusterer hides successfully clustered lights from the
+  // legacy renderer. They must remain in the source set on subsequent updates.
+  light.visible=false;
+  const snapshot=buildPStudioClusteredLightData({camera,lights:[light],maxFar:100});
+  assert.deepEqual(PSTUDIO_CLUSTER_GRID,{x:16,y:9,z:16});
+  assert.equal(PSTUDIO_CLUSTER_MAX_LIGHTS,96);
+  assert.equal(PSTUDIO_CLUSTER_MAX_PER_CELL,24);
+  assert.equal(snapshot.lightData.length,96*3*4);
+  assert.equal(snapshot.clusterData.length,16*9*16*25*4);
+  assert.equal(snapshot.lightCount,1);
+  assert.equal(snapshot.clusteredLights.has(light),true);
+  assert.equal(snapshot.nativeFallbackLights.has(light),false);
+  assert.equal(snapshot.lightData[3],20);
+  assert.equal(snapshot.lightData[7],3);
+  assert.equal(snapshot.lightData[8],2);
+  assert.ok(snapshot.counts.some(count=>count===1));
+  light.dispose();
+});
+
+test('cluster overflow and the 96-light limit retain lights on the native fallback path',async()=>{
+  const THREE=await import('three/webgpu');
+  const {buildPStudioClusteredLightData}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,80);
+  camera.lookAt(0,0,-1);
+  camera.updateMatrixWorld(true);
+  const first=new THREE.PointLight(0xffffff,1,20,2);
+  const second=new THREE.PointLight(0xffffff,1,20,2);
+  first.position.set(0,0,-5);
+  second.position.set(0,0,-6);
+  const overflow=buildPStudioClusteredLightData({
+    camera,lights:[first,second],grid:{x:1,y:1,z:1},maxLights:2,maxPerCell:1,maxFar:80
+  });
+  assert.equal(overflow.clusteredLights.has(first),true);
+  assert.equal(overflow.clusteredLights.has(second),false);
+  assert.equal(overflow.nativeFallbackLights.has(second),true);
+
+  const third=new THREE.PointLight(0xffffff,1,20,2);
+  third.position.set(1,0,-5);
+  const capped=buildPStudioClusteredLightData({
+    camera,lights:[first,second,third],grid:{x:1,y:1,z:1},maxLights:1,maxPerCell:24,maxFar:80
+  });
+  assert.equal(capped.lightCount,1);
+  assert.equal(capped.nativeFallbackLights.has(second),true);
+  assert.equal(capped.nativeFallbackLights.has(third),true);
+  first.dispose();second.dispose();third.dispose();
+});
+
+test('WebGPU clustered StorageBuffers use pinned r187 APIs and update in-place',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  const {createPStudioTSLClusterStorage,buildPStudioClusteredLightData}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  assert.equal(typeof THREE.StorageBufferAttribute,'function');
+  assert.equal(typeof TSL.storage,'function');
+  const renderer={backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:2*1024*1024,maxBufferSize:2*1024*1024}}}};
+  const storage=createPStudioTSLClusterStorage(renderer,{grid:{x:1,y:1,z:1},maxLights:2,maxPerCell:1});
+  assert.ok(storage.lightStorage?.isNode);
+  assert.ok(storage.clusterStorage?.isNode);
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,80);
+  camera.lookAt(0,0,-1);
+  camera.updateMatrixWorld(true);
+  const light=new THREE.PointLight(0xffffff,1,20,2);
+  light.position.set(0,0,-5);
+  const snapshot=buildPStudioClusteredLightData({camera,lights:[light],grid:{x:1,y:1,z:1},maxLights:2,maxPerCell:1,maxFar:80});
+  const lightVersion=storage.lightAttribute.version;
+  const clusterVersion=storage.clusterAttribute.version;
+  assert.equal(storage.update(snapshot),true);
+  assert.equal(storage.lightAttribute.version,lightVersion+1);
+  assert.equal(storage.clusterAttribute.version,clusterVersion+1);
+  assert.deepEqual(storage.lightAttribute.array,snapshot.lightData);
+  assert.deepEqual(storage.clusterAttribute.array,snapshot.clusterData);
+  assert.equal(storage.getState().uploads,1);
+  assert.equal(storage.dispose(),true);
+  assert.equal(storage.dispose(),false);
+  light.dispose();
+});
+
+test('clustered WebGPU storage rejects WebGL backends and unsafe device buffer limits',async()=>{
+  const {createPStudioTSLClusterStorage}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  assert.throws(()=>createPStudioTSLClusterStorage({backend:{isWebGPUBackend:false}}),/initialized WebGPU backend/);
+  const tinyDevice={backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:16,maxBufferSize:16}}}};
+  assert.throws(()=>createPStudioTSLClusterStorage(tinyDevice,{grid:{x:1,y:1,z:1},maxLights:2,maxPerCell:1}),/maxStorageBufferBindingSize/);
+});
+
+
+test('TSL SH irradiance uses the same nine RGB coefficients and PBR lighting context',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  const {createPStudioTSLSHProbeNode,attachPStudioTSLSHProbeToMaterial,blendPStudioTSLSHCoefficients}=await import('../static/pstudio_rendering_gi_tsl.mjs');
+  assert.equal(typeof THREE.IrradianceNode,'function');
+  assert.equal(typeof THREE.LightsNode,'function');
+  assert.equal(typeof TSL.uniform,'function');
+  const probe=createPStudioTSLSHProbeNode();
+  assert.ok(probe.node instanceof THREE.IrradianceNode);
+  assert.equal(probe.uniforms.length,9);
+  const coefficients=new Float32Array(27);
+  for(let index=0;index<27;index++)coefficients[index]=(index+1)*0.01;
+  assert.equal(probe.setCoefficients(coefficients),true);
+  assert.ok(Math.abs(probe.uniforms[0].value.x-0.01)<1e-7);
+  assert.ok(Math.abs(probe.uniforms[8].value.z-0.27)<1e-6);
+  const target=new Float32Array(27);
+  assert.ok(blendPStudioTSLSHCoefficients(target,coefficients,240,240)>0.49);
+  assert.ok(target[0]>0.004&&target[0]<0.006);
+
+  const material=new THREE.MeshStandardNodeMaterial();
+  const light=new THREE.DirectionalLight(0xffffff,2);
+  const originalLightsNode=material.lightsNode??null;
+  const handle=attachPStudioTSLSHProbeToMaterial(material,[light]);
+  assert.ok(material.lightsNode instanceof THREE.LightsNode);
+  const lights=material.lightsNode.getLights();
+  assert.ok(lights.includes(light));
+  assert.ok(lights.some(item=>item instanceof THREE.IrradianceNode));
+  assert.equal(material.userData.pstudioTSLProbeUniforms.length,9);
+  const values=Float32Array.from({length:27},(_,index)=>index/100);
+  handle.setCoefficients(values);
+  assert.ok(Math.abs(handle.uniforms[1].value.y-0.04)<1e-7);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(material.lightsNode,originalLightsNode);
+  assert.equal(material.userData.pstudioTSLProbeUniforms,undefined);
+  material.dispose();
+  light.dispose();
+});
+
+test('TSL SH probe adapter preserves existing scene lights and supports independent per-material uniforms',async()=>{
+  const THREE=await import('three/webgpu');
+  const {attachPStudioTSLSHProbeToMaterial}=await import('../static/pstudio_rendering_gi_tsl.mjs');
+  const scene=new THREE.Scene();
+  const key=new THREE.DirectionalLight(0xffffff,2);
+  const fill=new THREE.PointLight(0x88aaff,1,20,2);
+  scene.add(key,fill);
+  const materialA=new THREE.MeshPhysicalNodeMaterial();
+  const materialB=new THREE.MeshStandardNodeMaterial();
+  const a=attachPStudioTSLSHProbeToMaterial(materialA,[key,fill]);
+  const b=attachPStudioTSLSHProbeToMaterial(materialB,[key,fill]);
+  assert.equal(materialA.lightsNode.getLights().filter(item=>item.isLight).length,2);
+  assert.equal(materialB.lightsNode.getLights().filter(item=>item.isLight).length,2);
+  a.setCoefficients(new Float32Array(27).fill(0.5));
+  b.setCoefficients(new Float32Array(27).fill(0.25));
+  assert.notEqual(a.uniforms[0].value.x,b.uniforms[0].value.x);
+  a.dispose();b.dispose();
+  materialA.dispose();materialB.dispose();key.dispose();fill.dispose();
+});
+
+
+test('clustered TSL irradiance node builds from the shared StorageBuffer records',async()=>{
+  const THREE=await import('three/webgpu');
+  const {buildPStudioClusteredLightData,createPStudioTSLClusterStorage,createPStudioTSLClusterIrradianceNode}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const renderer={backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:1024*1024,maxBufferSize:1024*1024}}}};
+  const storage=createPStudioTSLClusterStorage(renderer,{grid:{x:2,y:2,z:2},maxLights:4,maxPerCell:2});
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,100);
+  camera.lookAt(0,0,-1);
+  camera.updateMatrixWorld(true);
+  const point=new THREE.PointLight(0xffaa66,2,18,2);
+  point.position.set(0,0,-6);
+  const snapshot=buildPStudioClusteredLightData({camera,lights:[point],grid:{x:2,y:2,z:2},maxLights:4,maxPerCell:2,maxFar:100});
+  const node=createPStudioTSLClusterIrradianceNode(storage);
+  assert.ok(node instanceof THREE.IrradianceNode);
+  assert.equal(storage.update(snapshot),true);
+  assert.equal(storage.getState().lastLightCount,1);
+  storage.dispose();
+  point.dispose();
+});
+
+test('clustered TSL attachment preserves native lights and restores light lists on disposal',async()=>{
+  const THREE=await import('three/webgpu');
+  const {buildPStudioClusteredLightData,createPStudioTSLClusterStorage,applyPStudioTSLClusteredLighting}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(60,1,0.1,100);
+  camera.lookAt(0,0,-1);
+  camera.updateMatrixWorld(true);
+  const clusteredPoint=new THREE.PointLight(0xffffff,2,15,2);
+  clusteredPoint.position.set(0,0,-5);
+  const retainedDirectional=new THREE.DirectionalLight(0xffffff,1);
+  scene.add(clusteredPoint,retainedDirectional);
+  const material=new THREE.MeshStandardNodeMaterial();
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),material);
+  scene.add(mesh);
+  const originalLightsNode=material.lightsNode??null;
+  const grid={x:2,y:2,z:2};
+  const snapshot=buildPStudioClusteredLightData({camera,lights:[clusteredPoint],grid,maxLights:4,maxPerCell:2,maxFar:100});
+  assert.equal(snapshot.clusteredLights.has(clusteredPoint),true);
+  const renderer={backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:1024*1024,maxBufferSize:1024*1024}}}};
+  const storage=createPStudioTSLClusterStorage(renderer,{grid,maxLights:4,maxPerCell:2});
+  const handle=applyPStudioTSLClusteredLighting(scene,{storage,snapshot});
+  assert.equal(handle.materialCount,1);
+  assert.ok(material.lightsNode instanceof THREE.LightsNode);
+  const activeLights=material.lightsNode.getLights();
+  assert.ok(activeLights.includes(retainedDirectional));
+  assert.equal(activeLights.includes(clusteredPoint),false);
+  assert.ok(activeLights.some(item=>item instanceof THREE.IrradianceNode));
+  assert.equal(handle.getState().storage.uploads,1);
+
+  const fallbackSnapshot={...snapshot,clusteredLights:new Set()};
+  assert.equal(handle.update(fallbackSnapshot),true);
+  assert.ok(material.lightsNode.getLights().includes(clusteredPoint));
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(material.lightsNode,originalLightsNode);
+  assert.equal(storage.dispose(),true);
+  material.dispose();mesh.geometry.dispose();clusteredPoint.dispose();retainedDirectional.dispose();
+});
+
+
+test('native r187 clustered PBR routes point/spot lights through the full material lighting model',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLNativeClusteredLighting}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const {attachPStudioTSLSHProbeToMaterial}=await import('../static/pstudio_rendering_gi_tsl.mjs');
+  const scene=new THREE.Scene();
+  const point=new THREE.PointLight(0xffaa66,2,22,2);
+  point.position.set(0,2,-5);
+  const spot=new THREE.SpotLight(0x88aaff,3,28,Math.PI/5,0.2,2);
+  spot.position.set(-2,3,-4);
+  const shadowPoint=new THREE.PointLight(0xffffff,1,18,2);
+  shadowPoint.castShadow=true;
+  const sun=new THREE.DirectionalLight(0xffffff,1.5);
+  scene.add(point,spot,shadowPoint,sun);
+  const material=new THREE.MeshPhysicalNodeMaterial({metalness:0.45,roughness:0.28,clearcoat:0.4});
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),material);
+  scene.add(mesh);
+  const originalLightsNode=material.lightsNode??null;
+  const shHandle=attachPStudioTSLSHProbeToMaterial(material,[point,spot,shadowPoint,sun]);
+  shHandle.setCoefficients(new Float32Array(27).fill(0.025));
+  const renderer={
+    backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:64*1024*1024,maxBufferSize:64*1024*1024}}},
+    getDrawingBufferSize(target){return target.set(1280,720);}
+  };
+  const handle=applyPStudioTSLNativeClusteredLighting(scene,{renderer,maxLights:16,tileSize:64,zSlices:16});
+  assert.equal(handle.materialCount,1);
+  assert.equal(material.lightsNode.isClusteredLightsNode,true);
+  const clustered=material.lightsNode;
+  const activeLights=clustered.getLights();
+  assert.ok(activeLights.includes(point));
+  assert.ok(activeLights.includes(spot));
+  assert.ok(activeLights.includes(shadowPoint));
+  assert.ok(activeLights.includes(sun));
+  assert.ok(clustered.clusteredLights.includes(point));
+  assert.ok(clustered.clusteredLights.includes(spot));
+  assert.ok(clustered.materialLights.includes(shadowPoint));
+  assert.ok(clustered.materialLights.includes(sun));
+  assert.ok(clustered.materialLights.some(item=>item instanceof THREE.IrradianceNode));
+  assert.equal(handle.getState().mode,'clustered-pbr');
+  assert.equal(handle.getState().clusteredLightCount,2);
+  assert.equal(handle.dispose(),true);
+  assert.notEqual(material.lightsNode,originalLightsNode);
+  assert.equal(shHandle.dispose(),true);
+  assert.equal(material.lightsNode,originalLightsNode);
+  assert.equal(handle.dispose(),false);
+  material.dispose();mesh.geometry.dispose();
+  point.dispose();spot.dispose();shadowPoint.dispose();sun.dispose();
+});
+
+test('native clustered PBR keeps lights beyond its budget on the native BRDF path',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLNativeClusteredLighting}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const scene=new THREE.Scene();
+  const lights=Array.from({length:4},(_,index)=>{
+    const light=new THREE.PointLight(0xffffff,1,30,2);
+    light.position.set(index-1.5,0,-6);
+    scene.add(light);
+    return light;
+  });
+  const material=new THREE.MeshStandardNodeMaterial();
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),material);
+  scene.add(mesh);
+  const renderer={
+    backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:64*1024*1024,maxBufferSize:64*1024*1024}}},
+    getDrawingBufferSize(target){return target.set(800,600);}
+  };
+  const handle=applyPStudioTSLNativeClusteredLighting(scene,{renderer,maxLights:1,tileSize:64,zSlices:8});
+  const clustered=material.lightsNode;
+  assert.equal(clustered.isClusteredLightsNode,true);
+  assert.equal(clustered.clusteredLights.length,1);
+  assert.equal(clustered.materialLights.length,3);
+  for(const light of lights)assert.ok(clustered.getLights().includes(light));
+  handle.dispose();
+  material.dispose();mesh.geometry.dispose();for(const light of lights)light.dispose();
+});
+
+test('native clustered PBR fails over to native lighting when the WebGPU buffer budget is too small',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLNativeClusteredLighting}=await import('../static/pstudio_rendering_clustered_lighting_tsl.mjs');
+  const scene=new THREE.Scene();
+  const light=new THREE.PointLight(0xffffff,1,20,2);
+  scene.add(light);
+  const material=new THREE.MeshStandardNodeMaterial();
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),material);
+  scene.add(mesh);
+  const renderer={
+    backend:{isWebGPUBackend:true,device:{limits:{maxStorageBufferBindingSize:1024,maxBufferSize:1024}}},
+    getDrawingBufferSize(target){return target.set(1920,1080);}
+  };
+  const handle=applyPStudioTSLNativeClusteredLighting(scene,{renderer,maxLights:64,tileSize:32,zSlices:24});
+  assert.equal(material.lightsNode.isClusteredLightsNode,undefined);
+  assert.ok(material.lightsNode instanceof THREE.LightsNode);
+  assert.ok(material.lightsNode.getLights().includes(light));
+  assert.equal(handle.getState().mode,'native-pbr-safe-fallback');
+  handle.dispose();
+  assert.equal(material.lightsNode, null);
+  material.dispose();mesh.geometry.dispose();light.dispose();
 });

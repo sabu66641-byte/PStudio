@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
-import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1';
+import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261126-npr-toon-v1';
 
 const overlay = document.getElementById('webgpu-lab-overlay');
 const canvas = document.getElementById('webgpu-lab-canvas');

@@ -42,5 +42,26 @@ jobs:
       - name: Check standalone WebGPU lab module syntax
         run: node --check static/pstudio_webgpu_lab.mjs
 
+      - name: Check TSL CSM shadow module syntax
+        run: node --check static/pstudio_rendering_csm_tsl.mjs
+
+      - name: Check TSL terrain and foliage surface module syntax
+        run: node --check static/pstudio_rendering_surface_tsl.mjs
+
+      - name: Check TSL water module syntax
+        run: node --check static/pstudio_rendering_water_tsl.mjs
+
+      - name: Check TSL clustered lighting module syntax
+        run: node --check static/pstudio_rendering_clustered_lighting_tsl.mjs
+
+      - name: Check TSL spherical harmonics module syntax
+        run: node --check static/pstudio_rendering_gi_tsl.mjs
+
+      - name: Check TSL NPR Toon module syntax
+        run: node --check static/pstudio_rendering_toon_tsl.mjs
+
+      - name: Check production 3D engine syntax
+        run: node --check static/pstudio_3d_engine.js
+
       - name: Run JavaScript regression tests
         run: node --test tests/*.test.js

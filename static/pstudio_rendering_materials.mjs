@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import * as TSL from 'three/tsl';
+import { isPStudioTSLSurfaceFeatureMaterial } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 
 const NODE_MATERIAL_TYPES = Object.freeze([
   ['isMeshPhysicalMaterial', 'MeshPhysicalNodeMaterial', THREE.MeshPhysicalNodeMaterial],
@@ -24,7 +26,35 @@ function cloneUserData(value) {
   }
 }
 
+export function isPStudioLegacyTSLToonMaterial(material) {
+  const metadata = material?.userData || {};
+  const toon = metadata.pstudioTSLToon;
+  return material?.pstudioTSLToonPreflightApproved === true
+    && toon?.version === 1
+    && toon.settings && typeof toon.settings === 'object'
+    && material.pstudioTSLToonCompileHook === material.onBeforeCompile
+    && material.pstudioTSLToonCacheKey === material.customProgramCacheKey
+    && metadata.pstudioTSLPortHasForeignHook !== true;
+}
+
 function hasCustomShaderHook(material) {
+  if (isPStudioLegacyTSLToonMaterial(material)) return false;
+  if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
+  const userData = material?.userData || {};
+  const csmOnly = userData.pstudioCSMOnlyHook === true
+    && userData.pstudioProbeShaderSetup !== true
+    && userData.pstudioCSMHook === material.onBeforeCompile
+    && !Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey');
+  if (csmOnly) return false;
+  const outline = userData.pstudioTSLOutline;
+  const approvedOutline = outline?.version === 1
+    && Number.isFinite(Number(outline.expansion))
+    && Number(outline.expansion) > 0
+    && material.pstudioTSLOutlineCompileHook === material.onBeforeCompile
+    && material.pstudioTSLOutlineCacheKey === material.customProgramCacheKey
+    && typeof material.onBeforeCompile === 'function'
+    && typeof material.customProgramCacheKey === 'function';
+  if (approvedOutline) return false;
   return Boolean(
     (Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile') && typeof material.onBeforeCompile === 'function')
     || (Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey') && typeof material.customProgramCacheKey === 'function')
@@ -61,6 +91,8 @@ export function createPStudioNodeMaterial(source, options = {}) {
   }
   const { MaterialClass, nodeType } = resolved;
   const target = new MaterialClass();
+  const approvedSurfaceFeatures = isPStudioTSLSurfaceFeatureMaterial(source);
+  const approvedToonMaterial = isPStudioLegacyTSLToonMaterial(source);
   const originalUserData = source.userData;
   const safeMetadata = cloneUserData(originalUserData);
 
@@ -74,6 +106,48 @@ export function createPStudioNodeMaterial(source, options = {}) {
     source.userData = originalUserData;
   }
 
+  // The WebGL CSM defines and its shader hook have a native TSL equivalent.
+  // They must not leak into the WebGPU NodeMaterial after conversion.
+  if (source.userData?.pstudioCSMOnlyHook === true && !source.userData?.pstudioProbeShaderSetup) {
+    delete safeMetadata.pstudioCSMOnlyHook;
+    delete safeMetadata.pstudioCSMSetup;
+    delete safeMetadata.pstudioCSMHook;
+    if (target.defines) {
+      delete target.defines.USE_CSM;
+      delete target.defines.CSM_CASCADES;
+      delete target.defines.CSM_FADE;
+    }
+  }
+
+  const outline = safeMetadata.pstudioTSLOutline;
+  if (outline?.version === 1
+    && Number.isFinite(Number(outline.expansion))
+    && Number(outline.expansion) > 0
+    && source.pstudioTSLOutlineCompileHook === source.onBeforeCompile
+    && source.pstudioTSLOutlineCacheKey === source.customProgramCacheKey) {
+    let alpha = TSL.float(1);
+    if (outline.useMapAlpha === true && source.map) {
+      alpha = alpha.mul(TSL.texture(source.map, TSL.uv()).a);
+    }
+    if (outline.useAlphaMapAlpha === true && source.alphaMap) {
+      alpha = alpha.mul(TSL.texture(source.alphaMap, TSL.uv()).g);
+    }
+    if (outline.useVertexAlpha === true && source.vertexColors === true) {
+      alpha = alpha.mul(TSL.vertexColor().a);
+    }
+
+    target.colorNode = TSL.uniform(source.color.clone());
+    target.opacityNode = alpha;
+    target.positionNode = TSL.positionLocal.add(
+      TSL.normalLocal.normalize().mul(TSL.float(Number(outline.expansion)))
+    );
+    // Alpha is reconstructed explicitly above to retain the legacy GLSL's
+    // cutout/transparent mask while forcing the shell's RGB to its outline tint.
+    target.map = null;
+    target.alphaMap = null;
+    target.vertexColors = false;
+    safeMetadata.pstudioTSLOutlineTSL = true;
+  }
   target.userData = {
     ...safeMetadata,
     pstudioNodeMaterial: true,
@@ -82,6 +156,10 @@ export function createPStudioNodeMaterial(source, options = {}) {
     pstudioRenderingBackend: 'webgpu-tsl'
   };
   target.onBeforeCompile = () => {};
+  // Carry the preflight decision across the legacy-to-NodeMaterial boundary;
+  // userData alone must never be able to assert this approval.
+  target.pstudioTSLSurfacePreflightApproved = approvedSurfaceFeatures;
+  target.pstudioTSLToonPreflightApproved = approvedToonMaterial;
   target.name = options.name ?? (source.name ? source.name + ' [TSL]' : 'PStudio ' + nodeType);
   target.needsUpdate = true;
   return target;
@@ -113,14 +191,7 @@ export function convertPStudioScenePBRMaterials(root, options = {}) {
       if (source) skippedMaterials += 1;
       return source;
     }
-    const hasCustomShaderHook = (
-      Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')
-      && typeof source.onBeforeCompile === 'function'
-    ) || (
-      Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')
-      && typeof source.customProgramCacheKey === 'function'
-    );
-    if (hasCustomShaderHook) {
+    if (hasCustomShaderHook(source)) {
       skippedMaterials += 1;
       skippedLegacyShaderHooks += 1;
       return source;

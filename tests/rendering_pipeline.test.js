@@ -16,6 +16,9 @@ const webgpuLab = fs.readFileSync(path.join(root, 'static/pstudio_webgpu_lab.mjs
 const webgpuBackend = fs.readFileSync(path.join(root, 'static/pstudio_rendering_backend.mjs'), 'utf8');
 const webgpuMaterials = fs.readFileSync(path.join(root, 'static/pstudio_rendering_materials.mjs'), 'utf8');
 const webgpuPipeline = fs.readFileSync(path.join(root, 'static/pstudio_rendering_pipeline.mjs'), 'utf8');
+const webgpuSurface = fs.readFileSync(path.join(root, 'static/pstudio_rendering_surface_tsl.mjs'), 'utf8');
+const webgpuWater = fs.readFileSync(path.join(root, 'static/pstudio_rendering_water_tsl.mjs'), 'utf8');
+const environmentFX = fs.readFileSync(path.join(root, 'static/pstudio_environment_fx.js'), 'utf8');
 const webgpuMigration = fs.readFileSync(path.join(root, 'static/pstudio_rendering_migration.mjs'), 'utf8');
 const webgpuEnvironmentTSL = fs.readFileSync(path.join(root, 'static/pstudio_rendering_environment_tsl.mjs'), 'utf8');
 
@@ -48,7 +51,8 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-npr-toon-v1'));
+  assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-npr-toon-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
   assert.ok(html.includes('PStudioWebGPURenderer'));
@@ -1384,15 +1388,15 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'id="webgpu-lab-open"',
     'id="webgpu-lab-overlay"',
     'id="webgpu-lab-canvas"',
-    'pstudio_webgpu_lab.mjs?v=20261125-unified-sky-cloud-ibl-v1',
+    'pstudio_webgpu_lab.mjs?v=20261126-cluster-sh-vfx-v2',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'
+    'pstudio_rendering_migration.mjs?v=20261126-npr-toon-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261125-unified-sky-cloud-ibl-v1'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-npr-toon-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1420,7 +1424,7 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
   for(const token of [
     'new THREE.RenderPipeline(renderer)',
     'pass(scene, camera)',
-    'bloom(sceneColor',
+    'bloom(output',
     'renderPipeline.render()',
     'renderPipeline.dispose()'
   ])assert.ok(webgpuPipeline.includes(token),token);
@@ -1457,16 +1461,18 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
-  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'onBeforeCompile')"));
-  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(source, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes("function hasCustomShaderHook(material)"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(material, 'onBeforeCompile')"));
+  assert.ok(webgpuMaterials.includes("Object.prototype.hasOwnProperty.call(material, 'customProgramCacheKey')"));
+  assert.ok(webgpuMaterials.includes("userData.pstudioCSMOnlyHook === true"));
   assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks += 1'));
   assert.ok(webgpuMaterials.includes('skippedLegacyShaderHooks,'));
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261125-daylight-mirror-hq-r2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-npr-toon-aa-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
-  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261124-daylight-hq-r1'));
+  assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-npr-toon-v1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
 });
 
@@ -1697,4 +1703,467 @@ test('r187 PMREM uses cube-render-target outputs for environment, physical sky a
   assert.ok(renderer.includes('createPhysicalSkyEnvironmentTarget(T)'));
   assert.ok(renderer.includes('pmremGenerator.fromScene(skyScene,0.04)'));
   assert.doesNotMatch(renderer,/CubeUVReflectionMapping|renderer\.setViewport\s*\(|renderer\.setScissor\s*\(/);
+});
+
+
+test('WebGPU TSL scene pass exposes shared beauty, depth and packed view-normal resources',()=>{
+  assert.ok(webgpuPipeline.includes("import * as TSL from 'three/tsl'")); 
+  assert.ok(webgpuPipeline.includes('function configureSceneAttachments(includeVelocity)'));
+  assert.ok(webgpuPipeline.includes('scenePass.setMRT(TSL.mrt(mrtNodes))'));
+  assert.ok(webgpuPipeline.includes('output: TSL.output'));
+  assert.ok(webgpuPipeline.includes('normal: TSL.packNormalToRGB(TSL.normalView)'));
+  assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('depth')"));
+  assert.ok(webgpuPipeline.includes("scenePass.getTextureNode('normal')"));
+  assert.ok(webgpuPipeline.includes('normalTexture.type = THREE.UnsignedByteType'));
+  assert.ok(webgpuPipeline.includes('getFrameResources()'));
+  assert.ok(webgpuPipeline.includes("normalEncoding: 'packed-rgb-unorm8-decoded-to-view-normal'"));
+  assert.ok(webgpuPipeline.includes("metalRoughEncoding: 'rg-unorm8'"));
+  assert.ok(webgpuPipeline.includes("metalrough: TSL.vec2(TSL.metalness, TSL.roughness)"));
+  assert.ok(webgpuPipeline.includes("import { ssao } from 'three/addons/tsl/display/SSAONode.js'"));
+  assert.ok(webgpuPipeline.includes("import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js'"));
+  assert.ok(webgpuPipeline.includes("import { ssr } from 'three/addons/tsl/display/SSRNode.js'"));
+  assert.ok(webgpuPipeline.includes('createGodRaysNode'));
+  assert.ok(webgpuPipeline.includes('TSL.Loop({ start: 0, end: 20 }'));
+  assert.ok(webgpuPipeline.includes('supportsPStudioTSLGodRays'));
+  assert.ok(webgpuPipeline.includes('createContactShadowsNode'));
+  assert.ok(webgpuPipeline.includes('getViewPosition'));
+  assert.ok(webgpuPipeline.includes('projectionDepth'));
+  assert.ok(webgpuPipeline.includes('supportsPStudioTSLContactShadows'));
+  assert.ok(webgpuPipeline.includes('createVolumetricFogNode'));
+  assert.ok(webgpuPipeline.includes('createVolumetricCloudNode'));
+  assert.ok(webgpuPipeline.includes('supportsPStudioTSLVolumetricFog'));
+  assert.ok(webgpuPipeline.includes('supportsPStudioTSLVolumetricClouds'));
+});
+
+test('pinned Three.js r187 exports the required TSL MRT and normal packing APIs',async()=>{
+  const TSL = await import('three/tsl');
+  const THREE = await import('three/webgpu');
+  assert.equal(typeof TSL.mrt,'function');
+  assert.equal(typeof TSL.packNormalToRGB,'function');
+  assert.ok(TSL.output);
+  assert.ok(TSL.normalView);
+  assert.equal(typeof TSL.getViewPosition,'function');
+  assert.equal(typeof TSL.getScreenPositionFromClip,'function');
+  assert.equal(typeof TSL.projectionDepth,'function');
+  assert.equal(typeof TSL.isBackgroundDepth,'function');
+  assert.equal(typeof TSL.Break,'function');
+  assert.equal(typeof TSL.step,'function');
+  assert.equal(typeof THREE.RenderPipeline,'function');
+});
+
+test('TSL RenderPipeline continues to fail closed for a non-WebGPU backend',async()=>{
+  const { createPStudioRenderPipeline } = await import('../static/pstudio_rendering_pipeline.mjs');
+  assert.throws(
+    ()=>createPStudioRenderPipeline({backend:{isWebGPUBackend:false}},{isScene:true},{isCamera:true}),
+    /requires an initialized WebGPU backend/
+  );
+});
+
+
+test('only explicitly marked PStudio terrain/foliage hooks are approved for TSL conversion',async()=>{
+  const { isPStudioTSLSurfaceFeatureMaterial } = await import('../static/pstudio_rendering_surface_tsl.mjs');
+  const approvedHook=function approvedPStudioHook(){};
+  const approvedCacheKey=function approvedPStudioCacheKey(){return 'pstudio-approved';};
+  const approved={
+    userData:{pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['terrain','triplanar']},
+    onBeforeCompile:approvedHook,
+    customProgramCacheKey:approvedCacheKey,
+    pstudioTSLPortApprovedCompileHook:approvedHook,
+    pstudioTSLPortApprovedCacheKey:approvedCacheKey
+  };
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(approved),true);
+  const untrustedNodeMaterial={isNodeMaterial:true,userData:{...approved.userData}};
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(untrustedNodeMaterial),false);
+  const replacedHook={...approved,onBeforeCompile:function unknownHook(){}};
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(replacedHook),false);
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial({...approved,userData:{...approved.userData,pstudioTSLPortHasForeignHook:true}}),false);
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial({...approved,userData:{...approved.userData,pstudioTSLFeatures:['terrain','custom-glsl']}}),false);
+  const csmHook=function approvedCSMHook(){};
+  const appendedCSM={
+    ...approved,
+    onBeforeCompile:csmHook,
+    userData:{...approved.userData,pstudioCSMOnlyHook:true,pstudioProbeShaderSetup:false,pstudioCSMHook:csmHook}
+  };
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(appendedCSM),true);
+  const probeHook={...appendedCSM,onBeforeCompile:function probeHook(){},userData:{...appendedCSM.userData,pstudioProbeShaderSetup:true}};
+  assert.equal(isPStudioTSLSurfaceFeatureMaterial(probeHook),false);
+  assert.ok(environmentFX.includes('const alreadyTagged=data.pstudioTSLPortVersion===1'));
+  assert.ok(environmentFX.includes('const sealTSLPortable=(material)=>'));
+  assert.ok(environmentFX.includes("markTSLPortable(material,'terrain')"));
+  assert.ok(environmentFX.includes('sealTSLPortable(material)'));
+});
+
+test('TSL surface graphs build Triplanar, layered terrain, parallax and foliage deformation nodes',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  const {createPStudioNodeMaterial}=await import('../static/pstudio_rendering_materials.mjs');
+  const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
+  for(const name of ['texture','uv','positionWorld','positionLocal','normalWorld','normalWorldGeometry','positionView','positionViewDirection','modelWorldMatrixInverse','materialColor','materialRoughness','materialMetalness','materialEmissive','materialOpacity','materialAlphaTest','time','select','bool','cameraViewMatrix']) {
+    assert.ok(TSL[name]!==undefined,name);
+  }
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(12,12,8,8);
+  const texture=new THREE.Texture();
+  const normalTexture=new THREE.Texture();
+  const materialSpecs=[
+    {
+      name:'terrain-triplanar',
+      features:['triplanar','terrain'],
+      map:texture,
+      normalMap:normalTexture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['triplanar','terrain'],
+        pstudioTriplanarHQ:{scale:.08,sharpness:4},
+        pstudioTerrainHQ:{heightMin:{value:0},heightRange:{value:10},detailScale:{value:.16},snowLine:{value:1.08},wetness:{value:.035},rockThreshold:{value:.38}}
+      }
+    },
+    {
+      name:'parallax',
+      map:texture,normalMap:normalTexture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['parallax'],
+        pstudioParallaxHQ:{scale:.012,heightSource:'normalTexture alpha',steps:8}
+      }
+    },
+    {
+      name:'foliage',
+      map:texture,
+      userData:{
+        pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],
+        pstudioFoliageHQ:{role:'leaf',strength:{value:.88},speed:{value:1},height:6,base:0,direction:{x:.83,y:.56},translucency:.48,thickness:.52,scatteringPower:3.2,translucencyColor:'#d9edaa'}
+      }
+    }
+  ];
+  const nodeMaterials=[];
+  for(const spec of materialSpecs){
+    const source=new THREE.MeshStandardMaterial({map:spec.map,normalMap:spec.normalMap});
+    source.userData=spec.userData;
+    source.onBeforeCompile=function approvedSurfaceHook(){};
+    source.customProgramCacheKey=function approvedSurfaceCacheKey(){return 'pstudio-legacy-surface';};
+    source.pstudioTSLPortApprovedCompileHook=source.onBeforeCompile;
+    source.pstudioTSLPortApprovedCacheKey=source.customProgramCacheKey;
+    const converted=createPStudioNodeMaterial(source);
+    assert.equal(converted.pstudioTSLSurfacePreflightApproved,true);
+    nodeMaterials.push(converted);
+    const mesh=new THREE.Mesh(geometry,converted);
+    mesh.name=spec.name;
+    scene.add(mesh);
+  }
+  const handle=applyPStudioTSLSurfaceFeatures(scene,{environmentProfile:{skySunX:.35,skySunY:.89,skySunZ:.28}});
+  assert.equal(handle.materialCount,3);
+  const terrain=nodeMaterials[0],parallax=nodeMaterials[1],foliage=nodeMaterials[2];
+  assert.ok(terrain.colorNode?.isNode);
+  assert.ok(terrain.roughnessNode?.isNode);
+  assert.ok(terrain.normalNode?.isNode);
+  assert.ok(parallax.colorNode?.isNode);
+  assert.ok(foliage.positionNode?.isNode);
+  assert.ok(foliage.castShadowPositionNode?.isNode);
+  assert.ok(foliage.emissiveNode?.isNode);
+  assert.equal(foliage.side,THREE.DoubleSide);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(foliage.positionNode,null);
+  assert.equal(terrain.colorNode,null);
+  for(const material of nodeMaterials)material.dispose();
+  geometry.dispose();
+  texture.dispose();
+  normalTexture.dispose();
+});
+
+test('TSL migration converter accepts approved PStudio surface features but still rejects unrelated custom GLSL',async()=>{
+  const THREE=await import('three/webgpu');
+  const {inspectPStudioWebGPUSceneMaterials}=await import('../static/pstudio_rendering_migration.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.BufferGeometry();
+  const source=new THREE.MeshStandardMaterial();
+  source.userData={pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],pstudioFoliageHQ:{role:'leaf',strength:{value:.8},speed:{value:1},height:4,base:0,direction:{x:.83,y:.56},translucency:.4,thickness:.5,scatteringPower:3,translucencyColor:'#d9edaa'}};
+  source.onBeforeCompile=function approvedSurfaceHook(){};
+  source.customProgramCacheKey=function approvedSurfaceCacheKey(){return 'pstudio-foliage';};
+  source.pstudioTSLPortApprovedCompileHook=source.onBeforeCompile;
+  source.pstudioTSLPortApprovedCacheKey=source.customProgramCacheKey;
+  scene.add(new THREE.Mesh(geometry,source));
+  assert.equal(inspectPStudioWebGPUSceneMaterials(scene).compatible,true);
+  const unsupported=new THREE.MeshStandardMaterial();
+  unsupported.onBeforeCompile=function(){};
+  scene.add(new THREE.Mesh(geometry,unsupported));
+  assert.equal(inspectPStudioWebGPUSceneMaterials(scene).compatible,false);
+  geometry.dispose();
+  source.dispose();
+  unsupported.dispose();
+});
+
+
+test('TSL surface setup rolls back earlier material graphs when a later feature fails',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.BufferGeometry();
+  const approve=(material)=>{
+    const hook=function approvedSurfaceHook(){};
+    const cacheKey=function approvedSurfaceCacheKey(){return 'pstudio-test-surface';};
+    material.onBeforeCompile=hook;
+    material.customProgramCacheKey=cacheKey;
+    material.pstudioTSLPortApprovedCompileHook=hook;
+    material.pstudioTSLPortApprovedCacheKey=cacheKey;
+  };
+  const foliage=new THREE.MeshStandardNodeMaterial();
+  foliage.userData={
+    pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['foliage'],
+    pstudioFoliageHQ:{role:'leaf',strength:{value:.8},speed:{value:1},height:4,base:0,direction:{x:.83,y:.56},translucency:0,thickness:.5,scatteringPower:3,translucencyColor:'#d9edaa'}
+  };
+  approve(foliage);
+  const invalidTerrain=new THREE.MeshStandardNodeMaterial();
+  invalidTerrain.userData={pstudioTSLPortVersion:1,pstudioTSLPortHasForeignHook:false,pstudioTSLFeatures:['triplanar']};
+  approve(invalidTerrain);
+  scene.add(new THREE.Mesh(geometry,foliage),new THREE.Mesh(geometry,invalidTerrain));
+  assert.throws(()=>applyPStudioTSLSurfaceFeatures(scene),/rolled back all partial TSL surface material graphs/);
+  assert.equal(foliage.positionNode,null);
+  assert.equal(foliage.castShadowPositionNode,null);
+  assert.equal(foliage.userData.pstudioTSLFeaturesApplied,undefined);
+  foliage.dispose();
+  invalidTerrain.dispose();
+  geometry.dispose();
+});
+
+
+test('pinned Three.js r187 exports native TSL water reflection and depth APIs',async()=>{
+  const THREE=await import('three/webgpu');
+  const TSL=await import('three/tsl');
+  assert.equal(typeof THREE.MeshBasicNodeMaterial,'function');
+  assert.equal(typeof THREE.RenderTarget,'function');
+  assert.equal(typeof THREE.DepthTexture,'function');
+  for(const name of ['reflector','screenUV','perspectiveDepthToViewZ','cameraNear','cameraFar','modelNormalMatrix','positionView','positionViewDirection','time','uv','vertexColor']) {
+    assert.ok(TSL[name]!==undefined,name);
+  }
+});
+
+test('TSL water surfaces clone materials per mesh, create ReflectorNode targets and restore on disposal',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLWaterSurfaces}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(20,20,16,16);
+  const original=new THREE.MeshStandardNodeMaterial({color:0x65d9bf});
+  original.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water'],
+    pstudioWaterTSLSettings:{
+      waterfall:false,amplitude:.105,
+      bounds:{minX:-10,minZ:-10,width:20,depth:20},
+      shallow:'#65d9bf',deep:'#08727d',foam:'#e3fff6',
+      reflectivity:.92,reflectionResolutionScale:.5,absorption:.19
+    }
+  };
+  original.pstudioTSLSurfacePreflightApproved=true;
+  const waterMesh=new THREE.Mesh(geometry,original);
+  waterMesh.userData.pstudioWaterSurface=true;
+  scene.add(waterMesh);
+  const depthTexture=new THREE.DepthTexture(8,8,THREE.UnsignedIntType);
+  const handle=applyPStudioTSLWaterSurfaces(scene,{depthTexture});
+  assert.equal(handle.waterMeshes,1);
+  assert.equal(handle.reflectorCount,1);
+  assert.notEqual(waterMesh.material,original);
+  assert.ok(waterMesh.material.colorNode?.isNode);
+  assert.ok(waterMesh.material.positionNode?.isNode);
+  assert.ok(waterMesh.material.normalNode?.isNode);
+  assert.ok(waterMesh.children.some(child=>child.isObject3D));
+  assert.equal(waterMesh.userData.pstudioWaterTSLActive,true);
+  assert.equal(handle.dispose(),true);
+  assert.equal(handle.dispose(),false);
+  assert.equal(waterMesh.material,original);
+  assert.equal(waterMesh.children.length,0);
+  assert.equal(waterMesh.userData.pstudioWaterTSLActive,undefined);
+  original.dispose();
+  geometry.dispose();
+  depthTexture.dispose();
+});
+
+test('TSL water depth prepass restores scene and renderer state after successful compile and render',async()=>{
+  const THREE=await import('three/webgpu');
+  const {createPStudioTSLWaterDepthPrepass}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera();
+  const originalOverride=new THREE.MeshBasicNodeMaterial();
+  scene.overrideMaterial=originalOverride;
+  const waterMaterial=new THREE.MeshStandardNodeMaterial();
+  const opaqueMaterial=new THREE.MeshStandardNodeMaterial();
+  const transparentMaterial=new THREE.MeshBasicNodeMaterial({transparent:true});
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(4,4),waterMaterial);
+  water.userData.pstudioWaterSurface=true;
+  const opaque=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),opaqueMaterial);
+  const transparent=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),transparentMaterial);
+  scene.add(water,opaque,transparent);
+
+  const previousTarget={name:'previous-target'};
+  const previousMRT={name:'previous-mrt'};
+  let currentTarget=previousTarget,currentMRT=previousMRT;
+  const shadowMap={autoUpdate:true},xr={enabled:true};
+  let compileCalls=0,renderCalls=0;
+  const renderer={
+    autoClear:false,shadowMap,xr,
+    getDrawingBufferSize(value){return value.set(32,24);},
+    getRenderTarget(){return currentTarget;},
+    getMRT(){return currentMRT;},
+    setMRT(value){currentMRT=value;},
+    setRenderTarget(value){currentTarget=value;},
+    clear(){},
+    async compileAsync(){
+      compileCalls++;
+      assert.equal(water.visible,false);
+      assert.equal(transparent.visible,false);
+      assert.ok(scene.overrideMaterial?.isMeshBasicNodeMaterial);
+    },
+    render(){
+      renderCalls++;
+      assert.equal(water.visible,false);
+      assert.equal(transparent.visible,false);
+      assert.equal(opaque.visible,true);
+      assert.equal(currentTarget?.isRenderTarget,true);
+    }
+  };
+  const handle=createPStudioTSLWaterDepthPrepass(renderer,scene,camera);
+  assert.equal(await handle.compile(),true);
+  assert.equal(handle.prepareFrame(),true);
+  assert.equal(compileCalls,1);
+  assert.equal(renderCalls,1);
+  assert.equal(water.visible,true);
+  assert.equal(transparent.visible,true);
+  assert.equal(scene.overrideMaterial,originalOverride);
+  assert.equal(currentTarget,previousTarget);
+  assert.equal(currentMRT,previousMRT);
+  assert.equal(renderer.autoClear,false);
+  assert.equal(shadowMap.autoUpdate,true);
+  assert.equal(xr.enabled,true);
+  assert.equal(handle.getState().preparedFrames,1);
+  assert.equal(handle.dispose(),true);
+  originalOverride.dispose();
+  waterMaterial.dispose();opaqueMaterial.dispose();transparentMaterial.dispose();
+  water.geometry.dispose();opaque.geometry.dispose();transparent.geometry.dispose();
+});
+
+test('TSL water depth prepass restores visibility and render targets when rendering fails',async()=>{
+  const THREE=await import('three/webgpu');
+  const {createPStudioTSLWaterDepthPrepass}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera();
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicNodeMaterial());
+  water.userData.pstudioWaterSurface=true;
+  scene.add(water);
+  const previousTarget={name:'previous-target'};
+  let target=previousTarget;
+  const renderer={
+    autoClear:false,
+    getDrawingBufferSize(value){return value.set(16,16);},
+    getRenderTarget(){return target;},
+    getMRT(){return null;},
+    setMRT(){},
+    setRenderTarget(value){target=value;},
+    clear(){},
+    render(){throw new Error('simulated render failure');}
+  };
+  const handle=createPStudioTSLWaterDepthPrepass(renderer,scene,camera);
+  assert.throws(()=>handle.prepareFrame(),/depth prepass failed/);
+  assert.equal(water.visible,true);
+  assert.equal(target,previousTarget);
+  assert.equal(scene.overrideMaterial,null);
+  assert.equal(renderer.autoClear,false);
+  assert.match(handle.getState().lastError,/simulated render failure/);
+  handle.dispose();
+  water.material.dispose();water.geometry.dispose();
+});
+
+
+test('TSL water-detail material preserves its transparent overlay state across fallback disposal',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLSurfaceFeatures}=await import('../static/pstudio_rendering_surface_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(5,5,4,4);
+  const material=new THREE.MeshStandardNodeMaterial({color:0x8fd8dc,transparent:false,depthWrite:true,side:THREE.FrontSide});
+  const hook=function approvedWaterDetailHook(){};
+  const cacheKey=function approvedWaterDetailCache(){return 'pstudio-water-detail-tsl';};
+  material.onBeforeCompile=hook;
+  material.customProgramCacheKey=cacheKey;
+  material.pstudioTSLPortApprovedCompileHook=hook;
+  material.pstudioTSLPortApprovedCacheKey=cacheKey;
+  material.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water-detail'],
+    pstudioWaterDetailTSLSettings:{role:'shoreline-foam',type:1,strength:0.54}
+  };
+  const mesh=new THREE.Mesh(geometry,material);
+  scene.add(mesh);
+  const handle=applyPStudioTSLSurfaceFeatures(scene);
+  assert.equal(handle.materialCount,1);
+  assert.ok(material.positionNode?.isNode);
+  assert.ok(material.colorNode?.isNode);
+  assert.ok(material.opacityNode?.isNode);
+  assert.equal(material.transparent,true);
+  assert.equal(material.depthWrite,false);
+  assert.equal(material.side,THREE.DoubleSide);
+  assert.equal(handle.dispose(),true);
+  assert.equal(material.positionNode,null);
+  assert.equal(material.opacityNode,null);
+  assert.equal(material.transparent,false);
+  assert.equal(material.depthWrite,true);
+  assert.equal(material.side,THREE.FrontSide);
+  material.dispose();
+  geometry.dispose();
+});
+
+test('TSL Mirror Water uses a native reflector node without the legacy mirror GLSL hook',async()=>{
+  const THREE=await import('three/webgpu');
+  const {applyPStudioTSLWaterSurfaces}=await import('../static/pstudio_rendering_water_tsl.mjs');
+  const scene=new THREE.Scene();
+  const geometry=new THREE.PlaneGeometry(40,40,8,8);
+  const material=new THREE.MeshPhysicalNodeMaterial({
+    color:0x0b3d52,roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008
+  });
+  material.userData={
+    pstudioTSLPortVersion:1,
+    pstudioTSLPortHasForeignHook:false,
+    pstudioTSLFeatures:['water'],
+    pstudioWaterTSLSettings:{
+      mirrorOnly:true,amplitude:0,waveStrength:0.05,
+      shallow:'#0b3d52',deep:'#0b3d52',foam:'#0b3d52',
+      reflectivity:1,reflectionResolutionScale:0.5,absorption:0.01
+    }
+  };
+  material.pstudioTSLSurfacePreflightApproved=true;
+  const mirror=new THREE.Mesh(geometry,material);
+  mirror.userData.pstudioWaterSurface=true;
+  mirror.userData.pstudioMirrorWater={reflectivity:1,waveStrength:0.05};
+  scene.add(mirror);
+  const depthTexture=new THREE.DepthTexture(16,16,THREE.UnsignedIntType);
+  const handle=applyPStudioTSLWaterSurfaces(scene,{depthTexture});
+  assert.equal(handle.waterMeshes,1);
+  assert.equal(handle.reflectorCount,1);
+  assert.ok(mirror.material.colorNode?.isNode);
+  assert.ok(mirror.material.roughnessNode?.isNode);
+  assert.equal(mirror.material.transparent,false);
+  assert.equal(mirror.material.depthWrite,true);
+  assert.equal(mirror.children.length,1);
+  assert.equal(handle.dispose(),true);
+  assert.equal(mirror.material,material);
+  assert.equal(mirror.children.length,0);
+  material.dispose();
+  geometry.dispose();
+  depthTexture.dispose();
+});
+
+
+test('TSL production post-processing composes clouds and shafts before bloom and final fog',()=>{
+  const root=path.join(__dirname,'..');
+  const source=fs.readFileSync(path.join(root,'static/pstudio_rendering_pipeline.mjs'),'utf8');
+  const start=source.indexOf('function rebuildOutput()');
+  const end=source.indexOf('renderPipeline.outputNode = output;',start);
+  assert.ok(start>=0&&end>start,'pipeline output composition block');
+  const composite=source.slice(start,end);
+  const index=token=>composite.indexOf(token);
+  assert.ok(index('createVolumetricCloudNode')>=0);
+  assert.ok(index('createGodRaysNode')>index('createVolumetricCloudNode'));
+  assert.ok(index('bloom(output')>index('createGodRaysNode'));
+  assert.ok(index('createVolumetricFogNode')>index('bloom(output'));
+  assert.ok(index('createContactShadowsNode')<index('createVolumetricCloudNode'));
+  assert.ok(source.includes('function sameRenderSettings(a, b)'));
 });

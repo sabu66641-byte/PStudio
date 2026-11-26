@@ -72,6 +72,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           backend: fallback.backend || 'webgl2',
           handle: fallback,
           render: () => fallback.render(),
+          resize: (width, height, pixelRatio) => fallback.resize?.(width, height, pixelRatio) !== false,
           dispose: () => fallback.dispose?.()
         });
         try { previous?.dispose?.(); } catch (_) {}
@@ -108,8 +109,15 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           powerPreference: options.powerPreference,
           environmentProfile: options.environmentProfile,
           environmentResolution: options.environmentResolution,
+          csm: options.csm,
+          clusteredLightingOptions: options.clusteredLightingOptions,
+          getClusteredLightingSnapshot: options.getClusteredLightingSnapshot,
+          clusteredLightingSnapshot: options.clusteredLightingSnapshot,
           pipelineOptions: options.pipelineOptions,
           configureRenderer: options.configureRenderer,
+          onStageChange: (stage, details) => {
+            try { options.onStageChange?.(stage, details); } catch (_) {}
+          },
           onDeviceLost: (info) => {
             if (!isCurrent(ticket)) return;
             publish('device-lost', { backend: 'webgpu', deviceLoss: info });
@@ -141,6 +149,17 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           backend: 'webgpu',
           handle: webgpu,
           render: () => webgpu.render(),
+          resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
+          setEnvironment: (profile) => webgpu.setEnvironment?.(profile) === true,
+          setBloom: (settings) => webgpu.setBloom?.(settings) === true,
+          setAntiAliasing: (settings) => webgpu.setAntiAliasing?.(settings) === true,
+          setAmbientOcclusion: (settings) => webgpu.setAmbientOcclusion?.(settings) === true,
+          setSSR: (settings) => webgpu.setSSR?.(settings) === true,
+          setGodRays: (settings) => webgpu.setGodRays?.(settings) === true,
+          setContactShadows: (settings) => webgpu.setContactShadows?.(settings) === true,
+          setVolumetricFog: (settings) => webgpu.setVolumetricFog?.(settings) === true,
+          setVolumetricClouds: (settings) => webgpu.setVolumetricClouds?.(settings) === true,
+          setClusteredLightingSnapshot: (snapshot) => webgpu.setClusteredLightingSnapshot?.(snapshot) === true,
           dispose: () => webgpu.dispose?.()
         });
         publish('ready', { backend: 'webgpu', capabilities: webgpu.capabilities || null });
@@ -175,6 +194,59 @@ export function createPStudioProductionRendererRuntime(options = {}) {
     render() {
       if (disposed || !active || state !== 'ready') return false;
       return active.render() !== false;
+    },
+    resize(width, height, pixelRatio) {
+      if (disposed || !active || state !== 'ready') return false;
+      return active.resize?.(width, height, pixelRatio) !== false;
+    },
+    setEnvironment(profile) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setEnvironment?.(profile) === true;
+    },
+    setBloom(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setBloom?.(settings) === true;
+    },
+    setAntiAliasing(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setAntiAliasing?.(settings) === true;
+    },
+    setAmbientOcclusion(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setAmbientOcclusion?.(settings) === true;
+    },
+    setSSR(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setSSR?.(settings) === true;
+    },
+    setGodRays(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setGodRays?.(settings) === true;
+    },
+    setContactShadows(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setContactShadows?.(settings) === true;
+    },
+    setVolumetricFog(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setVolumetricFog?.(settings) === true;
+    },
+    setVolumetricClouds(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setVolumetricClouds?.(settings) === true;
+    },
+    setClusteredLightingSnapshot(snapshot) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setClusteredLightingSnapshot?.(snapshot) === true;
+    },
+    getRenderer() {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return null;
+      return active.handle?.renderer || null;
+    },
+    useFallback(cause = new Error('PStudio requested the WebGL2 compatibility renderer.')) {
+      if (disposed || !allowFallback || typeof createFallback !== 'function') return Promise.resolve(false);
+      const error = cause instanceof Error ? cause : new Error(String(cause || 'WebGL2 fallback requested.'));
+      return activateFallback(error, generation).then(Boolean, () => false);
     },
     getState() {
       return Object.freeze({
