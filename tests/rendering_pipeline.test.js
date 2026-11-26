@@ -1737,6 +1737,12 @@ test('pinned Three.js r187 exports the required TSL MRT and normal packing APIs'
   assert.equal(typeof TSL.packNormalToRGB,'function');
   assert.ok(TSL.output);
   assert.ok(TSL.normalView);
+  assert.equal(typeof TSL.getViewPosition,'function');
+  assert.equal(typeof TSL.getScreenPositionFromClip,'function');
+  assert.equal(typeof TSL.projectionDepth,'function');
+  assert.equal(typeof TSL.isBackgroundDepth,'function');
+  assert.equal(typeof TSL.Break,'function');
+  assert.equal(typeof TSL.step,'function');
   assert.equal(typeof THREE.RenderPipeline,'function');
 });
 
