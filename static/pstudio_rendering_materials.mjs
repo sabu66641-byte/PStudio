@@ -133,7 +133,7 @@ export function createPStudioNodeMaterial(source, options = {}) {
     target.map = null;
     target.alphaMap = null;
     target.vertexColors = false;
-    target.userData.pstudioTSLOutlineTSL = true;
+    safeMetadata.pstudioTSLOutlineTSL = true;
   }
   target.userData = {
     ...safeMetadata,
