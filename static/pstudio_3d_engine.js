@@ -6440,8 +6440,9 @@ void main(){
     context.putImageData(image,0,0);
     context.save();
     context.globalCompositeOperation='screen';
-    for(let i=0;i<Math.round(36*areaScale);i++){
-      const u=(i/36+random()*.022)%1;
+    const haloCount=Math.max(1,Math.round(36*areaScale));
+    for(let i=0;i<haloCount;i++){
+      const u=(i/haloCount+random()*.022)%1;
       const x=u*width;
       const angle=u*Math.PI*2;
       const y=(.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1))*height;
