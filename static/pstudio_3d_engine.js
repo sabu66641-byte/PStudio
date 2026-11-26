@@ -6400,9 +6400,14 @@ void main(){
       applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375);
       genesisLastSkyUpdateAt=now;
     }
-    if(productionRendererBridge?.getState?.().backend==='webgpu'&&now-genesisLastWebGPUUpdateAt>=250){
-      productionRendererBridge.setEnvironment?.(state);
-      genesisLastWebGPUUpdateAt=now;
+    if(productionRendererBridge?.getState?.().backend==='webgpu'){
+      if(now-genesisLastWebGPUUpdateAt>=250){
+        productionRendererBridge.setEnvironment?.(state);
+        genesisLastWebGPUUpdateAt=now;
+      }
+      // TSL water uniforms are inexpensive to update per frame; keep wind,
+      // wave amplitude and rain ripples in lockstep with the WebGL2 path.
+      productionRendererBridge.setWaterEnvironment?.(state);
     }
     return true;
   }
