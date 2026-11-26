@@ -44,7 +44,7 @@ function requiredTSLFunctions() {
     'texture', 'screenUV', 'positionLocal', 'positionWorld', 'positionView',
     'positionViewDirection', 'normalWorldGeometry', 'cameraViewMatrix',
     'cameraNear', 'cameraFar', 'modelNormalMatrix', 'time', 'vec2', 'vec3',
-    'float', 'color', 'mix', 'max', 'min', 'clamp', 'sin', 'cos', 'pow',
+    'float', 'uniform', 'color', 'mix', 'max', 'min', 'clamp', 'sin', 'cos', 'pow',
     'exp', 'smoothstep', 'reflector', 'perspectiveDepthToViewZ', 'uv', 'vertexColor'
   ];
   return names.filter((name) => TSL[name] === undefined);
@@ -72,18 +72,24 @@ function collectWaterMeshes(root) {
   return entries;
 }
 
-function buildWaterNodes(material, settings, depthTexture, object, reflectors) {
+function buildWaterNodes(material, settings, depthTexture, object, reflectors, dynamicUniforms) {
   const local = TSL.positionLocal;
   const world = TSL.positionWorld;
   const t = TSL.time;
   const x = local.x;
   const z = local.z;
-  const amplitude = settings.amplitude;
+  const amplitude = TSL.uniform(settings.amplitude);
+  const waveStrength = TSL.uniform(settings.waveStrength);
+  const windDirection = TSL.uniform(new THREE.Vector2(1, 0));
+  const windSpeed = TSL.uniform(0.35);
+  const rainIntensity = TSL.uniform(0);
+  dynamicUniforms.push({ amplitude, waveStrength, windDirection, windSpeed, rainIntensity });
 
-  const waveA = x.mul(0.071).add(z.mul(0.043)).add(t.mul(0.92));
-  const waveB = x.mul(0.137).sub(z.mul(0.091)).sub(t.mul(0.67));
-  const waveC = x.mul(0.31).add(z.mul(0.22)).add(t.mul(1.43));
-  const waveD = x.mul(0.49).sub(z.mul(0.37)).add(t.mul(2.07));
+  const windPhase = x.mul(windDirection.x).add(z.mul(windDirection.y)).mul(windSpeed).mul(0.075);
+  const waveA = x.mul(0.071).add(z.mul(0.043)).add(t.mul(0.92)).add(windPhase);
+  const waveB = x.mul(0.137).sub(z.mul(0.091)).sub(t.mul(0.67)).add(windPhase.mul(0.82));
+  const waveC = x.mul(0.31).add(z.mul(0.22)).add(t.mul(1.43)).add(windPhase.mul(1.24));
+  const waveD = x.mul(0.49).sub(z.mul(0.37)).add(t.mul(2.07)).add(windPhase.mul(1.53));
   const displacement = waveA.sin().mul(0.52)
     .add(waveB.sin().mul(0.27))
     .add(waveC.sin().mul(0.14))
@@ -137,6 +143,7 @@ function buildWaterNodes(material, settings, depthTexture, object, reflectors) {
     world.x.mul(0.31).add(world.z.mul(0.27)).add(t.mul(1.22)).sin()
   ));
   foam = TSL.max(foam, TSL.smoothstep(0.91, 0.995, crest).mul(0.11));
+  foam = TSL.max(foam, rainIntensity.mul(0.055).mul(TSL.float(0.5).add(foamNoise.mul(0.5))));
 
   const variation = TSL.float(0.5).add(TSL.float(0.5).mul(
     world.x.mul(0.043).add(world.z.mul(0.037).sin().mul(1.8)).sin()
@@ -177,11 +184,17 @@ function buildWaterNodes(material, settings, depthTexture, object, reflectors) {
 
   if (settings.mirrorOnly) {
     const reflectorUV = reflectorNode.uvNode;
+    const mirrorWindPhase = reflectorUV.x.mul(windDirection.x)
+      .add(reflectorUV.y.mul(windDirection.y)).mul(t).mul(windSpeed).mul(0.07);
     const ripple = TSL.vec2(
-      reflectorUV.y.mul(190).add(t.mul(0.65)).sin(),
-      reflectorUV.x.mul(170).sub(t.mul(0.52)).cos()
-    ).mul(0.008 * settings.waveStrength);
-    reflectorNode.uvNode = reflectorUV.add(ripple);
+      reflectorUV.y.mul(190).add(t.mul(0.65)).add(mirrorWindPhase).sin(),
+      reflectorUV.x.mul(170).sub(t.mul(0.52)).sub(mirrorWindPhase).cos()
+    ).mul(waveStrength.mul(0.008));
+    const rainRipple = TSL.vec2(
+      reflectorUV.y.mul(238).add(t.mul(3.6)).add(mirrorWindPhase.mul(0.4)).sin(),
+      reflectorUV.x.mul(214).sub(t.mul(3.1)).sub(mirrorWindPhase.mul(0.3)).cos()
+    ).mul(rainIntensity.mul(0.0028));
+    reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple);
     material.colorNode = TSL.mix(
       TSL.color(material.color),
       reflectorNode.rgb,
@@ -399,6 +412,7 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
 
   const assignments = [];
   const reflectors = [];
+  const dynamicUniforms = [];
   const touchedMaterials = new Set();
   let disposed = false;
 
@@ -413,7 +427,7 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
         clone.pstudioTSLSurfacePreflightApproved = true;
         touchedMaterials.add(clone);
         const settings = readSettings(source);
-        buildWaterNodes(clone, settings, depthTexture, entry.object, reflectors);
+        buildWaterNodes(clone, settings, depthTexture, entry.object, reflectors, dynamicUniforms);
         nextMaterials[index] = clone;
       }
       entry.object.material = Array.isArray(originalMaterial) ? nextMaterials : nextMaterials[0];
@@ -443,8 +457,27 @@ export function applyPStudioTSLWaterSurfaces(root, options = {}) {
     waterMeshes: entries.length,
     reflectorCount: reflectors.length,
     depthTexture,
+    updateEnvironment(profile = {}) {
+      if (disposed) return false;
+      const direction = Array.isArray(profile.windDirection) ? profile.windDirection : [1, 0];
+      let dx = finite(direction[0], 1), dz = finite(direction[1], 0);
+      const length = Math.hypot(dx, dz) || 1;
+      dx /= length; dz /= length;
+      const speed = Math.max(0, Math.min(12, finite(profile.windSpeed, 0)));
+      const amplitude = Math.max(0.025, Math.min(0.34, finite(profile.waterWaveAmplitude, 0.08)));
+      const rain = Math.max(0, Math.min(1, finite(profile.rainIntensity, 0)));
+      const ripple = Math.max(0, Math.min(1, finite(profile.waterRippleStrength, rain * 0.9)));
+      for (const uniforms of dynamicUniforms) {
+        uniforms.amplitude.value = amplitude;
+        uniforms.waveStrength.value = ripple;
+        uniforms.windDirection.value.set(dx, dz);
+        uniforms.windSpeed.value = speed;
+        uniforms.rainIntensity.value = rain;
+      }
+      return true;
+    },
     getState() {
-      return Object.freeze({ disposed, waterMeshes: entries.length, reflectorCount: reflectors.length });
+      return Object.freeze({ disposed, waterMeshes: entries.length, reflectorCount: reflectors.length, dynamicUniformSets: dynamicUniforms.length });
     },
     dispose() {
       if (disposed) return false;

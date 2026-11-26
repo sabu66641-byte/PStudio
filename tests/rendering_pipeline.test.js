@@ -51,7 +51,7 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(html.includes('three-mesh-bvh@0.9.18'));
   assert.ok(html.includes("import('three/webgpu')"));
   assert.ok(html.includes("import('three/tsl')"));
-  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'));
+  assert.ok(html.includes('pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'));
   assert.ok(webgpuMigration.includes('pstudio_rendering_materials.mjs?v=20261126-npr-toon-v1'));
   assert.ok(renderer.includes('getRenderingBackendStatus:renderingBackendStatus'));
   assert.ok(renderer.includes('renderingBackend:renderingBackendStatus()'));
@@ -1395,12 +1395,12 @@ test('WebGPU PBR and TSL pilot uses the shared production scene-session modules'
     'pstudio_webgpu_lab.mjs?v=20261126-cluster-sh-vfx-v2',
     '既存プロジェクト',
     '既存プロジェクトのシーンや本番WebGL 2レンダラーは変更しません',
-    'pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'
+    'pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'
   ])assert.ok(html.includes(token),token);
   for(const token of [
     "import * as THREE from 'three/webgpu'",
     "import * as TSL from 'three/tsl'",
-    "from './pstudio_rendering_migration.mjs?v=20261126-npr-toon-aa-v2'",
+    "from './pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1'",
     'createPStudioWebGPUSceneSession({',
     'sessionHandle.render()',
     'sessionHandle.dispose()',
@@ -1474,7 +1474,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-npr-toon-aa-v2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261126-genesis-1-2-v1'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-npr-toon-v1'));
   assert.ok(html.includes('/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1'));
@@ -1608,6 +1608,65 @@ test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fall
   assert.match(controller,/source\s*\}\)/);
   assert.ok(renderer.includes('dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource'));
   assert.match(renderer,/updateDynamicResolutionFromMetrics\(now,hasRecentGpuSample\)/);
+});
+
+test('GENESIS renderer applies one continuous environment state to lighting, water, cloud and rain systems',()=>{
+  for(const token of [
+    'window.PStudioGenesisEnvironment?.createGenesisEnvironmentController',
+    'genesisEnvironmentController.update(deltaSeconds)',
+    'window.PStudioEnvironmentFX?.update?.(particleClock)',
+    "applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375)",
+    'productionRendererBridge.setEnvironment?.(state)',
+    'uMirrorWindDirection','uMirrorWindSpeed','uMirrorRain',
+    "createGpuParticleSystem(384,'#C7E3F8',.11)",
+    'spawnGpuParticle(genesisRainSystem',
+    'disposeGpuParticleSystem(genesisRainSystem)'
+  ])assert.ok(renderer.includes(token),token);
+  assert.ok(webgpuMigration.includes('const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true'));
+  assert.ok(webgpuMigration.includes('setWaterEnvironment(profile)'));
+  for(const token of [
+    'updateEnvironment(profile = {}) {',
+    'const amplitude = TSL.uniform(settings.amplitude)',
+    'const waveStrength = TSL.uniform(settings.waveStrength)',
+    'const windDirection = TSL.uniform(new THREE.Vector2(1, 0))',
+    'const rainIntensity = TSL.uniform(0)',
+    'reflectorNode.uvNode = reflectorUV.add(ripple).add(rainRipple)',
+  ])assert.ok(webgpuWater.includes(token),token);
+  for(const token of [
+    'uniform vec2 uPStudioWaterWindDirection',
+    'uPStudioWaterRainIntensity',
+    'rainLocal',
+    'rainRing*=uPStudioWaterRainIntensity',
+    'applyScalar(u.amplitude,settings.waterWaveAmplitude'
+  ])assert.ok(environmentFX.includes(token),token);
+});
+
+
+test('GENESIS environment has one particle-update owner in editor and Play modes',()=>{
+  const start=renderer.indexOf('  function updateGenesisEnvironment(');
+  const end=renderer.indexOf('  function applyModelMaterial(',start);
+  assert.ok(start>=0&&end>start,'Genesis update helper boundaries');
+  const update=renderer.slice(start,end);
+  assert.ok(update.includes('if(!window.PStudioEngine?.isRunning?.())updateGpuParticleSystems()'));
+  assert.doesNotMatch(update,/\n\s*updateGpuParticleSystems\(\);\s*return state;/);
+  const clearStart=renderer.indexOf('clearGenesisEnvironment:()=>{');
+  const clearEnd=renderer.indexOf('\n    getRenderingBackendStatus:',clearStart);
+  assert.ok(clearStart>=0&&clearEnd>clearStart,'clear Genesis API boundaries');
+  const clear=renderer.slice(clearStart,clearEnd);
+  assert.ok(clear.includes('disposeGpuParticleSystem(genesisRainSystem)'));
+  assert.ok(clear.includes('genesisRainAccumulator=0'));
+  assert.ok(clear.includes("productionRendererBridge.setEnvironment?.(studioProfile)"));
+});
+
+test('GENESIS wind, rain and wave state reaches both WebGL2 and WebGPU water paths',()=>{
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  assert.ok(renderer.includes('uMirrorWindDirection'));
+  assert.ok(renderer.includes('uMirrorWindSpeed'));
+  assert.ok(renderer.includes('uMirrorRain'));
+  for(const token of ['windDirection:{value:new Three.Vector2(1,0)}','windSpeed:{value:0.35}','rainIntensity:{value:0}','wetness:{value:0}','uPStudioWaterRainIntensity'])assert.ok(fx.includes(token),token);
+  for(const token of ['const amplitude = TSL.uniform(settings.amplitude)','const waveStrength = TSL.uniform(settings.waveStrength)','const windDirection = TSL.uniform(new THREE.Vector2(1, 0))','const rainIntensity = TSL.uniform(0)','updateEnvironment(profile = {})','uniforms.rainIntensity.value = rain'])assert.ok(webgpuWater.includes(token),token);
+  assert.ok(webgpuMigration.includes('setWaterEnvironment(profile)'));
+  assert.ok(renderer.includes('productionRendererBridge.setWaterEnvironment?.(state)'));
 });
 
 test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{

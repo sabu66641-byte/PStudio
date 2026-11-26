@@ -716,3 +716,14 @@ Renderer diagnostics expose staged preparation, virtual-texture page counts, clu
 GLB files use the dedicated GLTF module Worker. JSON glTF files bundled into the asset store use the regular Three.js GLTFLoader Blob-URL path; they are not sent to the GLB-header parser. A Worker packet that parses but cannot be rehydrated into the live Three.js scene is released and retried through the main-thread loader when the failure is not a malformed-file or memory-allocation failure. Decoder instances created for the fallback are disposed after parsing.
 
 Model loading stages are surfaced in the Scene status line. Worker parsing, packet hydration, instance creation, texture preparation, and initial-render failures produce an OUTPUT error with a retry path. Scene Refresh now refreshes the active 2D or 3D view and re-enters the model loading path for previously failed models. A failed instance build is retained as an explicit error state rather than being silently retried on every render.
+
+
+## GENESIS — Unified Atmosphere and Mirror Water Demo
+
+The Scene Environment inspector now exposes one shared GENESIS state for time of day, weather, wind speed and direction. The same state drives the visible sky/sun/moon, directional and hemisphere lighting, distance and volumetric atmosphere inputs, cloud drift, foliage wind, water displacement, rain ripples and camera-local GPU rain particles.
+
+Open **Scene Environment → GENESIS 鳥居・水鏡デモを開く**, then press Play. The generated project uses separate `.ps` Game Object scripts for the camera, ground, torii, mirror water and foliage. While the demo is running, use the Inspector to scrub time or select clear, cloudy, overcast, rain and storm weather. Wind speed/direction changes feed clouds, foliage and water. The automatic time cycle is optional.
+
+The ordinary `draw_water` PBR path keeps its existing depth-aware absorption/transmission and shoreline handling. `draw_mirror_water` retains the planar reflection render target and now receives wind/rain ripple inputs. These are raster/TSL rendering approximations, not path tracing or a full fluid solver.
+
+**Validation boundary:** automated controller, shader-contract, scene-fixture and CI tests do not establish physical-device image quality or stable frame pacing. WebGL2/WebGPU visual parity, real GPU timings, camera-path capture, adapter/device-loss recovery and 60-minute hardware soak testing remain hardware qualification tasks.

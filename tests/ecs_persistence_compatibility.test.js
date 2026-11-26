@@ -83,6 +83,7 @@ function loadProjectImportHarness({ failPersist = false } = {}) {
     updateLineNumbers() {},
     updateCursor() {},
     syncSceneEnvironmentPresetButtons() {},
+    syncGenesisEnvironmentToRenderer() {},
     switchWorkspaceView() {},
     loadSceneText() {},
     setOutput(message) { deps.lastOutput = message; },
@@ -94,7 +95,7 @@ function loadProjectImportHarness({ failPersist = false } = {}) {
       window, toast, PSTUDIO_BACKUP_FORMAT, PSTUDIO_BACKUP_VERSION, PSTUDIO_BACKUP_LIMIT,
       showPStudioConfirm, localStorage, PROJECT_KEY, document, renderProjectTree,
       openProjectFile, persistProject, updateLineNumbers, updateCursor,
-      syncSceneEnvironmentPresetButtons, switchWorkspaceView, loadSceneText,
+      syncSceneEnvironmentPresetButtons, syncGenesisEnvironmentToRenderer, switchWorkspaceView, loadSceneText,
       setOutput, console, TextEncoder, Blob, Uint8Array, atob, btoa,
       Set, Map, Math, Number, Object, Array, String, Boolean, TypeError, Error, JSON
     } = deps;

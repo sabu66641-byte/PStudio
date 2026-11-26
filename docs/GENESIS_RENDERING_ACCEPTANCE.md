@@ -1,6 +1,6 @@
 # GENESIS Rendering Acceptance and Phase Plan
 
-**Status (2026-11-26):** source audit recorded; GENESIS_TORII_MIRROR_V1 starter scripts and expanded percentile telemetry are included in PR #102. Candidate CI run #1361 passed. A post-merge main-branch run, browser-based WebGL2 session, real-device baseline, visual captures, and WebGPU hardware parity are not yet evidenced. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that the renderer has passed it.
+**Status (2026-11-26):** GENESIS 0 is merged. GENESIS 1/2 shared time/weather/wind state, water/rain integration and the inspector-driven torii/mirror-water demo are implemented on PR #103; the candidate source and regression suites passed GitHub Actions run #1383. The main merge is pending. Browser-based visual captures, named-device WebGL2 baselines and WebGPU hardware parity remain unverified. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that the renderer has passed every hardware gate.
 
 ## Mission
 
@@ -84,6 +84,20 @@ Record p50, p95, and p99 separately. The 30 FPS tier is a minimum-device target,
 - WebGPU is measured only on browsers/devices that actually expose a supported adapter; unsupported devices are marked not tested, not passed.
 - Existing Python and Node.js regression suites pass on the candidate commit, including explicit percentile-helper tests and source-level WebGL2 guards.
 - Every known measurement limitation and unverified hardware claim is documented.
+
+## GENESIS 1/2 candidate implementation
+
+The current implementation path is:
+
+- `PStudioGenesisEnvironment` owns smoothed time-of-day transitions, day/dusk/night profile interpolation, weather weights (clear/cloudy/overcast/rain/storm), wind vector/speed, precipitation, wetness, cloud drift and water-wave parameters.
+- Scene settings persist through the existing `.scene` and project backup formats. The inspector's time, weather and wind controls update that shared controller; an optional auto-cycle advances time at a slow fixed rate.
+- `PStudio3D` applies the shared state to the sky panorama/IBL, sun/moon, key and hemisphere lighting, fog, volumetric cloud/fog uniforms and planar mirror-water uniforms. The live WebGL2 sky/IBL panorama refresh is throttled to 1.2 seconds and uses a 0.375 resolution scale during transitions; direct lighting, fog and existing FX uniforms still receive the shared state every renderer frame. The active WebGPU environment/IBL profile is refreshed at 250 ms intervals, while water-specific TSL uniforms are updated each renderer frame.
+- WebGPU water settings are forwarded through the TSL water surface handle and every production layer (scene session → runtime → host → bridge). Wind direction/speed, wave amplitude, rain intensity and ripple strength update existing TSL uniforms rather than rebuilding shader programs.
+- `PStudioEnvironmentFX` receives cloud-wind, foliage-wind, water-wave, rain, wetness and water-reflection inputs. Ordinary water retains its depth prepass and Beer–Lambert absorption/transmission path. Mirror water retains its separate planar reflection target and receives wind/rain-driven UV perturbation and ripple rings. The TSL water path receives the same wind/rain state and changes wave displacement, mirror UVs and foam.
+- GPU billboard rain particles are emitted around the camera with a bounded 384-particle system, use a single update owner between Editor and Play, and are disposed when rain stops or the 3D scene is cleared.
+- The inspector can generate the integrated torii/shoreline/mirror-water/foliage demo from separate `.ps` scripts. The demo is an interactive rendering fixture, not yet a golden-image capture or automated camera-path harness.
+
+**Qualification boundary:** these source changes do not certify WebGL2 visual quality or WebGPU parity on a physical device. Browser/GPU measurements, screenshots and long-running soak results must be added independently before GENESIS 1/2 exit gates can be signed off.
 
 ## GENESIS 1 — Unified Atmosphere
 

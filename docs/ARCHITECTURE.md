@@ -328,3 +328,18 @@ AI decisions are evaluated by the ECS `gameplay.ai-controller` System in the `po
 - `Renderable.assetName` is authoritative for 3D model references; AssetStore/Renderer continue to own GLB bytes and loaded model resources.
 - `EditorObjectSettings` stores persistent manipulation permission; pointer/DOM interaction remains editor-service logic.
 - Legacy Scene Object fields `script`, `sprite`, `color`, `shape`, `w/h`, `model`, `modelScale`, `collider` and `manipulationEnabled` are migrated once into the versioned ECS Component payload and removed from the active Scene Object object. Future-version payloads are not modified.
+
+
+## GENESIS Environment and Water Integration
+
+GENESIS owns a GPU-independent environment controller in `static/pstudio_genesis_environment.js`. It provides a time-of-day profile interpolated across day, golden-hour dusk and night, plus normalized weather weights, wind direction/speed, rain intensity, wetness, cloud drift and derived water-wave parameters. The controller advances from the renderer frame delta and uses smoothed target transitions so a preset or weather change does not replace the current world state in one frame.
+
+The Scene Environment inspector persists this state in `.scene` and the project backup. Its one-click torii/mirror-water demo creates separate Game Object scripts for camera, terrain, torii, water and foliage. The renderer applies the shared state to the procedural equirectangular sky/IBL update, sun/moon direction, fog, hemisphere/key light, volumetric cloud/fog uniforms, cloud wind, foliage wind and water.
+
+- WebGL2 remains the production rendering path. Water depth prepass, depth-aware absorption/transmission, planar reflection capture and quality budgeting remain the existing rendering owners. GENESIS adds wind-directed wave phase, procedural rain-impact rings, wetness/reflection response and a bounded GPU billboard rain system without replacing those paths.
+- WebGPU receives the same environment profile through the existing renderer bridge when that backend is active. This integration does not mark WebGPU as production-ready and does not claim physical-device parity; TSL surface and water feature blockers continue to gate promotion.
+- Environment state updates do not allocate new shader programs in the steady-state frame loop. WebGL2 procedural sky/IBL refresh is throttled to 1.2 seconds at 0.375 render scale during live transitions; directional/hemisphere lighting, fog, cloud and foliage/water uniforms still update every renderer frame. The WebGPU environment/IBL profile updates at 250 ms, while water TSL uniforms update per frame. Full authored preset captures retain the existing quality-tier sky texture path.
+- The live TSL water update is explicitly proxied through the scene session, production runtime, production host and production bridge. Wave amplitude, wind direction/speed, rain intensity and ripple strength update retained uniform nodes; they do not compile a new shader per frame.
+- All rain GPU particle resources are released when rain stops or the scene is cleared. Editor particle stepping and Play render stepping have a single owner to avoid double integration. Water/cloud/foliage state updates write existing uniforms and do not create new materials per frame.
+
+Real GPU shader compilation, water/sky image parity, reflection stability during the camera path, rain-particle appearance, long-duration memory behavior and WebGPU device-loss recovery remain physical-device acceptance tasks.
