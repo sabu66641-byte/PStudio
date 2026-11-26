@@ -698,19 +698,28 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const supportsGodRaysNode=window.PStudioRenderingMigration?.supportsPStudioTSLGodRays===true;
     const supportsContactShadowsNode=window.PStudioRenderingMigration?.supportsPStudioTSLContactShadows===true;
     const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
-    if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
+    const hasWater=(waterMaterials.size>0||Number(fx.waterMaterials)>0);
+    if(hasWater&&!supportsWaterTSL)add('water','水面TSLアダプターが利用できません。');
+    else if(hasWater)add('water-reflection-parity','TSL水深プリパス／ReflectorNodeは接続済みですが、複数反射面・深度・カメラ切替の実機パリティが未確認です。');
     if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
+    else if(Number(fx.waterDetailMaterials)>0)add('water-detail-parity','水面マイクロリップル／詳細材質のTSLノードは接続済みですが、実機の透明合成・輪郭・遠景品質を未検証です。');
     if(!supportsSurfaceTSL&&(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0))add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
+    else if(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0)add('foliage-parity','植生の風変形・透過TSLは接続済みですが、GPU頂点変形と透過品質の実機比較が未完了です。');
     if(!supportsSurfaceTSL&&(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0))add('terrain','地形・トライプラナーPBRのTSL移植が未完了です。');
+    else if(Number(fx.terrainMaterials)>0||Number(fx.triplanarMaterials)>0)add('terrain-parity','地形レイヤー／トライプラナーTSLは接続済みですが、遠景・法線・継ぎ目の実機比較が未完了です。');
     if(!supportsSurfaceTSL&&Number(fx.parallaxMaterials)>0)add('parallax','パララックスマッピングのTSL移植が未完了です。');
     let hasLegacyMirrorWater=false;
     scene?.traverse?.(object=>{if(object?.userData?.pstudioMirrorWater)hasLegacyMirrorWater=true;});
     if(hasLegacyMirrorWater&&!supportsWaterTSL)add('mirror-water','Mirror Water用TSL ReflectorNodeが利用できません。');
     const activeClusterLighting=clusteredLightingActive||clusteredLightSet.size>0;
     if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','ClusteredLightsNode Forward+ PBRアダプターが利用できません。');
+    else if(activeClusterLighting&&clusteredLightSet.size>0)add('clustered-lighting-pbr-parity','ClusteredLightsNodeのPBR経路は接続済みですが、多数ライト・反射カメラ・影付きライトの実機一致を確認するまで本番昇格を保留します。');
     const supportsSHGI=window.PStudioRenderingMigration?.supportsPStudioTSLSHGI===true;
-    if((bakedLightProbe||bakedLightProbeVolume?.length)&&!supportsSHGI)add('static-gi-probe-capture','静的SHのTSL IrradianceNodeアダプターが利用できません。');
+    const hasBakedSHGI=!!(bakedLightProbe||bakedLightProbeVolume?.length);
+    if(hasBakedSHGI&&!supportsSHGI)add('static-gi-probe-capture','静的SHのTSL IrradianceNodeアダプターが利用できません。');
+    else if(hasBakedSHGI)add('sh-gi-capture-parity','9係数SHとWebGPU CubeRenderTarget読出しは接続済みですが、係数方向・強度・複数プローブ合成の実機一致が未確認です。');
     if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
+    else if(Number(fx.causticMaterials)>0)add('caustics-parity','水中コースティクスTSLは接続済みですが、屈折光・水深・時間変化の実機比較が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled){
       if(window.PStudioRenderingMigration?.supportsPStudioTSLVolumetricFog!==true)add('volumetric-fog-tsl','体積フォグのTSLノード機能が利用できません。');
@@ -721,16 +730,24 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       else add('volumetric-clouds-parity','体積雲TSLは実装済みですが、実機WebGPUでのノイズ・多重散乱・深度パリティ検証が未完了のためWebGL2を維持します。');
     }
     if(contactShadowsEnabled&&!supportsContactShadowsNode)add('contact-shadows','コンタクトシャドウのTSL深度レイマーチアダプターが利用できません。');
+    else if(contactShadowsEnabled)add('contact-shadows-parity','コンタクトシャドウのTSL深度レイマーチは接続済みですが、深度不連続・接地影・負荷の実機検証が未完了です。');
     if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
+    else if(ssaoEnabled||qualityAOEnabled)add('ambient-occlusion-parity','GTAO／SSAO TSLは接続済みですが、接触領域・ノイズ・時間安定性の実機検証が未完了です。');
     if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
+    else if(ssrEnabled)add('ssr-parity','SSR TSLは接続済みですが、画面外欠損・ラフネス・動的解像度での実機比較が未完了です。');
     if(godRaysEnabled&&!supportsGodRaysNode)add('god-rays','God RaysのTSL RenderPipelineアダプターが利用できません。');
+    else if(godRaysEnabled)add('god-rays-parity','God Rays TSLは接続済みですが、太陽位置・遮蔽・Bloomとの合成の実機検証が未完了です。');
     if(dynamicGIEnabled&&!supportsSHGI)add('dynamic-gi','動的SH GIのTSLプローブ係数アダプターが利用できません。');
+    else if(dynamicGIEnabled)add('dynamic-gi-capture-parity','動的SHのWebGPU捕捉／更新経路は接続済みですが、更新遅延・係数の時間変化・カメラ移動の実機検証が未完了です。');
     const supportsParticleTSL=!!window.PStudioWebGPU?.MeshBasicNodeMaterial&&!!window.PStudioTSL?.attribute;
     const particleSystems=[...particleEmitters.values(),...particleBursts.values()];
     if(particleSystems.some(effect=>effect?.system?.material?.isNodeMaterial!==true)
       ||(particleSystems.length>0&&!supportsParticleTSL))add('gpu-particles','GPUパーティクルがTSL NodeMaterialへ移植されていません。');
     if([...trailEffects.values()].some(trail=>trail?.material?.isNodeMaterial!==true)
       ||(trailEffects.size>0&&!supportsParticleTSL))add('trails','トレイルVFXがTSL NodeMaterialへ移植されていません。');
+    else if(trailEffects.size>0)add('trails-parity','TSLリボントレイルは接続済みですが、透明重なり・速度変化・点数上限の実機検証が未完了です。');
+    if(particleSystems.length>0&&particleSystems.every(effect=>effect?.system?.material?.isNodeMaterial===true))add('gpu-particles-parity','TSLインスタンス粒子は接続済みですが、密度・寿命境界・GPU負荷の実機検証が未完了です。');
+    if(temporalAAEnabled||taaPass?.enabled||smaaPass?.enabled)add('temporal-aa','TAA／SMAAの既存WebGLパスはRenderPipelineへ未移植のため、AA使用中はWebGL2を維持します。');
     if(csm&&window.PStudioRenderingMigration?.supportsPStudioTSLCSM!==true)add('cascaded-shadow-maps','TSL CSMShadowNodeの移行モジュールが利用できません。');
     if(commandsByObject&&typeof commandsByObject.values==='function'){
       for(const list of commandsByObject.values()){
