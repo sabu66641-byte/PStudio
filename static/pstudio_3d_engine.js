@@ -2362,6 +2362,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     const oldClearAlpha=captureRenderer.getClearAlpha?.()??1,oldAutoClear=captureRenderer.autoClear,oldShadowAuto=captureRenderer.shadowMap?.autoUpdate;
     const oldCaptureActive=probeCaptureActive,restoreProbeUniforms=suppressProbeLightingForCapture();
     const dynamicSet=new Set(dynamicLights.values()),hiddenLights=[],savedVisibility=[];
+    let capturedLight=null;
     dynamicProbeCaptureInFlight=true;
     try{
       scene.traverse(object=>{
@@ -2375,7 +2376,6 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       scene.environment=null;scene.background=new T.Color(0x000000);captureRenderer.setClearColor?.(0x000000,1);captureRenderer.autoClear=true;
       if(captureRenderer.shadowMap)captureRenderer.shadowMap.autoUpdate=false;
       cube.position.copy(position);scene.add(cube);cube.update(captureRenderer,scene);scene.remove(cube);
-      let capturedLight=null;
       capturedLight=await generator.fromCubeRenderTarget(captureRenderer,target);
       const coefficients=capturedLight?.sh?.coefficients;
       if(!coefficients||coefficients.length<9)throw new Error('Dynamic SH probe capture returned invalid coefficients.');
