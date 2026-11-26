@@ -7130,6 +7130,11 @@ void main(){
       return{available:true,enabled:true,state:genesisEnvironmentState,config:genesisEnvironmentController.getConfig()};
     },
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
+    clearGenesisEnvironment:()=>{
+      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;
+      if(renderer&&scene&&camera){applySceneEnvironmentPreset(window.THREE,'studio');drawFrame();}
+      return true;
+    },
     getRenderingBackendStatus:renderingBackendStatus,
     requestWebGPUMigration:()=>requestProductionWebGPUMigration({retry:true}),
     getWebGPUMigrationDiagnostics:()=>Object.freeze({
