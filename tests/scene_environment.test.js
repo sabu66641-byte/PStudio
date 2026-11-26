@@ -45,7 +45,7 @@ test('new scenes default to day and project persistence includes scene environme
   assert.match(html, /let sceneEnvironment=\{preset:'day',timeOfDay:12/);
   assert.match(html, /environment:sceneEnvironment/);
   assert.match(html, /function normalizeSceneEnvironment\(value\)/);
-  assert.match(html, /\['day','dusk','night','studio'\]\.includes\(preset\)/);
+  assert.match(html, /const valid=\['day','dusk','night','studio'\]/);
 });
 
 test('old scene files without environment data remain compatible and load as daytime', () => {
@@ -86,7 +86,7 @@ test('GENESIS Inspector persists time, weather, wind and automatic-cycle control
 
 test('renderer builds a procedural sky panorama and falls back safely if Canvas or PMREM is unavailable', () => {
   for (const token of [
-    'function createProceduralSkyTexture(T,profile)',
+    'function createProceduralSkyTexture(T,profile,resolutionScale=1,continuous=false)',
     'new T.CanvasTexture(canvas)',
     'T.EquirectangularReflectionMapping',
     'context.createLinearGradient',
@@ -440,7 +440,7 @@ test('day panorama adds an adaptive, seamless multi-octave cumulus field without
   assert.match(renderer,/makeNoiseGrid\(32,16\),makeNoiseGrid\(64,32\),makeNoiseGrid\(128,64\),makeNoiseGrid\(256,128\),makeNoiseGrid\(512,256\)/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
   assert.match(renderer,/context\.drawImage\(cloudCanvas,0,0,width,height\)/);
-  assert.match(renderer,/if\(name==='day'\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);
+  assert.match(renderer,/if\(name==='day'\|\|\(continuous&&Number\(profile\.cloudDensity\)>.025&&Number\(profile\.cloudCoverage\)>.04\)\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);
   assert.match(renderer,/uniform float pStudioSunAngularRadius/);
   assert.match(renderer,/pStudioSolarExponent=mix\(260\.0,155\.0/);
 });
@@ -457,7 +457,7 @@ test('night preset uses a dedicated dark procedural panorama and never exposes t
 
 test('physical-sky PMREM failure activates the procedural panorama as both visible sky and available environment source',()=>{
   assert.match(renderer,/scenePresetUsesPhysicalSky=!!\(physicalSkyReady&&nextTarget\)/);
-  assert.match(renderer,/try\{nextTexture=createProceduralSkyTexture\(T,profile\);?\}/);
+  assert.match(renderer,/try\{nextTexture=createProceduralSkyTexture\(T,profile,skyResolutionScale,!!profileOverride\);?\}/);
   assert.match(renderer,/if\(!nextTarget&&nextTexture&&pmremGenerator\)/);
   assert.match(renderer,/if\(scenePresetTexture\)scene\.background=scenePresetTexture/);
   assert.match(renderer,/else scene\.background=new T\.Color\(profile\.horizon\|\|profile\.skyMid\|\|'#79BCE0'\)/);
@@ -465,7 +465,7 @@ test('physical-sky PMREM failure activates the procedural panorama as both visib
 
 
 test('night sky uses a more populated, brighter starfield while preserving the navy-blue palette',()=>{
-  assert.ok(renderer.includes("const starBrightness=Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1))"));
+  assert.ok(renderer.includes("const starBrightness=continuous?Math.max(0,Math.min(1.8,Number(profile.starBrightness)||0)):Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1))"));
   assert.ok(renderer.includes("for(let i=0;i<12000;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<2600;i++)"));
   assert.ok(renderer.includes("(.12+random()*.55+band*.2)"));
