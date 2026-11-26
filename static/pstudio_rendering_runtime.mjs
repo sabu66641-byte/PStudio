@@ -207,6 +207,10 @@ export function createPStudioProductionRendererRuntime(options = {}) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
       return active.setBloom?.(settings) === true;
     },
+    setAntiAliasing(settings) {
+      if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
+      return active.setAntiAliasing?.(settings) === true;
+    },
     setAmbientOcclusion(settings) {
       if (disposed || !active || state !== 'ready' || active.backend !== 'webgpu') return false;
       return active.setAmbientOcclusion?.(settings) === true;
