@@ -1,4 +1,4 @@
-import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs';
+import { createPStudioWebGPUSceneSession } from './pstudio_rendering_migration.mjs?v=20261126-genesis-water-live-v1';
 
 /**
  * Coordinates the asynchronous renderer hand-off used by the production engine.
