@@ -1,4 +1,4 @@
-import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs?v=20261126-cluster-live-v1';
+import { createPStudioProductionRendererRuntime } from './pstudio_rendering_runtime.mjs?v=20261126-active-renderer-v1';
 import { createPStudioRendererCanvasHost } from './pstudio_rendering_canvas_host.mjs';
 
 /**
@@ -33,6 +33,7 @@ export function createPStudioProductionRendererHost(options = {}) {
     render: runtime.render,
     resize: runtime.resize,
     setClusteredLightingSnapshot: runtime.setClusteredLightingSnapshot,
+    getRenderer: runtime.getRenderer,
     useFallback: runtime.useFallback,
     getState() {
       return Object.freeze({
