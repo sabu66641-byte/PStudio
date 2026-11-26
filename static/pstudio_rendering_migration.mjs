@@ -422,7 +422,13 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
       },
       setEnvironment(profile) {
         if (disposed) return false;
-        return environmentHandle?.setProfile?.(profile) === true;
+        const environmentUpdated = environmentHandle?.setProfile?.(profile) === true;
+        const waterUpdated = waterSurfaceHandle?.updateEnvironment?.(profile) ?? true;
+        return environmentUpdated && waterUpdated;
+      },
+      setWaterEnvironment(profile) {
+        if (disposed) return false;
+        return waterSurfaceHandle?.updateEnvironment?.(profile) ?? true;
       },
       setBloom(settings) {
         if (disposed) return false;
