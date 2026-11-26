@@ -77,6 +77,7 @@ test('legacy Scene Object rendering settings migrate into persistent ECS Compone
   assert.equal(ecs.getComponent(entity, 'MaterialOverrides').overrides[0].name, 'Bark');
   assert.equal(ecs.getComponent(entity, 'MaterialOverrides').overrides[0].diffuseRoughness, 0.44);
   assert.equal(ecs.getComponent(entity, 'ShaderMaterial').fragmentShader.startsWith('uniform vec3'), true);
+  assert.equal(ecs.getComponent(entity, 'ShaderMaterial').tslAdapterId, '');
   assert.equal(ecs.getComponent(entity, 'MeshCollider').enabled, true);
   assert.equal(ecs.getComponent(entity, 'PostFX').bloom, true);
   assert.equal(ecs.getComponent(entity, 'PostFX').strength, 0.65);
@@ -140,7 +141,7 @@ test('ECS render settings feed the renderer in deterministic Toon, override, sha
   assert.equal(materials.setMaterialOverrides('tree', [{
     name: 'Bark', roughness: 0.25, diffuseRoughness: 0.68, metalness: 0.15, color: '#997755'
   }], objects), true);
-  assert.equal(materials.setShaderMaterial('tree', 'uniform vec3 uColor; void main(){gl_FragColor=vec4(uColor,1.0);}', objects), true);
+  assert.equal(materials.setShaderMaterial('tree', 'uniform vec3 uColor; void main(){gl_FragColor=vec4(uColor,1.0);}', objects, 'plugin.custom.shader'), true);
 
   const commands = new Map([['tree', [{
     type: 'model', name: 'tree.glb', x: 0, y: 0, z: 0, scale: 1, ecsRenderableFallback: true
@@ -156,6 +157,7 @@ test('ECS render settings feed the renderer in deterministic Toon, override, sha
   assert.equal(list[1].roughness, 0.25);
   assert.equal(list[1].diffuseRoughness, 0.68);
   assert.equal(list[2].shader, 'custom');
+  assert.equal(list[2].tslAdapterId, 'plugin.custom.shader');
   assert.equal(list[3].scale, 2.5);
   assert.equal(list[3].ecsRenderableFallback, undefined);
 });
@@ -184,6 +186,19 @@ test('Material snapshots respond immediately to Inspector changes; Shader and Me
   assert.equal(materials.getMeshCollider('prop', objects), true);
   assert.equal(materials.setMeshCollider('prop', false, objects), true);
   assert.equal(materials.getMeshCollider('prop', objects), false);
+});
+
+test('ShaderMaterial TSL adapter ids are validated and legacy custom shaders remain unadapted by default', () => {
+  const runtime = createMaterialsRuntime([{ id: 'shader-owner', name: 'Shader Owner', x: 0, y: 0, z: 0, w: 64, h: 64 }]);
+  const { materials, objects } = runtime;
+  assert.throws(
+    () => materials.setShaderMaterial('shader-owner', 'void main(){}', objects, '../unsafe'),
+    /2-96 URL-safe characters/
+  );
+  assert.equal(materials.setShaderMaterial('shader-owner', 'void main(){}', objects), true);
+  const commands = new Map();
+  materials.collectCommands(commands, objects);
+  assert.equal(commands.get('shader-owner')[0].tslAdapterId, '');
 });
 
 test('legacy modelScale migrates into Renderable.scale without duplicate authority', () => {
