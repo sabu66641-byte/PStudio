@@ -6764,7 +6764,7 @@ void main(){
       }
       for(let n=0;n<255&&instance<1880;n++,instance++){
         const center=centers[n%centers.length];
-        const a=randomAngle=(Math.sin((n+1)*(tx+97)*.137)*43758.5453)%1;
+        const a=(Math.sin((n+1)*(tx+97)*.137)*43758.5453)%1;
         const angle=Math.abs(a)*Math.PI*2;
         const radial=Math.sqrt(((n*37)%257)/257)*2.4*scale;
         const vertical=(Math.sin(n*1.91)*.95)*scale;
@@ -6883,10 +6883,15 @@ void main(){
     if(!state||!renderer||!scene)return false;
     genesisEnvironmentState=state;
     applyGenesisLiveLighting(state);
-    if(forceSky||now-genesisLastSkyUpdateAt>=1200){
-      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375);
-      genesisLastSkyUpdateAt=now;
+    // Build the expensive baseline only once. The visible environment panorama is
+    // then updated in-place from the continuous shared state, without disposing and
+    // recreating a 360-degree texture every 1.2 seconds.
+    if(!genesisSkyTexture){
+      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,null,.375);
+      ensureGenesisSkyBackground(window.THREE);
     }
+    updateGenesisSkyBackground(state,forceSky,now);
+    if(genesisShrineDemoRequested&&!genesisShrineDemoGroup)buildGenesisShrineDemo(window.THREE);
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       if(now-genesisLastWebGPUUpdateAt>=250){
         productionRendererBridge.setEnvironment?.(state);
@@ -6945,6 +6950,7 @@ void main(){
     window.PStudioEnvironmentFX?.update?.(particleClock);
     applyGenesisEnvironmentState(state,false,now);
     updateGenesisRainParticles(state,deltaSeconds);
+    updateGenesisShrineDemo(deltaSeconds);
     // In the editor the renderer loop owns particle stepping. During Play,
     // PStudio3D.render() already advances all GPU particles with the game dt.
     if(!window.PStudioEngine?.isRunning?.())updateGpuParticleSystems();
@@ -7629,10 +7635,13 @@ void main(){
       return{available:true,enabled:true,state:genesisEnvironmentState,config:genesisEnvironmentController.getConfig()};
     },
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
+    setGenesisShrineDemo,
     clearGenesisEnvironment:()=>{
       genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
       if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
       genesisRainAccumulator=0;
+      genesisShrineDemoRequested=false;removeGenesisShrineDemo();
+      disposeGenesisSkyBackground();
       const studioProfile=window.PStudioSceneEnvironment?.getPreset?.('studio');
       if(productionRendererBridge?.getState?.().backend==='webgpu'&&studioProfile){
         productionRendererBridge.setEnvironment?.(studioProfile);
