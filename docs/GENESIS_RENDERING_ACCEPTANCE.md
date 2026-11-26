@@ -1,6 +1,6 @@
 # GENESIS Rendering Acceptance and Phase Plan
 
-**Status (2026-11-26):** source audit recorded; deterministic fixture scripts and expanded percentile telemetry are being added. The merged GENESIS 0 policy correction has passing PR CI. A post-merge push run, browser-based WebGL2 session, real-device baseline, visual captures, and hardware parity are not yet evidenced. This document is an acceptance contract, not a claim that the renderer has passed it.
+**Status (2026-11-26):** source audit recorded; GENESIS_TORII_MIRROR_V1 starter scripts and expanded percentile telemetry are included in PR #102. Candidate CI run #1361 passed. A post-merge main-branch run, browser-based WebGL2 session, real-device baseline, visual captures, and WebGPU hardware parity are not yet evidenced. See docs/GENESIS_DEVICE_MATRIX.md. This document is an acceptance contract, not a claim that the renderer has passed it.
 
 ## Mission
 
