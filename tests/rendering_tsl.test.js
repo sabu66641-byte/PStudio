@@ -253,7 +253,19 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
     ambientOcclusion: { enabled: true, mode: 'ssao', strength: 0.8 },
     ssr: { enabled: true, quality: 0.65, reflectNonMetals: true },
     godRays: { enabled: true, intensity: 0.8, lightPosition: [0.4, 0.7] },
-    contactShadows: { enabled: true, intensity: 0.4, steps: 12, lightDirectionWorld: [0.35, 0.82, 0.44] }
+    contactShadows: { enabled: true, intensity: 0.4, steps: 12, lightDirectionWorld: [0.35, 0.82, 0.44] },
+    volumetricFog: {
+      enabled: true, density: 0.0023, heightFalloff: 0.02, baseHeight: 1,
+      anisotropy: 0.44, steps: 18, time: 14,
+      fogColor: [0.7, 0.82, 0.86], fogAmbientColor: [0.84, 0.92, 1],
+      sunColor: [1, 0.94, 0.83], sunDirection: [-0.35, 0.82, -0.44]
+    },
+    volumetricClouds: {
+      enabled: true, density: 0.74, cloudBase: 60, cloudTop: 118,
+      scale: 0.0095, coverage: 0.5, detail: 0.6,
+      wind: [-0.8, 0.32], steps: 34, lightSteps: 2,
+      atmosphereStrength: 0.96, time: 14
+    }
   });
   assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'ssao');
   assert.equal(effectsPipeline.getState().ssr.quality, 0.65);
@@ -261,6 +273,9 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.deepEqual(effectsPipeline.getState().godRays.lightPosition, [0.4, 0.7]);
   assert.equal(effectsPipeline.getState().contactShadows.intensity, 0.4);
   assert.equal(effectsPipeline.getState().contactShadows.steps, 12);
+  assert.equal(effectsPipeline.getState().volumetricFog.steps, 18);
+  assert.equal(effectsPipeline.getState().volumetricClouds.steps, 34);
+  assert.equal(effectsPipeline.getState().volumetricClouds.lightSteps, 2);
   assert.equal(effectsPipeline.setAmbientOcclusion({ enabled: true, mode: 'gtao', strength: 0.9 }), true);
   assert.equal(effectsPipeline.getState().ambientOcclusion.mode, 'gtao');
   assert.equal(effectsPipeline.setSSR(false), true);
@@ -274,6 +289,15 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.equal(effectsPipeline.getState().contactShadows.intensity, 0.55);
   assert.equal(effectsPipeline.setContactShadows(false), true);
   assert.equal(effectsPipeline.getState().contactShadows, null);
+  assert.equal(effectsPipeline.setVolumetricFog({ enabled: true, density: 0.003, steps: 22, time: 19 }), true);
+  assert.equal(effectsPipeline.getState().volumetricFog.steps, 22);
+  assert.equal(effectsPipeline.setVolumetricClouds({ enabled: true, density: 0.8, steps: 40, lightSteps: 3 }), true);
+  assert.equal(effectsPipeline.getState().volumetricClouds.steps, 40);
+  assert.equal(effectsPipeline.getState().volumetricClouds.lightSteps, 3);
+  assert.equal(effectsPipeline.setVolumetricFog(false), true);
+  assert.equal(effectsPipeline.getState().volumetricFog, null);
+  assert.equal(effectsPipeline.setVolumetricClouds(false), true);
+  assert.equal(effectsPipeline.getState().volumetricClouds, null);
   assert.equal(effectsPipeline.dispose(), true);
 });
 
