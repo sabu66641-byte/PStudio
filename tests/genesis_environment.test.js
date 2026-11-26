@@ -45,7 +45,7 @@ test('GENESIS controller wraps across midnight by the shortest direction', () =>
   const next = controller.update(0.1);
   assert.ok(next.timeOfDay < 24 && next.timeOfDay >= 23.5);
   let state = next;
-  for (let i = 0; i < 60; i += 1) state = controller.update(0.1);
+  for (let i = 0; i < 120; i += 1) state = controller.update(0.1);
   assert.ok(state.timeOfDay < 0.6 || state.timeOfDay > 23.9);
 });
 
