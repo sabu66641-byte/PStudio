@@ -42,7 +42,7 @@ test('scene environment preset normalization defaults invalid and missing names 
 });
 
 test('new scenes default to day and project persistence includes scene environment', () => {
-  assert.match(html, /let sceneEnvironment=\{preset:'day'\}/);
+  assert.match(html, /let sceneEnvironment=\{preset:'day',timeOfDay:12/);
   assert.match(html, /environment:sceneEnvironment/);
   assert.match(html, /function normalizeSceneEnvironment\(value\)/);
   assert.match(html, /\['day','dusk','night','studio'\]\.includes\(preset\)/);
@@ -65,6 +65,25 @@ test('Inspector exposes all four scene presets with explicit accessible active s
   assert.match(html, /\.environment-preset-btn\.active/);
 });
 
+test('GENESIS Inspector persists time, weather, wind and automatic-cycle controls',()=>{
+  for(const token of [
+    'genesis-time-of-day','genesis-weather','genesis-wind-speed','genesis-wind-direction',
+    'genesis-auto-cycle','openGenesisDemo()','syncGenesisEnvironmentToRenderer()',
+    'setGenesisEnvironmentWeather','setGenesisEnvironmentWind','setGenesisEnvironmentAutoCycle',
+    'timeScale:enabled?0.0125:0'
+  ])assert.ok(html.includes(token),token);
+  for(const token of [
+    'setGenesisEnvironment:config=>','getGenesisEnvironment:','clearGenesisEnvironment:',
+    'function applyGenesisLiveLighting','function updateGenesisRainParticles',
+    'function applyGenesisEnvironmentState','uMirrorWindDirection','uMirrorRain'
+  ])assert.ok(renderer.includes(token),token);
+  const fx=fs.readFileSync(path.join(root,'static/pstudio_environment_fx.js'),'utf8');
+  for(const token of [
+    'uPStudioWaterRainIntensity','uPStudioWaterWetness','uPStudioWaterWindDirection',
+    'cloudWindX','cloudWindZ','settings.rainIntensity','settings.windStrength'
+  ])assert.ok(fx.includes(token),token);
+});
+
 test('renderer builds a procedural sky panorama and falls back safely if Canvas or PMREM is unavailable', () => {
   for (const token of [
     'function createProceduralSkyTexture(T,profile)',
@@ -72,7 +91,7 @@ test('renderer builds a procedural sky panorama and falls back safely if Canvas 
     'T.EquirectangularReflectionMapping',
     'context.createLinearGradient',
     'context.createRadialGradient',
-    'function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false)',
+    'function applySceneEnvironmentPreset(T,presetName,hasCustomEnvironment=false,profileOverride=null,skyResolutionScale=1)',
     'Procedural atmosphere texture creation failed; a solid horizon fallback will be used',
     'Procedural sky PMREM generation failed; using the equirectangular texture directly',
     "else scene.background=new T.Color(profile.horizon||profile.skyMid||'#79BCE0')"
