@@ -16,6 +16,10 @@ test('GENESIS time model interpolates day, golden dusk and night continuously', 
   assert.ok(Math.hypot(dusk.skySunX, dusk.skySunY, dusk.skySunZ) > 0.999);
   assert.ok(Math.hypot(dusk.moonDirectionX, dusk.moonDirectionY, dusk.moonDirectionZ) > 0.999);
   assert.ok(dusk.skyTop !== presets.getPreset('day').skyTop);
+  assert.equal(beforeDusk.starBrightness, 0, 'daytime must not leak a visible night starfield');
+  assert.ok(dusk.starBrightness >= 0 && dusk.starBrightness <= 1.62, 'twilight star brightness stays bounded');
+  assert.ok(afterDusk.starBrightness > 1.45, 'late twilight/night must reveal the dense starfield');
+  assert.ok(Number.isFinite(dusk.starBrightness));
 });
 
 test('GENESIS time controller eases toward target time without a one-frame jump', () => {
