@@ -238,6 +238,27 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   const pipeline = pipelineModule.createPStudioRenderPipeline(renderer, scene, camera, {
     bloom: { strength: 0.2, radius: 0.3, threshold: 0.8 }
   });
+  assert.equal(pipelineModule.supportsPStudioTSLTRAA, true);
+  assert.equal(pipelineModule.supportsPStudioTSLSMAA, true);
+  assert.deepEqual(pipelineModule.normalizePStudioAntiAliasingOptions('taa'), { enabled: true, mode: 'traa' });
+  assert.deepEqual(pipelineModule.normalizePStudioAntiAliasingOptions('spatial'), { enabled: true, mode: 'smaa' });
+  assert.deepEqual(pipelineModule.normalizePStudioAntiAliasingOptions(false), { enabled: false, mode: 'none' });
+  assert.throws(() => pipelineModule.normalizePStudioAntiAliasingOptions('unknown'), /must be none, traa, or smaa/);
+  assert.equal(pipeline.getState().antiAliasing.mode, 'traa');
+  assert.equal(pipeline.getFrameResources().attachments.includes('velocity'), true);
+  assert.equal(pipeline.setAntiAliasing(false), true);
+  assert.equal(pipeline.getState().antiAliasing.mode, 'none');
+  // SMAA loads its two fixed lookup textures through HTMLImageElement. A small
+  // inert Image stub exercises the graph wiring without pretending to test pixels.
+  const previousImage = global.Image;
+  global.Image = class { set src(value) { this.source = value; } };
+  try {
+    assert.equal(pipeline.setAntiAliasing('smaa'), true);
+    assert.equal(pipeline.getState().antiAliasing.mode, 'smaa');
+  } finally {
+    if (previousImage === undefined) delete global.Image;
+    else global.Image = previousImage;
+  }
   assert.equal(pipeline.kind, 'webgpu-tsl-render-pipeline');
   assert.equal(pipeline.getState().bloom.strength, 0.2);
   assert.equal(pipeline.getState().bloom.radius, 0.3);
