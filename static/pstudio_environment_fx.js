@@ -687,7 +687,22 @@
 
   function configureToon(material,settings={},object=null) {
     const Three=T();
-    if(!Three||!material||(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial))return material;
+    if(!Three||!material)return material;
+    if(material.isNodeMaterial===true&&typeof material.pstudioTSLToonUpdate==='function'){
+      const defaults={
+        shadowColor:'#46516f',midColor:'#9eafd0',highlightColor:'#ffffff',
+        shadowThreshold:.32,highlightThreshold:.68,rimColor:'#b8dcff',
+        rimIntensity:.42,rimPower:2.6,outlineColor:'#182235',outlineWidth:.12,
+        sssColor:'#f0a5a0',sssIntensity:.12,enabled:true
+      };
+      const value=Object.assign({},defaults,settings||{});
+      material.pstudioTSLToonUpdate(value);
+      material.userData.pstudioTSLToon=material.userData.pstudioTSLToon||{version:1,settings:{}};
+      material.userData.pstudioTSLToon.settings={...value};
+      if(object)configureOutline(object,{enabled:value.enabled!==false,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
+      return material;
+    }
+    if(!material.isMeshStandardMaterial&&!material.isMeshPhysicalMaterial)return material;
     const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Number(value):0));
     const defaults={
       shadowColor:'#46516f',midColor:'#9eafd0',highlightColor:'#ffffff',
