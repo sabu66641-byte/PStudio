@@ -620,6 +620,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
     const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
     const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
+    const supportsSelectedAOTSL=qualityAOEnabled
+      ?window.PStudioRenderingMigration?.supportsPStudioTSLGTAO===true
+      :window.PStudioRenderingMigration?.supportsPStudioTSLSSAO===true;
+    const supportsSSRNode=window.PStudioRenderingMigration?.supportsPStudioTSLSSR===true;
     const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
     if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
@@ -638,8 +642,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
     if(volumetricCloudsEnabled)add('volumetric-clouds','体積雲のTSL RenderPipeline移植が未完了です。');
     if(contactShadowsEnabled)add('contact-shadows','コンタクトシャドウのTSL移植が未完了です。');
-    if(ssaoEnabled||qualityAOEnabled)add('ambient-occlusion','GTAO／SSAOのTSL移植が未完了です。');
-    if(ssrEnabled)add('screen-space-reflections','SSRのTSL移植が未完了です。');
+    if((ssaoEnabled||qualityAOEnabled)&&!supportsSelectedAOTSL)add('ambient-occlusion','選択中のGTAO／SSAO TSLアダプターが利用できません。');
+    if(ssrEnabled&&!supportsSSRNode)add('screen-space-reflections','SSRのTSLアダプターが利用できません。');
     if(godRaysEnabled||godRaysFallbackEnabled)add('god-rays','God RaysのTSL移植が未完了です。');
     if(dynamicGIEnabled||probeCaptureActive)add('dynamic-gi','動的SH GIキャプチャのWebGPU移植が未完了です。');
     if(particleEmitters.size>0||particleBursts.size>0)add('gpu-particles','GPUパーティクルのTSL／Compute Shader移植が未完了です。');
@@ -723,7 +727,11 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             normalBias:keyLight?.shadow?.normalBias,
             shadowRadius:keyLight?.shadow?.radius
           }:null,
-          pipelineOptions:{bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false},
+          pipelineOptions:{
+            bloom:bloomEnabled?{enabled:true,strength:bloomStrength}:false,
+            ambientOcclusion:(ssaoEnabled||qualityAOEnabled)?{enabled:true,mode:qualityAOEnabled?'gtao':'ssao',strength:0.82}:false,
+            ssr:ssrEnabled?{enabled:true,quality:0.72,reflectNonMetals:true}:false
+          },
           configureRenderer:webgpuRenderer=>{
             webgpuRenderer.outputColorSpace=window.THREE.SRGBColorSpace;
             webgpuRenderer.toneMapping=window.THREE.ACESFilmicToneMapping;
