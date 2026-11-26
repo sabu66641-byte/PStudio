@@ -75,6 +75,7 @@
       else result[key]=t<.5?av:bv;
     }
     result.name=t<.5?left.preset:right.preset;
+    result.visualPreset=result.name;
     result.label=result.name==='dusk'?'夕方':result.name==='night'?'夜':'昼';
     const sun=normalize3(result.skySunX,result.skySunY,result.skySunZ,[.35,.89,.28]);
     const moon=normalize3(result.moonDirectionX,result.moonDirectionY,result.moonDirectionZ,[0,1,0]);
@@ -99,7 +100,7 @@
     let timeScale=clamp(options.timeScale,0,.5,0);
     let transitionSeconds=clamp(options.transitionSeconds,.05,60,2.4);
     let windTransitionSeconds=clamp(options.windTransitionSeconds,.05,60,1.6);
-    let revision=0,lastSignature='';
+    let revision=0,elapsedSeconds=0;
     let snapshot=null;
 
     const configure=(config={})=>{
@@ -138,6 +139,7 @@
 
     const update=deltaSeconds=>{
       const dt=clamp(deltaSeconds,0,.1,0);
+      elapsedSeconds+=dt;
       if(timeScale>0)targetTimeOfDay=wrapHours(targetTimeOfDay+dt*timeScale);
       const timeAlpha=1-Math.exp(-dt/Math.max(.05,transitionSeconds));
       let delta=((targetTimeOfDay-timeOfDay+36)%24)-12;
@@ -174,6 +176,7 @@
       profile.windStrength=clamp(profile.windSpeed/5,0,2.5,0);
       profile.cloudWindX=windDirection[0]*profile.windSpeed;
       profile.cloudWindZ=windDirection[1]*profile.windSpeed;
+      profile.animationTime=elapsedSeconds;
       profile.waterWaveAmplitude=clamp(.035+profile.windSpeed*.018+profile.rainIntensity*.035,.025,.34,.08);
       profile.waterWaveSpeed=clamp(.55+profile.windSpeed*.52,0.3,7,.8);
       profile.waterRippleStrength=clamp(profile.rainIntensity*.9,0,1,0);
@@ -182,7 +185,8 @@
       profile.timeOfDay=Number(timeOfDay.toFixed(3));
       profile.timeScale=timeScale;
       profile.revision=revision;
-      profile.name=profile.rainIntensity>.05?'rain':profile.name;
+      profile.weatherName=profile.rainIntensity>.05?'rain':Object.keys(currentWeights).reduce((best,name)=>currentWeights[name]>currentWeights[best]?name:best,'clear');
+      profile.name=profile.visualPreset;
       snapshot=Object.freeze(profile);
       return snapshot;
     };
@@ -229,6 +233,9 @@
     const exposure=Math.pow(2,clamp(state.skyExposure,.1,2,.56));
     const mixRgb=(a,b,t)=>a.map((value,i)=>value+(b[i]-value)*clamp(t,0,1,0));
     const cloudSeed=0x6d2b79f5;
+    const cloudTime=clamp(state.animationTime,0,1e9,0);
+    const cloudWindX=clamp(state.cloudWindX,-48,48,0);
+    const cloudWindZ=clamp(state.cloudWindZ,-48,48,0);
     for(let y=0;y<h;y++){
       const v=y/(h-1);
       let base;
@@ -254,7 +261,9 @@
         g+=moonColor[1]*(moonGlow+moonDisc*.58);
         b+=moonColor[2]*(moonGlow+moonDisc*.68);
         if(cloudDensity>.025&&cloudCoverage>.04&&v>.16&&v<.61){
-          const n=.5+.22*Math.sin(u*23+v*9)+.15*Math.sin(u*57-v*21)+.08*Math.sin(u*111+v*63+cloudSeed*.00001);
+          const cloudU=(u+cloudWindX*cloudTime*.00008)%1;
+          const cloudV=v+cloudWindZ*cloudTime*.000025;
+          const n=.5+.22*Math.sin(cloudU*23+cloudV*9)+.15*Math.sin(cloudU*57-cloudV*21)+.08*Math.sin(cloudU*111+cloudV*63+cloudSeed*.00001);
           const cover=smooth(.88-cloudCoverage*.55,.99-cloudCoverage*.28,n)*clamp(cloudDensity,0,1.2,0);
           const cloud=cover*(.27+Math.max(0,dotSun)*.18);
           r=mix(r,Math.min(255,206+sunColor[0]*.18),cloud);
