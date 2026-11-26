@@ -5,10 +5,14 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ssao } from 'three/addons/tsl/display/SSAONode.js';
 import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+import { traa } from 'three/addons/tsl/display/TRAANode.js';
+import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 
 export const supportsPStudioTSLSSAO = typeof ssao === 'function';
 export const supportsPStudioTSLGTAO = typeof gtao === 'function';
 export const supportsPStudioTSLSSR = typeof ssr === 'function';
+export const supportsPStudioTSLTRAA = typeof traa === 'function' && TSL.velocity !== undefined;
+export const supportsPStudioTSLSMAA = typeof smaa === 'function';
 export const supportsPStudioTSLGodRays = typeof TSL.Fn === 'function' && typeof TSL.Loop === 'function' && typeof TSL.smoothstep === 'function' && typeof TSL.screenUV !== 'undefined';
 
 export const supportsPStudioTSLVolumetricFog = [
@@ -16,6 +20,25 @@ export const supportsPStudioTSLVolumetricFog = [
   'cameraWorldMatrix', 'cameraNear', 'cameraFar', 'isBackgroundDepth',
   'Loop', 'If', 'Break', 'sin', 'cos', 'exp', 'pow', 'mix', 'smoothstep'
 ].every(name => TSL[name] !== undefined);
+
+export function normalizePStudioAntiAliasingOptions(options = { mode: 'traa' }) {
+  if (options === false || options == null) return Object.freeze({ enabled: false, mode: 'none' });
+  const source = options === true ? { mode: 'traa' } : typeof options === 'string' ? { mode: options } : options;
+  let mode = String(source.mode || source.method || 'traa').toLowerCase();
+  if (mode === 'taa' || mode === 'temporal') mode = 'traa';
+  if (mode === 'spatial') mode = 'smaa';
+  if (!['none', 'traa', 'smaa'].includes(mode)) {
+    throw new TypeError('PStudio anti-aliasing mode must be none, traa, or smaa.');
+  }
+  const enabled = source.enabled !== false && mode !== 'none';
+  if (enabled && mode === 'traa' && !supportsPStudioTSLTRAA) {
+    throw new Error('Three.js r187 TRAA requires the TSL velocity output.');
+  }
+  if (enabled && mode === 'smaa' && !supportsPStudioTSLSMAA) {
+    throw new Error('Three.js r187 SMAA TSL node is unavailable.');
+  }
+  return Object.freeze({ enabled, mode: enabled ? mode : 'none' });
+}
 
 function vector3Option(value, fallback) {
   if (Array.isArray(value) && value.length >= 3 && value.slice(0, 3).every(item => Number.isFinite(Number(item)))) {
@@ -624,6 +647,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let volumetricFogHandle = null;
   let volumetricCloudSettings = normalizeVolumetricClouds(options.volumetricClouds);
   let volumetricCloudHandle = null;
+  let antiAliasingSettings = normalizePStudioAntiAliasingOptions(options.antiAliasing ?? options.antialiasing ?? { mode: 'traa' });
+  let aaPass = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
@@ -631,8 +656,10 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   function releaseScreenSpaceNodes() {
     try { aoPass?.dispose?.(); } catch (_) {}
     try { ssrPass?.dispose?.(); } catch (_) {}
+    try { aaPass?.dispose?.(); } catch (_) {}
     aoPass = null;
     ssrPass = null;
+    aaPass = null;
   }
 
   function rebuildOutput() {
@@ -705,6 +732,15 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       volumetricFogHandle = null;
     }
 
+    // TAA uses the scene velocity attachment and owns a temporal history buffer.
+    // SMAA is spatial and runs on the same linear-color output before tone mapping.
+    if (antiAliasingSettings.enabled) {
+      aaPass = antiAliasingSettings.mode === 'traa'
+        ? traa(output, sceneDepth, sceneVelocity, camera)
+        : smaa(output);
+      output = aaPass;
+    }
+
     renderPipeline.outputNode = output;
     renderPipeline.needsUpdate = true;
   }
@@ -718,6 +754,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       || typeof TSL.packNormalToRGB !== 'function'
       || typeof TSL.unpackRGBToNormal !== 'function'
       || typeof TSL.sample !== 'function'
+      || (antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' && TSL.velocity === undefined)
       || !TSL.output
       || !TSL.normalView
       || !TSL.metalness
@@ -729,7 +766,8 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     scenePass.setMRT(TSL.mrt({
       output: TSL.output,
       normal: TSL.packNormalToRGB(TSL.normalView),
-      metalrough: TSL.vec2(TSL.metalness, TSL.roughness)
+      metalrough: TSL.vec2(TSL.metalness, TSL.roughness),
+      ...(antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' ? { velocity: TSL.velocity } : {})
     }));
 
     const normalTexture = scenePass.getTexture('normal');
@@ -744,9 +782,13 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     sceneColor = scenePass.getTextureNode('output');
     sceneDepth = scenePass.getTextureNode('depth');
     sceneMetalRough = scenePass.getTextureNode('metalrough');
+    const sceneVelocity = antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa'
+      ? scenePass.getTextureNode('velocity')
+      : null;
     sceneNormal = TSL.sample((uvNode) => TSL.unpackRGBToNormal(sceneNormalPacked.sample(uvNode)));
-    if (!sceneColor || !sceneDepth || !sceneNormal || !sceneMetalRough) {
-      throw new Error('The TSL scene pass did not expose all required frame attachments.');
+    if (!sceneColor || !sceneDepth || !sceneNormal || !sceneMetalRough
+      || (antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' && !sceneVelocity)) {
+      throw new Error('The TSL scene pass did not expose all required frame attachments, including velocity for TRAA.');
     }
 
     renderPipeline = new THREE.RenderPipeline(renderer);
@@ -768,7 +810,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     metalRoughEncoding: 'rg-unorm8',
     normalSpace: 'view',
     depthSpace: 'projection',
-    attachments: Object.freeze(['output', 'depth', 'normal', 'metalrough'])
+    attachments: Object.freeze(['output', 'depth', 'normal', 'metalrough', ...(sceneVelocity ? ['velocity'] : [])])
   });
 
   return Object.freeze({
@@ -783,6 +825,14 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       const next = normalizeBloom(nextOptions);
       if (sameRenderSettings(next, bloomSettings)) return true;
       bloomSettings = next;
+      rebuildOutput();
+      return true;
+    },
+    setAntiAliasing(nextOptions) {
+      if (disposed) return false;
+      const next = normalizePStudioAntiAliasingOptions(nextOptions);
+      if (sameRenderSettings(next, antiAliasingSettings)) return true;
+      antiAliasingSettings = next;
       rebuildOutput();
       return true;
     },
@@ -861,6 +911,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       return Object.freeze({
         disposed,
         bloom: bloomSettings ? { ...bloomSettings } : null,
+        antiAliasing: { ...antiAliasingSettings },
         ambientOcclusion: aoSettings ? { ...aoSettings } : null,
         ssr: ssrSettings ? { ...ssrSettings } : null,
         godRays: godRaysHandle ? godRaysHandle.getState() : null,
