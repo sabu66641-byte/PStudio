@@ -5,14 +5,14 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { ssao } from 'three/addons/tsl/display/SSAONode.js';
 import { ao as gtao } from 'three/addons/tsl/display/GTAONode.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
-import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { smaa } from 'three/addons/tsl/display/SMAANode.js';
+import TRAANode from 'three/addons/tsl/display/TRAANode.js';
+import SMAANode from 'three/addons/tsl/display/SMAANode.js';
 
 export const supportsPStudioTSLSSAO = typeof ssao === 'function';
 export const supportsPStudioTSLGTAO = typeof gtao === 'function';
 export const supportsPStudioTSLSSR = typeof ssr === 'function';
-export const supportsPStudioTSLTRAA = typeof traa === 'function' && TSL.velocity !== undefined;
-export const supportsPStudioTSLSMAA = typeof smaa === 'function';
+export const supportsPStudioTSLTRAA = typeof TRAANode === 'function' && TSL.velocity !== undefined;
+export const supportsPStudioTSLSMAA = typeof SMAANode === 'function';
 export const supportsPStudioTSLGodRays = typeof TSL.Fn === 'function' && typeof TSL.Loop === 'function' && typeof TSL.smoothstep === 'function' && typeof TSL.screenUV !== 'undefined';
 
 export const supportsPStudioTSLVolumetricFog = [
@@ -651,14 +651,24 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
   let volumetricCloudHandle = null;
   let antiAliasingSettings = normalizePStudioAntiAliasingOptions(options.antiAliasing ?? options.antialiasing ?? { mode: 'traa' });
   let aaPass = null;
+  // convertToTexture() may allocate an RTTNode when the effect input is a graph node.
+  // The AA effect does not own that wrapper in Three.js r187, so the pipeline does.
+  let aaInputNode = null;
   let aoPass = null;
   let ssrPass = null;
   let disposed = false;
 
   function releaseScreenSpaceNodes() {
+    const previousAAInput = aaInputNode;
+    aaInputNode = null;
     try { aoPass?.dispose?.(); } catch (_) {}
     try { ssrPass?.dispose?.(); } catch (_) {}
     try { aaPass?.dispose?.(); } catch (_) {}
+    // Only dispose nodes allocated by convertToTexture(); pass/texture nodes
+    // belong to the scene pass and must remain alive across graph rebuilds.
+    if (previousAAInput?.isRTTNode === true) {
+      try { previousAAInput.dispose?.(); } catch (_) {}
+    }
     aoPass = null;
     ssrPass = null;
     aaPass = null;
@@ -787,9 +797,10 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     // TAA uses the scene velocity attachment and owns a temporal history buffer.
     // SMAA is spatial and runs on the same linear-color output before tone mapping.
     if (antiAliasingSettings.enabled) {
+      aaInputNode = TSL.convertToTexture(output);
       aaPass = antiAliasingSettings.mode === 'traa'
-        ? traa(output, sceneDepth, sceneVelocity, camera)
-        : smaa(output);
+        ? new TRAANode(aaInputNode, sceneDepth, sceneVelocity, camera)
+        : new SMAANode(aaInputNode);
       output = aaPass;
     }
 
@@ -806,6 +817,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       || typeof TSL.packNormalToRGB !== 'function'
       || typeof TSL.unpackRGBToNormal !== 'function'
       || typeof TSL.sample !== 'function'
+      || typeof TSL.convertToTexture !== 'function'
       || (antiAliasingSettings.enabled && antiAliasingSettings.mode === 'traa' && TSL.velocity === undefined)
       || !TSL.output
       || !TSL.normalView
