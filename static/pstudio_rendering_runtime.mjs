@@ -152,6 +152,7 @@ export function createPStudioProductionRendererRuntime(options = {}) {
           resize: (width, height, pixelRatio) => webgpu.resize?.(width, height, pixelRatio) !== false,
           setEnvironment: (profile) => webgpu.setEnvironment?.(profile) === true,
           setBloom: (settings) => webgpu.setBloom?.(settings) === true,
+          setAntiAliasing: (settings) => webgpu.setAntiAliasing?.(settings) === true,
           setAmbientOcclusion: (settings) => webgpu.setAmbientOcclusion?.(settings) === true,
           setSSR: (settings) => webgpu.setSSR?.(settings) === true,
           setGodRays: (settings) => webgpu.setGodRays?.(settings) === true,
