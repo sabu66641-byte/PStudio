@@ -5719,14 +5719,15 @@ void main(){
     };
     const smooth=(a,b,value)=>{const t=Math.max(0,Math.min(1,(value-a)/Math.max(1e-6,b-a)));return t*t*(3-2*t);};
     const clamp01=value=>Math.max(0,Math.min(1,value));
+    const isDusk=String(profile?.name||'day')==='dusk';
     const coverage=clamp01(Number(profile.cloudCoverage)||.56);
     const detail=clamp01(Number(profile.cloudDetail)||.94);
-    const threshold=.58-coverage*.13;
+    const threshold=.60-coverage*.19;
     const sunU=Math.max(0,Math.min(1,(Number(sun?.x)||0)/Math.max(1,width)));
     const image=cloudContext.createImageData(fieldWidth,fieldHeight),pixels=image.data;
     for(let y=0;y<fieldHeight;y++){
       const v=y/Math.max(1,fieldHeight-1);
-      const cloudBand=smooth(.125,.215,v)*(1-smooth(.432,.492,v));
+      const cloudBand=smooth(.105,.205,v)*(1-smooth(.455,.515,v));
       if(cloudBand<=.002)continue;
       for(let x=0;x<fieldWidth;x++){
         const u=x/fieldWidth;
@@ -5748,13 +5749,18 @@ void main(){
         const solarFacing=.5+.5*Math.cos(Math.min(wrappedDelta,1-wrappedDelta)*Math.PI*2);
         const upperSky=1-smooth(.19,.445,v);
         const microLight=(nano-.5)*.055;
-        const light=clamp01(.64+solarFacing*.12+upperSurface*.17+upperSky*.035-Math.min(.42,underside*.26)+microLight);
+        const light=clamp01(.60+solarFacing*.14+upperSurface*.20+upperSky*.04-Math.min(.48,underside*.34)+microLight);
         const warmEdge=solarFacing*upperSurface;
+        const duskWarmth=isDusk?clamp01(solarFacing*.48+warmEdge*.35):0;
         const offset=(y*fieldWidth+x)*4;
-        pixels[offset]=Math.round(132+101*light+10*warmEdge);
-        pixels[offset+1]=Math.round(154+86*light+6*warmEdge);
-        pixels[offset+2]=Math.round(181+70*light-3*warmEdge);
-        pixels[offset+3]=Math.round(Math.min(.94,alpha)*255);
+        const cloudR=124+108*light+8*warmEdge;
+        const cloudG=149+89*light+5*warmEdge;
+        const cloudB=179+73*light-2*warmEdge;
+        pixels[offset]=Math.round(cloudR+(246-cloudR)*duskWarmth*.58);
+        pixels[offset+1]=Math.round(cloudG+(176-cloudG)*duskWarmth*.58);
+        pixels[offset+2]=Math.round(cloudB+(161-cloudB)*duskWarmth*.58);
+        // More broken cloud shapes, but a lower alpha ceiling prevents a white veil over the blue sky.
+        pixels[offset+3]=Math.round(Math.min(isDusk?.78:.86,alpha*(isDusk?.88:.94))*255);
       }
     }
     cloudContext.putImageData(image,0,0);
@@ -5776,9 +5782,9 @@ void main(){
     if(!context)throw new Error('Canvas 2D context is unavailable for procedural sky generation.');
     const name=String(profile.name||'day');
     const palettes={
-      day:[[0,'#1A4F86'],[.12,'#236FB0'],[.3,'#4798D0'],[.43,'#83BDDC'],[.465,'#A8CFE2'],[.485,'#BDD9E6'],[.505,'#B5D0DB'],[.525,'#A2BECC'],[.55,'#849EAD'],[.68,'#607A8A'],[1,'#405969']],
+      day:[[0,'#164B8A'],[.12,'#1D68B5'],[.3,'#3489C8'],[.43,'#64A8D6'],[.465,'#83B9DC'],[.485,'#9CC9E3'],[.505,'#A7CDE1'],[.525,'#9ABDD4'],[.55,'#839FB4'],[.68,'#607B91'],[1,'#40596D']],
       dusk:[[0,'#171B42'],[.12,'#262349'],[.25,'#44305A'],[.35,'#76405F'],[.42,'#B95761'],[.462,'#DC7165'],[.485,'#F09A72'],[.498,'#F6B884'],[.51,'#E7A078'],[.535,'#BD756F'],[.58,'#80546B'],[.67,'#483D59'],[1,'#252133']],
-      night:[[0,'#01040B'],[.16,'#030918'],[.32,'#071326'],[.43,'#101C30'],[.49,'#142137'],[.515,'#142033'],[.57,'#090F1C'],[1,'#010309']],
+      night:[[0,'#01040B'],[.16,'#030918'],[.32,'#071326'],[.405,'#0C182D'],[.45,'#101D33'],[.485,'#14223A'],[.515,'#15243D'],[.55,'#14233B'],[.60,'#102039'],[.68,'#0B172C'],[.80,'#050D1B'],[1,'#010309']],
       studio:[[0,'#334456'],[.18,'#526A80'],[.36,'#8097A8'],[.47,'#AABAC4'],[.505,'#BBC6C9'],[.55,'#65727B'],[1,'#29343E']]
     };
     const gradient=context.createLinearGradient(0,0,0,height);
@@ -5824,6 +5830,7 @@ void main(){
         return(a+(b-a)*sx)+((c+(d-c)*sx)-(a+(b-a)*sx))*sy;
       };
       const clamp01=value=>Math.max(0,Math.min(1,value));
+      const smoothstep01=(a,b,value)=>{const t=clamp01((value-a)/Math.max(1e-6,b-a));return t*t*(3-2*t);};
 
       // Render the nebula at native panorama resolution; a fifth high-frequency octave restores fine filament detail before mipmap generation.
       const galaxyCanvas=document.createElement('canvas');
@@ -5875,14 +5882,14 @@ void main(){
 
       // A restrained horizon airglow gives the starfield a real atmospheric boundary.
       // It is a smooth, low-frequency band, not a full-screen fog pass.
-      const horizonAirglow=context.createLinearGradient(0,height*.405,0,height*.585);
+      const horizonAirglow=context.createLinearGradient(0,height*.375,0,height*.665);
       horizonAirglow.addColorStop(0,'rgba(9,18,38,0)');
-      horizonAirglow.addColorStop(.36,'rgba(54,78,119,0.018)');
-      horizonAirglow.addColorStop(.52,'rgba(105,139,184,0.072)');
-      horizonAirglow.addColorStop(.68,'rgba(65,91,139,0.035)');
+      horizonAirglow.addColorStop(.22,'rgba(54,78,119,0.012)');
+      horizonAirglow.addColorStop(.50,'rgba(105,139,184,0.064)');
+      horizonAirglow.addColorStop(.72,'rgba(65,91,139,0.030)');
       horizonAirglow.addColorStop(1,'rgba(8,15,30,0)');
       context.save();context.globalCompositeOperation='screen';
-      context.fillStyle=horizonAirglow;context.fillRect(0,height*.405,width,height*.18);
+      context.fillStyle=horizonAirglow;context.fillRect(0,height*.375,width,height*.29);
       context.restore();
 
       // Very faint wide-angle airglow keeps the black sky from becoming a flat void.
@@ -5957,7 +5964,8 @@ void main(){
       // Density and brightness rise gently inside the galactic band.
       const starBrightness=continuous?Math.max(0,Math.min(1.8,Number(profile.starBrightness)||0)):Math.max(.75,Math.min(1.8,Number(profile.starBrightness)||1));
       for(let i=0;i<12000;i++){
-        const x=random()*width,y=8+random()*height*.485,u=x/width,v=y/height;
+        const x=random()*width,y=8+random()*height*.515,u=x/width,v=y/height;
+        const horizonFade=1-smoothstep01(.43,.515,v);
         const angle=u*Math.PI*2;
         const galacticCenterY=.315+.115*Math.sin(angle-.72)+.035*Math.sin(angle*2+1.1);
         const band=Math.exp(-Math.pow((v-galacticCenterY)/.092,2));
@@ -5967,7 +5975,7 @@ void main(){
         const moonDy=y-moonUv.y;
         const moonDistance=Math.sqrt(moonDx*moonDx+moonDy*moonDy);
         const moonStarFade=1.0-.64*Math.exp(-Math.pow(moonDistance/(height*.062),2)*1.45);
-        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness*moonStarFade);
+        const alpha=Math.min(.99,(.12+random()*.55+band*.2)*(radius>1.7?1.22:1)*starBrightness*moonStarFade*horizonFade);
         const tint=random();
         const color=tint>.91?'190,211,255':tint>.73?'211,225,255':tint<.075?'255,220,180':'236,241,250';
         if(radius>1.45){
@@ -6002,14 +6010,15 @@ void main(){
       // A restrained second layer of very faint pinprick stars adds depth without changing
       // the established Milky Way palette or the existing main and micro-star distributions.
       for(let i=0;i<2600;i++){
-        const x=random()*width,y=4+random()*height*.49;
+        const x=random()*width,y=4+random()*height*.515;
+        const horizonFade=1-smoothstep01(.425,.515,y/height);
         const tint=random();
         const color=tint>.9?'190,211,255':tint>.72?'211,225,255':tint<.07?'255,220,180':'236,241,250';
         const radius=.1+random()*.25;
         const moonDxRaw=Math.abs(x-moonUv.x),moonDx=Math.min(moonDxRaw,width-moonDxRaw)*Math.max(.2,Math.cos((moonV-.5)*Math.PI));
         const moonDy=y-moonUv.y;
         const moonMicroFade=1.0-.62*Math.exp(-(moonDx*moonDx+moonDy*moonDy)/(height*height*.0048));
-        const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;
+        const alpha=(.045+random()*.09)*starBrightness*moonMicroFade*horizonFade;
         context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
         context.fillRect(x,y,radius,radius);
       }
@@ -6091,7 +6100,7 @@ void main(){
           context.restore();
         });
       }
-      if(name==='day'||(continuous&&Number(profile.cloudDensity)>.025&&Number(profile.cloudCoverage)>.04))drawDaytimeCloudField(context,width,height,profile,sun);
+      if(name==='day'||name==='dusk'||(continuous&&Number(profile.cloudDensity)>.025&&Number(profile.cloudCoverage)>.04))drawDaytimeCloudField(context,width,height,profile,sun);
       context.lineCap='round';context.lineJoin='round';
       for(let i=0;i<(dusk?112:260);i++){
         const x=random()*width,y=height*(dusk?.12:.095)+random()*height*(dusk?.34:.31),length=60+random()*(dusk?360:250);
