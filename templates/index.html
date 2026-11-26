@@ -2933,9 +2933,11 @@ try {
   // r187 exposes TSL and WebGPU through dedicated entry points. Keep them isolated
   // from the production WebGL renderer until the custom material parity port is ready.
   try {
-    window.PStudioWebGPURenderer = (await import('three/webgpu')).WebGPURenderer;
+    window.PStudioWebGPU = await import('three/webgpu');
+    window.PStudioWebGPURenderer = window.PStudioWebGPU.WebGPURenderer;
     window.PStudioTSL = await import('three/tsl');
   } catch (error) {
+    window.PStudioWebGPU = null;
     window.PStudioWebGPURenderer = null;
     window.PStudioTSL = null;
     console.warn('[PStudio] WebGPU/TSL prototype modules unavailable; the WebGL2 renderer remains active.', error);
