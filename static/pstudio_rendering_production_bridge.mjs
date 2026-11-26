@@ -201,6 +201,38 @@ export function createPStudioProductionRenderingBridge(options = {}) {
       if (disposed || !host) return false;
       return host.resize(width, height, pixelRatio);
     },
+    setEnvironment(profile) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setEnvironment?.(profile) === true;
+    },
+    setBloom(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setBloom?.(settings) === true;
+    },
+    setAmbientOcclusion(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setAmbientOcclusion?.(settings) === true;
+    },
+    setSSR(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setSSR?.(settings) === true;
+    },
+    setGodRays(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setGodRays?.(settings) === true;
+    },
+    setContactShadows(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setContactShadows?.(settings) === true;
+    },
+    setVolumetricFog(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setVolumetricFog?.(settings) === true;
+    },
+    setVolumetricClouds(settings) {
+      if (disposed || !host || host.getState().backend !== 'webgpu') return false;
+      return host.setVolumetricClouds?.(settings) === true;
+    },
     setClusteredLightingSnapshot(snapshot) {
       if (disposed || !host || host.getState().backend !== 'webgpu') return false;
       return host.setClusteredLightingSnapshot?.(snapshot) === true;
