@@ -888,7 +888,7 @@ let projectFiles={
  'main.scene':{type:'scene',content:''}
 };
 const PSTUDIO_SCENE_GRID_SIZE=500;
-let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='player';let sceneEnvironment={preset:'day',timeOfDay:12,timeScale:0,weather:'clear',weatherIntensity:0,windDirection:[1,0],windSpeed:.35,transitionSeconds:2.4,windTransitionSeconds:1.6};let sceneObjects=[
+let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='player';let sceneEnvironment={preset:'day',timeOfDay:12,timeScale:0,weather:'clear',weatherIntensity:0,windDirection:[1,0],windSpeed:.35,transitionSeconds:.15,windTransitionSeconds:1.6};let sceneObjects=[
  {id:'player',name:'Player',x:160,y:210,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'player.ps',color:'#d1d5db',shape:'rect'},
  {id:'enemy',name:'Enemy',x:620,y:210,z:0,rotationX:0,rotationY:0,rotationZ:0,w:56,h:56,sprite:'',script:'enemy.ps',color:'#a1a1aa',shape:'circle'}
 ];
@@ -914,7 +914,7 @@ function normalizeSceneEnvironment(value){
   weatherIntensity:clamp(source.weatherIntensity,0,1,weather==='clear'?0:1),
   windDirection:[wx,wz],
   windSpeed:clamp(source.windSpeed,0,8,.35),
-  transitionSeconds:clamp(source.transitionSeconds,.05,60,2.4),
+  transitionSeconds:clamp(source.transitionSeconds,.05,60,.15),
   windTransitionSeconds:clamp(source.windTransitionSeconds,.05,60,1.6)
  };
 }
@@ -970,7 +970,8 @@ function setSceneEnvironmentPreset(preset){
   ...sceneEnvironment,
   preset:name,
   timeOfDay:name==='dusk'?19:name==='night'?23:12,
-  timeScale:0
+  timeScale:0,
+  transitionSeconds:.15
  });
  if(name==='studio'){
   syncSceneEnvironmentPresetButtons();persistProject();window.PStudio3D?.clearGenesisEnvironment?.();window.PStudioEngine?.refreshSceneView?.();
@@ -980,7 +981,7 @@ function setSceneEnvironmentPreset(preset){
 function setGenesisEnvironmentTime(value){
  const time=Math.max(0,Math.min(24,Number(value)||0));
  const preset=time>=20?'night':time>=17.2?'dusk':'day';
- sceneEnvironment={...sceneEnvironment,timeOfDay:time,preset};
+ sceneEnvironment={...sceneEnvironment,timeOfDay:time,preset,transitionSeconds:.15};
  commitGenesisEnvironment();
 }
 function setGenesisEnvironmentWeather(value){
@@ -1011,7 +1012,7 @@ function openGenesisDemo(){
  selectedObjectId='shrine-camera';
  sceneEnvironment=normalizeSceneEnvironment({
   preset:'night',timeOfDay:23.25,timeScale:0,weather:'clear',weatherIntensity:0,
-  windSpeed:.22,windDirection:[1,0],transitionSeconds:2.4,windTransitionSeconds:1.6
+  windSpeed:.22,windDirection:[1,0],transitionSeconds:.15,windTransitionSeconds:1.6
  });
  syncSceneEnvironmentPresetButtons();
  syncGenesisEnvironmentControls();
@@ -3117,8 +3118,8 @@ try {
 <script src="/static/pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2"></script>
 <script src="/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
-<script src="/static/pstudio_genesis_environment.js?v=20261126-genesis-1-2-v1"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261126-natural-sky-v2"></script>
+<script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-time-v1"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-sky-time-v1"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
