@@ -6773,7 +6773,10 @@ void main(){
       path:new T.MeshStandardMaterial({color:'#7C7E82',roughness:.92,...textures.stone}),
       blossom:new T.MeshStandardMaterial({color:'#FFFFFF',roughness:.72,emissive:'#6B294B',emissiveIntensity:.22,vertexColors:true,side:T.DoubleSide}),
       blossomCenter:new T.MeshBasicMaterial({color:'#F3D18D',toneMapped:false}),
-      petal:new T.MeshStandardMaterial({color:'#F7BBD0',roughness:.8,side:T.DoubleSide})
+      petal:new T.MeshStandardMaterial({color:'#F7BBD0',roughness:.8,side:T.DoubleSide}),
+      deer:new T.MeshStandardMaterial({color:'#49362C',roughness:.91,metalness:0}),
+      antler:new T.MeshStandardMaterial({color:'#B9A184',roughness:.78,metalness:0}),
+      deerEye:new T.MeshBasicMaterial({color:'#F4C47A',toneMapped:false})
     };
     const boxGeometryCache=new Map(),cylinderGeometryCache=new Map(),instanceBatches=new Map();
     const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
@@ -6871,7 +6874,7 @@ void main(){
     // Broad terrain foundations and irregular stone banks around the mirror lake.
     add(new T.PlaneGeometry(310,270),materials.soil,0,-.72,-70,[-Math.PI/2,0,0]);
     genesisCreateGroundShape(T,[[-118,-3],[-104,26],[-91,42],[-68,38],[-53,20],[-50,-10],[-58,-40],[-83,-67],[-112,-59]],materials.ground,root).position.y=.26;
-    genesisCreateGroundShape(T,[[112,8],[105,34],[88,46],[65,36],[51,12],[53,-18],[70,-54],[97,-63],[117,-38]],materials.ground,root).position.y=.26;
+    genesisCreateGroundShape(T,[[74,8],[67,34],[50,46],[27,36],[13,12],[15,-18],[32,-54],[59,-63],[79,-38]],materials.ground,root).position.y=.26;
 
     // Three overlapping volumetric mountain ridges recede into atmospheric blue haze.
     genesisAddMountainRange(T,root,{z:-225,depth:52,baseY:1,rangeX:340,color:'#151E32',peaks:[[-142,24,37],[-90,38,30],[-28,27,35],[38,42,36],[116,27,30]]});
@@ -7032,8 +7035,52 @@ void main(){
       addBeam(materials.gold,[gateX+side*postSpacing*.5,7.0,gateZ+.65],[gateX+side*postSpacing*.5,7.8,gateZ+.65],.055);
     }
 
+    // Right-bank deer in profile, matching the reference image's quiet foreground silhouette.
+    const deerX=24,deerZ=-40;
+    const deerBodyGeometry=new T.SphereGeometry(1,24,16);
+    const deerJointGeometry=new T.SphereGeometry(1,16,12);
+    const deerEarGeometry=new T.ConeGeometry(.15,.42,8,2);
+    const deerHoofGeometry=new T.BoxGeometry(.19,.15,.17);
+    addInstance(deerBodyGeometry,materials.deer,deerX,1.42,deerZ,null,[1.28,.62,.48]);
+    addInstance(deerBodyGeometry,materials.deer,deerX-.78,1.52,deerZ+.015,null,[.52,.54,.43]);
+    // Slender raised neck, shoulder transition and long muzzle.
+    genesisAddCylinderBetween(T,root,materials.deer,
+      [deerX-.68,1.65,deerZ],[deerX-1.02,2.94,deerZ+.02],.22,.34,14);
+    addInstance(deerJointGeometry,materials.deer,deerX-1.04,3.04,deerZ+.035,null,[.34,.31,.29]);
+    addInstance(deerJointGeometry,materials.deer,deerX-1.31,2.91,deerZ+.08,null,[.31,.16,.19]);
+    // Ears point outward from the skull; the eye catches a small amount of lantern light.
+    for(const side of [-1,1]){
+      addInstance(deerEarGeometry,materials.deer,deerX-1.02,3.38,deerZ+side*.24,
+        [side*.12,0,side*.30],[.78,1,.62]);
+    }
+    const deerEye=add(new T.SphereGeometry(.052,10,8),materials.deerEye,deerX-1.19,3.12,deerZ+.284);
+    deerEye.name='GENESIS Deer | eye catchlight';
+    // Four independent tapered legs with dark split hooves.
+    for(const xSide of [-1,1])for(const zSide of [-1,1]){
+      const shoulderX=deerX+xSide*.72,shoulderZ=deerZ+zSide*.29;
+      const kneeY=xSide<0? .77:.72,hoofY=.22;
+      const kneeX=shoulderX+(xSide<0?-.06:.10);
+      genesisAddCylinderBetween(T,root,materials.deer,
+        [shoulderX,1.20,shoulderZ],[kneeX,kneeY,shoulderZ+zSide*.025],.075,.105,9);
+      genesisAddCylinderBetween(T,root,materials.deer,
+        [kneeX,kneeY,shoulderZ+zSide*.025],[kneeX+(xSide<0?-.05:.02),hoofY,shoulderZ+zSide*.045],.045,.075,8);
+      addInstance(deerHoofGeometry,materials.darkStone,
+        kneeX+(xSide<0?-.05:.02),.12,shoulderZ+zSide*.045,null,[1,1,1]);
+    }
+    // Short tail and branching antlers remain readable against the night sky.
+    addBeam(materials.deer,[deerX+1.08,1.75,deerZ],[deerX+1.45,1.95,deerZ-.02],.085,8);
+    for(const side of [-1,1]){
+      const base=[deerX-1.08,3.25,deerZ+side*.16];
+      const fork=[deerX-1.06,3.76,deerZ+side*.43];
+      addBeam(materials.antler,base,fork,.045,7);
+      addBeam(materials.antler,fork,[deerX-.86,4.12,deerZ+side*.56],.032,7);
+      addBeam(materials.antler,fork,[deerX-1.32,4.08,deerZ+side*.57],.032,7);
+      addBeam(materials.antler,[deerX-1.04,3.57,deerZ+side*.30],
+        [deerX-.77,3.89,deerZ+side*.35],.028,7);
+    }
+
     // Secondary waterside shrine and a row of warm interior screens on the right bank.
-    const secondaryX=49,secondaryZ=-48;
+    const secondaryX=27,secondaryZ=-48;
     addBox(materials.darkStone,secondaryX,.50,secondaryZ,17,.48,14);
     addBox(materials.plaster,secondaryX,2.75,secondaryZ,12,4.3,9);
     for(let i=0;i<4;i++){
@@ -7058,7 +7105,7 @@ void main(){
     const blossomColors=['#F4A6C3','#F8BCD0','#FAD2DF','#E98CAE','#FFE0E9','#F4C0CB'].map(color=>new T.Color(color));
     const treeSpecs=[
       [-92,-20,1.32],[-77,-42,1.18],[-70,12,1.38],[-46,-12,1.12],[-12,-27,.94],
-      [58,-26,1.22],[78,4,1.32],[94,-34,1.1],[40,18,1.05],[-105,-58,.96],[22,-78,.92]
+      [24,-26,.90],[38,4,.86],[32,-34,.88],[-105,-58,.96],[22,-78,.92]
     ];
     const dummy=new T.Object3D();
     const treeTrunkGeometry=new T.CylinderGeometry(.12,.36,1,12,2,false);
@@ -7120,7 +7167,7 @@ void main(){
 
     // Dark cedar and pine trees create a layered silhouette at the mountain foot.
     genesisAddPineForest(T,root,materials,0x5a821b1,36,{minX:-142,maxX:-92,minZ:-118,maxZ:-89,minHeight:6,maxHeight:13});
-    genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:88,maxX:142,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
+    genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:50,maxX:104,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
     genesisAddPineForest(T,root,materials,0x9d20c15,18,{minX:-8,maxX:80,minZ:-151,maxZ:-126,minHeight:5,maxHeight:11});
 
     // Long stone approach uses instanced irregular slabs instead of dozens of draw calls.
@@ -7137,8 +7184,8 @@ void main(){
       addLantern(-17-(i%2)*4,z,.92,i===1||i===5);
       addLantern(27+(i%2)*4,z,.92,i===3);
     }
-    addLantern(-88,12,1.18,true);
-    addLantern(88,10,1.18,true);
+    addLantern(-58,-32,1.18,true);
+    addLantern(24,-40,1.18,true);
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
     const stoneRandom=()=>{stoneSeed=(Math.imul(stoneSeed,1664525)+1013904223)>>>0;return stoneSeed/4294967296;};
@@ -7146,7 +7193,7 @@ void main(){
     const shorelineGrassGeometry=new T.ConeGeometry(1,1,5,2);
     for(let i=0;i<100;i++){
       const side=i%2===0?-1:1;
-      const x=side*(49+stoneRandom()*48);
+      const x=side<0?-(49+stoneRandom()*48):(21+stoneRandom()*48);
       const z=-73+stoneRandom()*116;
       const radius=.48+stoneRandom()*1.75;
       addInstance(shorelineRockGeometry,i%4===0?materials.wetStone:materials.darkStone,
@@ -7175,7 +7222,7 @@ void main(){
     for(const side of [-1,1]){
       for(let i=0;i<24;i++){
         const z=38-i*4.8;
-        const x=side*(103+Math.sin(i*.7)*3.5);
+        const x=side<0?-(103+Math.sin(i*.7)*3.5):(69+Math.sin(i*.7)*3.5);
         const radius=.35+(i%4)*.13;
         addInstance(shorelinePebbleGeometry,materials.wetStone,x,.22,z,[0,i*.4,0],[radius*1.6,radius*.48,radius*.85]);
       }
