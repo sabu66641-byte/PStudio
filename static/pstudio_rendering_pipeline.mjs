@@ -635,13 +635,6 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
     releaseScreenSpaceNodes();
     let output = sceneColor;
 
-    if (volumetricFogSettings) {
-      volumetricFogHandle = createVolumetricFogNode(output, sceneDepth, volumetricFogSettings);
-      output = volumetricFogHandle.node;
-    } else {
-      volumetricFogHandle = null;
-    }
-
     if (aoSettings) {
       if (aoSettings.mode === 'gtao') {
         aoPass = gtao(sceneDepth, sceneNormal, camera);
@@ -680,11 +673,7 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       contactShadowsHandle = null;
     }
 
-    if (bloomSettings && bloomSettings.strength > 0) {
-      const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
-      output = output.add(glow);
-    }
-
+    // Clouds are composed before glare so their sunlit structures contribute to Bloom.
     if (volumetricCloudSettings) {
       volumetricCloudHandle = createVolumetricCloudNode(output, sceneDepth, volumetricCloudSettings);
       output = volumetricCloudHandle.node;
@@ -697,6 +686,19 @@ export function createPStudioRenderPipeline(renderer, scene, camera, options = {
       output = godRaysHandle.node;
     } else {
       godRaysHandle = null;
+    }
+
+    if (bloomSettings && bloomSettings.strength > 0) {
+      const glow = bloom(output, bloomSettings.strength, bloomSettings.radius, bloomSettings.threshold);
+      output = output.add(glow);
+    }
+
+    // Fog is applied last so it attenuates the complete shaded/effected foreground.
+    if (volumetricFogSettings) {
+      volumetricFogHandle = createVolumetricFogNode(output, sceneDepth, volumetricFogSettings);
+      output = volumetricFogHandle.node;
+    } else {
+      volumetricFogHandle = null;
     }
 
     renderPipeline.outputNode = output;
