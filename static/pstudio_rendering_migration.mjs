@@ -8,8 +8,8 @@ import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from 
 import { applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
 import { applyPStudioTSLToonMaterials } from './pstudio_rendering_toon_tsl.mjs?v=20261126-npr-toon-v1';
-import { applyPStudioTSLMaterialAdapters, isPStudioTSLMaterialAdapterRegistered } from './pstudio_rendering_external_tsl.mjs?v=20261126-external-tsl-v1';
-import './pstudio_rendering_celestial_tsl.mjs?v=20261126-celestial-tsl-v1';
+import { applyPStudioTSLMaterialAdapters, isPStudioTSLMaterialAdapterRegistered } from './pstudio_rendering_external_tsl.mjs';
+import './pstudio_rendering_celestial_tsl.mjs';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
