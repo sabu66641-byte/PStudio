@@ -8,6 +8,8 @@ import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from 
 import { applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
 import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
 import { applyPStudioTSLToonMaterials } from './pstudio_rendering_toon_tsl.mjs?v=20261126-npr-toon-v1';
+import { applyPStudioTSLMaterialAdapters, isPStudioTSLMaterialAdapterRegistered } from './pstudio_rendering_external_tsl.mjs?v=20261126-external-tsl-v1';
+import './pstudio_rendering_celestial_tsl.mjs?v=20261126-celestial-tsl-v1';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
@@ -24,12 +26,13 @@ export const supportsPStudioTSLVolumetricClouds = pipelineSupportsVolumetricClou
 export const supportsPStudioTSLClusteredLighting = typeof applyPStudioTSLNativeClusteredLighting === 'function';
 export const supportsPStudioTSLSHGI = typeof attachPStudioTSLSHProbeToMaterial === 'function';
 export const supportsPStudioTSLToon = typeof applyPStudioTSLToonMaterials === 'function';
+export const supportsPStudioTSLCustomMaterialAdapters = typeof applyPStudioTSLMaterialAdapters === 'function';
 
 export const supportsPStudioTSLCSM = typeof createPStudioTSLCascadeShadows === 'function';
 
 const PRODUCTION_BLOCKERS = Object.freeze([
   Object.freeze({ id: 'renderer-parity-validation', label: '実機WebGPUでフレーム時間・メモリ・長時間動作・WebGL2復旧を回帰検証' }),
-  Object.freeze({ id: 'legacy-materials', label: 'PStudioのNPR ToonはTSL移植済み。未登録の外部ShaderMaterial／独自GLSLフックは個別TSLアダプターが必要' }),
+  Object.freeze({ id: 'legacy-materials', label: 'PStudioのNPR Toon・月・太陽・星空ShaderMaterialはTSL移植済み。外部／ユーザー定義GLSLは登録済みの明示的TSLアダプターのみ許可し、未知のGLSLは互換性ゲートで拒否' }),
   Object.freeze({ id: 'environment-effects', label: 'TSL体積雲・体積フォグは接続済み。実機で深度交差・散乱・ノイズ・時間変化の視覚品質を比較' }),
   Object.freeze({ id: 'lighting-gi-shadows', label: 'ClusteredLightsNode PBR・9係数SH・WebGPU CubeRenderTarget読出しを接続済み。反射視点・影・SH係数の実機等価性を検証' }),
   Object.freeze({ id: 'gpu-particles-trails', label: 'TSL NodeMaterialのInstanced GPU Particle／Ribbon Trailを接続済み。粒子密度・透明合成・負荷・寿命境界を実機検証' }),
@@ -40,6 +43,7 @@ const PRODUCTION_BLOCKERS = Object.freeze([
 ]);
 
 function hasCustomShaderHooks(material) {
+  if (isPStudioTSLMaterialAdapterRegistered(material)) return false;
   if (isPStudioLegacyTSLToonMaterial(material)) return false;
   if (isPStudioTSLSurfaceFeatureMaterial(material)) return false;
   const userData = material?.userData || {};
@@ -82,9 +86,14 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
   let builtInMeshMaterials = 0;
   let nodeMaterials = 0;
   let legacyShaderHooks = 0;
+  let externalTSLAdapterMaterials = 0;
   const builtInMaterialTypes = Object.create(null);
   for (const material of materials) {
     const name = String(material.name || material.type || 'Unnamed material');
+    if (isPStudioTSLMaterialAdapterRegistered(material)) {
+      externalTSLAdapterMaterials += 1;
+      continue;
+    }
     if (material.isNodeMaterial === true || material.isMeshStandardNodeMaterial === true || material.isMeshPhysicalNodeMaterial === true) {
       nodeMaterials += 1;
       continue;
@@ -124,6 +133,7 @@ export function inspectPStudioWebGPUSceneMaterials(scene) {
     builtInMaterialTypes: Object.freeze({ ...builtInMaterialTypes }),
     nodeMaterials,
     legacyShaderHooks,
+    externalTSLAdapterMaterials,
     unsupportedMaterials: unsupported.length,
     unsupported: Object.freeze(unsupported),
     compatible: unsupported.length === 0
@@ -171,6 +181,8 @@ export function getPStudioWebGPUMigrationStatus(options = {}) {
       'TSL Terrain/Triplanar/Parallax/Foliage surface adapters',
       'TSL Water surface, native ReflectorNode planar reflection and opaque-scene depth prepass',
       'TSL NPR Toon diffuse ramp, rim and pseudo-SSS layered over native Standard/Physical specular lighting',
+      'Explicit, reversible TSL adapter registry for external ShaderMaterial/custom GLSL; unknown adapters remain fail-closed',
+      'TSL ports for PStudio Moon, Sun and night-twinkle ShaderMaterial paths with reversible WebGL fallback',
       'TSL underwater caustics with the legacy diffuse-light response preserved',
       'TSL InstancedMesh billboard GPU particles with per-instance ballistic motion and lifetime shading',
       'TSL ribbon trail materials with per-vertex lifetime fading',
@@ -204,6 +216,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
 
   let backendHandle = null;
   let materialConversion = null;
+  let externalMaterialConversion = null;
   let environmentHandle = null;
   let pipelineHandle = null;
   let csmHandle = null;
@@ -274,6 +287,16 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         }
         return deviceLoss;
       });
+    }
+
+    reportStage('adapting-external-shaders', { adapterMaterials: compatibility.externalTSLAdapterMaterials || 0 });
+    externalMaterialConversion = applyPStudioTSLMaterialAdapters(scene, { renderer });
+    const adaptedCompatibility = inspectPStudioWebGPUSceneMaterials(scene);
+    if (!adaptedCompatibility.compatible) {
+      const error = new Error('The scene still contains unported GLSL materials after applying registered TSL adapters.');
+      error.code = 'PSTUDIO_WEBGPU_SCENE_INCOMPATIBLE';
+      error.details = adaptedCompatibility;
+      throw error;
     }
 
     reportStage('converting-materials', { materialCount: compatibility.materialCount });
@@ -467,7 +490,8 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
           materials: Object.freeze({
             convertedMeshes: materialConversion?.convertedMeshes || 0,
             convertedMaterials: materialConversion?.convertedMaterials || 0,
-            skippedMaterials: materialConversion?.skippedMaterials || 0
+            skippedMaterials: materialConversion?.skippedMaterials || 0,
+            externalTSLAdapterMaterials: externalMaterialConversion?.convertedMaterials || 0
           })
         });
       },
@@ -486,6 +510,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
         try { surfaceHandle?.dispose?.(); } catch (_) {}
         try { toonHandle?.dispose?.(); } catch (_) {}
         try { materialConversion?.restore?.(); } catch (_) {}
+        try { externalMaterialConversion?.restore?.(); } catch (_) {}
         try { backendHandle?.dispose?.(); } catch (_) {}
         reportStage('disposed');
         return true;
@@ -505,6 +530,7 @@ export async function createPStudioWebGPUSceneSession(options = {}) {
     try { surfaceHandle?.dispose?.(); } catch (_) {}
     try { toonHandle?.dispose?.(); } catch (_) {}
     try { materialConversion?.restore?.(); } catch (_) {}
+    try { externalMaterialConversion?.restore?.(); } catch (_) {}
     try { backendHandle?.dispose?.(); } catch (_) {}
     throw error;
   }
