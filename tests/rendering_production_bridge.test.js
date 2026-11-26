@@ -75,6 +75,7 @@ test('production bridge keeps WebGL2 visible until a compatible WebGPU scene is 
   let renders = 0;
   let resizes = 0;
   let disposals = 0;
+  const aaRequests = [];
   const bridge = createPStudioProductionRenderingBridge({
     legacyCanvas,
     scene,
@@ -87,6 +88,7 @@ test('production bridge keeps WebGL2 visible until a compatible WebGPU scene is 
         capabilities: { backend: 'webgpu' },
         render() { renders += 1; return true; },
         resize() { resizes += 1; return true; },
+        setAntiAliasing(settings) { aaRequests.push(settings); return true; },
         dispose() { disposals += 1; }
       };
     }
@@ -102,6 +104,8 @@ test('production bridge keeps WebGL2 visible until a compatible WebGPU scene is 
   assert.equal(children.length, 2);
   assert.equal(bridge.render(), true);
   assert.equal(bridge.resize(800, 450, 1.5), true);
+  assert.equal(bridge.setAntiAliasing({ mode: 'traa' }), true);
+  assert.deepEqual(aaRequests, [{ mode: 'traa' }]);
   assert.equal(creates, 1);
   assert.equal(renders, 1);
   assert.equal(resizes, 1);
