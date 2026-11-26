@@ -620,6 +620,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const supportsClusteredTSL=window.PStudioRenderingMigration?.supportsPStudioTSLClusteredLighting===true;
     const supportsSurfaceTSL=window.PStudioRenderingMigration?.supportsPStudioTSLSurfaceFeatures===true;
     const supportsWaterTSL=window.PStudioRenderingMigration?.supportsPStudioTSLWater===true;
+    const supportsCausticsTSL=window.PStudioRenderingMigration?.supportsPStudioTSLCaustics===true;
     if(!supportsWaterTSL&&(waterMaterials.size>0||Number(fx.waterMaterials)>0))add('water','水面TSLアダプターが利用できません。');
     if(!supportsSurfaceTSL&&Number(fx.waterDetailMaterials)>0)add('water-detail','水面マイクロリップル／詳細材質のTSL移植モジュールが利用できません。');
     if(!supportsSurfaceTSL&&(Number(fx.foliageMaterials)>0||Number(fx.foliageTranslucencyMaterials)>0))add('foliage','植生の風変形・透過シェーダーのTSL移植が未完了です。');
@@ -632,7 +633,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const hasReflectorCamera=waterMaterials.size>0||Number(fx.waterMaterials)>0||hasLegacyMirrorWater;
     if(activeClusterLighting&&!supportsClusteredTSL)add('clustered-lighting','クラスタ照明のTSL／Storage Bufferアダプターが利用できません。');
     else if(activeClusterLighting&&hasReflectorCamera)add('clustered-lighting-reflector-camera','反射カメラ別のクラスタ照明データ更新が未完了です。');
-    if(Number(fx.causticMaterials)>0)add('caustics','水中コースティクスのTSL移植が未完了です。');
+    if(Number(fx.causticMaterials)>0&&!supportsCausticsTSL)add('caustics','水中コースティクスのTSL移植が未完了です。');
     if(Number(fx.toonMaterials)>0)add('toon','トゥーンシェーディングのTSL移植が未完了です。');
     if(volumetricFogEnabled)add('volumetric-fog','体積フォグのTSL RenderPipeline移植が未完了です。');
     if(volumetricCloudsEnabled)add('volumetric-clouds','体積雲のTSL RenderPipeline移植が未完了です。');
