@@ -1499,6 +1499,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
+  assert.ok(html.includes("set_postprocessing(true, true, 0.52)"),'the showcase enables controlled bloom and AO');
   assert.ok(html.includes('20261127-moonlit-reference-scene-r2'));
 });
 
