@@ -112,7 +112,7 @@
   let scenePresetTexture=null,scenePresetTarget=null,scenePresetSignature='',scenePresetUsesPhysicalSky=false;
   let activeEnvironmentPreset='day';
   let physicalSky=null;
-  let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0;
+  let moonMesh=null,moonSurfaceTexture=null,moonDirection=null,moonLightDirection=null,moonIntensity=0,moonVisibilityAllowed=false;
   let nightTwinkleStars=null;
   let sunMesh=null,sunSurfaceTexture=null,sunDirection=null,sunViewDirection=null,sunIntensity=0,sunAngularRadius=1.2,sunGlareStrength=0,moonGlareStrength=0;
   let adaptiveMaximumTouchMode=false,adaptiveUltraTouchMode=false,adaptiveTouchResolutionBudget=false;
@@ -5479,13 +5479,15 @@ void main(){
   }
   function configureMoonSky(T,profile){
     moonIntensity=Math.max(0,Math.min(1.5,Number(profile.moonIntensity)||0));
-    if(moonIntensity<=.015||Number(profile.starBrightness)<.035){
+    moonVisibilityAllowed=moonIntensity>.015&&Number.isFinite(Number(profile.starBrightness))&&Number(profile.starBrightness)>=.035;
+    if(!moonVisibilityAllowed){
       if(moonMesh)moonMesh.visible=false;
       return false;
     }
     let mesh=null;
     try{mesh=ensureMoonMesh(T);}
     catch(error){
+      moonVisibilityAllowed=false;
       if(moonMesh)moonMesh.visible=false;
       console.warn('[PStudio] Lunar sphere setup failed; retaining the procedural night sky without the moon.',error);
       return false;
@@ -5516,7 +5518,7 @@ void main(){
   function updateMoonSkyMesh(){
     if(!moonMesh||!camera)return;
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    moonMesh.visible=moonIntensity>.015&&!hdrBackgroundVisible;
+    moonMesh.visible=moonVisibilityAllowed&&moonIntensity>.015&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
     const radius=distance*Math.tan(3.0*Math.PI/180);
@@ -6397,22 +6399,93 @@ void main(){
     return true;
   }
 
-  function createGenesisStarCanvas(T,width=1024,height=512){
-    // Reuse the renderer's authored high-detail Milky Way/star generator rather
-    // than drawing a cheaper substitute for GENESIS transitions.
-    const nightProfile=window.PStudioGenesisEnvironment?.profileForTime?.(23.4)||
-      window.PStudioSceneEnvironment?.getPreset?.('night')||{name:'night',starBrightness:1.62};
-    const profile={...nightProfile,name:'night',visualPreset:'night',
-      // Light-only layer: a black base prevents SCREEN blending from lifting
-      // the whole sky and washing out the Milky Way against the live gradient.
-      skyTop:'#000000',skyMid:'#000000',horizon:'#000000',fogColor:'#000000',ground:'#000000',
-      starBrightness:1.62,cloudDensity:0,cloudCoverage:0,sunIntensity:0};
-    const sourceTexture=createProceduralSkyTexture(T,profile,width/2048,true);
+  function createGenesisStarCanvas(width=768,height=384){
+    const resolutionScale=width/768;
+    const areaScale=(width*height)/(768*384);
     const canvas=document.createElement('canvas');
     canvas.width=width;canvas.height=height;
     const context=canvas.getContext('2d');
-    if(context&&sourceTexture?.image)context.drawImage(sourceTexture.image,0,0,width,height);
-    sourceTexture?.dispose?.();
+    if(!context)return canvas;
+    let seed=0x6d2b79f5;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const clamp01=value=>Math.max(0,Math.min(1,value));
+    const smooth=(a,b,x)=>{const t=clamp01((x-a)/(b-a));return t*t*(3-2*t);};
+    const hash=(x,y)=>{const value=Math.sin(x*127.1+y*311.7+74.7)*43758.5453123;return value-Math.floor(value);};
+    const image=context.createImageData(width,height),pixels=image.data;
+    for(let y=0;y<height;y++){
+      const v=y/(height-1);
+      for(let x=0;x<width;x++){
+        const u=x/width,angle=u*Math.PI*2;
+        let center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
+        center+=(hash(Math.floor(x/(20*resolutionScale)),Math.floor(y/(16*resolutionScale)))-.5)*.022;
+        const distance=Math.abs(v-center);
+        const broad=hash(Math.floor(x/(30*resolutionScale)),Math.floor(y/(24*resolutionScale)));
+        const medium=hash(Math.floor(x/(8*resolutionScale)),Math.floor(y/(7*resolutionScale)));
+        const fine=hash(Math.floor(x/(3*resolutionScale)),Math.floor(y/(3*resolutionScale)));
+        const filament=clamp01((broad*.37+medium*.36+fine*.27-.30)*1.85);
+        const core=Math.exp(-Math.pow(distance/(.038+.024*broad),2)*1.45);
+        const haze=Math.exp(-Math.pow(distance/.145,2));
+        const dust=clamp01((medium*.48+fine*.52-.64)*3.3)*core;
+        const knots=clamp01((fine*.56+medium*.44-.56)*2.4);
+        const intensity=clamp01((core*(.10+filament*.72+knots*.18)+haze*.07)*(1-dust*.72));
+        if(intensity<.003)continue;
+        const warm=clamp01(.48+.36*Math.sin(angle*1.35+.35)+(medium-.5)*.45);
+        const offset=(y*width+x)*4;
+        pixels[offset]=Math.round(255*(.18+.56*warm)*intensity);
+        pixels[offset+1]=Math.round(255*(.22+.43*warm+.08*knots)*intensity);
+        pixels[offset+2]=Math.round(255*(.40+.43*(1-warm)+.06*knots)*intensity);
+        pixels[offset+3]=Math.round(185*intensity);
+      }
+    }
+    context.putImageData(image,0,0);
+    context.save();
+    context.globalCompositeOperation='screen';
+    for(let i=0;i<Math.round(36*areaScale);i++){
+      const u=(i/36+random()*.022)%1;
+      const x=u*width;
+      const angle=u*Math.PI*2;
+      const y=(.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1))*height;
+      const radius=(8+random()*30)*resolutionScale;
+      const glow=context.createRadialGradient(x,y,0,x,y,radius);
+      const warm=random();
+      glow.addColorStop(0,warm>.45?'rgba(255,205,166,.16)':'rgba(173,198,255,.14)');
+      glow.addColorStop(.42,warm>.45?'rgba(238,150,155,.075)':'rgba(118,154,220,.07)');
+      glow.addColorStop(1,'rgba(95,120,190,0)');
+      context.fillStyle=glow;context.fillRect(x-radius,y-radius,radius*2,radius*2);
+    }
+    for(let i=0;i<Math.round(4600*areaScale);i++){
+      const u=random(),angle=u*Math.PI*2;
+      const center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
+      const band=Math.exp(-Math.pow((random()-.5)*.92,2)*1.7);
+      const y=Math.max(3,Math.min(height-2,(center+(random()-.5)*(.10+band*.06))*height));
+      const x=u*width;
+      const roll=random(),radius=(roll>.997?1.9+random()*1.6:roll>.95?.7+random()*.8:.18+random()*.35)*resolutionScale;
+      const tint=random();
+      const color=tint>.91?'190,211,255':tint>.74?'218,228,255':tint<.10?'255,211,177':'239,242,255';
+      const alpha=roll>.997?.72+random()*.24:.20+random()*.58;
+      if(radius>1.2){
+        const halo=context.createRadialGradient(x,y,0,x,y,radius*5);
+        halo.addColorStop(0,'rgba('+color+','+(alpha*.32).toFixed(3)+')');
+        halo.addColorStop(1,'rgba('+color+',0)');
+        context.fillStyle=halo;context.fillRect(x-radius*5,y-radius*5,radius*10,radius*10);
+      }
+      context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
+      context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';context.fill();
+      if(radius>2.3&&random()>.68){
+        context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
+        context.lineWidth=.5*resolutionScale;context.beginPath();
+        context.moveTo(x-radius*3.2,y);context.lineTo(x+radius*3.2,y);
+        context.moveTo(x,y-radius*3.2);context.lineTo(x,y+radius*3.2);
+        context.stroke();
+      }
+    }
+    for(let i=0;i<Math.round(2100*areaScale);i++){
+      const x=random()*width,y=8+random()*height*.52,radius=(.12+random()*.22)*resolutionScale;
+      const tint=random(),color=tint>.9?'190,211,255':tint<.08?'255,220,190':'224,235,255';
+      context.fillStyle='rgba('+color+','+(.035+random()*.07).toFixed(3)+')';
+      context.fillRect(x,y,radius,radius);
+    }
+    context.restore();
     return canvas;
   }
 
@@ -6428,14 +6501,14 @@ void main(){
     genesisSkyCanvas.width=width;genesisSkyCanvas.height=height;
     genesisSkyContext=genesisSkyCanvas.getContext('2d');
     if(!genesisSkyContext)return false;
-    genesisStarCanvas=createGenesisStarCanvas(T,width,height);
+    genesisStarCanvas=createGenesisStarCanvas(width,height);
     genesisCloudCanvas=document.createElement('canvas');
     genesisCloudCanvas.width=width;genesisCloudCanvas.height=height;
     const cloudContext=genesisCloudCanvas.getContext('2d');
     if(cloudContext){
       const dayProfile=window.PStudioGenesisEnvironment?.profileForTime?.(13)||
         window.PStudioSceneEnvironment?.getPreset?.('day')||{};
-      drawDaytimeCloudField(cloudContext,width,height,{...dayProfile,cloudCoverage:.52,cloudDetail:.96},{x:width*.48,y:height*.3});
+      drawDaytimeCloudField(cloudContext,width,height,{...dayProfile,cloudCoverage:.64,cloudDetail:1},{x:width*.48,y:height*.3});
     }
     genesisSkyTexture=new T.CanvasTexture(genesisSkyCanvas);
     genesisSkyQuality=selected;
