@@ -6890,7 +6890,7 @@ void main(){
     }
     addBox(materials.darkWood,shrineX,1.18,shrineZ,21,.42,14.6);
     addBox(materials.wood,shrineX,1.43,shrineZ,20.6,.12,14.2);
-    const wallBottom=1.55,wallTop=6.15,frontZ=shrineZ+6.78;
+    const wallBottom=1.55,wallTop=6.15,frontZ=shrineZ+7.03;
     addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ-6.85,20,wallTop-wallBottom,.26);
     addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ+6.85,20,wallTop-wallBottom,.24);
     for(const xSide of [-1,1]){
