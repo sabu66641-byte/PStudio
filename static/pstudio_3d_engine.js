@@ -6453,7 +6453,9 @@ void main(){
     window.PStudioEnvironmentFX?.update?.(particleClock);
     applyGenesisEnvironmentState(state,false,now);
     updateGenesisRainParticles(state,deltaSeconds);
-    updateGpuParticleSystems();
+    // In the editor the renderer loop owns particle stepping. During Play,
+    // PStudio3D.render() already advances all GPU particles with the game dt.
+    if(!window.PStudioEngine?.isRunning?.())updateGpuParticleSystems();
     return state;
   }
 
@@ -7136,7 +7138,13 @@ void main(){
     },
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
     clearGenesisEnvironment:()=>{
-      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;
+      genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
+      if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
+      genesisRainAccumulator=0;
+      const studioProfile=window.PStudioSceneEnvironment?.getPreset?.('studio');
+      if(productionRendererBridge?.getState?.().backend==='webgpu'&&studioProfile){
+        productionRendererBridge.setEnvironment?.(studioProfile);
+      }
       if(renderer&&scene&&camera){applySceneEnvironmentPreset(window.THREE,'studio');drawFrame();}
       return true;
     },
