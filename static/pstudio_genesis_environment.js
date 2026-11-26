@@ -151,12 +151,16 @@
       for(const name of Object.keys(currentWeights))currentWeights[name]+=(targetWeights[name]-currentWeights[name])*timeAlpha;
       const weightTotal=Object.values(currentWeights).reduce((sum,value)=>sum+value,0)||1;
       for(const name of Object.keys(currentWeights))currentWeights[name]/=weightTotal;
-      const nextDirection=normalize2(
-        windDirection[0]+(targetWindDirection[0]-windDirection[0])*windAlpha,
-        windDirection[1]+(targetWindDirection[1]-windDirection[1])*windAlpha,
-        windDirection
+      // Interpolate the shortest angular path. Linear interpolation of
+      // opposite unit vectors collapses toward zero and can flip direction.
+      const currentWindAngle=Math.atan2(windDirection[1],windDirection[0]);
+      const targetWindAngle=Math.atan2(targetWindDirection[1],targetWindDirection[0]);
+      const windAngleDelta=Math.atan2(
+        Math.sin(targetWindAngle-currentWindAngle),
+        Math.cos(targetWindAngle-currentWindAngle)
       );
-      windDirection=nextDirection;
+      const nextWindAngle=currentWindAngle+windAngleDelta*windAlpha;
+      windDirection=[Math.cos(nextWindAngle),Math.sin(nextWindAngle)];
       const profile=profileForTime(timeOfDay);
       const weatherMix={cloudDensity:0,cloudCoverage:0,fogDensity:0,fogFar:0,sun:0,rain:0,wetness:0,wind:0};
       for(const [name,weight] of Object.entries(currentWeights)){
