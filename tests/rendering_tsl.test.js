@@ -399,18 +399,17 @@ test('RenderPipeline requires WebGPU and composes a TSL scene pass with Bloom', 
   assert.equal(effectsPipeline.dispose(), true);
 });
 
-test('WebGPU Lab consumes the reusable strict WebGPU scene-session API', () => {
+test('production WebGPU scene-session API remains available without a standalone lab', async () => {
+  const [, , , , , , migration] = await modules;
+  assert.equal(typeof migration.createPStudioWebGPUSceneSession, 'function');
+  assert.equal(typeof migration.inspectPStudioWebGPUSceneMaterials, 'function');
+  assert.equal(typeof migration.getPStudioWebGPUProductionBlockers, 'function');
   const root = path.resolve(__dirname, '..');
-  const lab = fs.readFileSync(path.join(root, 'static', 'pstudio_webgpu_lab.mjs'), 'utf8');
-  for (const token of [
-    'createPStudioWebGPUSceneSession',
-    'sessionHandle.render()',
-    'sessionHandle.dispose()',
-    'configureRenderer'
-  ]) assert.ok(lab.includes(token), token);
-  assert.doesNotMatch(lab, /rendererCandidate\.render\(scene, camera\)/);
+  const html = fs.readFileSync(path.join(root, 'templates', 'index.html'), 'utf8');
+  assert.equal(fs.existsSync(path.join(root, 'static', 'pstudio_webgpu_lab.mjs')), false);
+  assert.doesNotMatch(html, /webgpu-lab-(open|overlay|canvas)/);
+  assert.match(html, /pstudio_rendering_migration\.mjs/);
 });
-
 
 test('WebGPU material preflight rejects legacy GLSL hooks and unsupported material types', async () => {
   const [THREE, , , , , , migration] = await modules;

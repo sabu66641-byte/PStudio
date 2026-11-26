@@ -50,6 +50,8 @@
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisLastSkyUpdateAt=0,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
+  let genesisSkyCanvas=null,genesisSkyContext=null,genesisSkyTexture=null,genesisStarCanvas=null;
+  let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[];
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const renderingFrameBudgetController=window.PStudioRenderingBudget?.createPStudioFrameBudgetController?.()||null;
@@ -1573,7 +1575,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   function ensureNightTwinkleStars(T){
     if(nightTwinkleStars?.parent===scene)return nightTwinkleStars;
     if(!scene)return null;
-    const count=56,geometry=new T.BufferGeometry();
+    const count=180,geometry=new T.BufferGeometry();
     const positions=new Float32Array(count*3),phases=new Float32Array(count),intensities=new Float32Array(count),speeds=new Float32Array(count);
     let seed=0x4e494748;
     const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
@@ -1589,7 +1591,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const material=new T.ShaderMaterial({
       uniforms:{
         uTime:{value:0},uPointScale:{value:Math.min(1.5,Math.max(1,window.devicePixelRatio||1))},
-        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0}
+        uMoonDirectionWorld:{value:new T.Vector3(0,1,0)},uMoonOcclusion:{value:0},uVisibility:{value:0}
       },
       vertexShader:[
         'attribute float aPhase;','attribute float aIntensity;','attribute float aSpeed;',
@@ -1603,7 +1605,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         '}'
       ].join('\n'),
       fragmentShader:[
-        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;',
+        'uniform vec3 uMoonDirectionWorld;','uniform float uMoonOcclusion;','uniform float uVisibility;',
         'varying float vTwinkle;','varying float vIntensity;','varying vec3 vSkyDirection;',
         'void main(){',
         'vec2 p=gl_PointCoord-vec2(.5);float r=length(p);',
@@ -1613,7 +1615,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         'float alignment=dot(normalize(vSkyDirection),normalize(uMoonDirectionWorld));',
         'float moonHalo=smoothstep(0.89,0.999,alignment);',
         'float moonDim=1.0-uMoonOcclusion*moonHalo*.58;',
-        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim;',
+        'float alpha=(core*.92+rays*.16+hexRay*.12)*vTwinkle*vIntensity*moonDim*uVisibility;',
         'if(alpha<.012)discard;',
         'gl_FragColor=vec4(vec3(.72,.83,1.0)*alpha,alpha);',
         '}'
@@ -1631,8 +1633,12 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
   function updateNightTwinkleStars(){
     if(!nightTwinkleStars||!camera)return;
-    const visible=activeEnvironmentPreset==='night'&&!(hdrTexture&&hdrShowBackground);
+    const starBrightness=genesisEnvironmentState
+      ?Math.max(0,Math.min(1.8,Number(genesisEnvironmentState.starBrightness)||0))
+      :(activeEnvironmentPreset==='night'?1.2:0);
+    const visible=starBrightness>.015&&!(hdrTexture&&hdrShowBackground);
     nightTwinkleStars.visible=visible;
+    if(nightTwinkleStars.material?.uniforms?.uVisibility)nightTwinkleStars.material.uniforms.uVisibility.value=starBrightness/1.62;
     if(!visible)return;
     nightTwinkleStars.position.copy(camera.position);
     const distance=Math.max(camera.near+2,camera.far*.96);
@@ -5473,7 +5479,7 @@ void main(){
   }
   function configureMoonSky(T,profile){
     moonIntensity=Math.max(0,Math.min(1.5,Number(profile.moonIntensity)||0));
-    if(profile.name!=='night'||moonIntensity<=.001){
+    if(moonIntensity<=.015||Number(profile.starBrightness)<.035){
       if(moonMesh)moonMesh.visible=false;
       return false;
     }
@@ -5510,7 +5516,7 @@ void main(){
   function updateMoonSkyMesh(){
     if(!moonMesh||!camera)return;
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    moonMesh.visible=activeEnvironmentPreset==='night'&&moonIntensity>.001&&!hdrBackgroundVisible;
+    moonMesh.visible=moonIntensity>.015&&!hdrBackgroundVisible;
     if(!moonMesh.visible||!moonDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
     const radius=distance*Math.tan(3.0*Math.PI/180);
@@ -5635,10 +5641,9 @@ void main(){
     return sunMesh;
   }
   function configureSunSky(T,profile){
-    const isDaylight=profile.name==='day'||profile.name==='dusk';
     sunIntensity=Math.max(0,Math.min(2,Number(profile.sunIntensity)||0));
     sunAngularRadius=Math.max(.2,Math.min(4,Number(profile.sunAngularRadius)||1.2));
-    if(!isDaylight||sunIntensity<=.001||Number(profile.sunRadius)<=0){
+    if(sunIntensity<=.001||Number(profile.sunRadius)<=0.04){
       if(sunMesh)sunMesh.visible=false;
       sunGlareStrength=0;
       return false;
@@ -5667,7 +5672,7 @@ void main(){
   function updateSunSkyMesh(){
     if(!sunMesh||!camera)return;
     const hdrBackgroundVisible=!!(hdrTexture&&hdrShowBackground);
-    sunMesh.visible=(activeEnvironmentPreset==='day'||activeEnvironmentPreset==='dusk')&&sunIntensity>.001&&!hdrBackgroundVisible;
+    sunMesh.visible=sunIntensity>.001&&!hdrBackgroundVisible;
     if(!sunMesh.visible||!sunDirection)return;
     const distance=Math.max(camera.near+2,camera.far*.88);
     const radius=distance*Math.tan(sunAngularRadius*Math.PI/180);
@@ -6392,14 +6397,551 @@ void main(){
     return true;
   }
 
+  function createGenesisStarCanvas(width=768,height=384){
+    const canvas=document.createElement('canvas');
+    canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d');
+    if(!context)return canvas;
+    let seed=0x6d2b79f5;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const clamp01=value=>Math.max(0,Math.min(1,value));
+    const smooth=(a,b,x)=>{const t=clamp01((x-a)/(b-a));return t*t*(3-2*t);};
+    const hash=(x,y)=>{const value=Math.sin(x*127.1+y*311.7+74.7)*43758.5453123;return value-Math.floor(value);};
+    const image=context.createImageData(width,height),pixels=image.data;
+    for(let y=0;y<height;y++){
+      const v=y/(height-1);
+      for(let x=0;x<width;x++){
+        const u=x/width,angle=u*Math.PI*2;
+        let center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
+        center+=(hash(Math.floor(x/20),Math.floor(y/16))-.5)*.022;
+        const distance=Math.abs(v-center);
+        const broad=hash(Math.floor(x/30),Math.floor(y/24));
+        const medium=hash(Math.floor(x/8),Math.floor(y/7));
+        const fine=hash(Math.floor(x/3),Math.floor(y/3));
+        const filament=clamp01((broad*.37+medium*.36+fine*.27-.30)*1.85);
+        const core=Math.exp(-Math.pow(distance/(.038+.024*broad),2)*1.45);
+        const haze=Math.exp(-Math.pow(distance/.145,2));
+        const dust=clamp01((medium*.48+fine*.52-.64)*3.3)*core;
+        const knots=clamp01((fine*.56+medium*.44-.56)*2.4);
+        const intensity=clamp01((core*(.10+filament*.72+knots*.18)+haze*.07)*(1-dust*.72));
+        if(intensity<.003)continue;
+        const warm=clamp01(.48+.36*Math.sin(angle*1.35+.35)+(medium-.5)*.45);
+        const offset=(y*width+x)*4;
+        pixels[offset]=Math.round(255*(.18+.56*warm)*intensity);
+        pixels[offset+1]=Math.round(255*(.22+.43*warm+.08*knots)*intensity);
+        pixels[offset+2]=Math.round(255*(.40+.43*(1-warm)+.06*knots)*intensity);
+        pixels[offset+3]=Math.round(185*intensity);
+      }
+    }
+    context.putImageData(image,0,0);
+    context.save();
+    context.globalCompositeOperation='screen';
+    for(let i=0;i<36;i++){
+      const u=(i/36+random()*.022)%1;
+      const x=u*width;
+      const angle=u*Math.PI*2;
+      const y=(.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1))*height;
+      const radius=8+random()*30;
+      const glow=context.createRadialGradient(x,y,0,x,y,radius);
+      const warm=random();
+      glow.addColorStop(0,warm>.45?'rgba(255,205,166,.16)':'rgba(173,198,255,.14)');
+      glow.addColorStop(.42,warm>.45?'rgba(238,150,155,.075)':'rgba(118,154,220,.07)');
+      glow.addColorStop(1,'rgba(95,120,190,0)');
+      context.fillStyle=glow;context.fillRect(x-radius,y-radius,radius*2,radius*2);
+    }
+    for(let i=0;i<4600;i++){
+      const u=random(),angle=u*Math.PI*2;
+      const center=.325+.115*Math.sin(angle-.72)+.032*Math.sin(angle*2+1.1);
+      const band=Math.exp(-Math.pow((random()-.5)*.92,2)*1.7);
+      const y=Math.max(3,Math.min(height-2,(center+(random()-.5)*(.10+band*.06))*height));
+      const x=u*width;
+      const roll=random(),radius=roll>.997?1.9+random()*1.6:roll>.95?.7+random()*.8:.18+random()*.35;
+      const tint=random();
+      const color=tint>.91?'190,211,255':tint>.74?'218,228,255':tint<.10?'255,211,177':'239,242,255';
+      const alpha=roll>.997?.72+random()*.24:.20+random()*.58;
+      if(radius>1.2){
+        const halo=context.createRadialGradient(x,y,0,x,y,radius*5);
+        halo.addColorStop(0,'rgba('+color+','+(alpha*.32).toFixed(3)+')');
+        halo.addColorStop(1,'rgba('+color+',0)');
+        context.fillStyle=halo;context.fillRect(x-radius*5,y-radius*5,radius*10,radius*10);
+      }
+      context.beginPath();context.arc(x,y,radius,0,Math.PI*2);
+      context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';context.fill();
+      if(radius>2.3&&random()>.68){
+        context.strokeStyle='rgba('+color+','+(alpha*.28).toFixed(3)+')';
+        context.lineWidth=.5;context.beginPath();
+        context.moveTo(x-radius*3.2,y);context.lineTo(x+radius*3.2,y);
+        context.moveTo(x,y-radius*3.2);context.lineTo(x,y+radius*3.2);
+        context.stroke();
+      }
+    }
+    for(let i=0;i<2100;i++){
+      const x=random()*width,y=8+random()*height*.52,radius=.12+random()*.22;
+      const tint=random(),color=tint>.9?'190,211,255':tint<.08?'255,220,190':'224,235,255';
+      context.fillStyle='rgba('+color+','+(.035+random()*.07).toFixed(3)+')';
+      context.fillRect(x,y,radius,radius);
+    }
+    context.restore();
+    return canvas;
+  }
+
+  function ensureGenesisSkyBackground(T){
+    if(genesisSkyTexture&&genesisSkyCanvas&&genesisStarCanvas)return true;
+    genesisSkyCanvas=document.createElement('canvas');
+    genesisSkyCanvas.width=512;genesisSkyCanvas.height=256;
+    genesisSkyContext=genesisSkyCanvas.getContext('2d');
+    if(!genesisSkyContext)return false;
+    genesisStarCanvas=createGenesisStarCanvas(768,384);
+    genesisSkyTexture=new T.CanvasTexture(genesisSkyCanvas);
+    genesisSkyTexture.mapping=T.EquirectangularReflectionMapping;
+    genesisSkyTexture.colorSpace=T.SRGBColorSpace;
+    genesisSkyTexture.wrapS=T.RepeatWrapping;
+    genesisSkyTexture.wrapT=T.ClampToEdgeWrapping;
+    genesisSkyTexture.generateMipmaps=true;
+    genesisSkyTexture.minFilter=T.LinearMipmapLinearFilter;
+    genesisSkyTexture.magFilter=T.LinearFilter;
+    genesisSkyTexture.anisotropy=Math.min(8,renderer?.capabilities?.getMaxAnisotropy?.()||1);
+    genesisSkyTexture.needsUpdate=true;
+    return true;
+  }
+
+  function updateGenesisSkyBackground(state,force=false,now=window.performance?.now?.()??Date.now()){
+    if(!renderer||!scene||!state)return false;
+    if(!force&&now-genesisLastSkyUpdateAt<50)return false;
+    const T=window.THREE;
+    if(!ensureGenesisSkyBackground(T))return false;
+    const context=genesisSkyContext,width=genesisSkyCanvas.width,height=genesisSkyCanvas.height;
+    const gradient=context.createLinearGradient(0,0,0,height);
+    gradient.addColorStop(0,state.skyTop||'#080D22');
+    gradient.addColorStop(.29,state.skyMid||'#111A34');
+    gradient.addColorStop(.465,state.horizon||'#C88B68');
+    gradient.addColorStop(.515,state.fogColor||state.horizon||'#C88B68');
+    gradient.addColorStop(1,state.ground||'#11131D');
+    context.globalAlpha=1;context.globalCompositeOperation='source-over';
+    context.fillStyle=gradient;context.fillRect(0,0,width,height);
+    const stars=Math.max(0,Math.min(1,Number(state.starBrightness||0)/1.62));
+    const twilight=Math.max(0,Math.min(1,Number(state.twilightStrength)||0));
+    const horizonGlow=Math.max(stars*.42,twilight*.78);
+    if(horizonGlow>.005){
+      context.save();context.globalCompositeOperation='screen';
+      const glow=context.createRadialGradient(width*.54,height*.515,2,width*.54,height*.515,height*.28);
+      glow.addColorStop(0,'rgba(255,184,129,'+(horizonGlow*.23).toFixed(3)+')');
+      glow.addColorStop(.32,'rgba(231,132,119,'+(horizonGlow*.15).toFixed(3)+')');
+      glow.addColorStop(.68,'rgba(125,95,137,'+(horizonGlow*.055).toFixed(3)+')');
+      glow.addColorStop(1,'rgba(54,66,105,0)');
+      context.fillStyle=glow;context.fillRect(0,height*.30,width,height*.42);
+      context.restore();
+    }
+    const cloud=Math.max(0,Math.min(1,Number(state.cloudDensity||0)/1.4));
+    if(cloud>.025){
+      context.save();context.globalCompositeOperation='screen';context.globalAlpha=cloud*.36;
+      for(let i=0;i<24;i++){
+        const x=((i*83+Math.sin(i*2.17)*29)%width+width)%width;
+        const y=height*(.18+(i%5)*.052);
+        const radius=22+(i%7)*11;
+        const cloudGlow=context.createRadialGradient(x,y,1,x,y,radius);
+        cloudGlow.addColorStop(0,twilight>.2?'rgba(255,181,157,.20)':'rgba(210,231,246,.22)');
+        cloudGlow.addColorStop(.55,twilight>.2?'rgba(215,133,151,.08)':'rgba(190,217,239,.08)');
+        cloudGlow.addColorStop(1,'rgba(155,192,225,0)');
+        context.fillStyle=cloudGlow;context.fillRect(x-radius,y-radius,radius*2,radius*2);
+      }
+      context.restore();
+    }
+    if(stars>.002&&genesisStarCanvas){
+      context.save();context.globalCompositeOperation='screen';context.globalAlpha=stars;
+      context.drawImage(genesisStarCanvas,0,0,width,height);
+      context.restore();
+    }
+    genesisSkyTexture.needsUpdate=true;
+    scene.background=genesisSkyTexture;
+    genesisLastSkyUpdateAt=now;
+    return true;
+  }
+
+  function disposeGenesisSkyBackground(){
+    genesisSkyTexture?.dispose?.();
+    genesisSkyTexture=null;genesisSkyCanvas=null;genesisSkyContext=null;genesisStarCanvas=null;
+    genesisLastSkyUpdateAt=0;
+  }
+
+  function genesisAddMesh(T,parent,geometry,material,x,y,z,rotation=null){
+    const mesh=new T.Mesh(geometry,material);
+    mesh.position.set(x,y,z);
+    if(rotation)mesh.rotation.set(rotation[0]||0,rotation[1]||0,rotation[2]||0);
+    mesh.castShadow=true;mesh.receiveShadow=true;
+    parent.add(mesh);return mesh;
+  }
+
+  function genesisAddBox(T,parent,material,x,y,z,sx,sy,sz,rotation=null){
+    return genesisAddMesh(T,parent,new T.BoxGeometry(sx,sy,sz),material,x,y,z,rotation);
+  }
+
+  function genesisAddCylinderBetween(T,parent,material,a,b,radiusTop,radiusBottom,segments=10){
+    const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
+    const direction=end.clone().sub(start),length=direction.length();
+    if(length<1e-4)return null;
+    const mesh=genesisAddMesh(T,parent,new T.CylinderGeometry(radiusTop,radiusBottom,length,segments),material,
+      (start.x+end.x)*.5,(start.y+end.y)*.5,(start.z+end.z)*.5);
+    mesh.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
+    return mesh;
+  }
+
+  function genesisCreateSakuraFlowerGeometry(T){
+    const positions=[],indices=[];
+    const petalCount=5,segments=12;
+    for(let petal=0;petal<petalCount;petal++){
+      const angle=-Math.PI/2+petal*Math.PI*2/petalCount;
+      const centerX=Math.cos(angle)*.105,centerY=Math.sin(angle)*.105;
+      const centerIndex=positions.length/3;
+      positions.push(centerX,centerY,.004);
+      for(let segment=0;segment<segments;segment++){
+        const theta=segment/segments*Math.PI*2;
+        const radial=Math.cos(theta)*.205;
+        const tangent=Math.sin(theta)*.112;
+        positions.push(
+          centerX+Math.cos(angle)*radial-Math.sin(angle)*tangent,
+          centerY+Math.sin(angle)*radial+Math.cos(angle)*tangent,
+          .004+Math.sin(theta)*.001
+        );
+      }
+      for(let segment=0;segment<segments;segment++){
+        indices.push(centerIndex,centerIndex+1+segment,centerIndex+1+(segment+1)%segments);
+      }
+    }
+    const geometry=new T.BufferGeometry();
+    geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function genesisAddMountainRange(T,parent,options){
+    const count=180,vertices=[],indices=[];
+    const {z,baseY,rangeX,peaks,color}=options;
+    for(let i=0;i<=count;i++){
+      const x=(i/count-.5)*rangeX;
+      let ridge=baseY;
+      for(const peak of peaks){
+        const distance=(x-peak[0])/peak[2];
+        ridge+=peak[1]*Math.exp(-distance*distance);
+      }
+      ridge+=Math.sin(i*.19)*.45+Math.sin(i*.071+1.7)*.9;
+      vertices.push(x,ridge,z,x,baseY-2,z);
+      if(i<count){
+        const k=i*2;
+        indices.push(k,k+1,k+2,k+1,k+3,k+2);
+      }
+    }
+    const geometry=new T.BufferGeometry();
+    geometry.setAttribute('position',new T.Float32BufferAttribute(vertices,3));
+    geometry.setIndex(indices);geometry.computeVertexNormals();
+    const material=new T.MeshStandardMaterial({color,roughness:1,metalness:0,side:T.DoubleSide});
+    return genesisAddMesh(T,parent,geometry,material,0,0,0);
+  }
+
+  function genesisAddLantern(T,parent,materials,x,z,scale=1,addLight=false){
+    const y=.4;
+    genesisAddCylinderBetween(T,parent,materials.stone,[x,y,z],[x,y+1.1*scale,z],.27*scale,.42*scale,8);
+    genesisAddBox(T,parent,materials.wood,x,y+1.25*scale,z,.9*scale,.18*scale,.9*scale);
+    genesisAddBox(T,parent,materials.glow,x,y+1.88*scale,z,.62*scale,.95*scale,.62*scale);
+    for(const side of [-1,1]){
+      genesisAddBox(T,parent,materials.darkWood,x+side*.33*scale,y+1.88*scale,z,.09*scale,1.02*scale,.76*scale);
+      genesisAddBox(T,parent,materials.darkWood,x,y+1.88*scale,z+side*.33*scale,.76*scale,1.02*scale,.09*scale);
+    }
+    genesisAddBox(T,parent,materials.wood,x,y+2.42*scale,z,1.05*scale,.18*scale,1.05*scale);
+    const roof=genesisAddMesh(T,parent,new T.ConeGeometry(.83*scale,.5*scale,4),materials.darkWood,x,y+2.72*scale,z);
+    roof.rotation.y=Math.PI/4;
+    genesisAddMesh(T,parent,new T.CylinderGeometry(.08*scale,.12*scale,.42*scale,8),materials.gold,x,y+3.12*scale,z);
+    if(addLight){
+      const light=new T.PointLight('#FFB86B',3.4*scale,18*scale,2);
+      light.position.set(x,y+1.9*scale,z);parent.add(light);
+    }
+  }
+
+  function buildGenesisShrineDemo(T){
+    if(!scene||!renderer)return false;
+    if(genesisShrineDemoGroup?.parent===scene)return true;
+    const root=new T.Group();root.name='PStudio Night Shrine / Mirror Lake';
+    const geometrySet=new Set(),materialSet=new Set();
+    const materials={
+      ground:new T.MeshStandardMaterial({color:'#20252D',roughness:.98}),
+      stone:new T.MeshStandardMaterial({color:'#48505C',roughness:.9}),
+      darkStone:new T.MeshStandardMaterial({color:'#252C38',roughness:.95}),
+      wood:new T.MeshStandardMaterial({color:'#513529',roughness:.78}),
+      darkWood:new T.MeshStandardMaterial({color:'#241C20',roughness:.72}),
+      red:new T.MeshStandardMaterial({color:'#AD3439',roughness:.42,metalness:.08}),
+      redLight:new T.MeshStandardMaterial({color:'#D24D45',roughness:.38}),
+      roof:new T.MeshStandardMaterial({color:'#172235',roughness:.34,metalness:.12}),
+      roofTile:new T.MeshStandardMaterial({color:'#253448',roughness:.38,metalness:.18}),
+      roofEdge:new T.MeshStandardMaterial({color:'#344153',roughness:.4,metalness:.16}),
+      plaster:new T.MeshStandardMaterial({color:'#D5C3A6',roughness:.88}),
+      gold:new T.MeshStandardMaterial({color:'#B88B50',roughness:.34,metalness:.68}),
+      glow:new T.MeshStandardMaterial({color:'#FFB86C',emissive:'#FF8B36',emissiveIntensity:2.25,roughness:.35}),
+      glowGlass:new T.MeshBasicMaterial({color:'#FFD49A',toneMapped:false}),
+      pine:new T.MeshStandardMaterial({color:'#101D28',roughness:1}),
+      path:new T.MeshStandardMaterial({color:'#4A4A4B',roughness:.94}),
+      blossom:new T.MeshStandardMaterial({color:'#FFFFFF',roughness:.86,emissive:'#5B203A',emissiveIntensity:.13,vertexColors:true}),
+      petal:new T.MeshStandardMaterial({color:'#F6B6CF',roughness:.82,side:T.DoubleSide})
+    };
+    const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>genesisAddBox(T,root,material,x,y,z,sx,sy,sz,rotation);
+    // Wide dark shoreline and stone approach.
+    add(new T.PlaneGeometry(300,220),materials.ground,0,-.55,-45,[-Math.PI/2,0,0]);
+    addBox(materials.darkStone,0,-.18,-48,150,.65,28);
+    for(let i=0;i<24;i++){
+      const z=18-i*3.1;
+      const x=Math.sin(i*1.71)*5.5;
+      const stone=add(new T.CylinderGeometry(.85,.98,.24,7),materials.path,x,.1,z);
+      stone.rotation.y=i*.31;
+    }
+    // Distant layered mountain silhouettes.
+    genesisAddMountainRange(T,root,{z:-150,baseY:5,rangeX:270,color:'#111A2A',peaks:[[-108,16,28],[-63,25,22],[-12,18,27],[44,27,26],[99,16,24]]});
+    genesisAddMountainRange(T,root,{z:-126,baseY:3,rangeX:235,color:'#1A2639',peaks:[[-93,12,22],[-48,21,19],[8,15,21],[64,24,22],[103,12,19]]});
+    genesisAddMountainRange(T,root,{z:-105,baseY:1,rangeX:210,color:'#243146',peaks:[[-70,10,17],[-25,17,18],[24,12,20],[76,19,19]]});
+    // Shrine island and timber platform.
+    addBox(materials.stone,-28,.2,-42,27,.85,18);
+    addBox(materials.darkWood,-28,.83,-42,20,.5,13);
+    addBox(materials.plaster,-28,3.45,-42,17,5.0,10.5);
+    addBox(materials.darkWood,-28,.95,-35.45,17,.45,.6);
+    for(let i=0;i<5;i++){
+      const x=-35+i*3.5;
+      addBox(materials.darkWood,x,3.35,-36.62,.18,4.3,.18);
+      addBox(materials.darkWood,x,3.35,-36.52,2.8,.16,.2);
+      addBox(materials.glow,x,3.35,-36.42,2.1,2.65,.07);
+      addBox(materials.darkWood,x-1.16,3.35,-36.35,.12,2.9,.16);
+      addBox(materials.darkWood,x+1.16,3.35,-36.35,.12,2.9,.16);
+      addBox(materials.darkWood,x,2.02,-36.35,2.4,.12,.16);
+      addBox(materials.darkWood,x,4.68,-36.35,2.4,.12,.16);
+      const interiorGlow=new T.PointLight('#FFB36D',1.35,27,2);
+      interiorGlow.position.set(x,3.28,-38.7);root.add(interiorGlow);
+    }
+    // Deep overhanging, tiled gable roof with ridge and raised eaves.
+    addBox(materials.roof,-32.2,6.42,-42,9.2,.58,14.5,[0,0,.39]);
+    addBox(materials.roof,-23.8,6.42,-42,9.2,.58,14.5,[0,0,-.39]);
+    // Individually overlapped slate courses catch moonlight along the broad shrine roof.
+    const roofTileGeometry=new T.BoxGeometry(1.32,.075,1.72);
+    const roofTiles=new T.InstancedMesh(roofTileGeometry,materials.roofTile,96);
+    roofTiles.name='GENESIS Shrine Slate Roof Courses';
+    const roofTileDummy=new T.Object3D();let roofTileIndex=0;
+    for(const side of [-1,1])for(let column=0;column<6;column++)for(let row=0;row<8;row++){
+      const x=-28+side*(.86+column*1.28);
+      const y=7.42-column*.43;
+      const z=-48.15+row*1.76+(column%2)*.18;
+      roofTileDummy.position.set(x,y,z);
+      roofTileDummy.rotation.set(0,0,side<0?.39:-.39);
+      roofTileDummy.scale.set(1,1,1);
+      roofTileDummy.updateMatrix();roofTiles.setMatrixAt(roofTileIndex++,roofTileDummy.matrix);
+    }
+    roofTiles.instanceMatrix.needsUpdate=true;roofTiles.castShadow=true;roofTiles.receiveShadow=true;
+    root.add(roofTiles);
+    addBox(materials.roofEdge,-28,7.92,-42,.54,.46,15.1);
+    for(const x of [-37.3,-18.7])for(const z of [-48.4,-35.6]){
+      add(new T.SphereGeometry(.34,12,8),materials.gold,x,5.76,z);
+    }
+    addBox(materials.darkWood,-28,5.3,-34.8,19,.35,.65);
+    // Five-tier pagoda rising behind the shrine at left.
+    const pagodaX=-54,pagodaZ=-53;
+    addBox(materials.stone,pagodaX,.55,pagodaZ,14,1.1,14);
+    for(let tier=0;tier<5;tier++){
+      const width=11-tier*1.55,level=1.5+tier*3.65;
+      addBox(materials.darkWood,pagodaX,level+1.0,pagodaZ,width*.78,2.05,width*.72);
+      addBox(materials.glow,pagodaX,level+1.02,pagodaZ+width*.37,width*.54,1.0,.07);
+      const roof=add(new T.ConeGeometry(width*.79,1.38,4),materials.roof,pagodaX,level+2.62,pagodaZ);
+      roof.rotation.y=Math.PI/4;
+      const eaves=add(new T.CylinderGeometry(width*.88,width*.98,.22,4),materials.roofEdge,pagodaX,level+2.16,pagodaZ);
+      eaves.rotation.y=Math.PI/4;
+      const pagodaWindowLight=new T.PointLight('#FFB86E',.78,22,2);
+      pagodaWindowLight.position.set(pagodaX,level+1.0,pagodaZ+width*.38);root.add(pagodaWindowLight);
+      for(const side of [-1,1]){
+        addBox(materials.gold,pagodaX+side*width*.42,level+2.2,pagodaZ,.10,.16,width*.95);
+      }
+    }
+    genesisAddCylinderBetween(T,root,materials.gold,[pagodaX,20.2,pagodaZ],[pagodaX,25.2,pagodaZ],.08,.25,10);
+    // Vermilion torii standing at the far waterline.
+    const gateX=13,gateZ=-43;
+    for(const side of [-1,1]){
+      const x=gateX+side*5.45;
+      add(new T.CylinderGeometry(.39,.64,9.6,18),materials.red,x,4.95,gateZ);
+      addBox(materials.darkStone,x,.2,gateZ,1.5,.45,1.5);
+      addBox(materials.redLight,x+side*.34,8.72,gateZ,.78,.72,1.25);
+      addBox(materials.red,x,6.9,gateZ,1.0,.45,1.1);
+    }
+    addBox(materials.red,gateX,9.9,gateZ,15.7,.82,1.1,[0,0,.015]);
+    addBox(materials.redLight,gateX,8.15,gateZ,12.9,.48,.74);
+    addBox(materials.red,gateX,10.43,gateZ,11.8,.34,1.3);
+    for(const side of [-1,1]){
+      addBox(materials.red,gateX+side*7.6,9.95,gateZ,.95,.76,1.2,[0,0,side*.16]);
+      addBox(materials.gold,gateX+side*5.45,5.9,gateZ,.35,.34,.26);
+    }
+    // A small secondary shrine on the far right balances the composition.
+    addBox(materials.stone,37,.15,-51,15,.55,12);
+    addBox(materials.plaster,37,2.3,-51,11,4.0,8);
+    addBox(materials.roof,34.2,4.55,-51,6.2,.42,10,[0,0,.36]);
+    addBox(materials.roof,39.8,4.55,-51,6.2,.42,10,[0,0,-.36]);
+    for(let i=0;i<3;i++){
+      addBox(materials.glow,34+i*3,2.4,-46.9,1.65,2.35,.06);
+      addBox(materials.darkWood,34+i*3,2.4,-46.8,.12,2.55,.12);
+    }
+    // Stone lanterns with warm emissive interiors; only selected lanterns cast local light.
+    for(let i=0;i<6;i++){
+      genesisAddLantern(T,root,materials,-68+i*8,-17,.78,i===1||i===4);
+      genesisAddLantern(T,root,materials,53+i*4,-20,.72,i===2);
+    }
+    genesisAddLantern(T,root,materials,-17,-25,1.0,true);
+    genesisAddLantern(T,root,materials,25,-29,.92,true);
+    // Cherry trees: sculpted trunks, articulated branches, dense instanced blossom crowns.
+    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T);
+    const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,1880);
+    blossomMesh.name='GENESIS Sakura Blossom Canopy';
+    blossomMesh.castShadow=true;blossomMesh.receiveShadow=true;
+    const blossomColors=['#F7A9C4','#F9C2D6','#FAD8E4','#E98EB2','#FFDCE8'].map(color=>new T.Color(color));
+    const treeSpecs=[
+      [-67,-22,1.25],[-47,-7,1.05],[-75,-48,1.15],[-8,-25,.93],[61,-33,1.1],[76,-5,1.25]
+    ];
+    const dummy=new T.Object3D();
+    let instance=0;
+    for(const [tx,tz,scale] of treeSpecs){
+      const trunkHeight=5.2*scale;
+      genesisAddCylinderBetween(T,root,materials.wood,[tx,0,tz],[tx, trunkHeight,tz],.48*scale,.72*scale,12);
+      const branches=[
+        [-2.8,2.1,-.5],[2.9,2.5,.7],[-1.5,3.4,1.5],[1.7,3.6,-1.2],[-.3,4.0,-2.1],[.7,4.1,2.0]
+      ];
+      const centers=[];
+      for(const [bx,by,bz] of branches){
+        const end=[tx+bx*scale,trunkHeight+by*scale,tz+bz*scale];
+        genesisAddCylinderBetween(T,root,materials.wood,[tx,trunkHeight*.48,tz],end,.16*scale,.30*scale,8);
+        centers.push(end);
+      }
+      for(let n=0;n<255&&instance<1880;n++,instance++){
+        const center=centers[n%centers.length];
+        const a=(Math.sin((n+1)*(tx+97)*.137)*43758.5453)%1;
+        const angle=Math.abs(a)*Math.PI*2;
+        const radial=Math.sqrt(((n*37)%257)/257)*2.4*scale;
+        const vertical=(Math.sin(n*1.91)*.95)*scale;
+        const px=center[0]+Math.cos(angle)*radial;
+        const py=center[1]+vertical;
+        const pz=center[2]+Math.sin(angle)*radial;
+        const size=(.48+((n*17)%13)/13*.78)*scale;
+        dummy.position.set(px,py,pz);
+        dummy.rotation.set((n%7)*.21,(n%11)*.31,(n%5)*.17);
+        dummy.scale.set(size,size*(.78+((n%3)*.12)),size);
+        dummy.updateMatrix();blossomMesh.setMatrixAt(instance,dummy.matrix);
+        blossomMesh.setColorAt(instance,blossomColors[(n+Math.abs(Math.floor(tx)))%blossomColors.length]);
+      }
+    }
+    blossomMesh.count=instance;blossomMesh.instanceMatrix.needsUpdate=true;
+    if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
+    root.add(blossomMesh);
+    // Dark pine silhouettes frame the warm shrine and distant mountain ridge.
+    for(const [x,z,height] of [[-85,-58,13],[86,-42,17],[70,-72,12],[ -4,-87,10]]){
+      genesisAddCylinderBetween(T,root,materials.darkWood,[x,0,z],[x,height*.74,z],.22,.42,8);
+      for(let tier=0;tier<4;tier++){
+        const radius=height*(.34-tier*.065),y=height*(.25+tier*.19);
+        const crown=add(new T.ConeGeometry(radius,height*.34,8),materials.pine,x,y,z);
+        crown.rotation.y=tier*.45;
+      }
+    }
+    // Foreground stones and low shrubs shape the reflective shoreline.
+    for(let i=0;i<34;i++){
+      const side=i%2===0?-1:1;
+      const x=side*(54+(i*19)%29);
+      const z=20-((i*13)%68);
+      const rock=add(new T.IcosahedronGeometry(.8+(i%5)*.22,1),i%3===0?materials.stone:materials.darkStone,x,.1,z);
+      rock.scale.set(1.4,.68,.86);
+      if(i%4===0){
+        const shrub=add(new T.IcosahedronGeometry(1.15,1),materials.pine,x+side*1.1,.9,z-1.2);
+        shrub.scale.set(1.4,.65,1.0);
+      }
+    }
+    // The mirror lake is a full planar reflection, not a painted highlight.
+    const mirrorMaterial=configureMirrorWaterMaterial(new T.MeshStandardMaterial({
+      color:'#16364C',roughness:.018,metalness:0,clearcoat:1,clearcoatRoughness:.012
+    }));
+    const water=genesisAddMesh(T,root,new T.PlaneGeometry(184,92,1,1),mirrorMaterial,0,.13,-6,[-Math.PI/2,0,0]);
+    water.name='GENESIS Mirror Lake';water.userData.pstudioWaterSurface=true;
+    genesisShrineDemoWaterState=createMirrorWaterState(mirrorMaterial);
+    genesisShrineDemoWaterState.reflectivity=1;
+    genesisShrineDemoWaterState.baseWaveStrength=.045;
+    genesisShrineDemoWaterState.waveStrength=.045;
+    water.userData.pstudioMirrorWater=genesisShrineDemoWaterState;
+    // Floating cherry petals use one instanced draw and deterministic per-petal motion.
+    const petalGeometry=new T.SphereGeometry(.13,7,5);
+    const petals=new T.InstancedMesh(petalGeometry,materials.petal,190);
+    petals.name='GENESIS Floating Sakura Petals';petals.castShadow=false;petals.receiveShadow=false;
+    genesisShrinePetalMotion=[];
+    for(let i=0;i<190;i++){
+      genesisShrinePetalMotion.push({
+        x:(Math.sin(i*12.9898)*.5+.5)*112-56,
+        y:1+Math.abs(Math.sin(i*7.13))*10,
+        z:(Math.sin(i*5.73)*.5+.5)*46-22,
+        phase:i*.371,speed:.35+(i%9)*.055,
+        size:.55+(i%7)*.09
+      });
+    }
+    root.add(petals);genesisShrinePetalInstances=petals;
+    root.traverse(object=>{
+      if(object.geometry)geometrySet.add(object.geometry);
+      const assigned=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of assigned)if(material)materialSet.add(material);
+    });
+    root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet};
+    scene.add(root);genesisShrineDemoGroup=root;
+    return true;
+  }
+
+  function removeGenesisShrineDemo(){
+    const root=genesisShrineDemoGroup;
+    if(!root)return false;
+    root.parent?.remove(root);
+    const owned=root.userData.pstudioGenesisOwned||{};
+    for(const material of owned.materials||[])material?.dispose?.();
+    for(const geometry of owned.geometries||[])geometry?.dispose?.();
+    genesisShrineDemoWaterState?.target?.dispose?.();
+    genesisShrineDemoWaterState?.cloudTarget?.dispose?.();
+    genesisShrineDemoWaterState=null;genesisShrinePetalInstances=null;genesisShrinePetalMotion=[];
+    genesisShrineDemoGroup=null;
+    return true;
+  }
+
+  function updateGenesisShrineDemo(deltaSeconds){
+    if(!genesisShrineDemoGroup||!genesisShrinePetalInstances)return false;
+    const dt=Math.max(0,Math.min(.1,Number(deltaSeconds)||0));
+    const T=window.THREE,now=particleClock,dummy=new T.Object3D();
+    for(let i=0;i<genesisShrinePetalMotion.length;i++){
+      const petal=genesisShrinePetalMotion[i];
+      petal.y-=dt*petal.speed;
+      if(petal.y<.35){petal.y=7+Math.abs(Math.sin(i*2.43))*6;petal.x=(Math.sin((now+i)*1.7)*.5+.5)*112-56;}
+      const x=petal.x+Math.sin(now*.42+petal.phase)*1.9;
+      const z=petal.z+Math.cos(now*.31+petal.phase)*1.5;
+      dummy.position.set(x,petal.y,z);
+      dummy.rotation.set(.15+Math.sin(now+petal.phase)*.45,now*.3+petal.phase,Math.cos(now*.7+petal.phase)*.65);
+      dummy.scale.set(petal.size,petal.size*.38,petal.size*.78);
+      dummy.updateMatrix();genesisShrinePetalInstances.setMatrixAt(i,dummy.matrix);
+    }
+    genesisShrinePetalInstances.instanceMatrix.needsUpdate=true;
+    return true;
+  }
+
+  function setGenesisShrineDemo(enabled){
+    genesisShrineDemoRequested=!!enabled;
+    if(!genesisShrineDemoRequested){removeGenesisShrineDemo();return true;}
+    if(renderer&&scene)return buildGenesisShrineDemo(window.THREE);
+    return true;
+  }
+
   function applyGenesisEnvironmentState(state,forceSky=false,now=window.performance?.now?.()??Date.now()){
     if(!state||!renderer||!scene)return false;
     genesisEnvironmentState=state;
     applyGenesisLiveLighting(state);
-    if(forceSky||now-genesisLastSkyUpdateAt>=1200){
-      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,state,.375);
-      genesisLastSkyUpdateAt=now;
+    // Build the expensive baseline only once. The visible environment panorama is
+    // then updated in-place from the continuous shared state, without disposing and
+    // recreating a 360-degree texture every 1.2 seconds.
+    if(!genesisSkyTexture){
+      applySceneEnvironmentPreset(window.THREE,state.visualPreset||state.name||'day',false,null,.375);
+      ensureGenesisSkyBackground(window.THREE);
     }
+    updateGenesisSkyBackground(state,forceSky,now);
+    if(genesisShrineDemoRequested&&!genesisShrineDemoGroup)buildGenesisShrineDemo(window.THREE);
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       if(now-genesisLastWebGPUUpdateAt>=250){
         productionRendererBridge.setEnvironment?.(state);
@@ -6458,6 +7000,7 @@ void main(){
     window.PStudioEnvironmentFX?.update?.(particleClock);
     applyGenesisEnvironmentState(state,false,now);
     updateGenesisRainParticles(state,deltaSeconds);
+    updateGenesisShrineDemo(deltaSeconds);
     // In the editor the renderer loop owns particle stepping. During Play,
     // PStudio3D.render() already advances all GPU particles with the game dt.
     if(!window.PStudioEngine?.isRunning?.())updateGpuParticleSystems();
@@ -7142,10 +7685,13 @@ void main(){
       return{available:true,enabled:true,state:genesisEnvironmentState,config:genesisEnvironmentController.getConfig()};
     },
     getGenesisEnvironment:()=>Object.freeze({available:!!window.PStudioGenesisEnvironment,enabled:!!genesisEnvironmentController,state:genesisEnvironmentState,config:genesisEnvironmentController?.getConfig?.()||null}),
+    setGenesisShrineDemo,
     clearGenesisEnvironment:()=>{
       genesisEnvironmentController=null;genesisEnvironmentState=null;genesisLastSkyUpdateAt=0;genesisLastWebGPUUpdateAt=0;
       if(genesisRainSystem){disposeGpuParticleSystem(genesisRainSystem);genesisRainSystem=null;}
       genesisRainAccumulator=0;
+      genesisShrineDemoRequested=false;removeGenesisShrineDemo();
+      disposeGenesisSkyBackground();
       const studioProfile=window.PStudioSceneEnvironment?.getPreset?.('studio');
       if(productionRendererBridge?.getState?.().backend==='webgpu'&&studioProfile){
         productionRendererBridge.setEnvironment?.(studioProfile);
