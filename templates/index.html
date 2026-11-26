@@ -232,7 +232,12 @@ body.scene-editor-expanded{overflow:hidden}
    <div class="editor-footer"><span id="editor-help">ps source · UTF-8 · Spaces: 4</span><span id="cursor-position">Ln 1, Col 1</span></div></div>
    <div class="game-surface" id="game-surface"><div class="game-toolbar"><span>SCENE VIEW</span><span id="scene-name-label">main.scene</span><span class="toolbar-spacer"></span><span class="view-mode-label">VIEW</span><button class="tool-btn view-mode-btn active" id="view-mode-auto" data-mode="auto" aria-pressed="true" aria-label="AUTO view mode active" onclick="setPStudioViewMode(this.dataset.mode)">AUTO</button><button class="tool-btn view-mode-btn" id="view-mode-2d" data-mode="2d" aria-pressed="false" aria-label="2D view mode inactive" onclick="setPStudioViewMode(this.dataset.mode)">2D</button><button class="tool-btn view-mode-btn" id="view-mode-3d" data-mode="3d" aria-pressed="false" aria-label="3D view mode inactive" onclick="setPStudioViewMode(this.dataset.mode)">3D</button><label class="render-quality-control"><span class="render-quality-label">QUALITY</span><select id="render-quality-select" class="tool-btn render-quality-select" aria-label="Rendering quality" title="Rendering quality" onchange="setPStudioQualityPreset(this.value)"><option value="auto">AUTO</option><option value="mobile">LIGHT</option><option value="balanced">STANDARD</option><option value="high">HIGH QUALITY</option><option value="maximum">MAXIMUM QUALITY</option><option value="ultra">ULTRA</option></select><output id="render-quality-active" class="render-quality-active" aria-live="polite">→ HIGH QUALITY</output></label><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="grid" aria-pressed="true" title="グリッド表示" onclick="toggleSceneOverlay('grid')">Grid</button><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="axes" aria-pressed="false" title="座標軸表示" onclick="toggleSceneOverlay('axes')">Axes</button><button class="tool-btn overlay-toggle" type="button" data-scene-overlay="origin" aria-pressed="true" title="原点マーカー表示" onclick="toggleSceneOverlay('origin')">Origin</button><select class="tool-btn scene-object-add-select" id="scene-object-add-select" aria-label="オブジェクトを追加" title="オブジェクトを追加" onchange="addSceneObjectFromMenu(this.value)"><option value="" selected>＋ オブジェクト</option><option value="basic">基本オブジェクト</option><option value="mirror-water">水鏡（平面）</option></select><button class="tool-btn mobile-scene-inspector" type="button" onclick="toggleWorkspacePanel('inspector')" aria-label="Inspectorを開く">Inspector</button><button class="tool-btn" type="button" id="scene-editor-expand" aria-pressed="false" onclick="toggleSceneEditorExpanded()">拡大</button><button class="tool-btn" type="button" onclick="frameSelectedModel()">Frame</button><button class="tool-btn" onclick="window.PStudioEngine?.refreshSceneView?.()">Refresh</button><button class="tool-btn" type="button" id="gi-bake-button" title="Bake static diffuse SH probes" onclick="window.PStudio3D?.bakeEnvironmentGI?.()?.catch?.(error=>console.error(&quot;GI bake failed&quot;,error))">Bake GI</button><output class="gi-bake-status" id="gi-bake-status" aria-live="polite">GI: not baked</output><button class="tool-btn" type="button" id="render-stats-toggle" aria-pressed="false" title="Performance metrics" onclick="window.PStudio3D?.togglePerformanceMonitor?.()">Stats</button><button class="tool-btn" type="button" id="dynamic-gi-toggle" aria-pressed="false" title="Toggle dynamic SH probe cache" onclick="window.PStudio3D?.toggleDynamicGI?.()">Live GI</button><button class="tool-btn run" id="engine-play" onclick="startPStudioGame()">▶ Play</button><button class="tool-btn" id="engine-stop" onclick="stopPStudioGame()" disabled>■ Stop</button></div><div class="game-stage"><pre class="render-stats-overlay" id="render-stats-overlay" hidden aria-live="polite"></pre><div class="camera-zoom-controls" id="camera-zoom-controls" aria-label="Camera zoom controls"><button type="button" class="camera-zoom-button" aria-label="Zoom out" title="Zoom out" onclick="window.PStudio3D?.adjustZoom?.(1.25)">−</button><output id="camera-zoom-level" aria-live="polite">100%</output><button type="button" class="camera-zoom-button" aria-label="Zoom in" title="Zoom in" onclick="window.PStudio3D?.adjustZoom?.(0.8)">＋</button></div><canvas class="game-canvas" id="game-canvas" width="960" height="540" aria-label="Game preview canvas"></canvas><canvas class="game-canvas game-canvas-3d" id="game-3d-canvas" width="960" height="540" aria-label="3D game preview canvas" style="display:none"></canvas><canvas id="game-hud-canvas" width="960" height="540" aria-hidden="true" style="position:absolute;inset:0;margin:auto;width:min(100%,800px);height:auto;aspect-ratio:16/9;pointer-events:none;z-index:4"></canvas><div id="game-ui-overlay" aria-live="polite"></div><div class="touch-controls" id="touch-controls" aria-hidden="true"><div class="touch-joystick" id="touch-joystick" aria-label="Movement joystick"><div class="touch-joystick-knob" id="touch-joystick-knob"></div></div><button class="touch-jump" id="touch-jump" type="button">JUMP</button></div></div><div class="game-status" id="game-status">Ready · 960 × 540</div></div>
   </section>
-  <aside class="panel inspector" id="workspace-inspector" aria-label="Editor settings"><div class="panel-heading"><span>INSPECTOR</span><span class="muted">SETTINGS</span></div><div class="inspector-content"><div class="inspector-section" id="scene-environment-inspector"><div class="inspector-title">SCENE ENVIRONMENT</div><div class="environment-preset-grid"><button type="button" class="tool-btn environment-preset-btn active" id="scene-environment-day" data-label="昼" aria-pressed="true" onclick="setSceneEnvironmentPreset('day')">昼</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-dusk" data-label="夕方" aria-pressed="false" onclick="setSceneEnvironmentPreset('dusk')">夕方</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-night" data-label="夜" aria-pressed="false" onclick="setSceneEnvironmentPreset('night')">夜</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-studio" data-label="スタジオ" aria-pressed="false" onclick="setSceneEnvironmentPreset('studio')">スタジオ</button></div><div class="object-grid" style="margin-top:10px"><div class="object-field full"><label for="genesis-time-of-day">時刻 <output id="genesis-time-output">12:00</output></label><input id="genesis-time-of-day" type="range" min="0" max="24" step="0.05" value="12" oninput="setGenesisEnvironmentTime(this.value)"></div><div class="object-field full"><label for="genesis-weather">天候</label><select id="genesis-weather" onchange="setGenesisEnvironmentWeather(this.value)"><option value="clear">快晴</option><option value="cloudy">薄曇り</option><option value="overcast">曇天</option><option value="rain">雨</option><option value="storm">嵐</option></select></div><div class="object-field"><label for="genesis-wind-speed">風速 <output id="genesis-wind-output">0.4 m/s</output></label><input id="genesis-wind-speed" type="range" min="0" max="8" step="0.1" value="0.35" oninput="setGenesisEnvironmentWind(this.value)"></div><div class="object-field"><label for="genesis-wind-direction">風向</label><select id="genesis-wind-direction" onchange="setGenesisEnvironmentWindDirection(this.value)"><option value="east">東</option><option value="south">南</option><option value="west">西</option><option value="north">北</option></select></div><div class="object-field full"><label class="check-row"><input id="genesis-auto-cycle" type="checkbox" onchange="setGenesisEnvironmentAutoCycle(this.checked)"><span>時間を自動進行（約32分で1日）</span></label><button type="button" class="tool-btn" style="width:100%;margin-top:8px" onclick="openGenesisDemo()">夜景神社・桜・水鏡デモを開く</button></div></div><div class="info-card" style="margin-top:8px">時刻・天候・風を共通の環境状態として、空・太陽・月・霧・水面・雨粒へ連動させます。設定は .scene に保存されます。</div></div><div class="inspector-section" id="object-inspector"><div class="inspector-title">GAME OBJECT</div><div class="object-empty" id="object-empty">Select an object in the Scene view or Project tree to edit its properties.</div><div id="object-fields" hidden><div class="object-grid"><div class="object-field full"><label for="obj-name">Name</label><input id="obj-name" type="text" value="Player" oninput="updateSelectedObject('name',this.value)"></div><div class="object-field full" id="obj-model-settings" hidden><label for="obj-model-name">3D Model</label><input id="obj-model-name" type="text" readonly><label for="obj-model-scale">Model Scale</label><input id="obj-model-scale" type="number" min="0.001" step="0.1" value="1" oninput="updateSelectedObject('modelScale',this.value)"><label for="obj-model-material-name">Material name (* = all)</label><input id="obj-model-material-name" type="text" value="*" placeholder="Material name or *"><label for="obj-model-material-roughness">Roughness</label><input id="obj-model-material-roughness" type="range" min="0" max="1" step="0.01" value="0.7"><label for="obj-model-material-diffuse-roughness">Diffuse roughness (r187 EON)</label><input id="obj-model-material-diffuse-roughness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-metalness">Metalness</label><input id="obj-model-material-metalness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-color">Material color</label><input id="obj-model-material-color" type="color" value="#d1d5db"><label class="check-row"><input id="obj-model-double-side" type="checkbox"><span>Double-sided rendering</span></label><label class="check-row"><input id="obj-model-recompute-normals" type="checkbox"><span>Recalculate normals</span></label><label for="obj-model-material-emissive">Emissive color</label><input id="obj-model-material-emissive" type="color" value="#000000"><label for="obj-model-material-emissive-intensity">Emissive intensity</label><input id="obj-model-material-emissive-intensity" type="range" min="0" max="8" step="0.05" value="0"><button type="button" class="tool-btn" onclick="applySelectedModelMaterial()">Apply GLB Material</button></div><div class="object-field full" id="obj-toon-controls">
+  <aside class="panel inspector" id="workspace-inspector" aria-label="Editor settings"><div class="panel-heading"><span>INSPECTOR</span><span class="muted">SETTINGS</span></div><div class="inspector-content"><div class="inspector-section" id="scene-environment-inspector"><div class="inspector-title">SCENE ENVIRONMENT</div><div class="environment-preset-grid"><button type="button" class="tool-btn environment-preset-btn active" id="scene-environment-day" data-label="昼" aria-pressed="true" onclick="setSceneEnvironmentPreset('day')">昼</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-dusk" data-label="夕方" aria-pressed="false" onclick="setSceneEnvironmentPreset('dusk')">夕方</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-night" data-label="夜" aria-pressed="false" onclick="setSceneEnvironmentPreset('night')">夜</button><button type="button" class="tool-btn environment-preset-btn" id="scene-environment-studio" data-label="スタジオ" aria-pressed="false" onclick="setSceneEnvironmentPreset('studio')">スタジオ</button></div><div class="object-grid" style="margin-top:10px">
+<div class="object-field full"><label for="genesis-weather">天候</label><select id="genesis-weather" onchange="setGenesisEnvironmentWeather(this.value)"><option value="clear">快晴</option><option value="cloudy">薄曇り</option><option value="overcast">曇天</option><option value="rain">雨</option><option value="storm">嵐</option></select></div>
+<div class="object-field"><label for="genesis-wind-speed">風速 <output id="genesis-wind-output">0.4 m/s</output></label><input id="genesis-wind-speed" type="range" min="0" max="8" step="0.1" value="0.35" oninput="setGenesisEnvironmentWind(this.value)"></div>
+<div class="object-field"><label for="genesis-wind-direction">風向</label><select id="genesis-wind-direction" onchange="setGenesisEnvironmentWindDirection(this.value)"><option value="east">東</option><option value="south">南</option><option value="west">西</option><option value="north">北</option></select></div>
+<div class="object-field full"><button type="button" class="tool-btn" style="width:100%;margin-top:8px" onclick="openGenesisDemo()">夜景神社・桜・水鏡デモを開く</button></div>
+</div><div class="info-card" style="margin-top:8px">昼・夕方・夜のプリセットに、天候・風・霧・水面・雨粒を連動させます。設定は .scene に保存されます。</div></div><div class="inspector-section" id="object-inspector"><div class="inspector-title">GAME OBJECT</div><div class="object-empty" id="object-empty">Select an object in the Scene view or Project tree to edit its properties.</div><div id="object-fields" hidden><div class="object-grid"><div class="object-field full"><label for="obj-name">Name</label><input id="obj-name" type="text" value="Player" oninput="updateSelectedObject('name',this.value)"></div><div class="object-field full" id="obj-model-settings" hidden><label for="obj-model-name">3D Model</label><input id="obj-model-name" type="text" readonly><label for="obj-model-scale">Model Scale</label><input id="obj-model-scale" type="number" min="0.001" step="0.1" value="1" oninput="updateSelectedObject('modelScale',this.value)"><label for="obj-model-material-name">Material name (* = all)</label><input id="obj-model-material-name" type="text" value="*" placeholder="Material name or *"><label for="obj-model-material-roughness">Roughness</label><input id="obj-model-material-roughness" type="range" min="0" max="1" step="0.01" value="0.7"><label for="obj-model-material-diffuse-roughness">Diffuse roughness (r187 EON)</label><input id="obj-model-material-diffuse-roughness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-metalness">Metalness</label><input id="obj-model-material-metalness" type="range" min="0" max="1" step="0.01" value="0"><label for="obj-model-material-color">Material color</label><input id="obj-model-material-color" type="color" value="#d1d5db"><label class="check-row"><input id="obj-model-double-side" type="checkbox"><span>Double-sided rendering</span></label><label class="check-row"><input id="obj-model-recompute-normals" type="checkbox"><span>Recalculate normals</span></label><label for="obj-model-material-emissive">Emissive color</label><input id="obj-model-material-emissive" type="color" value="#000000"><label for="obj-model-material-emissive-intensity">Emissive intensity</label><input id="obj-model-material-emissive-intensity" type="range" min="0" max="8" step="0.05" value="0"><button type="button" class="tool-btn" onclick="applySelectedModelMaterial()">Apply GLB Material</button></div><div class="object-field full" id="obj-toon-controls">
 <label class="check-row"><input id="obj-model-toon-enabled" type="checkbox"><span>Enable NPR Toon Shading</span></label>
 <div class="object-grid">
 <div class="object-field"><label for="obj-model-toon-shadow">Shadow color</label><input id="obj-model-toon-shadow" type="color" value="#46516f"></div>
@@ -888,7 +893,7 @@ let projectFiles={
  'main.scene':{type:'scene',content:''}
 };
 const PSTUDIO_SCENE_GRID_SIZE=500;
-let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='player';let sceneEnvironment={preset:'day',timeOfDay:12,timeScale:0,weather:'clear',weatherIntensity:0,windDirection:[1,0],windSpeed:.35,transitionSeconds:.15,windTransitionSeconds:1.6};let sceneObjects=[
+let projectAssets=[];let activeProjectFile='main.ps';let selectedObjectId='player';let sceneEnvironment={preset:'day',timeOfDay:12,timeScale:0,weather:'clear',weatherIntensity:0,windDirection:[1,0],windSpeed:.35,transitionSeconds:2.4,windTransitionSeconds:1.6};let sceneObjects=[
  {id:'player',name:'Player',x:160,y:210,z:0,rotationX:0,rotationY:0,rotationZ:0,w:64,h:64,sprite:'',script:'player.ps',color:'#d1d5db',shape:'rect'},
  {id:'enemy',name:'Enemy',x:620,y:210,z:0,rotationX:0,rotationY:0,rotationZ:0,w:56,h:56,sprite:'',script:'enemy.ps',color:'#a1a1aa',shape:'circle'}
 ];
@@ -908,27 +913,22 @@ function normalizeSceneEnvironment(value){
  wx/=directionLength;wz/=directionLength;
  return {
   preset,
-  timeOfDay:clamp(source.timeOfDay,0,24,presetTime),
-  timeScale:clamp(source.timeScale,0,.5,0),
+  timeOfDay:presetTime,
+  timeScale:0,
   weather,
   weatherIntensity:clamp(source.weatherIntensity,0,1,weather==='clear'?0:1),
   windDirection:[wx,wz],
   windSpeed:clamp(source.windSpeed,0,8,.35),
-  transitionSeconds:clamp(source.transitionSeconds,.05,60,.15),
+  transitionSeconds:clamp(source.transitionSeconds,.05,60,2.4),
   windTransitionSeconds:clamp(source.windTransitionSeconds,.05,60,1.6)
  };
 }
 window.addEventListener('load',()=>{syncSceneEnvironmentPresetButtons();syncGenesisEnvironmentToRenderer();});
 function syncGenesisEnvironmentControls(){
- const time=document.getElementById('genesis-time-of-day');
- const timeOutput=document.getElementById('genesis-time-output');
  const weather=document.getElementById('genesis-weather');
  const wind=document.getElementById('genesis-wind-speed');
  const windOutput=document.getElementById('genesis-wind-output');
  const direction=document.getElementById('genesis-wind-direction');
- const cycle=document.getElementById('genesis-auto-cycle');
- if(time)time.value=String(sceneEnvironment.timeOfDay);
- if(timeOutput){const hour=Math.floor(sceneEnvironment.timeOfDay),minute=Math.round((sceneEnvironment.timeOfDay-hour)*60)%60;timeOutput.textContent=String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0');}
  if(weather)weather.value=sceneEnvironment.weather;
  if(wind)wind.value=String(sceneEnvironment.windSpeed);
  if(windOutput)windOutput.textContent=sceneEnvironment.windSpeed.toFixed(1)+' m/s';
@@ -936,7 +936,6 @@ function syncGenesisEnvironmentControls(){
   const [x,z]=sceneEnvironment.windDirection;
   direction.value=Math.abs(x)>Math.abs(z)?(x>=0?'east':'west'):(z>=0?'south':'north');
  }
- if(cycle)cycle.checked=sceneEnvironment.timeScale>0;
 }
 function syncGenesisEnvironmentToRenderer(){
  if(sceneEnvironment.preset==='studio')return window.PStudio3D?.clearGenesisEnvironment?.()===true;
@@ -971,18 +970,12 @@ function setSceneEnvironmentPreset(preset){
   preset:name,
   timeOfDay:name==='dusk'?19:name==='night'?23:12,
   timeScale:0,
-  transitionSeconds:.15
+  transitionSeconds:2.4
  });
  if(name==='studio'){
   syncSceneEnvironmentPresetButtons();persistProject();window.PStudio3D?.clearGenesisEnvironment?.();window.PStudioEngine?.refreshSceneView?.();
  }else commitGenesisEnvironment();
  toast('シーン環境: '+({day:'昼',dusk:'夕方',night:'夜',studio:'スタジオ'}[sceneEnvironment.preset]));
-}
-function setGenesisEnvironmentTime(value){
- const time=Math.max(0,Math.min(24,Number(value)||0));
- const preset=time>=20?'night':time>=17.2?'dusk':'day';
- sceneEnvironment={...sceneEnvironment,timeOfDay:time,preset,transitionSeconds:.15};
- commitGenesisEnvironment();
 }
 function setGenesisEnvironmentWeather(value){
  const weather=['clear','cloudy','overcast','rain','storm'].includes(String(value))?String(value):'clear';
@@ -996,10 +989,6 @@ function setGenesisEnvironmentWind(value){
 function setGenesisEnvironmentWindDirection(value){
  const directions={north:[0,-1],east:[1,0],south:[0,1],west:[-1,0]};
  sceneEnvironment={...sceneEnvironment,windDirection:directions[value]||[1,0]};
- commitGenesisEnvironment();
-}
-function setGenesisEnvironmentAutoCycle(enabled){
- sceneEnvironment={...sceneEnvironment,timeScale:enabled?0.0125:0};
  commitGenesisEnvironment();
 }
 function openGenesisDemo(){
@@ -3118,8 +3107,8 @@ try {
 <script src="/static/pstudio_rendering_environment.js?v=20261125-tsl-ibl-state-v2"></script>
 <script src="/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
-<script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-time-v1"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-sky-time-v1"></script>
+<script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-render-state-v2"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
