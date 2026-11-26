@@ -1591,6 +1591,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       ].join('\n'),
       transparent:true,depthTest:true,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false
     });
+    material.userData=material.userData||{};
+    material.userData.pstudioTSLAdapterId='pstudio.celestial.twinkle-stars';
     nightTwinkleStars=new T.Points(geometry,material);
     nightTwinkleStars.name='PStudioNightTwinkleStars';
     nightTwinkleStars.frustumCulled=false;
@@ -5427,6 +5429,8 @@ void main(){
 }`,
         depthTest:true,depthWrite:true,transparent:false,fog:false
       });
+      material.userData=material.userData||{};
+      material.userData.pstudioTSLAdapterId='pstudio.celestial.moon';
       moonMesh=new T.Mesh(geometry,material);
       moonMesh.name='PStudioMoonSphere';
       moonMesh.frustumCulled=false;
@@ -5588,6 +5592,8 @@ void main(){
         ].join('\n'),
         depthTest:true,depthWrite:false,transparent:false,fog:false,toneMapped:false
       });
+      material.userData=material.userData||{};
+      material.userData.pstudioTSLAdapterId='pstudio.celestial.sun';
       sunMesh=new T.Mesh(geometry,material);
       sunMesh.name='PStudioSunSphere';
       sunMesh.frustumCulled=false;
