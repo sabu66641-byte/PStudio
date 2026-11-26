@@ -378,8 +378,8 @@
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveTouchResolutionBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
     adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
-    // Ultra retains its 2x Maximum output target. Constrained touch devices begin one
-    // adaptive rung lower so the premium effects do not stall the editor during startup.
+    // Ultra retains its configured 2x Maximum output target. Constrained touch devices begin one
+    // adaptive rung lower for buffer/sampling safety; the requested effect set remains enabled.
     adaptiveQualityLevel=2;
     if(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)adaptiveQualityLevel=1;
     if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
@@ -1496,6 +1496,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       jsHeapLimitBytes:memory.jsHeapLimitBytes,
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
       adaptiveLevel:adaptiveQualityLevel,mobileResolutionBudget:adaptiveTouchResolutionBudget,
+      effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null,
       renderEffects:{ao:qualityAOEnabled,ssr:ssrEnabled,volumetricClouds:volumetricCloudsEnabled,volumetricFog:volumetricFogEnabled,contactShadows:contactShadowsEnabled},
       dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource,
       frameBudget:{source:renderingFrameBudget.source,scale:Number(renderingFrameBudget.scale.toFixed(3)),mirrorIntervalFrames:renderingFrameBudget.mirrorIntervalFrames,mirrorResolutionScale:Number(renderingFrameBudget.mirrorResolutionScale.toFixed(3)),giCaptureAllowed:renderingFrameBudget.giCaptureAllowed,giCadenceMultiplier:renderingFrameBudget.giCadenceMultiplier,cloudStepScale:Number(renderingFrameBudget.cloudStepScale.toFixed(3)),fogStepScale:Number(renderingFrameBudget.fogStepScale.toFixed(3)),contactShadowStepScale:Number(renderingFrameBudget.contactShadowStepScale.toFixed(3))},
@@ -7042,7 +7043,7 @@ void main(){
         contactShadowPass.enabled=contactShadowsEnabled;
       }
       if(renderer&&scene&&camera)drawFrame();
-      return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested};
+      return{enabled:contactShadowsEnabled,available:!!contactShadowPass,requested:contactShadowsRequested,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};
     },
     setVolumetricFog:(enabled,options={})=>{resetPostProcessingFailure();volumetricFogEnabled=!!enabled&&!memorySafetyApplied;if(volumetricFogPass){const u=volumetricFogPass.uniforms;if(u){if(options.color&&u.uFogColor?.value?.set)u.uFogColor.value.set(options.color);if(Number.isFinite(options.density)&&u.uFogDensity&&Object.prototype.hasOwnProperty.call(u.uFogDensity,'value'))u.uFogDensity.value=Math.max(0,Math.min(.08,options.density));if(Number.isFinite(options.heightFalloff)&&u.uHeightFalloff&&Object.prototype.hasOwnProperty.call(u.uHeightFalloff,'value'))u.uHeightFalloff.value=Math.max(0,Math.min(.2,options.heightFalloff));if(Number.isFinite(options.baseHeight)&&u.uBaseHeight&&Object.prototype.hasOwnProperty.call(u.uBaseHeight,'value'))u.uBaseHeight.value=options.baseHeight;}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricFogEnabled,available:!!volumetricFogPass,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};},
     setVolumetricClouds:(enabled,options={})=>{resetPostProcessingFailure();volumetricCloudsEnabled=!!enabled&&!memorySafetyApplied&&!!volumetricCloudPass&&activeEnvironmentPreset!=='studio';if(volumetricCloudPass){const u=volumetricCloudPass.uniforms;if(u){if(Number.isFinite(options.base)&&u.uCloudBase&&Object.prototype.hasOwnProperty.call(u.uCloudBase,'value'))u.uCloudBase.value=options.base;if(Number.isFinite(options.top)&&u.uCloudTop&&Object.prototype.hasOwnProperty.call(u.uCloudTop,'value'))u.uCloudTop.value=Math.max((Number(u.uCloudBase?.value)||0)+1,options.top);if(Number.isFinite(options.density)&&u.uCloudDensity&&Object.prototype.hasOwnProperty.call(u.uCloudDensity,'value'))u.uCloudDensity.value=Math.max(0,Math.min(2,options.density));if(Number.isFinite(options.scale)&&u.uCloudScale&&Object.prototype.hasOwnProperty.call(u.uCloudScale,'value'))u.uCloudScale.value=Math.max(.0005,Math.min(.05,options.scale));if(Number.isFinite(options.atmosphereStrength)&&u.uAtmosphereStrength&&Object.prototype.hasOwnProperty.call(u.uAtmosphereStrength,'value'))u.uAtmosphereStrength.value=Math.max(0,Math.min(1,options.atmosphereStrength));if(Number.isFinite(options.coverage)&&u.uCloudCoverage)u.uCloudCoverage.value=Math.max(0,Math.min(1,options.coverage));if(Number.isFinite(options.detail)&&u.uCloudDetail)u.uCloudDetail.value=Math.max(0,Math.min(1,options.detail));if(Number.isFinite(options.steps)&&u.uCloudSteps)u.uCloudSteps.value=Math.max(8,Math.min(64,Math.floor(options.steps)));if(Number.isFinite(options.windX)&&Number.isFinite(options.windZ)&&u.uCloudWind?.set)u.uCloudWind.value.set(Math.max(-4,Math.min(4,options.windX)),Math.max(-4,Math.min(4,options.windZ)));}}if(renderer&&scene&&camera)drawFrame();return{enabled:volumetricCloudsEnabled,available:!!volumetricCloudPass,reason:memorySafetyApplied?'Disabled by the active memory-safety guard.':null};},
