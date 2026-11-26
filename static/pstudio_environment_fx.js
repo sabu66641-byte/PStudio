@@ -717,6 +717,18 @@
         sssIntensity:{value:defaults.sssIntensity}
       };
       const previousCompile=material.onBeforeCompile,previousKey=material.customProgramCacheKey?.bind(material);
+      const hadOwnCompile=Object.prototype.hasOwnProperty.call(material,'onBeforeCompile');
+      const hadOwnCacheKey=Object.prototype.hasOwnProperty.call(material,'customProgramCacheKey');
+      const previousUserData=material.userData||{};
+      const previousHooksApproved=(!hadOwnCompile&&!hadOwnCacheKey)
+        ||(material.pstudioTSLPortApprovedCompileHook===previousCompile
+          &&material.pstudioTSLPortApprovedCacheKey===material.customProgramCacheKey)
+        ||(previousUserData.pstudioCSMOnlyHook===true
+          &&previousUserData.pstudioProbeShaderSetup!==true
+          &&previousUserData.pstudioCSMHook===previousCompile)
+        ||(previousUserData.pstudioTSLOutline?.version===1
+          &&material.pstudioTSLOutlineCompileHook===previousCompile
+          &&material.pstudioTSLOutlineCacheKey===material.customProgramCacheKey);
       material.onBeforeCompile=function(shader,renderer){
         if(previousCompile)previousCompile.call(this,shader,renderer);
         Object.assign(shader.uniforms,{
@@ -767,7 +779,7 @@
         ].join('\n'));
       };
       material.customProgramCacheKey=()=>'pstudio-npr-toon-v1'+(previousKey?previousKey():'');
-      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1};
+      record=material.userData.pstudioToonHQ={uniforms:u,enabled:false,outlineMode:'expanded-backface-shell',version:1,tslPreflightApproved:previousHooksApproved};
       toonMaterials.add(material);
       material.needsUpdate=true;
     }
@@ -786,6 +798,26 @@
     u.sssColor.value.set(value.sssColor);
     u.sssIntensity.value=clamp(value.sssIntensity,0,1.5);
     record.enabled=u.enabled.value>0.5;
+    const normalizedToonSettings={
+      enabled:record.enabled,
+      shadowColor:String(value.shadowColor||defaults.shadowColor),
+      midColor:String(value.midColor||defaults.midColor),
+      highlightColor:String(value.highlightColor||defaults.highlightColor),
+      shadowThreshold:u.shadowThreshold.value,
+      highlightThreshold:u.highlightThreshold.value,
+      rimColor:String(value.rimColor||defaults.rimColor),
+      rimIntensity:u.rimIntensity.value,
+      rimPower:u.rimPower.value,
+      outlineColor:String(value.outlineColor||defaults.outlineColor),
+      outlineWidth:u.outlineWidth.value,
+      sssColor:String(value.sssColor||defaults.sssColor),
+      sssIntensity:u.sssIntensity.value
+    };
+    material.userData.pstudioTSLToon={version:1,settings:normalizedToonSettings};
+    material.pstudioTSLToonPreflightApproved=record.tslPreflightApproved===true
+      &&material.userData.pstudioTSLPortHasForeignHook!==true;
+    material.pstudioTSLToonCompileHook=material.onBeforeCompile;
+    material.pstudioTSLToonCacheKey=material.customProgramCacheKey;
     if(object)configureOutline(object,{enabled:record.enabled,color:value.outlineColor,width:value.outlineWidth,sourceMaterial:material});
     if(object&&settings&&Object.prototype.hasOwnProperty.call(settings,'windStrength'))configureFoliage(material,object,{windStrength:value.windStrength,windSpeed:value.windSpeed});
     return material;
