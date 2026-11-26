@@ -6,7 +6,7 @@ import { createPStudioTSLCascadeShadows } from './pstudio_rendering_csm_tsl.mjs?
 import { isPStudioTSLSurfaceFeatureMaterial, applyPStudioTSLSurfaceFeatures } from './pstudio_rendering_surface_tsl.mjs?v=20261126-surface-tsl-v8';
 import { createPStudioTSLWaterDepthPrepass, applyPStudioTSLWaterSurfaces } from './pstudio_rendering_water_tsl.mjs?v=20261126-water-tsl-v3';
 import { createPStudioTSLClusterStorage, applyPStudioTSLClusteredLighting, applyPStudioTSLNativeClusteredLighting } from './pstudio_rendering_clustered_lighting_tsl.mjs?v=20261126-clustered-pbr-v3';
-import { createPStudioTSLSHProbeNode, attachPStudioTSLSHProbeToMaterial, blendPStudioTSHCoefficients } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
+import { attachPStudioTSLSHProbeToMaterial } from './pstudio_rendering_gi_tsl.mjs?v=20261126-sh-probe-capture-v2';
 
 export const supportsPStudioTSLWater = typeof createPStudioTSLWaterDepthPrepass === 'function' && typeof applyPStudioTSLWaterSurfaces === 'function';
 export const supportsPStudioTSLSurfaceFeatures = typeof applyPStudioTSLSurfaceFeatures === 'function';
