@@ -446,7 +446,7 @@ test('day panorama adds an adaptive, seamless multi-octave cumulus field without
   assert.match(renderer,/makeNoiseGrid\(32,16\),makeNoiseGrid\(64,32\),makeNoiseGrid\(128,64\),makeNoiseGrid\(256,128\),makeNoiseGrid\(512,256\)/);
   assert.match(renderer,/x1=\(x0\+1\)%grid\.width/);
   assert.match(renderer,/context\.drawImage\(cloudCanvas,0,0,width,height\)/);
-  assert.match(renderer,/if\(name==='day'\|\|\(continuous&&Number\(profile\.cloudDensity\)>.025&&Number\(profile\.cloudCoverage\)>.04\)\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);
+  assert.match(renderer,/if\(name==='day'\|\|name==='dusk'\|\|\(continuous&&Number\(profile\.cloudDensity\)>.025&&Number\(profile\.cloudCoverage\)>.04\)\)drawDaytimeCloudField\(context,width,height,profile,sun\)/);
   assert.match(renderer,/uniform float pStudioSunAngularRadius/);
   assert.match(renderer,/pStudioSolarExponent=mix\(260\.0,155\.0/);
 });
@@ -475,7 +475,7 @@ test('night sky uses a more populated, brighter starfield while preserving the n
   assert.ok(renderer.includes("for(let i=0;i<12000;i++)"));
   assert.ok(renderer.includes("for(let i=0;i<2600;i++)"));
   assert.ok(renderer.includes("(.12+random()*.55+band*.2)"));
-  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness*moonMicroFade;"));
+  assert.ok(renderer.includes("const alpha=(.045+random()*.09)*starBrightness*moonMicroFade*horizonFade;"));
   assert.ok(renderer.includes("nightStars:name==='night'?14600:0"));
   assert.ok(renderer.includes("nightPrimaryStars:name==='night'?12000:0"));
 });
@@ -497,9 +497,28 @@ test('night Milky Way adds high-frequency filament structure without a separate 
   assert.match(renderer,/makeNoiseGrid\(768,384\)/);
   assert.match(renderer,/const ultraFine=sampleNoise\(noiseGrids\[4\],u,v\)/);
   assert.match(renderer,/const fiberRidges=Math\.pow\(/);
-  assert.match(renderer,/const horizonAirglow=context\.createLinearGradient\(0,height\*\.405,0,height\*\.585\)/);
+  assert.match(renderer,/const horizonAirglow=context\.createLinearGradient\(0,height\*\.375,0,height\*\.665\)/);
   assert.match(renderer,/const lunarHorizon=context\.createRadialGradient\(0,0,0,0,0,horizonRadiusX\)/);
   assert.match(renderer,/drawWrappedX\(moonUv\.x,horizonRadiusX/);
+});
+
+test('night starfield fades continuously into the lower sky instead of ending at a hard horizontal cutoff',()=>{
+  assert.match(renderer,/smoothstep01=\(a,b,value\)=>/);
+  assert.match(renderer,/y=8\+random\(\)\*height\*\.515,u=x\/width,v=y\/height/);
+  assert.match(renderer,/horizonFade=1-smoothstep01\(\.43,\.515,v\)/);
+  assert.match(renderer,/moonStarFade\*horizonFade/);
+  assert.match(renderer,/horizonFade=1-smoothstep01\(\.425,\.515,y\/height\)/);
+  assert.match(renderer,/night:\[\[0,'#01040B'.*\[\.60,'#102039'\].*\[\.80,'#050D1B'/);
+});
+
+test('day and dusk clouds retain clear blue openings and avoid a uniform white haze',()=>{
+  assert.match(renderer,/const threshold=\.60-coverage\*\.19/);
+  assert.match(renderer,/const cloudBand=smooth\(\.105,\.205,v\)\*\(1-smooth\(\.455,\.515,v\)\)/);
+  assert.match(renderer,/const duskWarmth=isDusk\?clamp01\(solarFacing\*\.48\+warmEdge\*\.35\):0/);
+  assert.match(renderer,/Math\.min\(isDusk\?\.78:\.86,alpha\*\(isDusk\?\.88:\.94\)\)/);
+  assert.match(renderer,/if\(name==='day'\|\|name==='dusk'\|\|\(continuous&&Number\(profile\.cloudDensity\)>.025&&Number\(profile\.cloudCoverage\)>.04\)\)drawDaytimeCloudField/);
+  assert.equal(presets.getPreset('day').fogDensity,0.00145,'global day fog is deliberately unchanged');
+  assert.equal(presets.getPreset('dusk').fogDensity,0.0018,'global dusk fog is deliberately unchanged');
 });
 
 test('bright night stars receive restrained diffraction flares and animated depth-tested twinkle points',()=>{
