@@ -1036,6 +1036,7 @@ async function openGenesisDemo(){
  if(genesisDemoLaunchInProgress)return;
  genesisDemoLaunchInProgress=true;genesisDemoCancelRequested=false;
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
+ if(typeof switchWorkspaceView==='function')switchWorkspaceView('game');
  setGenesisDemoLoading(true);
  // Paint the overlay before project setup or scene construction starts.
  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -1062,7 +1063,7 @@ async function openGenesisDemo(){
  if(sceneLabel)sceneLabel.textContent='genesis_river_capital.scene';
  const created=await window.PStudio3D?.setGenesisShrineDemo?.(true,updateGenesisDemoLoading);
   if(!created){setGenesisDemoLoading(false);return;}
-  window.startPStudioGame?.();
+  await window.startPStudioGame?.();
   await new Promise(resolve=>requestAnimationFrame(resolve));
   setGenesisDemoLoading(false);
   toast('川沿いの和風都・深紅の鳥居・五重塔・桜の螺旋・天灯シーンを開きました。');
