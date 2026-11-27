@@ -1461,7 +1461,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
+  assert.ok(html.includes("set_camera(-16, 19, 72, -16, 7, -55)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
@@ -1476,16 +1476,19 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'const shojiLamp=new T.PointLight',
     'const lanternGlow=new T.PointLight',
     'const toriiUplight=new T.PointLight',
-    'addLantern(-58,-32,1.18,true)',
-    'addLantern(36,-52,1.18,true)',
-    'root.scale.set(1.30,1,1)',
+    'addLantern(-50,-32,1.42,true)',
+    'addLantern(36,-32,1.42,true)',
+    'root.scale.set(1.30,1.18,1)',
     'frontZ=shrineZ+7.03',
     'const deerBodyGeometry=new T.SphereGeometry(1,24,16)',
     'const deerX=28,deerZ=-40',
+    'const pagodaX=-60,pagodaZ=-55',
+    'const gateX=20,gateZ=-60,postSpacing=12.2',
+    'const secondaryX=27,secondaryZ=-48',
     'materials.antler',
     'addBeam(materials.antler,base,fork,.045,7)',
     'root.userData.pstudioReferenceComposition',
-    'camera.fov=36',
+    'camera.fov=32',
     'genesisShrinePreviousCameraFov=camera.fov',
     'camera.fov=genesisShrinePreviousCameraFov',
     'mix(0.78, 1.0, pStudioMirrorFresnel)'
@@ -1496,11 +1499,16 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes('Math.max(0,Math.cos(theta))*.018'),'sakura petals have a shallow cupped surface');
   assert.ok(renderer.includes('Foreground Japanese black-pine branch clips into the upper-right frame edge.'),'composition includes the upper-right pine silhouette');
   assert.ok(renderer.includes('const pineSprayGeometry=new T.ConeGeometry(1,1,7,2)'),'pine sprays are real instanced foliage geometry');
+  assert.ok(renderer.includes('const blossomCapacity=11000;'),'the showcase has a denser sakura canopy');
+  assert.ok(renderer.includes('const branchCount=9;'),'sakura canopy branch density is increased');
+  assert.ok(renderer.includes("emissiveIntensity:4.25"),'lantern emitters are brighter without changing world exposure');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFC18F',1.85,34,shrineX,5.4,frontZ-3.8)"),'the main hall receives a local warm fill light');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFC0D1',1.55,34,-80,4.8,-21)"),'sakura receives local canopy illumination');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
-  assert.ok(html.includes("set_camera(-24, 19, 72, -24, 7, -55)"));
+  assert.ok(html.includes("set_camera(-16, 19, 72, -16, 7, -55)"));
   assert.ok(html.includes("set_postprocessing(true, true, 0.52)"),'the showcase enables controlled bloom and AO');
-  assert.ok(html.includes('20261127-moonlit-reference-scene-r2'));
+  assert.ok(html.includes('20261127-moonlit-reference-scene-r3'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1513,7 +1521,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r2'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r3'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
