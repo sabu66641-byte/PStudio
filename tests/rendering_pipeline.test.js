@@ -1461,7 +1461,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(-16, 19, 72, -16, 7, -55)"));
+  assert.ok(html.includes("set_camera(-16, 35, 62, -14, 5, -48)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
@@ -1488,7 +1488,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'materials.antler',
     'addBeam(materials.antler,base,fork,.045,7)',
     'root.userData.pstudioReferenceComposition',
-    'camera.fov=32',
+    'camera.fov=30',
     'genesisShrinePreviousCameraFov=camera.fov',
     'camera.fov=genesisShrinePreviousCameraFov',
     'mix(0.78, 1.0, pStudioMirrorFresnel)'
@@ -1500,15 +1500,21 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes('Foreground Japanese black-pine branch clips into the upper-right frame edge.'),'composition includes the upper-right pine silhouette');
   assert.ok(renderer.includes('const pineSprayGeometry=new T.ConeGeometry(1,1,7,2)'),'pine sprays are real instanced foliage geometry');
   assert.ok(renderer.includes('const blossomCapacity=11000;'),'the showcase has a denser sakura canopy');
+  assert.ok(renderer.includes('const addBankPavilion=(centerX,centerZ,width,depth,ridgeY)=>{'),'two additional 3D pavilions are generated');
+  assert.ok(renderer.includes('addBankPavilion(-92,-54,13.5,10.5,7.7);'),'left-bank pavilion exists');
+  assert.ok(renderer.includes('addBankPavilion(64,-49,14.5,11.5,8.0);'),'right-bank pavilion exists');
+  assert.ok(renderer.includes('new T.PlaneGeometry(236,176,1,1),mirrorMaterial,0,.145,-1'),'mirror lake reaches farther into the foreground');
+  assert.ok(renderer.includes('const value=64+noise*.42+tileGlow+tileLine;'),'roof tile albedo is lifted');
+  assert.ok(renderer.includes('const value=62+grain*12+fine*5+noise;'),'timber albedo is lifted');
   assert.ok(renderer.includes('const branchCount=9;'),'sakura canopy branch density is increased');
   assert.ok(renderer.includes("emissiveIntensity:4.25"),'lantern emitters are brighter without changing world exposure');
   assert.ok(renderer.includes("addShowcasePointLight('#FFC18F',1.85,34,shrineX,5.4,frontZ-3.8)"),'the main hall receives a local warm fill light');
   assert.ok(renderer.includes("addShowcasePointLight('#FFC0D1',1.55,34,-80,4.8,-21)"),'sakura receives local canopy illumination');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
-  assert.ok(html.includes("set_camera(-16, 19, 72, -16, 7, -55)"));
-  assert.ok(html.includes("set_postprocessing(true, true, 0.52)"),'the showcase enables controlled bloom and AO');
-  assert.ok(html.includes('20261127-moonlit-reference-scene-r3'));
+  assert.ok(html.includes("set_camera(-16, 35, 62, -14, 5, -48)"));
+  assert.ok(html.includes("set_postprocessing(true, true, 0.72)"),'the showcase enables controlled bloom and AO');
+  assert.ok(html.includes('20261127-moonlit-reference-scene-r4'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1521,7 +1527,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r4'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
