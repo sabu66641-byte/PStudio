@@ -1478,18 +1478,23 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'GENESIS Deep Crimson Timber Bridge | arched deck',
     'const gateX=0,gateZ=-72,gateSpacing=34,gateHeight=31',
     'GENESIS Deep Crimson Torii Pillar',
-    'const pagodaWidths=[58,49,40,31,23]',
+    'const pagodaWidths=[72,61,50,39,29],pagodaDepths=[70,59,48,37,28]',
     'const pagodaX=0,pagodaZ=-454',
+    'baseY=2+tier*31,wallHeight=20',
+    'roofDimsFor(halfW+5.2,halfD+4.8,9.5,4.1,2.5)',
+    'addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64)',
+    'const vortexCount=36000,vortexStrandCount=6,vortexHeight=112,vortexRadiusGrowth=22',
+    'vortexBaseHeight[index]=vortexRandom()*vortexHeight',
+    'vortex.boundingSphere=new T.Sphere(',
+    'vortex.frustumCulled=true',
     'blossomCapacity=22000',
     'const cityColumns=[102,188,276,366,446]',
     'addGrandHall(-236,248,54,42,2,materials.roofGreen)',
-    'const skyLanternCount=320',
+    'const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D()',
+    'skyCoreDummy.rotation.copy(dummy.rotation)',
     'GENESIS Sky Lanterns | warm paper bodies',
-    'const vortexCount=50000',
-    'vortexStrandCount=6',
-    'vortexBaseHeight[index]=vortexRandom()*142',
     'vortexRadius[index]=54+vortexRandom()*12',
-    'uVortexHeight:{value:142},uRadiusGrowth:{value:38}',
+    'uVortexHeight:{value:vortexHeight},uRadiusGrowth:{value:vortexRadiusGrowth}',
     'heightRatio*18.849556',
     'vortex.instanceMatrix.setUsage(T.StaticDrawUsage)',
     'aVortexAngularSpeed',
@@ -1499,8 +1504,11 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'camera.fov=44',
     'uniforms?.uTime'
   ])assert.ok(renderer.includes(token),token);
+  assert.doesNotMatch(renderer,/for\(let index=0;index<vortexCount;index\+\+\)\{\s*vortexDummy/);
+  assert.ok(renderer.includes('Math.hypot(vortexMaxRadius,vortexHeight*.5+1.2)'));
   assert.ok(renderer.includes('genesisCreateCurvedRoofGeometry(T,dimensions.halfWidth,dimensions.halfDepth'));
   assert.ok(renderer.includes('addInstance(tileGeometry,materials.roofTile'));
+  assert.doesNotMatch(renderer,/const (?:topDummy|bottomDummy|coreDummy)=dummy\.clone\(\)/);
   assert.ok(renderer.includes('genesisAddPineForest(T,root,materials'));
   assert.ok(renderer.includes('genesisShrineDemoWaterState.reflectivity=1'));
   assert.ok(renderer.includes('genesisShrineDemoWaterState.waveStrength=.0028'));
