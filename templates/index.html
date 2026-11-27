@@ -1097,9 +1097,10 @@ async function openGenesisDemo(){
   setGenesisDemoLoading(false);
   toast('川沿いの和風都・深紅の鳥居・五重塔・桜の螺旋・天灯シーンを開きました。');
  }catch(error){
-  showGenesisDemoLoadingError(error);
+  if(genesisDemoCancelRequested)setGenesisDemoLoading(false);
+  else showGenesisDemoLoadingError(error);
   console.error('GENESIS scene generation failed',error);
-  toast('シーン生成に失敗しました。ロード画面にエラー内容を表示しています。');
+  if(!genesisDemoCancelRequested)toast('シーン生成に失敗しました。ロード画面にエラー内容を表示しています。');
  }finally{
   genesisDemoLaunchInProgress=false;
  }
@@ -3197,7 +3198,7 @@ try {
 <script src="/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
 <script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v4"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v5"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
