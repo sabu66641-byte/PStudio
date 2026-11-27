@@ -6883,7 +6883,7 @@ void main(){
       geometrySet.add(geometry);if(material)materialSet.add(material);
       const key=String(geometry.id)+'|'+String(material.id);
       let batch=instanceBatches.get(key);
-      if(!batch){batch={geometry,material,matrices:new Float32Array(4096),count:0};instanceBatches.set(key,batch);}
+      if(!batch){batch={geometry,material,matrices:new Float32Array(256),count:0};instanceBatches.set(key,batch);}
       if(batch.count+16>batch.matrices.length){
         const expanded=new Float32Array(Math.max(batch.matrices.length*2,batch.count+16));
         expanded.set(batch.matrices);batch.matrices=expanded;
