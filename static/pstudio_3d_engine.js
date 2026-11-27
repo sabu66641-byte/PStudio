@@ -7228,11 +7228,11 @@ void main(){
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
     await yieldBuild(54,'松林を生成中',true);
-    await genesisAddPineForest(T,root,materials,0x712a9b4,Math.round(26*(constrainedMobile?.62:1)),{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x712a9b4,Math.round(26*(constrainedMobile ? .62 : 1)),{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(56,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x5a821b1,Math.round(26*(constrainedMobile?.62:1)),{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x5a821b1,Math.round(26*(constrainedMobile ? .62 : 1)),{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(58,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x6bd1c29,Math.round(22*(constrainedMobile?.62:1)),{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x6bd1c29,Math.round(22*(constrainedMobile ? .62 : 1)),{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
     const signGeometry=new T.BoxGeometry(2.3,3.8,.18),lanternBoxGeometry=new T.BoxGeometry(.9,1.5,.9);
