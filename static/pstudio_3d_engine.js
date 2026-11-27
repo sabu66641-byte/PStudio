@@ -1108,7 +1108,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const hardware=qualityHardwareCapabilities();
     const ultraFullDetail=qualityPreset==='ultra'&&!memorySafetyApplied;
     const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0);
-    return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
+    // GENESIS is a large showcase: cap mirror-target pixels slightly and let the existing
+    // frame-budget controller reduce them further under measured GPU pressure.
+    const genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0;
+    return Math.min(base,genesisCap)*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
@@ -6801,7 +6804,7 @@ void main(){
         mesh.setMatrixAt(i,matrices[i]);
         if((i&255)===255)await yieldBuild(58,'松林の描画データを転送中');
       }
-      mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere?.();parent.add(mesh);
+      mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=geometry===trunkGeometry;mesh.receiveShadow=true;mesh.computeBoundingSphere?.();parent.add(mesh);
     };
     await batch(trunkGeometry,materials.pineTrunk,trunkMatrices,'GENESIS Black Pine | tapered trunks');
     await batch(branchGeometry,materials.pineTrunk,branchMatrices,'GENESIS Black Pine | horizontal boughs');
@@ -7519,7 +7522,12 @@ void main(){
         destination.set(batch.matrices.subarray(offset,end),offset);
         await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'描画データを転送中');
       }
-      mesh.instanceMatrix.setUsage(T.StaticDrawUsage);mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
+      mesh.instanceMatrix.setUsage(T.StaticDrawUsage);mesh.instanceMatrix.needsUpdate=true;
+      const geometryParameters=batch.geometry.parameters||{};
+      const tinyBox=batch.geometry.type==='BoxGeometry'&&Math.max(Number(geometryParameters.width)||0,Number(geometryParameters.height)||0,Number(geometryParameters.depth)||0)<0.9;
+      const thinCylinder=batch.geometry.type==='CylinderGeometry'&&Math.max(Number(geometryParameters.radiusTop)||0,Number(geometryParameters.radiusBottom)||0)<0.09;
+      mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder;
+      mesh.receiveShadow=true;
       mesh.computeBoundingSphere?.();root.add(mesh);batch.matrices=new Float32Array(0);batch.count=0;mergedBatchIndex++;
       await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'街並みを統合中');
     }
