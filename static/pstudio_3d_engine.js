@@ -6978,8 +6978,8 @@ void main(){
     addRoofStructure(shrineX,shrineZ,mainRoof,.78);
     addShingleRidge(shrineX,shrineZ,mainRoof);
     addShowcasePointLight('#FFD09C',5.6,48,shrineX,5.4,frontZ-3.8);
-    addShowcasePointLight('#FFD3A6',4.6,46,pagodaX,8.0,pagodaZ+8.5);
-    addShowcasePointLight('#FFC68F',4.0,42,gateX,4.2,gateZ+4.0);
+    addShowcasePointLight('#FFD3A6',4.6,46,-60,8.0,-46.5);
+    addShowcasePointLight('#FFC68F',4.0,42,20,4.2,-56.0);
     addShowcasePointLight('#FFD5A4',3.5,48,-18,4.0,18);
     // Gold ridge-end ornaments, roof-end bells and curved corner supports.
     for(const side of [-1,1]){
