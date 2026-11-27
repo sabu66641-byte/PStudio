@@ -7049,13 +7049,13 @@ void main(){
 
     // A truly monumental five-storey pagoda dominates the far end of the city.
     const pagodaX=0,pagodaZ=-454;
-    addBox(materials.darkStone,pagodaX,.72,pagodaZ,100,1.35,100);
-    addBox(materials.stone,pagodaX,1.52,pagodaZ,92,.32,92);
-    for(let ring=0;ring<3;ring++)addBox(ring===1?materials.wetStone:materials.stone,pagodaX,1.86+ring*.48,pagodaZ,85-ring*7,.20,85-ring*7);
-    const pagodaWidths=[58,49,40,31,23],pagodaDepths=[56,47,39,30,22];
+    addBox(materials.darkStone,pagodaX,.78,pagodaZ,120,1.48,120);
+    addBox(materials.stone,pagodaX,1.62,pagodaZ,110,.36,110);
+    for(let ring=0;ring<3;ring++)addBox(ring===1?materials.wetStone:materials.stone,pagodaX,2.02+ring*.52,pagodaZ,102-ring*8,.22,102-ring*8);
+    const pagodaWidths=[72,61,50,39,29],pagodaDepths=[70,59,48,37,28];
     const pagodaGoldGeometry=new T.SphereGeometry(.58,10,8);
     for(let tier=0;tier<5;tier++){
-      const width=pagodaWidths[tier],depth=pagodaDepths[tier],baseY=2+tier*28,wallHeight=18;
+      const width=pagodaWidths[tier],depth=pagodaDepths[tier],baseY=2+tier*31,wallHeight=20;
       const halfW=width*.5,halfD=depth*.5;
       addBox(materials.darkWood,pagodaX,baseY+wallHeight*.5,pagodaZ,width-.8,wallHeight,depth-.8);
       addBox(materials.wood,pagodaX,baseY+.55,pagodaZ,width+.8,.72,depth+.8);
@@ -7086,20 +7086,21 @@ void main(){
           addBox(materials.gold,x,baseY+wallHeight+.94,pagodaZ+side*(halfD-.18),1.4,.12,.82);
         }
       }
-      const roofDims=roofDimsFor(halfW+4.4,halfD+4.0,8.6,3.75,2.2);
-      addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.78);
+      const roofDims=roofDimsFor(halfW+5.2,halfD+4.8,9.5,4.1,2.5);
+      // Keep tile density approximately constant as the pagoda footprint grows.
+      addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64);
       for(const side of [-1,1])for(const sz of [-1,1]){
         addInstance(pagodaGoldGeometry,materials.gold,pagodaX+side*(roofDims.halfWidth-.3),
           baseY+wallHeight+4.4,pagodaZ+sz*(roofDims.halfDepth-.3));
       }
       addLight('#FFB774',tier===0?7:4.2,75,pagodaX,baseY+10,pagodaZ+halfD+7);
     }
-    addBeam(materials.gold,[pagodaX,143,pagodaZ],[pagodaX,188,pagodaZ],.42,20);
+    addBeam(materials.gold,[pagodaX,157,pagodaZ],[pagodaX,205,pagodaZ],.48,20);
     for(let ring=0;ring<18;ring++){
-      const mesh=add(new T.TorusGeometry(2.45-ring*.072,.22,10,48),materials.gold,pagodaX,146+ring*2.18,pagodaZ);
+      const mesh=add(new T.TorusGeometry(2.45-ring*.072,.22,10,48),materials.gold,pagodaX,160+ring*2.42,pagodaZ);
       mesh.rotation.x=Math.PI/2;
     }
-    add(new T.ConeGeometry(1.7,7,16),materials.gold,pagodaX,193,pagodaZ);
+    add(new T.ConeGeometry(2.0,8,16),materials.gold,pagodaX,212,pagodaZ);
 
     // Sculpted sakura trees form continuous flowering corridors beside the river.
     const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=22000;
@@ -7286,7 +7287,7 @@ void main(){
     addGrandHall(248,-270,60,48,2,materials.roofGreen);
 
     // Hundreds of emissive paper sky lanterns fill the open sky above the capital.
-    const skyLanternCount=320;
+    const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
     const skyBodyGeometry=new T.CylinderGeometry(.52,.66,1.62,12,8,true);
     const skyTopGeometry=new T.TorusGeometry(.52,.045,6,16);
     const skyBottomGeometry=new T.TorusGeometry(.66,.045,6,16);
@@ -7303,9 +7304,9 @@ void main(){
       const x=(cityRandom()-.5)*820,z=-520+cityRandom()*990,y=48+cityRandom()*142,scale=.72+cityRandom()*.72;
       dummy.position.set(x,y,z);dummy.rotation.set((cityRandom()-.5)*.08,cityRandom()*Math.PI*2,(cityRandom()-.5)*.08);
       dummy.scale.set(scale,scale,scale);dummy.updateMatrix();skyBodies.setMatrixAt(index,dummy.matrix);
-      const topDummy=dummy.clone();topDummy.position.y+=.79*scale;topDummy.rotation.set(Math.PI/2,0,0);topDummy.updateMatrix();skyTops.setMatrixAt(index,topDummy.matrix);
-      const bottomDummy=dummy.clone();bottomDummy.position.y-=.79*scale;bottomDummy.rotation.set(Math.PI/2,0,0);bottomDummy.updateMatrix();skyBottoms.setMatrixAt(index,bottomDummy.matrix);
-      const coreDummy=dummy.clone();coreDummy.scale.setScalar(.62*scale);coreDummy.updateMatrix();skyCores.setMatrixAt(index,coreDummy.matrix);
+      skyTopDummy.position.copy(dummy.position);skyTopDummy.position.y+=.79*scale;skyTopDummy.rotation.set(Math.PI/2,0,0);skyTopDummy.scale.set(scale,scale,scale);skyTopDummy.updateMatrix();skyTops.setMatrixAt(index,skyTopDummy.matrix);
+      skyBottomDummy.position.copy(dummy.position);skyBottomDummy.position.y-=.79*scale;skyBottomDummy.rotation.set(Math.PI/2,0,0);skyBottomDummy.scale.set(scale,scale,scale);skyBottomDummy.updateMatrix();skyBottoms.setMatrixAt(index,skyBottomDummy.matrix);
+      skyCoreDummy.position.copy(dummy.position);skyCoreDummy.rotation.copy(dummy.rotation);skyCoreDummy.scale.setScalar(.62*scale);skyCoreDummy.updateMatrix();skyCores.setMatrixAt(index,skyCoreDummy.matrix);
     }
     for(const mesh of [skyBodies,skyTops,skyBottoms,skyCores]){
       mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=false;mesh.receiveShadow=false;root.add(mesh);
@@ -7334,8 +7335,9 @@ void main(){
       for(let index=0;index<10;index++)addGardenLantern(side*(72+(index%4)*18),320-index*72,.82+(index%3)*.1,index%4!==0);
     }
 
-    // 50,000 individual sakura petals form six coherent, upward-expanding spiral arms around the pagoda.
-    const vortexCount=50000,vortexStrandCount=6,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
+    // 36,000 petals form six upward-expanding arms around the lower four storeys.
+    // The crown and fifth storey remain an intentionally clear architectural silhouette.
+    const vortexCount=36000,vortexStrandCount=6,vortexHeight=112,vortexRadiusGrowth=22,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
     const vortexPhase=new Float32Array(vortexCount),vortexBaseHeight=new Float32Array(vortexCount);
     const vortexRadius=new Float32Array(vortexCount),vortexAngularSpeed=new Float32Array(vortexCount);
     const vortexRiseSpeed=new Float32Array(vortexCount),vortexScale=new Float32Array(vortexCount);
@@ -7347,11 +7349,11 @@ void main(){
       const strandIndex=index%vortexStrandCount;
       const strandPhase=(strandIndex/vortexStrandCount)*Math.PI*2;
       vortexPhase[index]=strandPhase+(vortexRandom()-.5)*.56;
-      vortexBaseHeight[index]=vortexRandom()*142;
+      vortexBaseHeight[index]=vortexRandom()*vortexHeight;
       vortexRadius[index]=54+vortexRandom()*12;
       vortexAngularSpeed[index]=.035+vortexRandom()*.025;
       vortexRiseSpeed[index]=.42+vortexRandom()*.58;
-      vortexScale[index]=.7+vortexRandom()*1.35;
+      vortexScale[index]=.78+vortexRandom()*1.35;
       const tint=vortexPalette[Math.floor(vortexRandom()*vortexPalette.length)];
       vortexColor[index*3]=tint[0];vortexColor[index*3+1]=tint[1];vortexColor[index*3+2]=tint[2];
     }
@@ -7363,7 +7365,7 @@ void main(){
     vortexGeometry.setAttribute('aVortexScale',new T.InstancedBufferAttribute(vortexScale,1));
     vortexGeometry.setAttribute('aVortexColor',new T.InstancedBufferAttribute(vortexColor,3));
     const vortexMaterial=new T.ShaderMaterial({
-      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:142},uRadiusGrowth:{value:38}},
+      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:vortexHeight},uRadiusGrowth:{value:vortexRadiusGrowth}},
       vertexShader:[
         'precision highp float;','attribute float aVortexPhase;','attribute float aVortexBaseHeight;',
         'attribute float aVortexRadius;','attribute float aVortexAngularSpeed;','attribute float aVortexRiseSpeed;',
@@ -7398,13 +7400,15 @@ void main(){
       transparent:false,depthWrite:true,depthTest:true,side:T.DoubleSide,toneMapped:false
     });
     const vortex=new T.InstancedMesh(vortexGeometry,vortexMaterial,vortexCount);
-    vortex.name='GENESIS Sakura Vortex | 50,000 GPU-animated petals in six spiral arms';
-    vortex.frustumCulled=false;
-    const vortexDummy=new T.Object3D();
-    for(let index=0;index<vortexCount;index++){
-      vortexDummy.position.set(0,0,0);vortexDummy.rotation.set(0,0,0);vortexDummy.scale.set(1,1,1);
-      vortexDummy.updateMatrix();vortex.setMatrixAt(index,vortexDummy.matrix);
-    }
+    vortex.name='GENESIS Sakura Vortex | 36,000 GPU-animated petals, clear pagoda crown';
+    // InstancedMesh initializes all instance matrices to identity in its constructor.
+    // Avoid a second 36k-matrix CPU pass; the shader uses its dedicated instanced attributes.
+    const vortexMaxRadius=54+12+vortexRadiusGrowth+2.8+1.2;
+    vortex.boundingSphere=new T.Sphere(
+      new T.Vector3(pagodaX,2+vortexHeight*.5,pagodaZ),
+      Math.hypot(vortexMaxRadius,vortexHeight*.5+1.2)
+    );
+    vortex.frustumCulled=true;
     vortex.instanceMatrix.setUsage(T.StaticDrawUsage);vortex.instanceMatrix.needsUpdate=true;root.add(vortex);
     genesisShrinePetalInstances=vortex;genesisShrinePetalMotion=[];
 
