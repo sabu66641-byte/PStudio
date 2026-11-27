@@ -1119,43 +1119,49 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       uMirrorReflection:{value:null},
       uMirrorTextureMatrix:{value:new T.Matrix4()},
       uMirrorReflectivity:{value:1.0},
-      uMirrorWaveStrength:{value:0.05},
+      uMirrorWaveStrength:{value:0.016},
       uMirrorWindDirection:{value:new T.Vector2(1,0)},
-      uMirrorWindSpeed:{value:0.35},
+      uMirrorWindSpeed:{value:0.22},
       uMirrorRain:{value:0},
       uMirrorTime:{value:0}
     };
     material.userData.pstudioMirrorUniforms=uniforms;
     material.onBeforeCompile=shader=>{
       Object.assign(shader.uniforms,uniforms);
-      shader.vertexShader='uniform mat4 uMirrorTextureMatrix;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.vertexShader;
+      shader.vertexShader='uniform mat4 uMirrorTextureMatrix;\nvarying vec4 vPStudioMirrorCoord;\nvarying vec3 vPStudioMirrorWorldPosition;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace(
         '#include <project_vertex>',
-        '#include <project_vertex>\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);'
+        '#include <project_vertex>\nvPStudioMirrorCoord = uMirrorTextureMatrix * vec4(position, 1.0);\nvPStudioMirrorWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;'
       );
-      shader.fragmentShader='uniform sampler2D uMirrorReflection;\nuniform float uMirrorReflectivity;\nuniform float uMirrorWaveStrength;\nuniform vec2 uMirrorWindDirection;\nuniform float uMirrorWindSpeed;\nuniform float uMirrorRain;\nuniform float uMirrorTime;\nvarying vec4 vPStudioMirrorCoord;\n'+shader.fragmentShader;
+      shader.fragmentShader='uniform sampler2D uMirrorReflection;\nuniform float uMirrorReflectivity;\nuniform float uMirrorWaveStrength;\nuniform vec2 uMirrorWindDirection;\nuniform float uMirrorWindSpeed;\nuniform float uMirrorRain;\nuniform float uMirrorTime;\nvarying vec4 vPStudioMirrorCoord;\nvarying vec3 vPStudioMirrorWorldPosition;\n'+shader.fragmentShader;
       shader.fragmentShader=shader.fragmentShader.replace(
         '#include <opaque_fragment>',
         '#include <opaque_fragment>\n'+
         'vec2 pStudioMirrorUv = vPStudioMirrorCoord.xy / max(vPStudioMirrorCoord.w, 0.0001);\n'+
-        'vec2 pStudioMirrorWindUv = pStudioMirrorUv + uMirrorWindDirection * (uMirrorTime * uMirrorWindSpeed * 0.0007);\n'+
-        'vec2 pStudioMirrorRipple = vec2(sin(pStudioMirrorWindUv.y * 190.0 + uMirrorTime * 0.65), cos(pStudioMirrorWindUv.x * 170.0 - uMirrorTime * 0.52)) * (0.008 * uMirrorWaveStrength);\n'+
-        'vec2 pStudioMirrorRainCell = floor(pStudioMirrorUv * 42.0);\n'+
-        'vec2 pStudioMirrorRainLocal = fract(pStudioMirrorUv * 42.0) - 0.5;\n'+
-        'float pStudioMirrorRainSeed = fract(sin(dot(pStudioMirrorRainCell, vec2(127.1,311.7))) * 43758.5453);\n'+
-        'float pStudioMirrorRainRadius = fract(uMirrorTime * 1.35 + pStudioMirrorRainSeed) * 0.48;\n'+
-        'float pStudioMirrorRainRing = (1.0-smoothstep(0.02,0.08,abs(length(pStudioMirrorRainLocal)-pStudioMirrorRainRadius))) * smoothstep(0.02,0.14,pStudioMirrorRainRadius) * (1.0-smoothstep(0.38,0.48,pStudioMirrorRainRadius)) * uMirrorRain;\n'+
-        'pStudioMirrorRipple += pStudioMirrorRainRing * vec2(0.003,-0.003);\n'+
-        'vec2 pStudioMirrorSampleUv = pStudioMirrorUv + pStudioMirrorRipple;\n'+
-        'float pStudioMirrorInside = step(0.0, pStudioMirrorSampleUv.x) * step(pStudioMirrorSampleUv.x, 1.0) * step(0.0, pStudioMirrorSampleUv.y) * step(pStudioMirrorSampleUv.y, 1.0);\n'+
-        'vec3 pStudioMirrorSample = texture2D(uMirrorReflection, clamp(pStudioMirrorSampleUv, 0.001, 0.999)).rgb;\n'+
-        'float pStudioMirrorFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 5.0);\n'+
-        'float pStudioMirrorAmount = clamp(uMirrorReflectivity * mix(0.78, 1.0, pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside;\n'+
-        'vec3 pStudioMirrorTinted = pStudioMirrorSample + vec3(0.12,0.18,0.24) * pStudioMirrorRainRing * 0.12;\n'+
-        'gl_FragColor.rgb = mix(gl_FragColor.rgb, pStudioMirrorTinted, pStudioMirrorAmount);'
+        'vec2 pStudioMirrorWorldXZ = vPStudioMirrorWorldPosition.xz;\n'+
+        'vec2 pStudioMirrorWind = normalize(uMirrorWindDirection + vec2(0.0001));\n'+
+        'float pStudioMirrorWaveA = sin(dot(pStudioMirrorWorldXZ, vec2(0.071,0.029)) + uMirrorTime*(0.22+uMirrorWindSpeed*0.10));\n'+
+        'float pStudioMirrorWaveB = cos(dot(pStudioMirrorWorldXZ, vec2(-0.023,0.083)) - uMirrorTime*(0.17+uMirrorWindSpeed*0.08));\n'+
+        'vec2 pStudioMirrorRipple = vec2(pStudioMirrorWaveA,pStudioMirrorWaveB)*(0.00022+uMirrorWaveStrength*0.0016);\n'+
+        'pStudioMirrorRipple += pStudioMirrorWind*(uMirrorTime*uMirrorWindSpeed*0.000035);\n'+
+        'vec2 pStudioMirrorRainCell=floor(pStudioMirrorWorldXZ*0.24);\n'+
+        'vec2 pStudioMirrorRainLocal=fract(pStudioMirrorWorldXZ*0.24)-0.5;\n'+
+        'float pStudioMirrorRainSeed=fract(sin(dot(pStudioMirrorRainCell,vec2(127.1,311.7)))*43758.5453);\n'+
+        'float pStudioMirrorRainRadius=fract(uMirrorTime*0.72+pStudioMirrorRainSeed)*0.48;\n'+
+        'float pStudioMirrorRainRing=(1.0-smoothstep(0.015,0.055,abs(length(pStudioMirrorRainLocal)-pStudioMirrorRainRadius)))*(1.0-smoothstep(0.39,0.48,pStudioMirrorRainRadius))*uMirrorRain;\n'+
+        'pStudioMirrorRipple+=vec2(pStudioMirrorRainRing*0.00045,-pStudioMirrorRainRing*0.00028);\n'+
+        'vec2 pStudioMirrorSampleUv=pStudioMirrorUv+pStudioMirrorRipple;\n'+
+        'float pStudioMirrorEdge=min(min(pStudioMirrorUv.x,1.0-pStudioMirrorUv.x),min(pStudioMirrorUv.y,1.0-pStudioMirrorUv.y));\n'+
+        'float pStudioMirrorEdgeFade=smoothstep(-0.018,0.016,pStudioMirrorEdge);\n'+
+        'vec3 pStudioMirrorSample=texture2D(uMirrorReflection,clamp(pStudioMirrorSampleUv,0.001,0.999)).rgb;\n'+
+        'float pStudioMirrorViewCosine=clamp(abs(dot(normalize(normal),normalize(vViewPosition))),0.0,1.0);\n'+
+        'float pStudioMirrorFresnel=pow(1.0-pStudioMirrorViewCosine,4.0);\n'+
+        'float pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.82,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade;\n'+
+        'vec3 pStudioMirrorTinted=pStudioMirrorSample*vec3(1.0,0.995,0.98);\n'+
+        'gl_FragColor.rgb=mix(gl_FragColor.rgb,pStudioMirrorTinted,pStudioMirrorAmount);'
       );
     };
-    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v2';
+    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v3-stable-world-ripple';
     material.userData.pstudioMirrorUniforms=uniforms;
     const features=new Set(Array.isArray(material.userData.pstudioTSLFeatures)?material.userData.pstudioTSLFeatures:[]);
     features.add('water');
@@ -1163,9 +1169,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     material.userData.pstudioTSLPortHasForeignHook=hadForeignHook;
     material.userData.pstudioTSLFeatures=[...features];
     material.userData.pstudioWaterTSLSettings={
-      mirrorOnly:true,amplitude:0,waveStrength:0.05,
-      shallow:'#0b3d52',deep:'#0b3d52',foam:'#0b3d52',
-      reflectivity:1,reflectionResolutionScale:0.5,absorption:0.01
+      mirrorOnly:true,amplitude:0,waveStrength:0.016,
+      shallow:'#102C37',deep:'#071A24',foam:'#D8C6A5',
+      reflectivity:1.0,reflectionResolutionScale:1,absorption:0.018
     };
     material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
     material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
@@ -6747,34 +6753,56 @@ void main(){
   function genesisAddPineForest(T,parent,materials,seed,count,zone){
     let state=seed>>>0;
     const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
-    const trunkGeometry=new T.CylinderGeometry(.12,.26,1,7);
-    const crownGeometry=new T.ConeGeometry(1,1,7,2);
-    const trunkInstances=new T.InstancedMesh(trunkGeometry,materials.pineTrunk,count);
-    const crownInstances=new T.InstancedMesh(crownGeometry,materials.pine,count*3);
-    const dummy=new T.Object3D();
+    const trunkGeometry=new T.CylinderGeometry(.12,.28,1,8,2,false);
+    const branchGeometry=new T.CylinderGeometry(.035,.105,1,7,1,false);
+    const needlePadGeometry=new T.SphereGeometry(1,10,7);
+    const dummy=new T.Object3D(),trunkMatrices=[],branchMatrices=[],padMatrices=[];
+    const addSegment=(a,b,radius)=>{
+      const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
+      const direction=end.clone().sub(start),length=direction.length();
+      if(length<1e-4)return;
+      dummy.position.copy(start).add(end).multiplyScalar(.5);
+      dummy.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
+      dummy.scale.set(radius,length,radius);dummy.updateMatrix();branchMatrices.push(dummy.matrix.clone());
+    };
     for(let i=0;i<count;i++){
-      const x=zone.minX+random()*(zone.maxX-zone.minX);
-      const z=zone.minZ+random()*(zone.maxZ-zone.minZ);
+      const x=zone.minX+random()*(zone.maxX-zone.minX),z=zone.minZ+random()*(zone.maxZ-zone.minZ);
       const height=zone.minHeight+random()*(zone.maxHeight-zone.minHeight);
-      dummy.position.set(x,height*.40,z);dummy.scale.set(1,height*.8,1);dummy.updateMatrix();
-      trunkInstances.setMatrixAt(i,dummy.matrix);
-      for(let tier=0;tier<3;tier++){
-        const h=height*(.34-tier*.055),y=height*(.26+tier*.205);
-        dummy.position.set(x,y,z);
-        const radius=height*(.22-tier*.042);
-        dummy.scale.set(radius,h,radius);
-        dummy.rotation.set(0,random()*Math.PI,0);
-        dummy.updateMatrix();crownInstances.setMatrixAt(i*3+tier,dummy.matrix);
+      const leanX=(random()-.5)*height*.055,leanZ=(random()-.5)*height*.055;
+      dummy.position.set(x+leanX*.5,height*.40,z+leanZ*.5);
+      dummy.rotation.set(leanZ*.025,random()*.12,-leanX*.025);
+      dummy.scale.set(1,height*.8,1);dummy.updateMatrix();trunkMatrices.push(dummy.matrix.clone());
+      for(let level=0;level<4;level++){
+        const y=height*(.31+level*.17),branchCount=4+(level===3?1:0),phase=random()*Math.PI*2;
+        for(let branch=0;branch<branchCount;branch++){
+          const angle=phase+branch/branchCount*Math.PI*2,length=height*(.19+random()*.065)*(1-level*.075);
+          const start=[x+leanX*(y/height),y,z+leanZ*(y/height)];
+          const end=[start[0]+Math.cos(angle)*length,start[1]-.035*height,start[2]+Math.sin(angle)*length];
+          addSegment(start,end,.032+height*.002);
+          for(let tuft=0;tuft<2;tuft++){
+            const along=.58+tuft*.24,px=start[0]+(end[0]-start[0])*along,py=start[1]+(end[1]-start[1])*along,pz=start[2]+(end[2]-start[2])*along;
+            const padLength=length*(.46-tuft*.035);
+            dummy.position.set(px,py,pz);dummy.rotation.set((random()-.5)*.22,angle,(random()-.5)*.18);
+            dummy.scale.set(padLength,height*(.035+random()*.012),height*(.075+random()*.025));
+            dummy.updateMatrix();padMatrices.push(dummy.matrix.clone());
+          }
+        }
       }
     }
-    trunkInstances.instanceMatrix.needsUpdate=true;crownInstances.instanceMatrix.needsUpdate=true;
-    trunkInstances.castShadow=true;crownInstances.castShadow=true;
-    parent.add(trunkInstances,crownInstances);
+    const batch=(geometry,material,matrices,name)=>{
+      if(!matrices.length)return;
+      const mesh=new T.InstancedMesh(geometry,material,matrices.length);mesh.name=name;
+      for(let i=0;i<matrices.length;i++)mesh.setMatrixAt(i,matrices[i]);
+      mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere?.();parent.add(mesh);
+    };
+    batch(trunkGeometry,materials.pineTrunk,trunkMatrices,'GENESIS Black Pine | tapered trunks');
+    batch(branchGeometry,materials.pineTrunk,branchMatrices,'GENESIS Black Pine | horizontal boughs');
+    batch(needlePadGeometry,materials.pine,padMatrices,'GENESIS Black Pine | flattened needle pads');
   }
 
   function buildGenesisShrineDemo(T){
     if(!scene||!renderer)return false;
-    if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=40;camera.updateProjectionMatrix();}
+    if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=35;camera.updateProjectionMatrix();}
     if(genesisShrineDemoGroup?.parent===scene)return true;
     const root=new T.Group();root.name='PStudio | Moonlit Sakura Shrine and Mirror Lake';
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
@@ -6799,10 +6827,10 @@ void main(){
       roofEdge:new T.MeshStandardMaterial({color:'#756047',roughness:.39,metalness:.10}),
       plaster:new T.MeshStandardMaterial({color:'#F0D7AF',roughness:.82}),
       gold:new T.MeshStandardMaterial({color:'#FFD17A',roughness:.25,metalness:.62,emissive:'#99561C',emissiveIntensity:.22}),
-      glow:new T.MeshStandardMaterial({color:'#FFD18A',emissive:'#FF9B32',emissiveIntensity:5.8,roughness:.22,toneMapped:false}),
-      paper:new T.MeshStandardMaterial({color:'#FFE0B3',roughness:.80,...textures.paper,emissive:'#FF8E36',emissiveIntensity:1.68,side:T.DoubleSide}),
-      pine:new T.MeshStandardMaterial({color:'#294238',roughness:1}),
-      pineTrunk:new T.MeshStandardMaterial({color:'#55402F',roughness:.94,...textures.wood}),
+      glow:new T.MeshStandardMaterial({color:'#FFD6A0',emissive:'#FF9B43',emissiveIntensity:2.9,roughness:.26,toneMapped:false}),
+      paper:new T.MeshStandardMaterial({color:'#FFE5C3',roughness:.82,...textures.paper,emissive:'#FFAE67',emissiveIntensity:.78,side:T.DoubleSide}),
+      pine:new T.MeshStandardMaterial({color:'#18271F',roughness:1}),
+      pineTrunk:new T.MeshStandardMaterial({color:'#473629',roughness:.96,...textures.wood}),
       path:new T.MeshStandardMaterial({color:'#C8B69B',roughness:.86,...textures.stone}),
       blossom:new T.MeshStandardMaterial({color:'#FFFFFF',roughness:.66,emissive:'#A45E52',emissiveIntensity:.42,vertexColors:true,side:T.DoubleSide}),
       blossomCenter:new T.MeshBasicMaterial({color:'#F3D18D',toneMapped:false}),
@@ -6884,23 +6912,31 @@ void main(){
         addInstance(goldOrnamentGeometry,materials.roofEdge,centerX,dimensions.ridgeY+.17,z,null,[.105,.105,.105]);
       }
     };
+    const lanternBaseGeometry=new T.CylinderGeometry(.62,.82,.42,8,1);
+    const lanternColumnGeometry=new T.CylinderGeometry(.17,.24,1.28,8,1);
+    const lanternCapPlateGeometry=new T.CylinderGeometry(.48,.58,.18,8,1);
+    const lanternRoofGeometry=new T.CylinderGeometry(.58,.92,.34,4,1);
+    const lanternJewelGeometry=new T.ConeGeometry(.13,.36,8,2);
     const addLantern=(x,z,scale=1,addLight=false)=>{
-      const y=.4*scale;
-      addBox(materials.stone,x,y,z,.9*scale,.36*scale,.9*scale);
-      addBox(materials.darkStone,x,y+.29*scale,z,.66*scale,.18*scale,.66*scale);
-      addBeam(materials.stone,[x,y+.38*scale,z],[x,y+1.43*scale,z],.25*scale,10);
-      addBox(materials.stone,x,y+1.62*scale,z,.88*scale,.18*scale,.88*scale);
-      addBox(materials.glow,x,y+2.08*scale,z,.58*scale,.78*scale,.58*scale);
+      const y=.20*scale;
+      addInstance(lanternBaseGeometry,materials.stone,x,y,z,null,[scale,scale,scale]);
+      addInstance(lanternColumnGeometry,materials.darkStone,x,y+.93*scale,z,null,[scale,scale,scale]);
+      addInstance(lanternCapPlateGeometry,materials.stone,x,y+1.64*scale,z,null,[scale,scale,scale]);
+      addBox(materials.paper,x,y+2.12*scale,z,.62*scale,.68*scale,.62*scale);
       for(const side of [-1,1]){
-        addBox(materials.darkWood,x+side*.31*scale,y+2.08*scale,z,.075*scale,.9*scale,.72*scale);
-        addBox(materials.darkWood,x,y+2.08*scale,z+side*.31*scale,.72*scale,.9*scale,.075*scale);
+        addBox(materials.darkWood,x+side*.33*scale,y+2.12*scale,z,.075*scale,.82*scale,.76*scale);
+        addBox(materials.darkWood,x,y+2.12*scale,z+side*.33*scale,.76*scale,.82*scale,.075*scale);
       }
-      addBox(materials.stone,x,y+2.56*scale,z,1.1*scale,.16*scale,1.1*scale);
-      addInstance(lanternCapGeometry,materials.darkStone,x,y+2.91*scale,z,[0,Math.PI/4,0],[.78*scale,.52*scale,.78*scale]);
-      addBeam(materials.gold,[x,y+3.16*scale,z],[x,y+3.50*scale,z],.05*scale,8);
+      for(let side=0;side<4;side++){
+        const angle=side*Math.PI*.5+Math.PI*.25,ax=x+Math.cos(angle)*.39*scale,az=z+Math.sin(angle)*.39*scale;
+        addBeam(materials.stone,[ax,y+1.78*scale,az],[ax,y+2.45*scale,az],.055*scale,7);
+      }
+      addInstance(lanternRoofGeometry,materials.darkStone,x,y+2.72*scale,z,[0,Math.PI*.25,0],[scale,scale,scale]);
+      addBeam(materials.gold,[x,y+2.88*scale,z],[x,y+3.08*scale,z],.045*scale,8);
+      addInstance(lanternJewelGeometry,materials.gold,x,y+3.22*scale,z,null,[scale,scale,scale]);
       if(addLight){
-        const light=new T.PointLight('#FFB65B',7.0*scale,42*scale,2);
-        light.position.set(x,y+2.05*scale,z);light.castShadow=false;root.add(light);
+        const light=new T.PointLight('#FFB65B',2.6*scale,22*scale,2);
+        light.position.set(x,y+2.08*scale,z);light.castShadow=false;root.add(light);
       }
     };
     const addShowcasePointLight=(color,intensity,distance,x,y,z)=>{
@@ -6908,9 +6944,9 @@ void main(){
       light.position.set(x,y,z);light.castShadow=false;root.add(light);
       return light;
     };
-    const moonFill=new T.HemisphereLight('#FFE0BC','#26374A',.74);
+    const moonFill=new T.HemisphereLight('#F4D8B6','#1E2B31',.56);
     moonFill.name='GENESIS Showcase | soft warm moonlit fill';root.add(moonFill);
-    const warmKey=new T.DirectionalLight('#FFD09A',.48);
+    const warmKey=new T.DirectionalLight('#FFD2A0',.24);
     warmKey.position.set(-72,68,48);warmKey.castShadow=false;
     warmKey.name='GENESIS Showcase | soft warm architectural fill';root.add(warmKey);
 
@@ -6926,29 +6962,29 @@ void main(){
     genesisAddPineForest(T,root,materials,0x712a9b4,44,{minX:-142,maxX:142,minZ:-148,maxZ:-111,minHeight:4,maxHeight:10});
 
     // Main shrine: raised granite platform, layered steps, timber veranda and framed shoji.
-    const shrineX=-51,shrineZ=-18,shrineHalfW=11,shrineHalfD=7.6;
-    addBox(materials.darkStone,shrineX,.6,shrineZ,27,.8,20);
-    addBox(materials.stone,shrineX,1.06,shrineZ,24,.28,17);
+    const shrineX=-17,shrineZ=-18,shrineHalfW=13,shrineHalfD=8.2;
+    addBox(materials.darkStone,shrineX,.6,shrineZ,33,.8,22);
+    addBox(materials.stone,shrineX,1.06,shrineZ,30,.28,19);
     for(let step=0;step<4;step++){
       const width=19-step*1.55,depth=1.1,frontZ=shrineZ+9.6+step*.24;
       addBox(materials.wetStone,shrineX,.38+step*.2,frontZ,width,.2,depth);
     }
-    addBox(materials.darkWood,shrineX,1.18,shrineZ,21,.42,14.6);
-    addBox(materials.wood,shrineX,1.43,shrineZ,20.6,.12,14.2);
+    addBox(materials.darkWood,shrineX,1.18,shrineZ,25,.42,16.2);
+    addBox(materials.wood,shrineX,1.43,shrineZ,24.6,.12,15.8);
     const wallBottom=1.55,wallTop=6.15,frontZ=shrineZ+7.03;
-    addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ-6.85,20,wallTop-wallBottom,.26);
-    addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ+6.85,20,wallTop-wallBottom,.24);
+    addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ-7.65,24,wallTop-wallBottom,.26);
+    addBox(materials.plaster,shrineX,(wallBottom+wallTop)/2,shrineZ+7.65,24,wallTop-wallBottom,.24);
     for(const xSide of [-1,1]){
-      addBox(materials.plaster,shrineX+xSide*9.85,(wallBottom+wallTop)/2,shrineZ, .26,wallTop-wallBottom,13.7);
+      addBox(materials.plaster,shrineX+xSide*11.85,(wallBottom+wallTop)/2,shrineZ, .26,wallTop-wallBottom,15.3);
     }
     // Five front bays with layered timber lattice, paper screens and warm interior panels.
     for(let bay=0;bay<5;bay++){
-      const x=shrineX-8+bay*4;
-      addBox(materials.paper,x,3.82,frontZ,3.55,4.15,.095);
-      const shojiLamp=new T.PointLight('#FFB65F',bay%2===0?7.2:6.2,48,2);
+      const x=shrineX-9.6+bay*4.8;
+      addBox(materials.paper,x,3.82,frontZ,4.15,4.15,.095);
+      const shojiLamp=new T.PointLight('#FFB45C',bay%2===0?1.85:1.55,17,2);
       shojiLamp.position.set(x,3.82,frontZ-1.55);shojiLamp.castShadow=false;root.add(shojiLamp);
       for(const dx of [-1.82,1.82]){
-        addBox(materials.darkWood,x+dx,3.82,frontZ+.09,.17,4.45,.22);
+        addBox(materials.darkWood,x+dx*1.12,3.82,frontZ+.09,.18,4.45,.22);
       }
       for(let row=0;row<=8;row++){
         addBox(materials.darkWood,x,1.75+row*.53,frontZ+.16,3.55,.075,.16);
@@ -6961,7 +6997,7 @@ void main(){
     }
     // Deep exposed posts and crossbeams establish a readable Japanese timber frame.
     for(let xIndex=0;xIndex<=5;xIndex++){
-      const x=shrineX-10+xIndex*4;
+      const x=shrineX-12+xIndex*4.8;
       addBeam(materials.darkWood,[x,1.45,frontZ+.22],[x,6.65,frontZ+.22],.19);
       addBeam(materials.wood,[x,1.4,shrineZ-6.8],[x,6.6,shrineZ-6.8],.22);
       addBeam(materials.wood,[x,1.4,shrineZ+6.8],[x,6.6,shrineZ+6.8],.22);
@@ -6979,14 +7015,14 @@ void main(){
       addBox(materials.wood,x,7.02,frontZ+.48,.72,.13,.64);
       addBox(materials.gold,x,7.14,frontZ+.52,.34,.055,.36);
     }
-    const mainRoof={halfWidth:16.0,halfDepth:10.8,ridgeY:13.0,eaveY:8.55,cornerLift:1.52};
+    const mainRoof={halfWidth:20.5,halfDepth:11.8,ridgeY:13.45,eaveY:8.72,cornerLift:1.72};
     genesisAddCurvedJapaneseRoof(T,root,materials,shrineX,shrineZ,mainRoof,textureSet);
     addRoofStructure(shrineX,shrineZ,mainRoof,.78);
     addShingleRidge(shrineX,shrineZ,mainRoof);
-    addShowcasePointLight('#FFB35B',8.0,58,shrineX,5.8,frontZ-4.2);
-    addShowcasePointLight('#FFB65F',7.0,54,-88,8.0,-39.5);
-    addShowcasePointLight('#FFB65C',6.5,52,28,4.8,-60.5);
-    addShowcasePointLight('#FFBF74',4.8,58,-28,4.0,18);
+    addShowcasePointLight('#FFB45C',2.6,24,shrineX,5.2,frontZ-3.0);
+    addShowcasePointLight('#FFB65B',1.6,18,-48,7.0,-39.5);
+    addShowcasePointLight('#FFB65B',1.6,19,38,4.8,-60.5);
+    addShowcasePointLight('#FFBF74',1.5,21,-39,4.0,18);
     // Gold ridge-end ornaments, roof-end bells and curved corner supports.
     for(const side of [-1,1]){
       for(const zSide of [-1,1]){
@@ -7001,7 +7037,7 @@ void main(){
     }
 
     // Five-storey pagoda: tiered bodies, bracket sets, curved roofs and a brass sorin finial.
-    const pagodaX=-87,pagodaZ=-48;
+    const pagodaX=-47,pagodaZ=-48;
     addBox(materials.darkStone,pagodaX,.65,pagodaZ,16,.62,16);
     addBox(materials.stone,pagodaX,.82,pagodaZ,13.8,.22,13.8);
     for(let tier=0;tier<5;tier++){
@@ -7036,7 +7072,7 @@ void main(){
         }
       }
       if(tier===0||tier===2||tier===4){
-        const lanternGlow=new T.PointLight('#FFB45C',tier===0?5.8:4.0,44,2);
+        const lanternGlow=new T.PointLight('#FFB45C',tier===0?1.5:.95,17,2);
         lanternGlow.position.set(pagodaX,baseY+1.4,pagodaZ+depth*.46);lanternGlow.castShadow=false;root.add(lanternGlow);
       }
     }
@@ -7049,12 +7085,12 @@ void main(){
     addInstance(sorinTipGeometry,materials.gold,pagodaX,28.15,pagodaZ,null,[.24,1.1,.24]);
 
     // Vermilion torii: splayed posts, kasagi curve, shimaki and gold collars.
-    const gateX=28,gateZ=-65,postSpacing=13.2;
+    const gateX=38,gateZ=-65,postSpacing=13.2;
     for(const side of [-1,1]){
       const x=gateX+side*postSpacing*.5;
       const foot=add(new T.CylinderGeometry(.72,.88,.62,24),materials.darkStone,x,.43,gateZ);
       addBox(materials.darkStone,x,.76,gateZ,.96,.34,1.42);
-      const toriiUplight=new T.PointLight('#FFB45C',6.0,48,2);
+      const toriiUplight=new T.PointLight('#FFB65B',1.65,19,2);
       toriiUplight.position.set(x,.9,gateZ+1.8);toriiUplight.castShadow=false;root.add(toriiUplight);
       const post=genesisAddCylinderBetween(T,root,materials.red,
         [x-side*.55,.92,gateZ],[x+side*.2,9.15,gateZ],.40,.62,20);
@@ -7081,7 +7117,7 @@ void main(){
     }
 
     // Right-bank deer in profile, matching the reference image's quiet foreground silhouette.
-    const deerX=72,deerZ=-15;
+    const deerX=50,deerZ=-15;
     const deerBodyGeometry=new T.SphereGeometry(1,24,16);
     const deerJointGeometry=new T.SphereGeometry(1,16,12);
     const deerEarGeometry=new T.ConeGeometry(.15,.42,8,2);
@@ -7124,62 +7160,20 @@ void main(){
         [deerX-.77,3.89,deerZ+side*.35],.028,7);
     }
 
-    // Secondary waterside shrine and a row of warm interior screens on the right bank.
-    const secondaryX=58,secondaryZ=-39;
-    addBox(materials.darkStone,secondaryX,.50,secondaryZ,17,.48,14);
-    addBox(materials.plaster,secondaryX,2.75,secondaryZ,12,4.3,9);
-    for(let i=0;i<4;i++){
-      const x=secondaryX-4.5+i*3;
-      addBox(materials.paper,x,2.85,secondaryZ+4.56,2.5,2.9,.07);
-      for(const side of [-1,1])addBox(materials.darkWood,x+side*1.25,2.85,secondaryZ+4.66,.10,3.1,.12);
-      for(let row=0;row<6;row++)addBox(materials.darkWood,x,1.5+row*.5,secondaryZ+4.72,2.5,.055,.12);
+    // Two prominent stone tōrō frame the water; smaller lamps recede along the shores.
+    addLantern(-55,8,1.92,true);
+    addLantern(49,7,2.02,true);
+    for(let i=0;i<5;i++){
+      const z=20-i*16;
+      addLantern(-47,z,1.02,i===0||i===4);
+      addLantern(48,z-3,1.04,i===1||i===4);
     }
-    genesisAddCurvedJapaneseRoof(T,root,materials,secondaryX,secondaryZ,
-      {halfWidth:8.1,halfDepth:6.7,ridgeY:6.15,eaveY:4.55,cornerLift:.62},textureSet);
-
-    // Two additional waterside pavilions close the empty gaps along both banks.
-    // They reuse the showcase's curved kawara roofs, exposed timber frames and shoji materials.
-    const addBankPavilion=(centerX,centerZ,width,depth,ridgeY)=>{
-      const frontZ=centerZ+depth*.42;
-      addBox(materials.darkStone,centerX,.56,centerZ,width+2.2,.68,depth+2.0);
-      addBox(materials.stone,centerX,.98,centerZ,width,.18,depth);
-      addBox(materials.wood,centerX,1.22,centerZ,width-.6,.22,depth-.6);
-      for(let post=0;post<=4;post++){
-        const x=centerX-width*.43+post*(width*.86/4);
-        addBeam(materials.darkWood,[x,1.25,frontZ],[x,5.72,frontZ],.16,10);
-        addBeam(materials.wood,[x,1.25,centerZ-depth*.42],[x,5.65,centerZ-depth*.42],.15,10);
-        addBox(materials.darkWood,x,5.54,centerZ,.34,.32,depth+.3);
-      }
-      addBox(materials.plaster,centerX,3.42,centerZ-depth*.40,width*.82,3.9,.22);
-      for(let bay=0;bay<4;bay++){
-        const x=centerX-width*.36+bay*(width*.24);
-        addBox(materials.paper,x,3.34,frontZ,width*.205,2.95,.08);
-        for(let row=0;row<=5;row++)addBox(materials.darkWood,x,2.0+row*.52,frontZ+.09,width*.205,.055,.12);
-        for(let col=0;col<=3;col++)addBox(materials.darkWood,x-width*.102+col*width*.068,3.34,frontZ+.1,.045,2.86,.12);
-        addShowcasePointLight('#FFD19E',3.8,32,x,3.65,frontZ-1.6);
-      }
-      const roofDims={halfWidth:width*.72,halfDepth:depth*.68,ridgeY,eaveY:ridgeY-1.95,cornerLift:.78};
-      genesisAddCurvedJapaneseRoof(T,root,materials,centerX,centerZ,roofDims,textureSet);
-      addRoofStructure(centerX,centerZ,roofDims,1.12);
-      addShingleRidge(centerX,centerZ,roofDims);
-      addShowcasePointLight('#FFD09C',4.2,44,centerX,3.8,frontZ-2.2);
-    };
-    addBankPavilion(-101,5,14.0,11.0,8.0);
-    addBankPavilion(63,9,15.0,11.8,8.2);
-    addLantern(-111,4,1.34,true);
-    addLantern(77,1,1.34,true);
-    // Layered warm shoreline lamps create a readable path of light toward the torii.
-    for(let i=0;i<6;i++){
-      const z=29-i*13;
-      addLantern(-83,z,1.12,i%2===0);
-      addLantern(66,z,1.12,i%2===1);
-    }
-    addShowcasePointLight('#FFB65C',5.8,66,-58,4.2,-7);
-    addShowcasePointLight('#FFB65C',5.0,62,52,4.2,-43);
+    addShowcasePointLight('#FFB65C',2.2,28,-38,3.4,-5);
+    addShowcasePointLight('#FFB65C',2.0,27,40,3.4,-39);
 
     // Sakura: tapered trunks, curved branch hierarchy, individual blossom instances.
     const blossomGeometry=genesisCreateSakuraFlowerGeometry(T);
-    const blossomCapacity=16000;
+    const blossomCapacity=14000;
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,blossomCapacity);
     blossomMesh.name='GENESIS Sakura | up to 16,000 sculpted blossoms';
     blossomMesh.castShadow=false;blossomMesh.receiveShadow=false;
@@ -7189,9 +7183,8 @@ void main(){
     centerMesh.castShadow=false;centerMesh.receiveShadow=false;
     const blossomColors=['#F4A49B','#F7BBAA','#FFE0C8','#E88E8C','#FFEAD7','#F5C0A8'].map(color=>new T.Color(color));
     const treeSpecs=[
-      [-108,18,1.28],[-91,31,1.12],[-110,-22,1.08],[-74,13,1.18],[-94,-6,1.02],[-112,-46,.94],
-      [48,24,1.06],[73,29,1.12],[89,2,1.04],[58,-26,.98],[79,-43,.92],[100,15,.90],
-      [-72,-42,.94],[42,-5,1.02],[67,-58,.84]
+      [-94,26,1.26],[-82,36,1.20],[-101,1,1.12],[-78,8,1.18],[-91,-24,1.04],
+      [-67,25,1.10],[-57,5,1.02],[-73,-43,.94],[-49,-18,.92],[-106,-43,.92]
     ];
     const dummy=new T.Object3D();
     const treeTrunkGeometry=new T.CylinderGeometry(.12,.36,1,12,2,false);
@@ -7228,7 +7221,7 @@ void main(){
           branchEnds.push(twigEnd);
         }
       }
-      const countForTree=Math.floor(900*scale);
+      const countForTree=Math.floor(980*scale);
       for(let n=0;n<countForTree&&instance<blossomCapacity;n++,instance++){
         const center=branchEnds[n%branchEnds.length];
         const angle=random()*Math.PI*2;
@@ -7250,46 +7243,37 @@ void main(){
     blossomMesh.instanceMatrix.needsUpdate=true;centerMesh.instanceMatrix.needsUpdate=true;
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
-    addShowcasePointLight('#FFC18F',2.4,58,-103,6.0,2);
-    addShowcasePointLight('#FFC18F',2.2,54,86,6.0,1);
+    addShowcasePointLight('#FFB88A',1.8,26,-89,5.0,11);
+    addShowcasePointLight('#FFB88A',1.45,23,-62,4.6,12);
 
     // Dark cedar and pine trees create a layered silhouette at the mountain foot.
     genesisAddPineForest(T,root,materials,0x5a821b1,36,{minX:-142,maxX:-92,minZ:-118,maxZ:-89,minHeight:6,maxHeight:13});
     genesisAddPineForest(T,root,materials,0x6bd1c29,34,{minX:50,maxX:104,minZ:-126,maxZ:-85,minHeight:7,maxHeight:15});
     genesisAddPineForest(T,root,materials,0x9d20c15,18,{minX:-8,maxX:80,minZ:-151,maxZ:-126,minHeight:5,maxHeight:11});
 
-    // Foreground Japanese black-pine branch clips into the upper-right frame edge.
-    // It is actual instanced foliage geometry, not a sky-card or a modified sky texture.
-    const pineSprayGeometry=new T.ConeGeometry(1,1,7,2);
-    addBeam(materials.pineTrunk,[43,22,-20],[28,27,-34],.24,12);
-    for(let spray=0;spray<18;spray++){
-      const t=spray/17;
-      const x=41-t*13.5,y=22.5+t*4.1,z=-21-t*11.5;
-      const direction=new T.Vector3(-1,.20+Math.sin(t*Math.PI)*.18,-.34).normalize();
-      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction);
-      addInstance(pineSprayGeometry,materials.pine,x,y,z,null,
-        [.78+t*.22,2.65+t*.55,.82+t*.12],quaternion);
-      if(spray%3===0){
-        addBeam(materials.pineTrunk,[x,y,z],[x-2.7,y+.55,z-1.1],.055,7);
-      }
+    // A Japanese black-pine bough frames the upper-right with broad, horizontal needle pads.
+    const pinePadGeometry=new T.SphereGeometry(1,12,8);
+    addBeam(materials.pineTrunk,[75,29,21],[61,33,8],.26,12);
+    const pinePadSpecs=[
+      [72,29,20,4.1,.38,1.35,-.18],[67,31,16,4.6,.36,1.42,-.12],
+      [63,32,12,4.2,.34,1.30,-.08],[58,34,7,3.7,.31,1.18,.04],
+      [69,35,8,3.1,.32,1.08,-.16],[77,32,23,3.4,.34,1.15,-.26],
+      [54,35,2,3.1,.30,1.02,.07],[61,37,1,2.7,.28,.96,.14]
+    ];
+    for(const [x,y,z,sx,sy,sz,rz] of pinePadSpecs){
+      addInstance(pinePadGeometry,materials.pine,x,y,z,[rz,0,-.12],[sx,sy,sz]);
     }
+    addBeam(materials.pineTrunk,[68,31,15],[55,35,1],.12,9);
+    addBeam(materials.pineTrunk,[71,32,18],[83,35,28],.10,8);
 
-    // Long stone approach uses instanced irregular slabs instead of dozens of draw calls.
+    // Short, irregular stepping stones remain on the near-left bank; water stays open toward the torii.
     const pathSlabGeometry=new T.BoxGeometry(1,.20,1);
     const pathStoneGeometry=new T.IcosahedronGeometry(1,1);
-    for(let i=0;i<34;i++){
-      const z=42-i*3.2;
-      const x=17+Math.sin(i*1.91)*2.7;
-      addInstance(pathSlabGeometry,materials.path,x,.13,z,[0,Math.sin(i*1.1)*.16,0],[1.8+(i%3)*.22,1,1.16+(i%4)*.16]);
-      if(i%5===0)addInstance(pathStoneGeometry,materials.darkStone,x+Math.sin(i)*2,.25,z-.65,[0,i*.2,0],[.46+(i%3)*.16,.46+(i%3)*.16,.46+(i%3)*.16]);
+    for(let i=0;i<16;i++){
+      const z=25-i*3.7,x=-46+Math.sin(i*1.91)*2.2;
+      addInstance(pathSlabGeometry,materials.path,x,.16,z,[0,Math.sin(i*1.1)*.16,0],[1.4+(i%3)*.18,1,1.0+(i%4)*.12]);
+      if(i%4===0)addInstance(pathStoneGeometry,materials.darkStone,x-1.2,.22,z-.55,[0,i*.2,0],[.42,.42,.42]);
     }
-    for(let i=0;i<7;i++){
-      const z=26-i*11;
-      addLantern(-17-(i%2)*4,z,1.04,i%2===1||i===6);
-      if(i<6)addLantern(23+(i%2)*3,z,1.04,i%2===0);
-    }
-    addLantern(-50,-32,1.42,true);
-    addLantern(36,-32,1.42,true);
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
     const stoneRandom=()=>{stoneSeed=(Math.imul(stoneSeed,1664525)+1013904223)>>>0;return stoneSeed/4294967296;};
@@ -7297,7 +7281,7 @@ void main(){
     const shorelineGrassGeometry=new T.ConeGeometry(1,1,5,2);
     for(let i=0;i<100;i++){
       const side=i%2===0?-1:1;
-      const x=side<0?-(49+stoneRandom()*48):(21+stoneRandom()*48);
+      const x=side<0?-(70+stoneRandom()*30):(70+stoneRandom()*30);
       const z=-98+stoneRandom()*172;
       const radius=.48+stoneRandom()*1.75;
       addInstance(shorelineRockGeometry,i%4===0?materials.wetStone:materials.darkStone,
@@ -7311,22 +7295,22 @@ void main(){
     // A nearly still, full planar mirror lake. All skyline/building/lantern emissive
     // elements remain real scene geometry and are therefore reflected by the same camera path.
     const mirrorMaterial=configureMirrorWaterMaterial(new T.MeshStandardMaterial({
-      color:'#30495C',roughness:.014,metalness:.035,clearcoat:1,clearcoatRoughness:.010
+      color:'#1B2A33',roughness:.032,metalness:.02,clearcoat:.92,clearcoatRoughness:.025
     }));
     const water=genesisAddMesh(T,root,new T.PlaneGeometry(180,218,1,1),mirrorMaterial,0,.145,-3,[-Math.PI/2,0,0]);
     water.name='GENESIS Mirror Lake | Full planar reflection';
     water.userData.pstudioWaterSurface=true;
     genesisShrineDemoWaterState=createMirrorWaterState(mirrorMaterial);
-    genesisShrineDemoWaterState.reflectivity=1;
-    genesisShrineDemoWaterState.baseWaveStrength=.026;
-    genesisShrineDemoWaterState.waveStrength=.026;
+    genesisShrineDemoWaterState.reflectivity=.98;
+    genesisShrineDemoWaterState.baseWaveStrength=.016;
+    genesisShrineDemoWaterState.waveStrength=.016;
     water.userData.pstudioMirrorWater=genesisShrineDemoWaterState;
     // Thin shoreline highlights and reflection-friendly foreground stones.
     const shorelinePebbleGeometry=new T.IcosahedronGeometry(1,1);
     for(const side of [-1,1]){
       for(let i=0;i<24;i++){
         const z=49-i*5.7;
-        const x=side<0?-(103+Math.sin(i*.7)*3.5):(69+Math.sin(i*.7)*3.5);
+        const x=side<0?-(78+Math.sin(i*.7)*4.5):(78+Math.sin(i*.7)*4.5);
         const radius=.35+(i%4)*.13;
         addInstance(shorelinePebbleGeometry,materials.wetStone,x,.22,z,[0,i*.4,0],[radius*1.6,radius*.48,radius*.85]);
       }
@@ -7365,8 +7349,8 @@ void main(){
       for(const material of assigned)if(material)materialSet.add(material);
     });
     root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
-    root.scale.set(1.30,1.18,1);
-    root.userData.pstudioReferenceComposition={name:'MOONLIT_SAKURA_LAKE_REFERENCE',horizontalScale:1.30,verticalScale:1.18,cameraFov:32};
+    root.scale.setScalar(1);
+    root.userData.pstudioReferenceComposition={name:'MOONLIT_SAKURA_LAKE_REFERENCE',aspectRatio:1.5,cameraFov:35,cameraLocked:true};
     scene.add(root);genesisShrineDemoGroup=root;
     return true;
   }
@@ -7414,6 +7398,9 @@ void main(){
 
   function setGenesisShrineDemo(enabled){
     genesisShrineDemoRequested=!!enabled;
+    const referenceCanvas=document.getElementById('game-3d-canvas')||canvas;
+    referenceCanvas?.classList?.toggle('pstudio-reference-frame',genesisShrineDemoRequested);
+    document.getElementById('game-hud-canvas')?.classList?.toggle('pstudio-reference-frame-hud',genesisShrineDemoRequested);
     if(!genesisShrineDemoRequested){
       removeGenesisShrineDemo();
       if(camera&&genesisShrinePreviousCameraFov!==null){camera.fov=genesisShrinePreviousCameraFov;camera.updateProjectionMatrix();}
@@ -7421,7 +7408,7 @@ void main(){
       return true;
     }
     if(renderer&&scene){
-      if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=40;camera.updateProjectionMatrix();}
+      if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=35;camera.updateProjectionMatrix();}
       return buildGenesisShrineDemo(window.THREE);
     }
     return true;
@@ -8073,6 +8060,9 @@ void main(){
       cameraPan?.set(0,0,0);
       if(!cameraSmoothing){smoothedTarget=null;smoothedPosition=null;}
       cameraFocusOwnerId=null;
+      if(cameraCommand&&cameraOwnerId==='shrine-camera'){
+        orbitYaw=0;orbitPitch=0;zoom=1;
+      }
       cameraCommandSignature=nextCameraSignature;
     }
     for(const instance of pendingFrameInstances)frameCameraToModel(instance);
