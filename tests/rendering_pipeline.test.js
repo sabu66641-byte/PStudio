@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
+const renderingBudget = require('../static/pstudio_rendering_budget.js');
 const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
 const renderingGI = fs.readFileSync(path.join(root, 'static/pstudio_rendering_gi.mjs'), 'utf8');
@@ -61,20 +62,24 @@ test('advanced Three.js rendering add-ons are optional and version-aligned', () 
   assert.ok(renderer.includes("tslNodesEnabled:false"));
 });
 
-test('auto quality keeps device-aware scaling while Ultra uses the shared 2x render helper',()=>{
-  assert.ok(renderer.includes("if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1"));
+test('auto quality avoids touch-as-GPU-proxy while Ultra uses the shared 2x render helper',()=>{
+  assert.ok(renderer.includes('// Touch input is not a GPU capability.'));
   assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
   assert.ok(renderer.includes("applyEffectiveRenderScale()"));
   assert.ok(renderer.includes("selected==='maximum'?[.66,.78,.94][level]"));
   assert.ok(renderer.includes("const adaptiveScale=adaptive?[0.35,0.65,1][level]:1"));
-  assert.ok(renderer.includes("const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap)"));
+  assert.ok(renderer.includes("const targetRatio=requested*adaptiveScale"));
+  assert.ok(!renderer.includes("mobilePixelRatioCap"));
   assert.ok(renderer.includes("lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission'"));
 });
 test('Ultra can reduce actual drawing-buffer resolution when adaptive quality steps down',()=>{
   assert.ok(renderer.includes('const adaptiveScale=adaptive?[0.35,0.65,1][level]:1'));
-  assert.ok(renderer.includes('const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap)'));
+  assert.ok(renderer.includes('const targetRatio=requested*adaptiveScale'));
+  assert.ok(!renderer.includes('mobilePixelRatioCap'));
   assert.ok(renderer.includes('frame-interval-fallback'));
-  assert.ok(renderer.includes('Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0)'));
+  assert.ok(renderer.includes('const fallbackFrameMs=Number(lastFrameIntervalMs)||0'));
+  assert.ok(renderer.includes('dynamicResolutionTrialVerifier'));
+  assert.ok(renderer.includes('dynamicResolutionFallbackValidated'));
 });
 
 test('constrained touch Maximum and Ultra preserve configured effects while applying resolution budgeting',()=>{
@@ -82,8 +87,8 @@ test('constrained touch Maximum and Ultra preserve configured effects while appl
   assert.ok(renderer.includes("const premiumEffectsEnabled=effectsEnabled;"));
   assert.ok(renderer.includes("const effects=!memorySafetyApplied;"));
   assert.ok(renderer.includes("const cloudTierActive=!memorySafetyApplied;"));
-  assert.ok(renderer.includes("adaptiveTouchResolutionBudget?[.72,.9,1.05][level]:Infinity"));
-  assert.ok(renderer.includes("adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity"));
+  assert.ok(!renderer.includes("adaptiveTouchResolutionBudget?[.72,.9,1.05][level]:Infinity"));
+  assert.ok(!renderer.includes("adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity"));
   assert.ok(renderer.includes("mobileResolutionBudget:adaptiveTouchResolutionBudget"));
   assert.ok(renderer.includes("touchResolutionBudget:adaptiveTouchResolutionBudget"));
   assert.ok(renderer.includes("effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null"));
@@ -128,9 +133,9 @@ test('Mirror Water uses bounded reflection targets coordinated by the shared fra
     'pstudio-planar-mirror-water-v4-bounded-projection','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
-    'const ultraFullDetail=qualityPreset===\'ultra\'&&!memorySafetyApplied;\n    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0)',
-    'const genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0',
-    'return Math.min(base,genesisCap)*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
+    'const base=memorySafetyApplied?0.86:1.0',
+    '// Reflection resolution follows measured frame-budget pressure, not touch/device labels.',
+    'return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
     'renderer.capabilities?.maxTextureSize',
     'Math.floor(size.x*scale)',
     'Math.floor(size.y*scale)',
@@ -139,7 +144,7 @@ test('Mirror Water uses bounded reflection targets coordinated by the shared fra
     'renderer.render(scene,reflectionCamera)',
     'const updateInterval=renderingFrameBudgetController',
     'renderingFrameBudget.mirrorIntervalFrames',
-    ':touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1'
+    ':1'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(engine.includes("case 'draw_mirror_water'"));
   assert.ok(engine.includes("type:'mirror_water'"));
@@ -1324,7 +1329,7 @@ test('Maximum remains distinct from Ultra, which requests true 2x output and dev
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
   assert.ok(renderer.includes("resolutionLimited:qualityPreset==='ultra'"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][adaptiveQualityLevel]"));
-  assert.ok(renderer.includes("const shadowSizes=adaptiveUltraTouchMode?[1024,1536,2048]:adaptiveMaximumTouchMode?[768,1024,1536]:qualityPreset==='ultra'?[3072,4096,8192]"));
+  assert.ok(renderer.includes("const shadowSizes=qualityPreset==='ultra'?[3072,4096,8192]:qualityPreset==='maximum'?[1024,2048,4096]"));
   assert.ok(renderer.includes("const base=resolveQualityRenderPixelRatio(selected,level,adaptive)"));
   assert.ok(renderer.includes("const safeScale=applyEffectiveRenderScale()"));
 });
@@ -1533,16 +1538,17 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('destination.set(batch.matrices.subarray(offset,end),offset)'));
   assert.ok(renderer.includes('matrices:new Float32Array(256),count:0'));
   assert.ok(renderer.includes('transparent:true,opacity:1,depthWrite:false'));
-  assert.ok(renderer.includes('genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0'));
-  assert.ok(renderer.includes('const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=4||(hardware.memoryGiB<=6&&hardware.maxTextureSize<=4096))'));
-  assert.ok(renderer.includes('const detailTextureSize=constrainedMobile?256'));
-  assert.ok(renderer.includes('const cityRowCount=constrainedMobile?8:11'));
-  assert.ok(renderer.includes('blossomCapacity=constrainedMobile?12000:22000'));
-  assert.ok(renderer.includes('constrainedMobile?12000:28000'));
-  assert.ok(renderer.includes('skyLanternCount=constrainedMobile?160:320'));
+  assert.ok(renderer.includes('const base=memorySafetyApplied?0.86:1.0'));
+  assert.ok(renderer.includes("const detailTextureSize=qualityPreset==='ultra'?1024:512"));
+  assert.ok(renderer.includes('const cityRowCount=11'));
+  assert.ok(renderer.includes('blossomCapacity=22000'));
+  assert.ok(renderer.includes('const vortexCount=28000'));
+  assert.ok(renderer.includes('const skyLanternCount=320'));
+  assert.ok(!renderer.includes('constrainedMobile'));
+  assert.ok(!renderer.includes('mobileDetailScale'));
   assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
   assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
-  assert.ok(html.includes('20261127-genesis-progressive-v5'));
+  assert.ok(html.includes('20261127-adaptive-parity-v6'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1555,7 +1561,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v5'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-adaptive-parity-v6'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
@@ -1603,7 +1609,7 @@ test('editor orbit camera reaches near-vertical top-down and bottom-up views wit
 
 test('Ultra preserves 2x output while avoiding oversized shadow maps and excessive AO sampling',()=>{
   assert.ok(renderer.includes("outputMultiplier:qualityPreset==='ultra'?2:1"));
-  assert.ok(renderer.includes("const requestedShadow=adaptiveUltraTouchMode?[1024,1536,2048][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[768,1024,1536][adaptiveQualityLevel]:qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]"));
+  assert.ok(renderer.includes("const requestedShadow=qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]"));
   assert.ok(renderer.includes("qualityPreset==='ultra'?[3072,4096,8192]"));
   assert.ok(renderer.includes("const aoSamples=selected==='ultra'?[16,28,40][level]"));
 });
@@ -1689,7 +1695,33 @@ test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fall
   assert.match(controller,/frameIntervalMs:source==='frame-interval-fallback'/);
   assert.match(controller,/source\s*\}\)/);
   assert.ok(renderer.includes('dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource'));
+  assert.match(controller,/dynamicResolutionTrialVerifier/);
+  assert.match(controller,/dynamicResolutionFallbackValidated/);
+  assert.match(controller,/if\(!hasRecentGpuSample\)return/);
+  assert.ok(fs.readFileSync(path.join(root,'static/pstudio_rendering_budget.js'),'utf8').includes('frame-pacing-did-not-improve'));
+  assert.ok(renderer.includes('solely by the separately verified dynamic-resolution trial above.'));
+  assert.ok(renderer.includes('      0,\n      16.67,'));
   assert.match(renderer,/updateDynamicResolutionFromMetrics\(now,hasRecentGpuSample\)/);
+});
+
+test('resolution fallback persists only when measured frame pacing improves',()=>{
+  const verifier=renderingBudget.createPStudioResolutionTrialVerifier({sampleCount:4,minimumImprovement:0.025});
+  assert.equal(verifier.getState().status,'unverified');
+  assert.equal(verifier.begin(1,0.9,20).status,'measuring');
+  for(const sample of [19.8,19.4,19.2])assert.equal(verifier.observe(sample).status,'measuring');
+  const improved=verifier.observe(19.3);
+  assert.equal(improved.status,'improved');
+  assert.equal(improved.blocked,false);
+  assert.ok(improved.improvement>=0.025);
+  assert.equal(verifier.begin(0.9,0.8,19.4).status,'measuring');
+  for(const sample of [19.6,19.8,19.5])verifier.observe(sample);
+  const ineffective=verifier.observe(19.7);
+  assert.equal(ineffective.status,'ineffective');
+  assert.equal(ineffective.blocked,true);
+  assert.equal(ineffective.reason,'frame-pacing-did-not-improve');
+  assert.equal(verifier.begin(0.9,0.8,19.7),false);
+  assert.equal(verifier.reset('new-quality-profile').status,'unverified');
+  assert.equal(verifier.getState().blocked,false);
 });
 
 test('GENESIS renderer applies one continuous environment state to lighting, water, cloud and rain systems',()=>{

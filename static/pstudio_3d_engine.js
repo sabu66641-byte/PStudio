@@ -30,6 +30,8 @@
   let ssrEnabled=false,qualityAOEnabled=false,qualityPreset=readSavedQualityPreset();
   let csm=null,adaptiveQualityEnabled=true,adaptiveQualityLevel=2,adaptiveFrameEMA=0,adaptiveSlowFrames=0,adaptiveFastFrames=0,adaptiveLastChange=0;
   let dynamicResolutionScale=1,dynamicResolutionSlowSamples=0,dynamicResolutionFastSamples=0,dynamicResolutionLastChange=0,dynamicResolutionLastSampleAt=0,dynamicResolutionMetricSource='unavailable';
+  const dynamicResolutionTrialVerifier=window.PStudioRenderingBudget?.createPStudioResolutionTrialVerifier?.({sampleCount:30,minimumImprovement:0.025})||null;
+  let dynamicResolutionFallbackValidated=false;
   const frameIntervalSamples=[],cpuRenderSamples=[],gpuRenderSamples=[];
   let lastFrameRenderStats={calls:0,triangles:0,points:0,geometries:0,textures:0};
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastFrameIntervalSampleAt=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
@@ -294,10 +296,10 @@
   function resolveQualityPreset(name){
     if(name!=='auto')return QUALITY_PROFILES[name]?name:'balanced';
     const hardware=qualityHardwareCapabilities();
-    const {memoryGiB,cpuCores,maxTextureSize,touch}=hardware;
-    // Choose the strongest sensible starting tier, then adapt from real frame timing.
+    const {memoryGiB,cpuCores,maxTextureSize}=hardware;
+    // Touch input is not a GPU capability. Select by exposed resource limits, then adapt from measured cost.
     if(memoryGiB<=2||cpuCores<=2||maxTextureSize<2048)return 'mobile';
-    if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096||(touch&&memoryGiB<=4))return 'balanced';
+    if(memoryGiB<=3||cpuCores<4||maxTextureSize<4096)return 'balanced';
     if(memoryGiB>=8&&cpuCores>=8&&maxTextureSize>=8192)return 'maximum';
     return 'high';
   }
@@ -330,9 +332,8 @@
       // shadow/AO settings. Level 2 preserves the full 2x Maximum target; lower
       // levels trade resolution for frame time on constrained devices.
       const adaptiveScale=adaptive?[0.35,0.65,1][level]:1;
-      // A constrained touch device must not allocate a desktop-class Ultra drawing buffer.
-      const mobilePixelRatioCap=adaptiveTouchResolutionBudget?[.8,1.0,1.2][level]:Infinity;
-      const targetRatio=Math.min(requested*adaptiveScale,mobilePixelRatioCap);
+      // Bound output by physical framebuffer/texture and memory limits below, not touch status.
+      const targetRatio=requested*adaptiveScale;
       const rect=canvas?.getBoundingClientRect?.()||{};
       const width=Math.max(0,Number(rect.width)||0),height=Math.max(0,Number(rect.height)||0);
       if(width<=0||height<=0)return targetRatio;
@@ -346,8 +347,7 @@
     const scale=adaptive
       ?(selected==='maximum'?[.66,.78,.94][level]:[.68,.84,1][level])
       :1;
-    const mobilePixelRatioCap=adaptiveTouchResolutionBudget?[.72,.9,1.05][level]:Infinity;
-    return Math.min(dpr,profile.pixelRatio*scale,mobilePixelRatioCap);
+    return Math.min(dpr,profile.pixelRatio*scale);
   }
 
   function effectiveRenderPixelRatio(selected=resolveQualityPreset(qualityPreset),level=adaptiveQualityLevel,adaptive=adaptiveQualityEnabled){
@@ -370,6 +370,7 @@
     resetPostProcessingFailure();
     qualityPreset=QUALITY_PROFILES[name]?name:'auto';
     dynamicResolutionScale=1;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;dynamicResolutionLastChange=0;dynamicResolutionLastSampleAt=0;dynamicResolutionMetricSource='unavailable';
+    dynamicResolutionTrialVerifier?.reset?.('quality-preset-reset');dynamicResolutionFallbackValidated=false;
     adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset);
     const isTouchDevice=Number(window.navigator?.maxTouchPoints||0)>0;
@@ -379,12 +380,11 @@
     adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveTouchResolutionBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
-    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
-    // Ultra retains its configured 2x Maximum output target. Constrained touch devices begin one
-    // adaptive rung lower for buffer/sampling safety; the requested effect set remains enabled.
+    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='maximum'||qualityPreset==='ultra';
+    // Start from the selected profile's full quality. Runtime reductions require measured benefit.
     adaptiveQualityLevel=2;
-    if(adaptiveMaximumTouchMode||adaptiveUltraTouchMode)adaptiveQualityLevel=1;
-    if(qualityPreset==='auto'&&selected==='mobile'&&isTouchDevice&&deviceMemoryGiB()>2)adaptiveQualityLevel=1;
+    dynamicResolutionTrialVerifier?.reset?.('quality-preset-changed');
+    dynamicResolutionFallbackValidated=false;
     const baseProfile=QUALITY_PROFILES[selected],profile=baseProfile;
     const effectsEnabled=!memorySafetyApplied;
     const premiumEffectsEnabled=effectsEnabled;
@@ -400,7 +400,7 @@
       renderer.shadowMap.type=profile.shadowMode==='vsm'&&effectsEnabled?window.THREE.VSMShadowMap:window.THREE.PCFSoftShadowMap;
       renderer.shadowMap.needsUpdate=true;
       const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
-      const requestedShadow=adaptiveUltraTouchMode?[1024,1536,2048][adaptiveQualityLevel]:adaptiveMaximumTouchMode?[768,1024,1536][adaptiveQualityLevel]:qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
+      const requestedShadow=qualityPreset==='ultra'?[3072,4096,8192][adaptiveQualityLevel]:Math.min(4096,profile.shadowSize);
       for(const light of lights)if(light?.shadow){const size=resolveShadowMapSize(csm?requestedShadow:Math.min(requestedShadow,profile.shadowSize));light.shadow.mapSize.set(size,size);light.shadow.dispose?.();light.shadow.radius=profile.shadowMode==='vsm'&&effectsEnabled?(qualityPreset==='ultra'?1.9:2.5):2;light.shadow.bias=-0.00003;light.shadow.normalBias=0.006;light.shadow.needsUpdate=true;}
       if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.updateFrustums?.();}
       volumetricCloudsEnabled=!!(premiumEffectsEnabled&&profile.clouds&&volumetricCloudPass&&activeEnvironmentPreset!=='studio');
@@ -421,42 +421,78 @@
     if(!adaptiveQualityEnabled||!renderer)return false;
     let sampleMs=0,sampleAt=0,source='unavailable';
     if(hasRecentGpuSample&&Number.isFinite(lastGpuRenderDurationMs)&&lastGpuRenderDurationMs>0&&lastGpuTimerTimestamp>0){
-      sampleMs=lastGpuRenderDurationMs;
-      sampleAt=lastGpuTimerTimestamp;
-      source='gpu-timer-query';
+      sampleMs=lastGpuRenderDurationMs;sampleAt=lastGpuTimerTimestamp;source='gpu-timer-query';
     }else{
       const pageVisible=typeof document==='undefined'||document.visibilityState!=='hidden';
       const frameInterval=Number(lastFrameIntervalMs)||0;
-      // Frame pacing is the fallback when timer queries are absent, disjoint or stale.
-      // Ignore background-tab pauses, initial frames and long scheduling stalls.
+      // Frame pacing is only a proxy for GPU load. Ignore hidden tabs, startup frames and stalls.
       if(!pageVisible||!lastFrameIntervalSampleAt||now-lastFrameIntervalSampleAt>250||frameInterval<1||frameInterval>100){
-        dynamicResolutionMetricSource='unavailable';
-        return false;
+        dynamicResolutionMetricSource='unavailable';return false;
       }
-      sampleMs=frameInterval;
-      sampleAt=lastFrameIntervalSampleAt;
-      source='frame-interval-fallback';
+      sampleMs=frameInterval;sampleAt=lastFrameIntervalSampleAt;source='frame-interval-fallback';
     }
     if(!sampleAt||sampleAt===dynamicResolutionLastSampleAt)return false;
-    dynamicResolutionLastSampleAt=sampleAt;
-    dynamicResolutionMetricSource=source;
-    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
-    const targetMs=(touch||adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?20:16.67;
+    dynamicResolutionLastSampleAt=sampleAt;dynamicResolutionMetricSource=source;
+    if(source==='gpu-timer-query'){
+      dynamicResolutionTrialVerifier?.reset?.('gpu-timer-query-available');
+      dynamicResolutionFallbackValidated=false;
+    }else{
+      const beforeTrial=dynamicResolutionTrialVerifier?.getState?.();
+      const trial=dynamicResolutionTrialVerifier?.observe?.(sampleMs);
+      if(beforeTrial?.active&&!trial?.active&&trial?.status==='improved'){
+        dynamicResolutionFallbackValidated=true;
+        try{window.PStudioEvents?.emit('render.dynamic-resolution.validated',{
+          scale:Number(dynamicResolutionScale.toFixed(3)),
+          referenceFrameMs:Number(trial.referenceFrameMs.toFixed(2)),
+          observedFrameMs:Number(trial.observedFrameMs.toFixed(2)),
+          improvementPercent:Number((trial.improvement*100).toFixed(2)),
+          sampleCount:trial.sampleCount,source
+        });}catch(_){}
+      }else if(beforeTrial?.active&&!trial?.active&&trial?.status==='ineffective'){
+        dynamicResolutionFallbackValidated=false;
+        const restoreScale=Number(trial.beforeScale);
+        if(Number.isFinite(restoreScale)&&restoreScale>0){
+          dynamicResolutionScale=restoreScale;dynamicResolutionLastChange=now;
+          dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;
+          applyEffectiveRenderScale();lastSize={width:0,height:0};resize();
+        }
+        try{window.PStudioEvents?.emit('render.dynamic-resolution.ineffective',{
+          scale:Number(dynamicResolutionScale.toFixed(3)),
+          attemptedScale:Number(trial.afterScale.toFixed(3)),
+          referenceFrameMs:Number(trial.referenceFrameMs.toFixed(2)),
+          observedFrameMs:Number(trial.observedFrameMs.toFixed(2)),
+          improvementPercent:Number((trial.improvement*100).toFixed(2)),
+          sampleCount:trial.sampleCount,reason:trial.reason,source
+        });}catch(_){}
+        return true;
+      }
+      if(trial?.active)return false;
+    }
+    const targetMs=16.67;
     if(sampleMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
     else if(sampleMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
     else{dynamicResolutionSlowSamples=Math.max(0,dynamicResolutionSlowSamples-1);dynamicResolutionFastSamples=0;}
     if(now-dynamicResolutionLastChange<900)return false;
     let next=dynamicResolutionScale;
-    if(dynamicResolutionSlowSamples>=8&&dynamicResolutionScale>0.55)next=Math.max(0.55,dynamicResolutionScale-0.05);
+    const trialState=dynamicResolutionTrialVerifier?.getState?.();
+    const canUseFallback=source==='gpu-timer-query'||(!!dynamicResolutionTrialVerifier&&!trialState?.blocked);
+    if(dynamicResolutionSlowSamples>=8&&dynamicResolutionScale>0.55&&canUseFallback)next=Math.max(0.55,dynamicResolutionScale-0.05);
     else if(dynamicResolutionFastSamples>=45&&dynamicResolutionScale<1)next=Math.min(1,dynamicResolutionScale+0.025);
     if(Math.abs(next-dynamicResolutionScale)<0.001)return false;
+    if(next<dynamicResolutionScale&&source==='frame-interval-fallback'){
+      const referenceSamples=frameIntervalSamples.slice(-30);
+      const referenceMs=referenceSamples.length?referenceSamples.reduce((sum,value)=>sum+value,0)/referenceSamples.length:sampleMs;
+      const started=dynamicResolutionTrialVerifier?.begin?.(dynamicResolutionScale,next,referenceMs);
+      if(started?.status!=='measuring')return false;
+      dynamicResolutionFallbackValidated=false;
+    }
     dynamicResolutionScale=next;dynamicResolutionLastChange=now;dynamicResolutionSlowSamples=0;dynamicResolutionFastSamples=0;
     applyEffectiveRenderScale();lastSize={width:0,height:0};resize();
     try{window.PStudioEvents?.emit('render.dynamic-resolution.changed',{
       scale:Number(dynamicResolutionScale.toFixed(3)),
       gpuTimeMs:source==='gpu-timer-query'?Number(sampleMs.toFixed(2)):null,
       frameIntervalMs:source==='frame-interval-fallback'?Number(sampleMs.toFixed(2)):null,
-      targetMs,source
+      validationRequired:source==='frame-interval-fallback',targetMs,source
     });}catch(_){}
     return true;
   }
@@ -465,20 +501,19 @@
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     updateDynamicResolutionFromMetrics(now,hasRecentGpuSample);
-    const fallbackFrameMs=Math.max(Number(lastRenderDurationMs)||0,Number(lastFrameIntervalMs)||0);
-    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission';
-    // GPU timer queries are unavailable on some mobile browsers. In that case,
-    // use observed frame cadence as well as CPU submission time so GPU-bound
-    // Ultra scenes can still step down their real render resolution.
-    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:fallbackFrameMs;
+    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'unavailable';
+    // A frame-interval trial can validate resolution scaling only. It cannot attribute
+    // bottlenecks to AO, shadows, clouds or volumetrics, so pass-quality changes require GPU timing.
+    if(!hasRecentGpuSample)return;
+    const ms=lastGpuRenderDurationMs;
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
     if(adaptiveFrameEMA>19){adaptiveSlowFrames++;adaptiveFastFrames=0;}
     else if(adaptiveFrameEMA<15){adaptiveFastFrames++;adaptiveSlowFrames=0;}
     else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
     if(now-adaptiveLastChange<1800)return;
     let changed=false;
-    if(adaptiveSlowFrames>=(adaptiveTouchResolutionBudget?6:35)&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
-    else if(adaptiveFastFrames>=(adaptiveTouchResolutionBudget?90:150)&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
+    if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
+    else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
@@ -493,7 +528,7 @@
     if(volumetricFogPass){volumetricFogPass.enabled=volumetricFogEnabled;volumetricFogPass.setQuality?.(selected,adaptiveQualityLevel);}
     if(gtaoPass?.updateGtaoMaterial){const aoSamples=selected==='ultra'?[16,28,40][adaptiveQualityLevel]:selected==='maximum'?[12,20,32][adaptiveQualityLevel]:[8,12,16][adaptiveQualityLevel];const pdSamples=selected==='ultra'?[20,32,44][adaptiveQualityLevel]:selected==='maximum'?[14,22,32][adaptiveQualityLevel]:[12,18,24][adaptiveQualityLevel];gtaoPass.updateGtaoMaterial({radius:selected==='ultra'?0.92:selected==='maximum'?0.72:0.52,thickness:selected==='ultra'?0.2:selected==='maximum'?0.16:0.12,distanceExponent:1.5,scale:selected==='ultra'?1.12:selected==='maximum'?1.0:0.85,samples:aoSamples,screenSpaceRadius:false});gtaoPass.updatePdMaterial?.({rings:selected==='ultra'?4:selected==='maximum'?3:2,samples:pdSamples,radius:selected==='ultra'?10:selected==='maximum'?9:8});}
     if(taaPass&&!temporalAAEnabled){taaPass.sampleLevel=adaptiveQualityLevel;taaPass.accumulateIndex=-1;}
-    const shadowSizes=adaptiveUltraTouchMode?[1024,1536,2048]:adaptiveMaximumTouchMode?[768,1024,1536]:qualityPreset==='ultra'?[3072,4096,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
+    const shadowSizes=qualityPreset==='ultra'?[3072,4096,8192]:qualityPreset==='maximum'?[1024,2048,4096]:[1024,1536,2048];
     const mapSize=resolveShadowMapSize(shadowSizes[adaptiveQualityLevel]);
     const lights=csm?.lights?.length?csm.lights:(keyLight?[keyLight]:[]);
     for(const light of lights)if(light?.shadow){light.shadow.mapSize.set(mapSize,mapSize);light.shadow.dispose?.();light.shadow.needsUpdate=true;}
@@ -1105,13 +1140,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   }
 
   function mirrorWaterResolutionScale(){
-    const hardware=qualityHardwareCapabilities();
-    const ultraFullDetail=qualityPreset==='ultra'&&!memorySafetyApplied;
-    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0);
-    // GENESIS is a large showcase: cap mirror-target pixels slightly and let the existing
-    // frame-budget controller reduce them further under measured GPU pressure.
-    const genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0;
-    return Math.min(base,genesisCap)*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
+    const base=memorySafetyApplied?0.86:1.0;
+    // Reflection resolution follows measured frame-budget pressure, not touch/device labels.
+    return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1);
   }
   function configureMirrorWaterMaterial(material){
     const T=window.THREE;
@@ -1216,10 +1247,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     });
     if(!mirrors.length)return 0;
     mirrorWaterFrameCounter++;
-    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
     const updateInterval=renderingFrameBudgetController
       ?Math.max(1,Math.floor(Number(renderingFrameBudget.mirrorIntervalFrames)||1))
-      :touch?(memorySafetyApplied||adaptiveQualityLevel===0?3:2):1;
+      :1;
     const forceRefresh=mirrors.some(mesh=>!mesh.userData.pstudioMirrorWater.hasRendered);
     if(mirrorWaterFrameCounter%updateInterval!==0&&!forceRefresh)return mirrors.length;
     const size=renderer.getDrawingBufferSize(new T.Vector2());
@@ -1533,6 +1563,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null,
       renderEffects:{ao:qualityAOEnabled,ssr:ssrEnabled,volumetricClouds:volumetricCloudsEnabled,volumetricFog:volumetricFogEnabled,contactShadows:contactShadowsEnabled},
       dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource,
+      dynamicResolutionValidation:dynamicResolutionTrialVerifier?.getState?.()||{status:'unavailable',active:false,blocked:false},
+      adaptiveQualityValidation:gpuFresh?'gpu-timer-query':dynamicResolutionFallbackValidated?'frame-pacing-validated':'awaiting-frame-pacing-validation',
       frameBudget:{source:renderingFrameBudget.source,scale:Number(renderingFrameBudget.scale.toFixed(3)),mirrorIntervalFrames:renderingFrameBudget.mirrorIntervalFrames,mirrorResolutionScale:Number(renderingFrameBudget.mirrorResolutionScale.toFixed(3)),giCaptureAllowed:renderingFrameBudget.giCaptureAllowed,giCadenceMultiplier:renderingFrameBudget.giCadenceMultiplier,cloudStepScale:Number(renderingFrameBudget.cloudStepScale.toFixed(3)),fogStepScale:Number(renderingFrameBudget.fogStepScale.toFixed(3)),contactShadowStepScale:Number(renderingFrameBudget.contactShadowStepScale.toFixed(3))},
       renderPixelRatio:renderer?.getPixelRatio?.()||null,memorySafety:memorySafetyApplied,
       dynamicGI:{enabled:dynamicGIEnabled,status:dynamicGIStatus,validProbes:dynamicProbeCache.filter(item=>item.valid).length,totalProbes:dynamicProbeCache.length,updates:dynamicProbeUpdates,captureResolution:qualityPreset==='ultra'?192:qualityPreset==='maximum'?128:qualityPreset==='high'?96:64,nextCaptureIntervalMs:dynamicProbeCaptureIntervalMs(gpuFresh?lastGpuRenderDurationMs:lastRenderDurationMs,gpuFresh)},
@@ -1673,16 +1705,16 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     frameBudgetPreviousDirection.copy(frameBudgetCurrentDirection);
     frameBudgetCameraValid=true;
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
-    const frameFresh=lastFrameIntervalSampleAt>0&&now-lastFrameIntervalSampleAt<250;
-    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    // The shared pass-quality broker consumes GPU timing only; frame pacing is used
+    // solely by the separately verified dynamic-resolution trial above.
     const dynamicScene=dynamicLights.size>0||dynamicGIEnabled||
       volumetricCloudsEnabled||activeEnvironmentPreset==='night'||!!window.PStudioEngine?.isRunning?.()||particleEmitters.size>0||trailEffects.size>0;
     const revision=renderingFrameBudget.revision;
     renderingFrameBudgetController.update(
       gpuFresh?lastGpuRenderDurationMs:0,
       gpuFresh,
-      frameFresh?lastFrameIntervalMs:0,
-      touch?20:16.67,
+      0,
+      16.67,
       lastMemoryPressure,
       cameraMoving,
       dynamicScene,
@@ -6826,10 +6858,9 @@ void main(){
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
     root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
     genesisShrineDemoGroup=root;
-    const hardware=qualityHardwareCapabilities();
-    const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=4||(hardware.memoryGiB<=6&&hardware.maxTextureSize<=4096));
-    const mobileDetailScale=constrainedMobile?0.42:1;
-    const detailTextureSize=constrainedMobile?256:(qualityPreset==='ultra'?1024:512);
+    // Authored scene density is invariant across devices. Instancing and staged construction
+    // optimize execution without substituting a smaller scene on touch hardware.
+    const detailTextureSize=qualityPreset==='ultra'?1024:512;
     let nextYieldAt=0,progressFloor=0;
     const yieldBuild=async(progress,label,force=false)=>{
       if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
@@ -6946,7 +6977,7 @@ void main(){
       }
       const mesh=add(geometry,material,centerX,baseY,centerZ);
       mesh.name='GENESIS Curved Japanese Roof | individually tiled';
-      const effectiveTileDensity=tileDensity*mobileDetailScale;
+      const effectiveTileDensity=tileDensity;
       const columns=Math.max(3,Math.floor(dimensions.halfWidth/1.85*effectiveTileDensity));
       const rows=Math.max(4,Math.floor(dimensions.halfDepth/1.8*effectiveTileDensity));
       for(const side of [-1,1]){
@@ -7160,7 +7191,7 @@ void main(){
 
     await yieldBuild(44,'桜並木を生成中',true);
     // Sculpted sakura trees form continuous flowering corridors beside the river.
-    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=constrainedMobile?12000:22000;
+    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=22000;
     geometrySet.add(blossomGeometry);materialSet.add(materials.blossom);
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,blossomCapacity);
     blossomMesh.name='GENESIS Sakura | dense sculpted blossoms along both river banks';
@@ -7207,7 +7238,7 @@ void main(){
           branchEnds.push(twigEnd);
         }
       }
-      const countForTree=Math.floor(820*scale*mobileDetailScale);
+      const countForTree=Math.floor(820*scale);
       for(let n=0;n<countForTree&&blossomIndex<blossomCapacity;n++,blossomIndex++){
         const branch=branchEnds[n%branchEnds.length],angle=random()*Math.PI*2;
         const radial=Math.sqrt(random())*(4.2+random()*2.2)*scale;
@@ -7228,11 +7259,11 @@ void main(){
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
     await yieldBuild(54,'松林を生成中',true);
-    await genesisAddPineForest(T,root,materials,0x712a9b4,Math.round(26*(constrainedMobile ? .62 : 1)),{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(56,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x5a821b1,Math.round(26*(constrainedMobile ? .62 : 1)),{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(58,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x6bd1c29,Math.round(22*(constrainedMobile ? .62 : 1)),{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
     const signGeometry=new T.BoxGeometry(2.3,3.8,.18),lanternBoxGeometry=new T.BoxGeometry(.9,1.5,.9);
@@ -7311,7 +7342,7 @@ void main(){
     let citySeed=0x16a2bc43;
     const cityRandom=()=>{citySeed=(Math.imul(citySeed,1664525)+1013904223)>>>0;return citySeed/4294967296;};
     const cityColumns=[102,188,276,366,446];
-    const cityRowCount=constrainedMobile?8:11;
+    const cityRowCount=11;
     await yieldBuild(61,'城下町の建築物を生成中',true);
     let buildingsBuilt=0;
     for(const side of [-1,1]){
@@ -7357,7 +7388,7 @@ void main(){
 
     await yieldBuild(82,'街並みの仕上げ中',true);
     // Hundreds of emissive paper sky lanterns fill the open sky above the capital.
-    const skyLanternCount=constrainedMobile?160:320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
+    const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
     const skyBodyGeometry=new T.CylinderGeometry(.52,.66,1.62,12,8,true);
     const skyTopGeometry=new T.TorusGeometry(.52,.045,6,16);
     const skyBottomGeometry=new T.TorusGeometry(.66,.045,6,16);
@@ -7407,7 +7438,7 @@ void main(){
 
     await yieldBuild(89,'桜の螺旋と空の灯籠を生成中',true);
     // A broad, oblique helix rises around the pagoda and quietly fades before its crown.
-    const vortexCount=constrainedMobile?12000:28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28;
+    const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28;
     const vortexBaseGeometry=new T.PlaneGeometry(1,.58,1,1);
     const vortexGeometry=new T.InstancedBufferGeometry().copy(vortexBaseGeometry);
     vortexBaseGeometry.dispose();vortexGeometry.instanceCount=vortexCount;geometrySet.add(vortexGeometry);

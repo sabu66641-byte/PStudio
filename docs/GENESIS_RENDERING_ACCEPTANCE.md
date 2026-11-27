@@ -40,6 +40,13 @@ The following is a source-level review of the default branch as of 2026-11-26. I
 - Existing telemetry has known limits: WebGL GPU timer queries depend on browser extensions; CPU render-submission time is not total CPU frame time; resource-registry GPU memory is an estimate, not driver-reported allocation; these values must be labeled accordingly.
 - Automated tests and module smoke tests do not prove browser image parity, Android GPU behavior, sustained frame pacing, total memory stability, or device-loss recovery on physical hardware.
 
+
+### Adaptive rendering parity update (2026-11-27)
+
+The renderer now distinguishes measured GPU time from frame-pacing fallback. When a valid GPU timer query exists, adaptation uses that GPU measurement. When it does not, a dynamic-resolution decrease is a reversible experiment: collect 30 subsequent foreground frame-interval samples and retain the lower scale only when their mean improves by at least 2.5%. Otherwise restore the prior scale and block further frame-pacing-only downscales until a fresh GPU timing source or an explicit quality-profile reset becomes available. CPU render-submission time is not treated as a GPU-load estimate. Profile-level shadow/AO/volumetric quality changes and shared pass-budget reductions require fresh GPU timing. Frame-pacing fallback is limited to the separately trial-verified dynamic-resolution path.
+
+The GENESIS showcase now uses the same authored composition on touch and non-touch devices. Fixed reductions to roof-tile density, sakura count, pine count, city rows, lantern count, vortex instances, procedural texture size and planar reflection scale have been removed. Instancing, incremental build checkpoints, resource limits, measured resolution adaptation and the separate emergency memory-safety guard remain. This source-level change does not certify that every device can sustain the same frame rate or allocate the complete scene.
+
 ## GENESIS 0 — Baseline & Audit
 
 ### Required reference fixture
