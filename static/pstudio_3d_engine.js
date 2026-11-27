@@ -7243,8 +7243,8 @@ void main(){
     blossomMesh.instanceMatrix.needsUpdate=true;centerMesh.instanceMatrix.needsUpdate=true;
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
-    addShowcasePointLight('#FFC18F',2.4,58,-103,6.0,2);
-    addShowcasePointLight('#FFC18F',2.2,54,86,6.0,1);
+    addShowcasePointLight('#FFB88A',1.8,26,-89,5.0,11);
+    addShowcasePointLight('#FFB88A',1.45,23,-62,4.6,12);
 
     // Dark cedar and pine trees create a layered silhouette at the mountain foot.
     genesisAddPineForest(T,root,materials,0x5a821b1,36,{minX:-142,maxX:-92,minZ:-118,maxZ:-89,minHeight:6,maxHeight:13});
