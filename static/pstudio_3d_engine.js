@@ -6751,7 +6751,7 @@ void main(){
     return mesh;
   }
 
-  function genesisAddPineForest(T,parent,materials,seed,count,zone){
+  async function genesisAddPineForest(T,parent,materials,seed,count,zone,yieldBuild=async()=>{}){
     let state=seed>>>0;
     const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
     const trunkGeometry=new T.CylinderGeometry(.12,.28,1,8,2,false);
@@ -6789,16 +6789,20 @@ void main(){
           }
         }
       }
+      if((i&3)===3)await yieldBuild(56,'松の枝と葉を配置中');
     }
-    const batch=(geometry,material,matrices,name)=>{
+    const batch=async(geometry,material,matrices,name)=>{
       if(!matrices.length)return;
       const mesh=new T.InstancedMesh(geometry,material,matrices.length);mesh.name=name;
-      for(let i=0;i<matrices.length;i++)mesh.setMatrixAt(i,matrices[i]);
+      for(let i=0;i<matrices.length;i++){
+        mesh.setMatrixAt(i,matrices[i]);
+        if((i&255)===255)await yieldBuild(58,'松林の描画データを転送中');
+      }
       mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;mesh.computeBoundingSphere?.();parent.add(mesh);
     };
-    batch(trunkGeometry,materials.pineTrunk,trunkMatrices,'GENESIS Black Pine | tapered trunks');
-    batch(branchGeometry,materials.pineTrunk,branchMatrices,'GENESIS Black Pine | horizontal boughs');
-    batch(needlePadGeometry,materials.pine,padMatrices,'GENESIS Black Pine | flattened needle pads');
+    await batch(trunkGeometry,materials.pineTrunk,trunkMatrices,'GENESIS Black Pine | tapered trunks');
+    await batch(branchGeometry,materials.pineTrunk,branchMatrices,'GENESIS Black Pine | horizontal boughs');
+    await batch(needlePadGeometry,materials.pine,padMatrices,'GENESIS Black Pine | flattened needle pads');
   }
 
   async function buildGenesisShrineDemo(T,onProgress=()=>{},buildToken=genesisShrineDemoBuildToken){
@@ -6930,8 +6934,8 @@ void main(){
             const localY=genesisRoofHeight(localX,localZ,dimensions)+.075;
             addInstance(tileGeometry,materials.roofTile,centerX+localX,baseY+localY,centerZ+localZ,
               [0,0,-side*slope],[1,1,1]);
+            if((row&7)===7)await yieldBuild(25,'屋根瓦を配置中');
           }
-          if((row&7)===7)await yieldBuild(25,'屋根瓦を配置中');
         }
       }
       const ridgeY=baseY+dimensions.ridgeY+.16;
@@ -7200,11 +7204,11 @@ void main(){
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
     await yieldBuild(54,'松林を生成中',true);
-    genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    await genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(56,'松林を配置中');
-    genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    await genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(58,'松林を配置中');
-    genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26});
+    await genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
     const signGeometry=new T.BoxGeometry(2.3,3.8,.18),lanternBoxGeometry=new T.BoxGeometry(.9,1.5,.9);
@@ -7503,9 +7507,10 @@ void main(){
         if((index&1023)===1023)await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'描画データを転送中');
       }
       mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
-      mesh.computeBoundingSphere?.();root.add(mesh);mergedBatchIndex++;
+      mesh.computeBoundingSphere?.();root.add(mesh);batch.matrices.length=0;mergedBatchIndex++;
       await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'街並みを統合中');
     }
+    instanceBatches.clear();boxGeometryCache.clear();cylinderGeometryCache.clear();roofGeometryCache.clear();
     root.traverse(object=>{
       if(object.geometry)geometrySet.add(object.geometry);
       const assigned=Array.isArray(object.material)?object.material:[object.material];
