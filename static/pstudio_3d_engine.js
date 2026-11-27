@@ -468,7 +468,6 @@
       }
       if(trial?.active)return false;
     }
-    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
     const targetMs=16.67;
     if(sampleMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
     else if(sampleMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
@@ -1706,16 +1705,16 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     frameBudgetPreviousDirection.copy(frameBudgetCurrentDirection);
     frameBudgetCameraValid=true;
     const gpuFresh=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
-    const frameFresh=dynamicResolutionFallbackValidated&&lastFrameIntervalSampleAt>0&&now-lastFrameIntervalSampleAt<250;
-    const touch=Number(window.navigator?.maxTouchPoints||0)>0;
+    // The shared pass-quality broker consumes GPU timing only; frame pacing is used
+    // solely by the separately verified dynamic-resolution trial above.
     const dynamicScene=dynamicLights.size>0||dynamicGIEnabled||
       volumetricCloudsEnabled||activeEnvironmentPreset==='night'||!!window.PStudioEngine?.isRunning?.()||particleEmitters.size>0||trailEffects.size>0;
     const revision=renderingFrameBudget.revision;
     renderingFrameBudgetController.update(
       gpuFresh?lastGpuRenderDurationMs:0,
       gpuFresh,
-      frameFresh?lastFrameIntervalMs:0,
-      touch?20:16.67,
+      0,
+      16.67,
       lastMemoryPressure,
       cameraMoving,
       dynamicScene,
