@@ -1697,7 +1697,10 @@ test('dynamic resolution uses fresh GPU timers or safe visible-frame pacing fall
   assert.ok(renderer.includes('dynamicResolutionScale:Number(dynamicResolutionScale.toFixed(3)),dynamicResolutionSource:dynamicResolutionMetricSource'));
   assert.match(controller,/dynamicResolutionTrialVerifier/);
   assert.match(controller,/dynamicResolutionFallbackValidated/);
+  assert.match(controller,/if\(!hasRecentGpuSample\)return/);
   assert.ok(fs.readFileSync(path.join(root,'static/pstudio_rendering_budget.js'),'utf8').includes('frame-pacing-did-not-improve'));
+  assert.ok(renderer.includes('solely by the separately verified dynamic-resolution trial above.'));
+  assert.ok(renderer.includes('      0,\n      16.67,'));
   assert.match(renderer,/updateDynamicResolutionFromMetrics\(now,hasRecentGpuSample\)/);
 });
 
