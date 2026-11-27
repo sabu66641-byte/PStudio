@@ -7556,6 +7556,9 @@ void main(){
       if(genesisShrineDemoGroup===root)removeGenesisShrineDemo();
       if(error?.message==='GENESIS_BUILD_CANCELLED')return false;
       genesisShrineDemoRequested=false;
+      const referenceCanvas=document.getElementById('game-3d-canvas')||canvas;
+      referenceCanvas?.classList?.toggle('pstudio-reference-frame',false);
+      document.getElementById('game-hud-canvas')?.classList?.toggle('pstudio-reference-frame-hud',false);
       if(camera&&genesisShrinePreviousCameraFov!==null){camera.fov=genesisShrinePreviousCameraFov;camera.updateProjectionMatrix();}
       genesisShrinePreviousCameraFov=null;
       throw error;
