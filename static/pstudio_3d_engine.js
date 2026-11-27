@@ -7334,8 +7334,8 @@ void main(){
       for(let index=0;index<10;index++)addGardenLantern(side*(72+(index%4)*18),320-index*72,.82+(index%3)*.1,index%4!==0);
     }
 
-    // 24,000 separate sakura petals move on a slow upward-expanding spiral around the pagoda.
-    const vortexCount=24000,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
+    // 50,000 individual sakura petals form six coherent, upward-expanding spiral arms around the pagoda.
+    const vortexCount=50000,vortexStrandCount=6,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
     const vortexPhase=new Float32Array(vortexCount),vortexBaseHeight=new Float32Array(vortexCount);
     const vortexRadius=new Float32Array(vortexCount),vortexAngularSpeed=new Float32Array(vortexCount);
     const vortexRiseSpeed=new Float32Array(vortexCount),vortexScale=new Float32Array(vortexCount);
@@ -7344,10 +7344,12 @@ void main(){
     let vortexSeed=0x5c7319ab;
     const vortexRandom=()=>{vortexSeed=(Math.imul(vortexSeed,1664525)+1013904223)>>>0;return vortexSeed/4294967296;};
     for(let index=0;index<vortexCount;index++){
-      vortexPhase[index]=vortexRandom()*Math.PI*2;
-      vortexBaseHeight[index]=vortexRandom()*105;
-      vortexRadius[index]=19+vortexRandom()*13;
-      vortexAngularSpeed[index]=.075+vortexRandom()*.075;
+      const strandIndex=index%vortexStrandCount;
+      const strandPhase=(strandIndex/vortexStrandCount)*Math.PI*2;
+      vortexPhase[index]=strandPhase+(vortexRandom()-.5)*.56;
+      vortexBaseHeight[index]=vortexRandom()*142;
+      vortexRadius[index]=54+vortexRandom()*12;
+      vortexAngularSpeed[index]=.035+vortexRandom()*.025;
       vortexRiseSpeed[index]=.42+vortexRandom()*.58;
       vortexScale[index]=.7+vortexRandom()*1.35;
       const tint=vortexPalette[Math.floor(vortexRandom()*vortexPalette.length)];
@@ -7361,7 +7363,7 @@ void main(){
     vortexGeometry.setAttribute('aVortexScale',new T.InstancedBufferAttribute(vortexScale,1));
     vortexGeometry.setAttribute('aVortexColor',new T.InstancedBufferAttribute(vortexColor,3));
     const vortexMaterial=new T.ShaderMaterial({
-      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:105},uRadiusGrowth:{value:47}},
+      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:142},uRadiusGrowth:{value:38}},
       vertexShader:[
         'precision highp float;','attribute float aVortexPhase;','attribute float aVortexBaseHeight;',
         'attribute float aVortexRadius;','attribute float aVortexAngularSpeed;','attribute float aVortexRiseSpeed;',
@@ -7371,7 +7373,7 @@ void main(){
         'void main(){','vPetalUv=uv;','vPetalColor=aVortexColor;',
         'float height=mod(aVortexBaseHeight+uTime*aVortexRiseSpeed,uVortexHeight);',
         'float heightRatio=clamp(height/uVortexHeight,0.0,1.0);',
-        'float angle=aVortexPhase+uTime*aVortexAngularSpeed+heightRatio*15.0;',
+        'float angle=aVortexPhase+uTime*aVortexAngularSpeed+heightRatio*18.849556;',
         'float radius=aVortexRadius+heightRatio*uRadiusGrowth+sin(uTime*.42+aVortexPhase)*2.8;',
         'vec3 centre=uCenter+vec3(cos(angle)*radius,height,sin(angle)*radius);',
         'vec3 cameraRight=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));',
@@ -7396,14 +7398,14 @@ void main(){
       transparent:false,depthWrite:true,depthTest:true,side:T.DoubleSide,toneMapped:false
     });
     const vortex=new T.InstancedMesh(vortexGeometry,vortexMaterial,vortexCount);
-    vortex.name='GENESIS Sakura Vortex | 24,000 GPU-animated petals';
+    vortex.name='GENESIS Sakura Vortex | 50,000 GPU-animated petals in six spiral arms';
     vortex.frustumCulled=false;
     const vortexDummy=new T.Object3D();
     for(let index=0;index<vortexCount;index++){
       vortexDummy.position.set(0,0,0);vortexDummy.rotation.set(0,0,0);vortexDummy.scale.set(1,1,1);
       vortexDummy.updateMatrix();vortex.setMatrixAt(index,vortexDummy.matrix);
     }
-    vortex.instanceMatrix.needsUpdate=true;root.add(vortex);
+    vortex.instanceMatrix.setUsage(T.StaticDrawUsage);vortex.instanceMatrix.needsUpdate=true;root.add(vortex);
     genesisShrinePetalInstances=vortex;genesisShrinePetalMotion=[];
 
     // Secondary paths, neighborhood gates and outer walls make the city feel inhabited.
