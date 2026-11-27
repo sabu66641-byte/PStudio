@@ -1025,12 +1025,15 @@ function setGenesisDemoLoading(visible){
  overlay.hidden=!visible;
  if(visible)updateGenesisDemoLoading({progress:0,label:'準備中'});
 }
+let genesisDemoLaunchInProgress=false;
 function cancelGenesisDemoLoading(){
  window.PStudio3D?.setGenesisShrineDemo?.(false);
  setGenesisDemoLoading(false);
  toast('シーン生成をキャンセルしました。');
 }
 async function openGenesisDemo(){
+ if(genesisDemoLaunchInProgress)return;
+ genesisDemoLaunchInProgress=true;
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
  setGenesisDemoLoading(true);
  // Paint the overlay before project setup or scene construction starts.
@@ -1065,6 +1068,8 @@ async function openGenesisDemo(){
   setGenesisDemoLoading(false);
   console.error('GENESIS scene generation failed',error);
   toast('シーン生成に失敗しました。詳細はコンソールを確認してください。');
+ }finally{
+  genesisDemoLaunchInProgress=false;
  }
 }
 function persistProject(){
