@@ -6459,8 +6459,10 @@ void main(){
     return geometry;
   }
 
-  function genesisCreateDetailTexture(T,kind,textureSet){
-    const size=qualityPreset==='ultra'?1024:512,canvas=document.createElement('canvas');
+  function genesisCreateDetailTexture(T,kind,textureSet,sizeOverride=0){
+    const requestedSize=Math.floor(Number(sizeOverride)||0);
+    const size=requestedSize>0?Math.max(128,Math.min(1024,requestedSize)):(qualityPreset==='ultra'?1024:512);
+    const canvas=document.createElement('canvas');
     canvas.width=size;canvas.height=size;
     const context=canvas.getContext('2d');
     if(!context)return null;
@@ -6824,6 +6826,10 @@ void main(){
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
     root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
     genesisShrineDemoGroup=root;
+    const hardware=qualityHardwareCapabilities();
+    const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=6||hardware.maxTextureSize<=4096);
+    const mobileDetailScale=constrainedMobile?0.42:1;
+    const detailTextureSize=constrainedMobile?256:(qualityPreset==='ultra'?1024:512);
     let nextYieldAt=0,progressFloor=0;
     const yieldBuild=async(progress,label,force=false)=>{
       if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
@@ -6839,10 +6845,10 @@ void main(){
     try{
     await yieldBuild(2,'環境とマテリアルを準備中',true);
     const textures={
-      wood:genesisCreateDetailTexture(T,'wood',textureSet),
-      stone:genesisCreateDetailTexture(T,'stone',textureSet),
-      roof:genesisCreateDetailTexture(T,'roof',textureSet),
-      paper:genesisCreateDetailTexture(T,'paper',textureSet)
+      wood:genesisCreateDetailTexture(T,'wood',textureSet,detailTextureSize),
+      stone:genesisCreateDetailTexture(T,'stone',textureSet,detailTextureSize),
+      roof:genesisCreateDetailTexture(T,'roof',textureSet,detailTextureSize),
+      paper:genesisCreateDetailTexture(T,'paper',textureSet,detailTextureSize)
     };
     const materials={
       ground:new T.MeshStandardMaterial({color:'#8B806B',roughness:.96,...textures.stone}),
@@ -6937,8 +6943,9 @@ void main(){
       }
       const mesh=add(geometry,material,centerX,baseY,centerZ);
       mesh.name='GENESIS Curved Japanese Roof | individually tiled';
-      const columns=Math.max(3,Math.floor(dimensions.halfWidth/1.85*tileDensity));
-      const rows=Math.max(4,Math.floor(dimensions.halfDepth/1.8*tileDensity));
+      const effectiveTileDensity=tileDensity*mobileDetailScale;
+      const columns=Math.max(3,Math.floor(dimensions.halfWidth/1.85*effectiveTileDensity));
+      const rows=Math.max(4,Math.floor(dimensions.halfDepth/1.8*effectiveTileDensity));
       for(const side of [-1,1]){
         for(let column=0;column<columns;column++){
           const localX=side*(.72+(column/Math.max(1,columns-1))*(dimensions.halfWidth-.95));
@@ -7150,7 +7157,7 @@ void main(){
 
     await yieldBuild(44,'桜並木を生成中',true);
     // Sculpted sakura trees form continuous flowering corridors beside the river.
-    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=22000;
+    const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=constrainedMobile?12000:22000;
     geometrySet.add(blossomGeometry);materialSet.add(materials.blossom);
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,blossomCapacity);
     blossomMesh.name='GENESIS Sakura | dense sculpted blossoms along both river banks';
@@ -7197,7 +7204,7 @@ void main(){
           branchEnds.push(twigEnd);
         }
       }
-      const countForTree=Math.floor(820*scale);
+      const countForTree=Math.floor(820*scale*mobileDetailScale);
       for(let n=0;n<countForTree&&blossomIndex<blossomCapacity;n++,blossomIndex++){
         const branch=branchEnds[n%branchEnds.length],angle=random()*Math.PI*2;
         const radial=Math.sqrt(random())*(4.2+random()*2.2)*scale;
@@ -7218,11 +7225,11 @@ void main(){
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
     await yieldBuild(54,'松林を生成中',true);
-    await genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x712a9b4,Math.round(26*(constrainedMobile?.62:1)),{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(56,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x5a821b1,Math.round(26*(constrainedMobile?.62:1)),{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24},yieldBuild);
     await yieldBuild(58,'松林を配置中');
-    await genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
+    await genesisAddPineForest(T,root,materials,0x6bd1c29,Math.round(22*(constrainedMobile?.62:1)),{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26},yieldBuild);
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
     const signGeometry=new T.BoxGeometry(2.3,3.8,.18),lanternBoxGeometry=new T.BoxGeometry(.9,1.5,.9);
@@ -7301,10 +7308,11 @@ void main(){
     let citySeed=0x16a2bc43;
     const cityRandom=()=>{citySeed=(Math.imul(citySeed,1664525)+1013904223)>>>0;return citySeed/4294967296;};
     const cityColumns=[102,188,276,366,446];
+    const cityRowCount=constrainedMobile?8:11;
     await yieldBuild(61,'城下町の建築物を生成中',true);
     let buildingsBuilt=0;
     for(const side of [-1,1]){
-      for(let row=0;row<11;row++){
+      for(let row=0;row<cityRowCount;row++){
         const z=352-row*77+(cityRandom()-.5)*10;
         for(let column=0;column<cityColumns.length;column++){
           if((row===5&&column===0)||(row===8&&column===4))continue;
@@ -7346,7 +7354,7 @@ void main(){
 
     await yieldBuild(82,'街並みの仕上げ中',true);
     // Hundreds of emissive paper sky lanterns fill the open sky above the capital.
-    const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
+    const skyLanternCount=constrainedMobile?160:320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
     const skyBodyGeometry=new T.CylinderGeometry(.52,.66,1.62,12,8,true);
     const skyTopGeometry=new T.TorusGeometry(.52,.045,6,16);
     const skyBottomGeometry=new T.TorusGeometry(.66,.045,6,16);
@@ -7396,7 +7404,7 @@ void main(){
 
     await yieldBuild(89,'桜の螺旋と空の灯籠を生成中',true);
     // A broad, oblique helix rises around the pagoda and quietly fades before its crown.
-    const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28;
+    const vortexCount=constrainedMobile?12000:28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28;
     const vortexBaseGeometry=new T.PlaneGeometry(1,.58,1,1);
     const vortexGeometry=new T.InstancedBufferGeometry().copy(vortexBaseGeometry);
     vortexBaseGeometry.dispose();vortexGeometry.instanceCount=vortexCount;geometrySet.add(vortexGeometry);
@@ -7546,13 +7554,11 @@ void main(){
       landmarkOrder:['arched_crimson_bridge','deep_crimson_torii','monumental_five_storey_pagoda']
     };
     if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
-    await yieldBuild(97,'シェーダーと描画準備を開始中',true);
+    await yieldBuild(97,'シーンを表示する準備中',true);
     scene.add(root);genesisShrineDemoGroup=root;
-    if(typeof renderer.compileAsync==='function'){
-      try{await renderer.compileAsync(scene,camera);}
-      catch(error){console.warn('[PStudio] GENESIS shader precompile deferred to first visible frame.',error);}
-    }
-    await yieldBuild(100,'生成完了',true);
+    // Do not compile the entire editor scene in one blocking finalization phase.
+    // The normal renderer compiles the showcase's materials as its first visible frames arrive.
+    await yieldBuild(100,'シーン生成完了',true);
     return true;
     }catch(error){
       if(genesisShrineDemoGroup===root)removeGenesisShrineDemo();
