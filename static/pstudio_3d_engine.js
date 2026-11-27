@@ -502,16 +502,15 @@
     const now=window.performance?.now?.()??Date.now();
     const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
     updateDynamicResolutionFromMetrics(now,hasRecentGpuSample);
-    const fallbackFrameMs=Number(lastFrameIntervalMs)||0;
-    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'cpu-render-submission';
-    // CPU render-submission time is not a GPU-load estimate. Frame-pacing fallback
-    // must first pass the reversible render-scale effectiveness trial.
-    const ms=hasRecentGpuSample?lastGpuRenderDurationMs:fallbackFrameMs;
+    adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':lastFrameIntervalMs>0?'frame-interval-fallback':'unavailable';
+    // A frame-interval trial can validate resolution scaling only. It cannot attribute
+    // bottlenecks to AO, shadows, clouds or volumetrics, so pass-quality changes require GPU timing.
+    if(!hasRecentGpuSample)return;
+    const ms=lastGpuRenderDurationMs;
     adaptiveFrameEMA=adaptiveFrameEMA?adaptiveFrameEMA*0.9+ms*0.1:ms;
     if(adaptiveFrameEMA>19){adaptiveSlowFrames++;adaptiveFastFrames=0;}
     else if(adaptiveFrameEMA<15){adaptiveFastFrames++;adaptiveSlowFrames=0;}
     else{adaptiveSlowFrames=Math.max(0,adaptiveSlowFrames-1);adaptiveFastFrames=0;}
-    if(!hasRecentGpuSample&&!dynamicResolutionFallbackValidated)return;
     if(now-adaptiveLastChange<1800)return;
     let changed=false;
     if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
