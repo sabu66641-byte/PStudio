@@ -6827,7 +6827,7 @@ void main(){
     root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
     genesisShrineDemoGroup=root;
     const hardware=qualityHardwareCapabilities();
-    const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=6||hardware.maxTextureSize<=4096);
+    const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=4||(hardware.memoryGiB<=6&&hardware.maxTextureSize<=4096));
     const mobileDetailScale=constrainedMobile?0.42:1;
     const detailTextureSize=constrainedMobile?256:(qualityPreset==='ultra'?1024:512);
     let nextYieldAt=0,progressFloor=0;
@@ -6844,12 +6844,15 @@ void main(){
     };
     try{
     await yieldBuild(2,'環境とマテリアルを準備中',true);
-    const textures={
-      wood:genesisCreateDetailTexture(T,'wood',textureSet,detailTextureSize),
-      stone:genesisCreateDetailTexture(T,'stone',textureSet,detailTextureSize),
-      roof:genesisCreateDetailTexture(T,'roof',textureSet,detailTextureSize),
-      paper:genesisCreateDetailTexture(T,'paper',textureSet,detailTextureSize)
-    };
+    const textures={};
+    textures.wood=genesisCreateDetailTexture(T,'wood',textureSet,detailTextureSize);
+    await yieldBuild(3,'木材テクスチャを生成中');
+    textures.stone=genesisCreateDetailTexture(T,'stone',textureSet,detailTextureSize);
+    await yieldBuild(4,'石材テクスチャを生成中');
+    textures.roof=genesisCreateDetailTexture(T,'roof',textureSet,detailTextureSize);
+    await yieldBuild(5,'瓦テクスチャを生成中');
+    textures.paper=genesisCreateDetailTexture(T,'paper',textureSet,detailTextureSize);
+    await yieldBuild(6,'和紙テクスチャを生成中');
     const materials={
       ground:new T.MeshStandardMaterial({color:'#8B806B',roughness:.96,...textures.stone}),
       soil:new T.MeshStandardMaterial({color:'#49443A',roughness:1,...textures.stone}),
