@@ -6891,16 +6891,18 @@ void main(){
       if(!geometry){geometry=new T.BoxGeometry(sx,sy,sz);boxGeometryCache.set(key,geometry);}
       addInstance(geometry,material,x,y,z,rotation);
     };
+    const beamStart=new T.Vector3(),beamEnd=new T.Vector3(),beamDirection=new T.Vector3(),beamQuaternion=new T.Quaternion();
+    const beamUp=new T.Vector3(0,1,0);
     const addBeam=(material,a,b,radius=.12,segments=10)=>{
-      const startPoint=new T.Vector3(a[0],a[1],a[2]),endPoint=new T.Vector3(b[0],b[1],b[2]);
-      const direction=endPoint.clone().sub(startPoint),length=direction.length();
+      beamStart.set(a[0],a[1],a[2]);beamEnd.set(b[0],b[1],b[2]);
+      beamDirection.subVectors(beamEnd,beamStart);const length=beamDirection.length();
       if(length<1e-4)return;
       const key=[radius,segments].map(value=>Number(value).toFixed(3)).join(':');
       let geometry=cylinderGeometryCache.get(key);
       if(!geometry){geometry=new T.CylinderGeometry(radius,radius,1,segments,1,false);cylinderGeometryCache.set(key,geometry);}
-      const quaternion=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),direction.normalize());
-      addInstance(geometry,material,(startPoint.x+endPoint.x)*.5,(startPoint.y+endPoint.y)*.5,(startPoint.z+endPoint.z)*.5,
-        null,[1,length,1],quaternion);
+      beamQuaternion.setFromUnitVectors(beamUp,beamDirection.normalize());
+      addInstance(geometry,material,(beamStart.x+beamEnd.x)*.5,(beamStart.y+beamEnd.y)*.5,(beamStart.z+beamEnd.z)*.5,
+        null,[1,length,1],beamQuaternion);
     };
     const addLight=(color,intensity,distance,x,y,z)=>{
       const light=new T.PointLight(color,intensity,distance,2);
@@ -7529,6 +7531,9 @@ void main(){
     }catch(error){
       if(genesisShrineDemoGroup===root)removeGenesisShrineDemo();
       if(error?.message==='GENESIS_BUILD_CANCELLED')return false;
+      genesisShrineDemoRequested=false;
+      if(camera&&genesisShrinePreviousCameraFov!==null){camera.fov=genesisShrinePreviousCameraFov;camera.updateProjectionMatrix();}
+      genesisShrinePreviousCameraFov=null;
       throw error;
     }
   }
