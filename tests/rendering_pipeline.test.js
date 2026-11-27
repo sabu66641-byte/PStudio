@@ -1465,7 +1465,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true,updateGenesisDemoLoading)"));
-  assert.ok(html.includes("set_camera(0, 663, 1364, 0, 99, -124)"));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 99, -124)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
@@ -1514,7 +1514,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('genesisShrineDemoWaterState.waveStrength=.0028'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'));
-  assert.ok(html.includes("set_camera(0, 663, 1364, 0, 99, -124)"));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 99, -124)"));
   assert.ok(html.includes("set_postprocessing(true, true, 0.38)"));
   assert.ok(html.includes("window.setPStudioQualityPreset?.('auto')"));
   assert.ok(html.includes('genesis-loading-overlay'));
