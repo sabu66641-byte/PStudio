@@ -1477,7 +1477,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'const lanternGlow=new T.PointLight',
     'const toriiUplight=new T.PointLight',
     'addLantern(-50,-32,1.42,true)',
-    'addLantern(20,-30,1.42,true)',
+    'addLantern(36,-32,1.42,true)',
     'root.scale.set(1.30,1.18,1)',
     'frontZ=shrineZ+7.03',
     'const deerBodyGeometry=new T.SphereGeometry(1,24,16)',
