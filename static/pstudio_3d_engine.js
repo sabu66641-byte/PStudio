@@ -1151,17 +1151,18 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         'float pStudioMirrorRainRing=(1.0-smoothstep(0.015,0.055,abs(length(pStudioMirrorRainLocal)-pStudioMirrorRainRadius)))*(1.0-smoothstep(0.39,0.48,pStudioMirrorRainRadius))*uMirrorRain;\n'+
         'pStudioMirrorRipple+=vec2(pStudioMirrorRainRing*0.00045,-pStudioMirrorRainRing*0.00028);\n'+
         'vec2 pStudioMirrorSampleUv=pStudioMirrorUv+pStudioMirrorRipple;\n'+
-        'float pStudioMirrorEdge=min(min(pStudioMirrorUv.x,1.0-pStudioMirrorUv.x),min(pStudioMirrorUv.y,1.0-pStudioMirrorUv.y));\n'+
-        'float pStudioMirrorEdgeFade=smoothstep(-0.018,0.016,pStudioMirrorEdge);\n'+
+        'float pStudioMirrorInside=step(0.001,pStudioMirrorSampleUv.x)*step(pStudioMirrorSampleUv.x,0.999)*step(0.001,pStudioMirrorSampleUv.y)*step(pStudioMirrorSampleUv.y,0.999);\n'+
+        'float pStudioMirrorEdge=min(min(pStudioMirrorSampleUv.x,1.0-pStudioMirrorSampleUv.x),min(pStudioMirrorSampleUv.y,1.0-pStudioMirrorSampleUv.y));\n'+
+        'float pStudioMirrorEdgeFade=smoothstep(0.0,0.025,pStudioMirrorEdge)*pStudioMirrorInside;\n'+
         'vec3 pStudioMirrorSample=texture2D(uMirrorReflection,clamp(pStudioMirrorSampleUv,0.001,0.999)).rgb;\n'+
         'float pStudioMirrorViewCosine=clamp(abs(dot(normalize(normal),normalize(vViewPosition))),0.0,1.0);\n'+
         'float pStudioMirrorFresnel=pow(1.0-pStudioMirrorViewCosine,4.0);\n'+
-        'float pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.82,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade;\n'+
+        'float pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.92,1.0,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade;\n'+
         'vec3 pStudioMirrorTinted=pStudioMirrorSample*vec3(1.0,0.995,0.98);\n'+
         'gl_FragColor.rgb=mix(gl_FragColor.rgb,pStudioMirrorTinted,pStudioMirrorAmount);'
       );
     };
-    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v3-stable-world-ripple';
+    material.customProgramCacheKey=()=> 'pstudio-planar-mirror-water-v4-bounded-projection';
     material.userData.pstudioMirrorUniforms=uniforms;
     const features=new Set(Array.isArray(material.userData.pstudioTSLFeatures)?material.userData.pstudioTSLFeatures:[]);
     features.add('water');
