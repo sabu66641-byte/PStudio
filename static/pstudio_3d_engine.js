@@ -6821,12 +6821,13 @@ void main(){
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
     root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
     genesisShrineDemoGroup=root;
-    let nextYieldAt=0;
+    let nextYieldAt=0,progressFloor=0;
     const yieldBuild=async(progress,label,force=false)=>{
       if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
       const now=window.performance?.now?.()??Date.now();
       if(force||now>=nextYieldAt){
-        try{onProgress?.({progress:Math.max(0,Math.min(100,progress)),label:String(label||'生成中')});}catch{}
+        progressFloor=Math.max(progressFloor,Math.max(0,Math.min(100,Number(progress)||0)));
+        try{onProgress?.({progress:progressFloor,label:String(label||'生成中')});}catch{}
         await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
         nextYieldAt=(window.performance?.now?.()??Date.now())+7;
         if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
@@ -7406,6 +7407,7 @@ void main(){
       vortexScale[index]=.78+vortexRandom()*1.35;
       const tint=vortexPalette[Math.floor(vortexRandom()*vortexPalette.length)];
       vortexColor[index*3]=tint[0];vortexColor[index*3+1]=tint[1];vortexColor[index*3+2]=tint[2];
+      if((index&1023)===1023)await yieldBuild(90,'桜の螺旋を計算中');
     }
     vortexGeometry.setAttribute('aVortexPhase',new T.InstancedBufferAttribute(vortexPhase,1));
     vortexGeometry.setAttribute('aVortexBaseHeight',new T.InstancedBufferAttribute(vortexBaseHeight,1));
