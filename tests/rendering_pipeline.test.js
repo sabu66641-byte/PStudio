@@ -1480,7 +1480,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'GENESIS Deep Crimson Torii Pillar',
     'const pagodaWidths=[58,49,40,31,23]',
     'const pagodaX=0,pagodaZ=-454',
-    'const blossomCapacity=22000',
+    'blossomCapacity=22000',
     'const cityColumns=[102,188,276,366,446]',
     'addGrandHall(-236,248,54,42,2,materials.roofGreen)',
     'const skyLanternCount=320',
