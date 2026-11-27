@@ -6880,14 +6880,19 @@ void main(){
       geometrySet.add(geometry);if(material)materialSet.add(material);
       const key=String(geometry.id)+'|'+String(material.id);
       let batch=instanceBatches.get(key);
-      if(!batch){batch={geometry,material,matrices:[]};instanceBatches.set(key,batch);}
+      if(!batch){batch={geometry,material,matrices:new Float32Array(4096),count:0};instanceBatches.set(key,batch);}
+      if(batch.count+16>batch.matrices.length){
+        const expanded=new Float32Array(Math.max(batch.matrices.length*2,batch.count+16));
+        expanded.set(batch.matrices);batch.matrices=expanded;
+      }
       instanceTransform.position.set(x,y,z);
       if(quaternion)instanceTransform.quaternion.copy(quaternion);
       else if(rotation)instanceTransform.rotation.set(rotation[0]||0,rotation[1]||0,rotation[2]||0);
       else instanceTransform.rotation.set(0,0,0);
       instanceTransform.scale.set(scale[0],scale[1],scale[2]);instanceTransform.updateMatrix();
-      const elements=instanceTransform.matrix.elements;
-      for(let element=0;element<16;element++)batch.matrices.push(elements[element]);
+      const elements=instanceTransform.matrix.elements,offset=batch.count;
+      for(let element=0;element<16;element++)batch.matrices[offset+element]=elements[element];
+      batch.count+=16;
     };
     const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>{
       const key=[sx,sy,sz].map(value=>Number(value).toFixed(3)).join(':');
@@ -7503,18 +7508,19 @@ void main(){
       peaks:[[-420,62,160],[-180,88,170],[80,58,150],[350,92,180]]});
 
     await yieldBuild(94,'建築物を描画用にまとめています',true);
-    const packedMatrix=new T.Matrix4();let mergedBatchIndex=0;
+    let mergedBatchIndex=0;
     for(const batch of instanceBatches.values()){
-      const instanceCount=batch.matrices.length/16;
+      const instanceCount=batch.count/16;
       const mesh=new T.InstancedMesh(batch.geometry,batch.material,instanceCount);
       mesh.name='GENESIS Capital | batched architectural detail ('+instanceCount+' instances)';
-      for(let index=0;index<instanceCount;index++){
-        packedMatrix.fromArray(batch.matrices,index*16);
-        mesh.setMatrixAt(index,packedMatrix);
-        if((index&1023)===1023)await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'描画データを転送中');
+      const destination=mesh.instanceMatrix.array,copyChunk=262144;
+      for(let offset=0;offset<batch.count;offset+=copyChunk){
+        const end=Math.min(batch.count,offset+copyChunk);
+        destination.set(batch.matrices.subarray(offset,end),offset);
+        await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'描画データを転送中');
       }
-      mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
-      mesh.computeBoundingSphere?.();root.add(mesh);batch.matrices.length=0;mergedBatchIndex++;
+      mesh.instanceMatrix.setUsage(T.StaticDrawUsage);mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
+      mesh.computeBoundingSphere?.();root.add(mesh);batch.matrices=new Float32Array(0);batch.count=0;mergedBatchIndex++;
       await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'街並みを統合中');
     }
     instanceBatches.clear();boxGeometryCache.clear();cylinderGeometryCache.clear();roofGeometryCache.clear();
