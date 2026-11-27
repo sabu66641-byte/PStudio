@@ -6863,9 +6863,13 @@ void main(){
       lanternCore:new T.MeshBasicMaterial({color:'#FFB66D',toneMapped:false})
     };
     const boxGeometryCache=new Map(),cylinderGeometryCache=new Map(),roofGeometryCache=new Map(),instanceBatches=new Map();
-    const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    const add=(geometry,material,x,y,z,rotation=null)=>{
+      geometrySet.add(geometry);if(material)materialSet.add(material);
+      return genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    };
     const instanceTransform=new T.Object3D();
     const addInstance=(geometry,material,x,y,z,rotation=null,scale=[1,1,1],quaternion=null)=>{
+      geometrySet.add(geometry);if(material)materialSet.add(material);
       const key=String(geometry.id)+'|'+String(material.id);
       let batch=instanceBatches.get(key);
       if(!batch){batch={geometry,material,matrices:[]};instanceBatches.set(key,batch);}
@@ -7129,9 +7133,10 @@ void main(){
     await yieldBuild(44,'桜並木を生成中',true);
     // Sculpted sakura trees form continuous flowering corridors beside the river.
     const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=22000;
+    geometrySet.add(blossomGeometry);materialSet.add(materials.blossom);
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,blossomCapacity);
     blossomMesh.name='GENESIS Sakura | dense sculpted blossoms along both river banks';
-    const centerGeometry=new T.SphereGeometry(.027,6,5);
+    const centerGeometry=new T.SphereGeometry(.027,6,5);geometrySet.add(centerGeometry);materialSet.add(materials.blossomCenter);
     const centerMesh=new T.InstancedMesh(centerGeometry,materials.blossomCenter,blossomCapacity);
     centerMesh.name='GENESIS Sakura | golden stamens';
     const blossomColors=['#F2A1AA','#F7B9BE','#FFE0D5','#E88F9B','#FFE9DF','#F4C1B5'].map(color=>new T.Color(color));
