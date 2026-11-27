@@ -7544,8 +7544,13 @@ void main(){
       landmarkOrder:['arched_crimson_bridge','deep_crimson_torii','monumental_five_storey_pagoda']
     };
     if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
+    await yieldBuild(97,'シェーダーと描画準備を開始中',true);
     scene.add(root);genesisShrineDemoGroup=root;
-    try{onProgress?.({progress:100,label:'生成完了'});}catch{}
+    if(typeof renderer.compileAsync==='function'){
+      try{await renderer.compileAsync(scene,camera);}
+      catch(error){console.warn('[PStudio] GENESIS shader precompile deferred to first visible frame.',error);}
+    }
+    await yieldBuild(100,'生成完了',true);
     return true;
     }catch(error){
       if(genesisShrineDemoGroup===root)removeGenesisShrineDemo();
