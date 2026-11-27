@@ -380,7 +380,7 @@
     adaptiveUltraTouchMode=qualityPreset==='ultra'&&isTouchDevice&&
       (hardware.memoryGiB<=6||hardware.cpuCores<=6||hardware.maxTextureSize<8192);
     adaptiveTouchResolutionBudget=adaptiveMaximumTouchMode||adaptiveUltraTouchMode;
-    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode;
+    adaptiveQualityEnabled=qualityPreset==='auto'||qualityPreset==='maximum'||qualityPreset==='ultra';
     // Start from the selected profile's full quality. Runtime reductions require measured benefit.
     adaptiveQualityLevel=2;
     dynamicResolutionTrialVerifier?.reset?.('quality-preset-changed');
@@ -469,7 +469,7 @@
       if(trial?.active)return false;
     }
     const touch=Number(window.navigator?.maxTouchPoints||0)>0;
-    const targetMs=(touch||adaptiveMaximumTouchMode||adaptiveUltraTouchMode)?20:16.67;
+    const targetMs=16.67;
     if(sampleMs>targetMs*1.06){dynamicResolutionSlowSamples++;dynamicResolutionFastSamples=0;}
     else if(sampleMs<targetMs*0.78){dynamicResolutionFastSamples++;dynamicResolutionSlowSamples=0;}
     else{dynamicResolutionSlowSamples=Math.max(0,dynamicResolutionSlowSamples-1);dynamicResolutionFastSamples=0;}
@@ -514,8 +514,8 @@
     if(!hasRecentGpuSample&&!dynamicResolutionFallbackValidated)return;
     if(now-adaptiveLastChange<1800)return;
     let changed=false;
-    if(adaptiveSlowFrames>=(adaptiveTouchResolutionBudget?6:35)&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
-    else if(adaptiveFastFrames>=(adaptiveTouchResolutionBudget?90:150)&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
+    if(adaptiveSlowFrames>=35&&adaptiveQualityLevel>0){adaptiveQualityLevel--;changed=true;}
+    else if(adaptiveFastFrames>=150&&adaptiveQualityLevel<2){adaptiveQualityLevel++;changed=true;}
     if(!changed)return;
     adaptiveLastChange=now;adaptiveQualityFrameEMAReset();
     const selected=resolveQualityPreset(qualityPreset),base=QUALITY_PROFILES[selected];
