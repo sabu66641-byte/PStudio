@@ -995,7 +995,7 @@ function setGenesisEnvironmentWindDirection(value){
 }
 function openGenesisDemo(){
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
- const cameraScript='func update(dt)\n    set_camera(-3, 30, 128, -3, 7, -36)\n    set_postprocessing(true, true, 0.38)\n';
+ const cameraScript='func update(dt)\n    set_camera(0, 535, 1100, 0, 80, -100)\n    set_postprocessing(true, true, 0.38)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
   {id:'shrine-camera',name:'Night Shrine Camera',x:480,y:260,z:0,rotationX:0,rotationY:0,rotationZ:0,w:32,h:32,sprite:'',script:'shrine_camera.ps',color:'#FFFFFF',shape:'rect'}
@@ -1014,8 +1014,8 @@ function openGenesisDemo(){
  window.PStudio3D?.setGenesisShrineDemo?.(true);
  window.PStudioEngine?.setViewMode?.('3d');
  const sceneLabel=document.getElementById('scene-name-label');
- if(sceneLabel)sceneLabel.textContent='night_shrine_mirror_lake.scene';
- toast('月夜の神社・五重塔・桜並木・水鏡シーンを開きました。');
+ if(sceneLabel)sceneLabel.textContent='genesis_river_capital.scene';
+ toast('川沿いの和風都・深紅の鳥居・五重塔・桜の渦・天灯シーンを開きました。');
  window.startPStudioGame?.();
 }
 function persistProject(){
@@ -3111,7 +3111,7 @@ try {
 <script src="/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
 <script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r6"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261127-river-capital-v2"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
