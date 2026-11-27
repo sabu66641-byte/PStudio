@@ -7028,6 +7028,7 @@ void main(){
       const x=side*gateSpacing*.5;
       addBox(materials.darkStone,x,.72,gateZ,8,1.4,8);
       addBox(materials.stone,x,1.52,gateZ,6.8,.3,6.8);
+      addBeam(materials.darkStone,[x,-5.5,gateZ],[x,1.52,gateZ],1.55,12);
       const post=genesisAddCylinderBetween(T,root,materials.redLacquer,
         [x-side*.65,1.65,gateZ],[x+side*.32,gateHeight-2.4,gateZ],1.65,2.1,24);
       if(post)post.name='GENESIS Deep Crimson Torii Pillar';
@@ -7165,8 +7166,8 @@ void main(){
     blossomMesh.instanceMatrix.needsUpdate=true;centerMesh.instanceMatrix.needsUpdate=true;
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
-    genesisAddPineForest(T,root,materials,0x712a9b4,38,{minX:-462,maxX:-354,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
-    genesisAddPineForest(T,root,materials,0x5a821b1,38,{minX:354,maxX:462,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
     genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26});
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
@@ -7241,7 +7242,7 @@ void main(){
         addInstance(lanternBoxGeometry,materials.lanternPaper,lx,ly,lz,null,[.62,1.1,.62]);
         addBeam(materials.darkWood,[lx,ly-.9,lz],[lx,ly+.9,lz],.045,6);
       }
-      if(localRandom()>.78)addLight('#FFB36C',1.1,18,x,baseY+4,entryZ+2.3);
+      if(localRandom()>.91)addLight('#FFB36C',1.1,18,x,baseY+4,entryZ+2.3);
     };
     let citySeed=0x16a2bc43;
     const cityRandom=()=>{citySeed=(Math.imul(citySeed,1664525)+1013904223)>>>0;return citySeed/4294967296;};
@@ -7326,7 +7327,7 @@ void main(){
       addBox(lit?materials.paperLit:materials.paper,x,y+2.32*scale,z,.66*scale,.78*scale,.66*scale);
       addInstance(lanternRoofGeometry,materials.darkStone,x,y+2.92*scale,z,[0,Math.PI*.25,0],[scale,scale,scale]);
       addBeam(materials.gold,[x,y+3.08*scale,z],[x,y+3.42*scale,z],.05*scale,8);
-      if(lit)addLight('#FFB878',1.05*scale,13*scale,x,y+2.3*scale,z);
+      if(lit&&Math.abs(Math.round(x)+Math.round(z))%4===0)addLight('#FFB878',1.05*scale,13*scale,x,y+2.3*scale,z);
     };
     for(const side of [-1,1]){
       for(let index=0;index<9;index++)addGardenLantern(side*(38+(index%3)*3),330-index*78,1.05+(index%2)*.12,index%3!==1);
@@ -7344,7 +7345,7 @@ void main(){
     const vortexRandom=()=>{vortexSeed=(Math.imul(vortexSeed,1664525)+1013904223)>>>0;return vortexSeed/4294967296;};
     for(let index=0;index<vortexCount;index++){
       vortexPhase[index]=vortexRandom()*Math.PI*2;
-      vortexBaseHeight[index]=vortexRandom()*116;
+      vortexBaseHeight[index]=vortexRandom()*105;
       vortexRadius[index]=19+vortexRandom()*13;
       vortexAngularSpeed[index]=.075+vortexRandom()*.075;
       vortexRiseSpeed[index]=.42+vortexRandom()*.58;
@@ -7360,7 +7361,7 @@ void main(){
     vortexGeometry.setAttribute('aVortexScale',new T.InstancedBufferAttribute(vortexScale,1));
     vortexGeometry.setAttribute('aVortexColor',new T.InstancedBufferAttribute(vortexColor,3));
     const vortexMaterial=new T.ShaderMaterial({
-      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:116},uRadiusGrowth:{value:47}},
+      uniforms:{uTime:{value:0},uCenter:{value:new T.Vector3(pagodaX,2,pagodaZ)},uVortexHeight:{value:105},uRadiusGrowth:{value:47}},
       vertexShader:[
         'precision highp float;','attribute float aVortexPhase;','attribute float aVortexBaseHeight;',
         'attribute float aVortexRadius;','attribute float aVortexAngularSpeed;','attribute float aVortexRiseSpeed;',
