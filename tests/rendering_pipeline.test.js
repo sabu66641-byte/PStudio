@@ -1524,6 +1524,9 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('batch.matrices=new Float32Array(0)'));
   assert.ok(renderer.includes('destination.set(batch.matrices.subarray(offset,end),offset)'));
   assert.ok(renderer.includes('transparent:true,opacity:1,depthWrite:false'));
+  assert.ok(renderer.includes('genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0'));
+  assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
+  assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
   assert.ok(html.includes('20261127-genesis-progressive-v4'));
 });
 
