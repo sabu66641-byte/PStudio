@@ -125,7 +125,7 @@ test('water uses a physical transmission material and animated vertex displaceme
 test('Mirror Water uses bounded reflection targets coordinated by the shared frame budget',()=>{
   for(const token of [
     'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
-    'pstudio-planar-mirror-water-v2','uMirrorReflectivity','uMirrorWaveStrength',
+    'pstudio-planar-mirror-water-v3-stable-world-ripple','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
     'const ultraFullDetail=qualityPreset===\'ultra\'&&!memorySafetyApplied;\n    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0)',
@@ -167,9 +167,11 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   const shader=renderer.slice(start,end);
   assert.ok(shader.includes("uMirrorTextureMatrix;\\nvarying"),"GLSL declarations use a real newline escape");
   assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
-  assert.ok(shader.includes("pstudio-planar-mirror-water-v2"));
+  assert.ok(shader.includes("pstudio-planar-mirror-water-v3-stable-world-ripple"));
   assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
-  assert.ok(shader.includes("pStudioMirrorAmount = clamp(uMirrorReflectivity * mix(0.78, 1.0, pStudioMirrorFresnel), 0.0, 1.0) * pStudioMirrorInside"));
+  assert.ok(shader.includes("pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.82,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade"));
+  assert.ok(shader.includes("vPStudioMirrorWorldPosition"));
+  assert.ok(shader.includes("pStudioMirrorEdgeFade"));
   assert.ok(renderer.includes("reflectivity:1.0"));
   assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
   assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
@@ -1490,7 +1492,7 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
     'camera.fov=35',
     'genesisShrinePreviousCameraFov=camera.fov',
     'camera.fov=genesisShrinePreviousCameraFov',
-    'mix(0.34,0.98,pStudioMirrorFresnel)'
+    'mix(0.82,0.98,pStudioMirrorFresnel)'
   ])assert.ok(renderer.includes(token),token);
   assert.ok(renderer.includes('const tileGeometry=new T.BufferGeometry()'),'roof tiles are individual curved ceramic meshes');
   assert.ok(renderer.includes('const tileRow=(layer,row,column)=>layer*18+row*9+column'),'ceramic tile geometry includes a closed underside');
