@@ -7396,7 +7396,10 @@ void main(){
 
     await yieldBuild(89,'桜の螺旋と空の灯籠を生成中',true);
     // A broad, oblique helix rises around the pagoda and quietly fades before its crown.
-    const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
+    const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28;
+    const vortexBaseGeometry=new T.PlaneGeometry(1,.58,1,1);
+    const vortexGeometry=new T.InstancedBufferGeometry().copy(vortexBaseGeometry);
+    vortexBaseGeometry.dispose();vortexGeometry.instanceCount=vortexCount;geometrySet.add(vortexGeometry);
     const vortexPhase=new Float32Array(vortexCount),vortexBaseHeight=new Float32Array(vortexCount);
     const vortexRadius=new Float32Array(vortexCount),vortexAngularSpeed=new Float32Array(vortexCount);
     const vortexRiseSpeed=new Float32Array(vortexCount),vortexScale=new Float32Array(vortexCount);
@@ -7460,17 +7463,16 @@ void main(){
       ].join('\n'),
       transparent:true,opacity:1,depthWrite:false,depthTest:true,side:T.DoubleSide,toneMapped:false
     });
-    const vortex=new T.InstancedMesh(vortexGeometry,vortexMaterial,vortexCount);
+    materialSet.add(vortexMaterial);
+    const vortex=new T.Mesh(vortexGeometry,vortexMaterial);
     vortex.name='GENESIS Sakura Vortex | 28,000 oblique fading helix petals';
-    // InstancedMesh initializes all instance matrices to identity in its constructor.
-    // Avoid a second 36k-matrix CPU pass; the shader uses its dedicated instanced attributes.
+    // The custom shader consumes per-petal instanced attributes directly; no identity matrices are needed.
     const vortexMaxRadius=49+11+vortexRadiusGrowth+1.8+1.2;
-    vortex.boundingSphere=new T.Sphere(
+    vortexGeometry.boundingSphere=new T.Sphere(
       new T.Vector3(pagodaX,2+vortexHeight*.5,pagodaZ),
       Math.hypot(vortexMaxRadius,vortexHeight*.5+1.2)
     );
-    vortex.frustumCulled=true;
-    vortex.instanceMatrix.setUsage(T.StaticDrawUsage);vortex.instanceMatrix.needsUpdate=true;root.add(vortex);
+    vortex.frustumCulled=true;root.add(vortex);
     genesisShrinePetalInstances=vortex;genesisShrinePetalMotion=[];
     await yieldBuild(92,'桜の螺旋を配置中',true);
 
