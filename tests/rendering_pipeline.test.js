@@ -125,7 +125,7 @@ test('water uses a physical transmission material and animated vertex displaceme
 test('Mirror Water uses bounded reflection targets coordinated by the shared frame budget',()=>{
   for(const token of [
     'renderMirrorWaterReflections','configureMirrorWaterMaterial','createMirrorWaterState',
-    'pstudio-planar-mirror-water-v3-stable-world-ripple','uMirrorReflectivity','uMirrorWaveStrength',
+    'pstudio-planar-mirror-water-v4-bounded-projection','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
     'const ultraFullDetail=qualityPreset===\'ultra\'&&!memorySafetyApplied;\n    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0)',
@@ -167,11 +167,13 @@ test('Mirror Water shader uses valid GLSL line breaks, full reflectivity default
   const shader=renderer.slice(start,end);
   assert.ok(shader.includes("uMirrorTextureMatrix;\\nvarying"),"GLSL declarations use a real newline escape");
   assert.equal(shader.includes("uMirrorTextureMatrix;\\\\nvarying"),false,"double-escaped GLSL line breaks are forbidden");
-  assert.ok(shader.includes("pstudio-planar-mirror-water-v3-stable-world-ripple"));
+  assert.ok(shader.includes("pstudio-planar-mirror-water-v4-bounded-projection"));
   assert.ok(shader.includes("uMirrorReflectivity:{value:1.0}"));
-  assert.ok(shader.includes("pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.82,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade"));
+  assert.ok(shader.includes("pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.92,1.0,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade"));
   assert.ok(shader.includes("vPStudioMirrorWorldPosition"));
   assert.ok(shader.includes("pStudioMirrorEdgeFade"));
+  assert.ok(shader.includes("pStudioMirrorInside"),'out-of-view UVs must not smear clamped edge pixels');
+  assert.ok(shader.includes("smoothstep(0.0,0.025,pStudioMirrorEdge)"),'reflection fades at projection bounds');
   assert.ok(renderer.includes("reflectivity:1.0"));
   assert.ok(renderer.includes("roughness:0.012,metalness:0,clearcoat:1,clearcoatRoughness:0.008"));
   assert.ok(renderer.includes("if(d.type!=='water'&&d.type!=='mirror_water'){"));
@@ -1463,7 +1465,7 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
   assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(-3, 30, 128, -3, 7, -36)"));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 80, -100)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
