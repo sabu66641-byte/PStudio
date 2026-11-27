@@ -1484,14 +1484,14 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'baseY=2+tier*31,wallHeight=20',
     'roofDimsFor(halfW+5.2,halfD+4.8,9.5,4.1,2.5)',
     'addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64)',
-    'const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28',
+    'const vortexCount=constrainedMobile?12000:28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28',
     'vortexBaseHeight[index]=vortexRandom()*vortexHeight',
     'vortexGeometry.boundingSphere=new T.Sphere(',
     'vortex.frustumCulled=true',
-    'blossomCapacity=22000',
+    'blossomCapacity=constrainedMobile?12000:22000',
     'const cityColumns=[102,188,276,366,446]',
     'addGrandHall(-236,248,54,42,2,materials.roofGreen)',
-    'const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D()',
+    'const skyLanternCount=constrainedMobile?160:320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D()',
     'skyCoreDummy.rotation.copy(dummy.rotation)',
     'GENESIS Sky Lanterns | warm paper bodies',
     'vortexRadius[index]=49+vortexRandom()*11',
@@ -1522,17 +1522,27 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(html.includes("window.setPStudioQualityPreset?.('auto')"));
   assert.ok(html.includes('genesis-loading-overlay'));
   assert.ok(html.includes('genesis-loading-progress'));
+  assert.ok(html.includes('genesis-loading-title'));
+  assert.ok(html.includes('showGenesisDemoLoadingError(error)'));
+  assert.ok(html.includes('requestAnimationFrame(()=>requestAnimationFrame(resolve))'));
+  assert.ok(html.includes('PStudioEngine?.isRunning?.()'));
   assert.ok(renderer.includes('async function buildGenesisShrineDemo'));
   assert.ok(renderer.includes('await yieldBuild('));
-  assert.ok(renderer.includes('await renderer.compileAsync(scene,camera)'));
+  assert.ok(!renderer.includes('await renderer.compileAsync(scene,camera)'));
   assert.ok(renderer.includes('batch.matrices=new Float32Array(0)'));
   assert.ok(renderer.includes('destination.set(batch.matrices.subarray(offset,end),offset)'));
   assert.ok(renderer.includes('matrices:new Float32Array(256),count:0'));
   assert.ok(renderer.includes('transparent:true,opacity:1,depthWrite:false'));
   assert.ok(renderer.includes('genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0'));
+  assert.ok(renderer.includes('const constrainedMobile=hardware.touch&&(hardware.memoryGiB<=4||hardware.cpuCores<=4||(hardware.memoryGiB<=6&&hardware.maxTextureSize<=4096))'));
+  assert.ok(renderer.includes('const detailTextureSize=constrainedMobile?256'));
+  assert.ok(renderer.includes('const cityRowCount=constrainedMobile?8:11'));
+  assert.ok(renderer.includes('blossomCapacity=constrainedMobile?12000:22000'));
+  assert.ok(renderer.includes('constrainedMobile?12000:28000'));
+  assert.ok(renderer.includes('skyLanternCount=constrainedMobile?160:320'));
   assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
   assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
-  assert.ok(html.includes('20261127-genesis-progressive-v4'));
+  assert.ok(html.includes('20261127-genesis-progressive-v5'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1545,7 +1555,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v4'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v5'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
