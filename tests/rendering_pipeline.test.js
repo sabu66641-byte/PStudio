@@ -1486,7 +1486,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'const skyLanternCount=320',
     'GENESIS Sky Lanterns | warm paper bodies',
     'const vortexCount=50000',
-    'const vortexStrandCount=6',
+    'vortexStrandCount=6',
     'vortexBaseHeight[index]=vortexRandom()*142',
     'vortexRadius[index]=54+vortexRandom()*12',
     'uVortexHeight:{value:142},uRadiusGrowth:{value:38}',
