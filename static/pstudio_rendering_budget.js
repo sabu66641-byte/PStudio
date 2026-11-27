@@ -61,5 +61,39 @@
     }
     return Object.freeze({state,update});
   }
-  return Object.freeze({createPStudioFrameBudgetController});
+
+  function createPStudioResolutionTrialVerifier(options = {}) {
+    const requiredSamples = Math.floor(clamp(options.sampleCount, 4, 120, 30));
+    const minimumImprovement = clamp(options.minimumImprovement, 0.005, 0.2, 0.025);
+    let trial = null, blocked = false;
+    let last = {status:'unverified',beforeScale:null,afterScale:null,referenceFrameMs:null,observedFrameMs:null,improvement:null,sampleCount:0,reason:null};
+    function snapshot() { return Object.freeze({...last,active:!!trial,blocked,requiredSamples,minimumImprovement}); }
+    function begin(beforeScale,afterScale,referenceFrameMs) {
+      const before=Number(beforeScale),after=Number(afterScale),reference=Number(referenceFrameMs);
+      if(trial||blocked||!Number.isFinite(before)||!Number.isFinite(after)||!Number.isFinite(reference)||before<=0||after<=0||after>=before||reference<=0||reference>100)return false;
+      trial={beforeScale:before,afterScale:after,referenceFrameMs:reference,samples:[]};
+      last={status:'measuring',beforeScale:before,afterScale:after,referenceFrameMs:reference,observedFrameMs:null,improvement:null,sampleCount:0,reason:null};
+      return snapshot();
+    }
+    function observe(frameIntervalMs) {
+      if(!trial)return snapshot();
+      const value=Number(frameIntervalMs);
+      if(!Number.isFinite(value)||value<1||value>100)return snapshot();
+      trial.samples.push(value);last={...last,sampleCount:trial.samples.length};
+      if(trial.samples.length<requiredSamples)return snapshot();
+      const observed=trial.samples.reduce((sum,sample)=>sum+sample,0)/trial.samples.length;
+      const improvement=(trial.referenceFrameMs-observed)/trial.referenceFrameMs;
+      const improved=improvement>=minimumImprovement;blocked=!improved;
+      last={status:improved?'improved':'ineffective',beforeScale:trial.beforeScale,afterScale:trial.afterScale,referenceFrameMs:trial.referenceFrameMs,observedFrameMs:observed,improvement,sampleCount:trial.samples.length,reason:improved?null:'frame-pacing-did-not-improve'};
+      trial=null;return snapshot();
+    }
+    function reset(reason='reset') {
+      trial=null;blocked=false;
+      last={status:'unverified',beforeScale:null,afterScale:null,referenceFrameMs:null,observedFrameMs:null,improvement:null,sampleCount:0,reason:String(reason||'reset')};
+      return snapshot();
+    }
+    return Object.freeze({begin,observe,reset,getState:snapshot});
+  }
+
+  return Object.freeze({createPStudioFrameBudgetController,createPStudioResolutionTrialVerifier});
 });
