@@ -1156,7 +1156,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         'vec3 pStudioMirrorSample=texture2D(uMirrorReflection,clamp(pStudioMirrorSampleUv,0.001,0.999)).rgb;\n'+
         'float pStudioMirrorViewCosine=clamp(abs(dot(normalize(normal),normalize(vViewPosition))),0.0,1.0);\n'+
         'float pStudioMirrorFresnel=pow(1.0-pStudioMirrorViewCosine,4.0);\n'+
-        'float pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.34,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade;\n'+
+        'float pStudioMirrorAmount=clamp(uMirrorReflectivity*mix(0.82,0.98,pStudioMirrorFresnel),0.0,1.0)*pStudioMirrorEdgeFade;\n'+
         'vec3 pStudioMirrorTinted=pStudioMirrorSample*vec3(1.0,0.995,0.98);\n'+
         'gl_FragColor.rgb=mix(gl_FragColor.rgb,pStudioMirrorTinted,pStudioMirrorAmount);'
       );
@@ -1171,7 +1171,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     material.userData.pstudioWaterTSLSettings={
       mirrorOnly:true,amplitude:0,waveStrength:0.016,
       shallow:'#102C37',deep:'#071A24',foam:'#D8C6A5',
-      reflectivity:1,reflectionResolutionScale:1,absorption:0.018
+      reflectivity:1.0,reflectionResolutionScale:1,absorption:0.018
     };
     material.pstudioTSLPortApprovedCompileHook=material.onBeforeCompile;
     material.pstudioTSLPortApprovedCacheKey=material.customProgramCacheKey;
