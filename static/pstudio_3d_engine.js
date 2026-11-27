@@ -6992,7 +6992,7 @@ void main(){
     }
 
     // Five-storey pagoda: tiered bodies, bracket sets, curved roofs and a brass sorin finial.
-    const pagodaX=-50,pagodaZ=-55;
+    const pagodaX=-60,pagodaZ=-55;
     addBox(materials.darkStone,pagodaX,.65,pagodaZ,16,.62,16);
     addBox(materials.stone,pagodaX,.82,pagodaZ,13.8,.22,13.8);
     for(let tier=0;tier<5;tier++){
@@ -7040,7 +7040,7 @@ void main(){
     addInstance(sorinTipGeometry,materials.gold,pagodaX,28.15,pagodaZ,null,[.24,1.1,.24]);
 
     // Vermilion torii: splayed posts, kasagi curve, shimaki and gold collars.
-    const gateX=8,gateZ=-60,postSpacing=12.2;
+    const gateX=20,gateZ=-60,postSpacing=12.2;
     for(const side of [-1,1]){
       const x=gateX+side*postSpacing*.5;
       const foot=add(new T.CylinderGeometry(.72,.88,.62,24),materials.darkStone,x,.43,gateZ);
@@ -7072,7 +7072,7 @@ void main(){
     }
 
     // Right-bank deer in profile, matching the reference image's quiet foreground silhouette.
-    const deerX=13,deerZ=-40;
+    const deerX=28,deerZ=-40;
     const deerBodyGeometry=new T.SphereGeometry(1,24,16);
     const deerJointGeometry=new T.SphereGeometry(1,16,12);
     const deerEarGeometry=new T.ConeGeometry(.15,.42,8,2);
@@ -7116,7 +7116,7 @@ void main(){
     }
 
     // Secondary waterside shrine and a row of warm interior screens on the right bank.
-    const secondaryX=16,secondaryZ=-48;
+    const secondaryX=27,secondaryZ=-48;
     addBox(materials.darkStone,secondaryX,.50,secondaryZ,17,.48,14);
     addBox(materials.plaster,secondaryX,2.75,secondaryZ,12,4.3,9);
     for(let i=0;i<4;i++){
@@ -7141,7 +7141,7 @@ void main(){
     const blossomColors=['#FFAFCA','#FFC9DB','#FFE0E9','#F28FB4','#FFF0F5','#F8B0C9'].map(color=>new T.Color(color));
     const treeSpecs=[
       [-92,-20,1.32],[-77,-42,1.18],[-70,12,1.38],[-56,-12,1.12],[-62,-24,.98],
-      [18,-26,.98],[38,4,.86],[32,-34,.88],[-105,-58,.96],[22,-78,.92],
+      [24,-26,.98],[38,4,.86],[32,-34,.88],[-105,-58,.96],[22,-78,.92],
       [-92,-4,1.22],[-72,29,1.04],[55,-16,1.08]
     ];
     const dummy=new T.Object3D();
@@ -7240,7 +7240,7 @@ void main(){
       if(i<6)addLantern(23+(i%2)*3,z,1.04,i%2===0);
     }
     addLantern(-50,-32,1.42,true);
-    addLantern(20,-30,1.42,true);
+    addLantern(36,-32,1.42,true);
     // Natural shoreline boulders, wet stones and small clusters of low vegetation.
     let stoneSeed=0x1eaf743;
     const stoneRandom=()=>{stoneSeed=(Math.imul(stoneSeed,1664525)+1013904223)>>>0;return stoneSeed/4294967296;};
