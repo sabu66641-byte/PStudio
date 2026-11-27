@@ -128,7 +128,7 @@ test('Mirror Water uses bounded reflection targets coordinated by the shared fra
     'pstudio-planar-mirror-water-v2','uMirrorReflectivity','uMirrorWaveStrength',
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
-    'const base=memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0',
+    'const ultraFullDetail=qualityPreset===\'ultra\'&&!memorySafetyApplied;\n    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0)',
     'return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
     'renderer.capabilities?.maxTextureSize',
     'Math.floor(size.x*scale)',
@@ -1512,8 +1512,8 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes("new T.DirectionalLight('#FFD09A',.48)"),'warm directional fill remains showcase-local');
   assert.ok(renderer.includes("const size=qualityPreset==='ultra'?1024:512"),'Ultra uses higher-resolution material maps');
   assert.ok(renderer.includes("const ultraFullDetail=qualityPreset==='ultra'&&!memorySafetyApplied"),'Ultra mirror detail uses full resolution until adaptive frame budgeting is required');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFD09C',5.6,48,shrineX,5.4,frontZ-3.8)"),'the main hall receives a local warm fill light');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFD0DF',3.1,48,-80,5.5,-21)"),'sakura receives local canopy illumination');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFB35B',8.0,58,shrineX,5.8,frontZ-4.2)"),'the main hall receives a local warm fill light');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFC18F',2.4,58,-103,6.0,2)"),'sakura receives local canopy illumination');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-7, 21, 118, -7, 8, -30)"));
