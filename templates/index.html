@@ -1025,20 +1025,22 @@ function setGenesisDemoLoading(visible){
  overlay.hidden=!visible;
  if(visible)updateGenesisDemoLoading({progress:0,label:'準備中'});
 }
-let genesisDemoLaunchInProgress=false;
+let genesisDemoLaunchInProgress=false,genesisDemoCancelRequested=false;
 function cancelGenesisDemoLoading(){
+ genesisDemoCancelRequested=true;
  window.PStudio3D?.setGenesisShrineDemo?.(false);
  setGenesisDemoLoading(false);
  toast('シーン生成をキャンセルしました。');
 }
 async function openGenesisDemo(){
  if(genesisDemoLaunchInProgress)return;
- genesisDemoLaunchInProgress=true;
+ genesisDemoLaunchInProgress=true;genesisDemoCancelRequested=false;
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
  setGenesisDemoLoading(true);
  // Paint the overlay before project setup or scene construction starts.
  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
  try{
+ if(genesisDemoCancelRequested){setGenesisDemoLoading(false);return;}
  const cameraScript='func update(dt)\n    set_camera(0, 663, 1364, 0, 99, -124)\n    set_postprocessing(true, true, 0.38)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
