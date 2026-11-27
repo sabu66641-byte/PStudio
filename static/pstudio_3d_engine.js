@@ -50,7 +50,7 @@
   let worldStreamingInterests=[];
   let particleClock=0,lastRenderDurationMs=0;
   let genesisEnvironmentController=null,genesisEnvironmentState=null,genesisAppliedEnvironmentPreset=null,genesisLastWebGPUUpdateAt=0,genesisRainSystem=null,genesisRainAccumulator=0,genesisRainSeed=0x71a5c3;
-  let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[],genesisShrinePreviousCameraFov=null;
+  let genesisShrineDemoRequested=false,genesisShrineDemoGroup=null,genesisShrineDemoWaterState=null,genesisShrinePetalInstances=null,genesisShrinePetalMotion=[],genesisShrinePreviousCameraFov=null,genesisShrineDemoBuildToken=0,genesisShrineDemoBuildPromise=null;
   const RENDER_METRIC_HISTORY=120;
   const DYNAMIC_PROBE_UPDATE_INTERVAL_MS=900;
   const renderingFrameBudgetController=window.PStudioRenderingBudget?.createPStudioFrameBudgetController?.()||null;
@@ -6801,7 +6801,7 @@ void main(){
     batch(needlePadGeometry,materials.pine,padMatrices,'GENESIS Black Pine | flattened needle pads');
   }
 
-  function buildGenesisShrineDemo(T){
+  async function buildGenesisShrineDemo(T,onProgress=()=>{},buildToken=genesisShrineDemoBuildToken){
     if(!scene||!renderer)return false;
     if(camera){
       if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;
@@ -6812,6 +6812,21 @@ void main(){
     const root=new T.Group();
     root.name='PStudio | GENESIS River Capital and Sakura Pagoda';
     const geometrySet=new Set(),materialSet=new Set(),textureSet=new Set();
+    root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
+    genesisShrineDemoGroup=root;
+    let nextYieldAt=0;
+    const yieldBuild=async(progress,label,force=false)=>{
+      if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
+      const now=window.performance?.now?.()??Date.now();
+      if(force||now>=nextYieldAt){
+        try{onProgress?.({progress:Math.max(0,Math.min(100,progress)),label:String(label||'生成中')});}catch{}
+        await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+        nextYieldAt=(window.performance?.now?.()??Date.now())+7;
+        if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
+      }
+    };
+    try{
+    await yieldBuild(2,'環境とマテリアルを準備中',true);
     const textures={
       wood:genesisCreateDetailTexture(T,'wood',textureSet),
       stone:genesisCreateDetailTexture(T,'stone',textureSet),
@@ -6849,16 +6864,18 @@ void main(){
     };
     const boxGeometryCache=new Map(),cylinderGeometryCache=new Map(),roofGeometryCache=new Map(),instanceBatches=new Map();
     const add=(geometry,material,x,y,z,rotation=null)=>genesisAddMesh(T,root,geometry,material,x,y,z,rotation);
+    const instanceTransform=new T.Object3D();
     const addInstance=(geometry,material,x,y,z,rotation=null,scale=[1,1,1],quaternion=null)=>{
       const key=String(geometry.id)+'|'+String(material.id);
       let batch=instanceBatches.get(key);
       if(!batch){batch={geometry,material,matrices:[]};instanceBatches.set(key,batch);}
-      const transform=new T.Object3D();
-      transform.position.set(x,y,z);
-      if(quaternion)transform.quaternion.copy(quaternion);
-      else if(rotation)transform.rotation.set(rotation[0]||0,rotation[1]||0,rotation[2]||0);
-      transform.scale.set(scale[0],scale[1],scale[2]);transform.updateMatrix();
-      batch.matrices.push(transform.matrix.clone());
+      instanceTransform.position.set(x,y,z);
+      if(quaternion)instanceTransform.quaternion.copy(quaternion);
+      else if(rotation)instanceTransform.rotation.set(rotation[0]||0,rotation[1]||0,rotation[2]||0);
+      else instanceTransform.rotation.set(0,0,0);
+      instanceTransform.scale.set(scale[0],scale[1],scale[2]);instanceTransform.updateMatrix();
+      const elements=instanceTransform.matrix.elements;
+      for(let element=0;element<16;element++)batch.matrices.push(elements[element]);
     };
     const addBox=(material,x,y,z,sx,sy,sz,rotation=null)=>{
       const key=[sx,sy,sz].map(value=>Number(value).toFixed(3)).join(':');
@@ -6887,7 +6904,7 @@ void main(){
     };
     const tileGeometry=new T.BoxGeometry(1.04,.105,.78);
     const roofDimsFor=(halfWidth,halfDepth,ridgeY=4.7,eaveY=1.7,cornerLift=.82)=>({halfWidth,halfDepth,ridgeY,eaveY,cornerLift});
-    const addRoof=(centerX,centerZ,baseY,dimensions,material=materials.roof,tileDensity=1)=>{
+    const addRoof=async(centerX,centerZ,baseY,dimensions,material=materials.roof,tileDensity=1)=>{
       const key=[dimensions.halfWidth,dimensions.halfDepth,dimensions.ridgeY,dimensions.eaveY,dimensions.cornerLift]
         .map(value=>Number(value).toFixed(2)).join(':');
       let geometry=roofGeometryCache.get(key);
@@ -6910,6 +6927,7 @@ void main(){
             addInstance(tileGeometry,materials.roofTile,centerX+localX,baseY+localY,centerZ+localZ,
               [0,0,-side*slope],[1,1,1]);
           }
+          if((row&7)===7)await yieldBuild(25,'屋根瓦を配置中');
         }
       }
       const ridgeY=baseY+dimensions.ridgeY+.16;
@@ -6924,6 +6942,7 @@ void main(){
     };
 
     // Distinct terrain, streets, and a separate central waterway.
+    await yieldBuild(7,'土地と街区を生成中',true);
     const cityFloor=add(new T.PlaneGeometry(1080,1160,1,1),materials.soil,0,-.48,-28,[-Math.PI/2,0,0]);
     cityFloor.name='GENESIS Capital | land terrain';
     cityFloor.receiveShadow=true;
@@ -6942,6 +6961,7 @@ void main(){
     addBox(materials.stone,0,1.04,-430,108,.32,98);
     for(let step=0;step<8;step++)addBox(materials.wetStone,0,.38+step*.23,-360-step*1.2,82-step*4.4,.22,2.5);
 
+    await yieldBuild(13,'川と水鏡を生成中',true);
     const riverWidth=56,riverLength=1080,riverZ=-25,riverY=.115;
     const waterMaterial=configureMirrorWaterMaterial(new T.MeshStandardMaterial({
       color:'#142B35',roughness:.022,metalness:.025,clearcoat:1,clearcoatRoughness:.018
@@ -6974,6 +6994,7 @@ void main(){
       }
     }
 
+    await yieldBuild(19,'橋と川岸を生成中',true);
     // Curved deep-crimson wooden bridge in the foreground.
     const bridgeHalfSpan=37,bridgeDeckWidth=11,bridgeSegments=48,bridgePositions=[],bridgeIndices=[];
     const bridgeTop=x=>1.15+6.15*Math.max(0,1-(x/bridgeHalfSpan)*(x/bridgeHalfSpan));
@@ -7022,6 +7043,7 @@ void main(){
     }
     addBox(materials.gold,0,bridgeTop(0)+2.15,178,.9,.12,1.1);
 
+    await yieldBuild(25,'深紅の鳥居を生成中',true);
     // Monumental deep-crimson torii set across the river on stone foundations.
     const gateX=0,gateZ=-72,gateSpacing=34,gateHeight=31;
     for(const side of [-1,1]){
@@ -7047,6 +7069,7 @@ void main(){
     addBox(materials.redLacquer,0,gateHeight-3,gateZ,.95,1.25,4.2);
     addBox(materials.gold,0,gateHeight-3,gateZ+2.18,.78,.075,.08);
 
+    await yieldBuild(30,'五重塔を組み立て中',true);
     // A truly monumental five-storey pagoda dominates the far end of the city.
     const pagodaX=0,pagodaZ=-454;
     addBox(materials.darkStone,pagodaX,.78,pagodaZ,120,1.48,120);
@@ -7088,7 +7111,8 @@ void main(){
       }
       const roofDims=roofDimsFor(halfW+5.2,halfD+4.8,9.5,4.1,2.5);
       // Keep tile density approximately constant as the pagoda footprint grows.
-      addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64);
+      await addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64);
+      await yieldBuild(36+tier*2,'五重塔の屋根と装飾を生成中');
       for(const side of [-1,1])for(const sz of [-1,1]){
         addInstance(pagodaGoldGeometry,materials.gold,pagodaX+side*(roofDims.halfWidth-.3),
           baseY+wallHeight+4.4,pagodaZ+sz*(roofDims.halfDepth-.3));
@@ -7102,6 +7126,7 @@ void main(){
     }
     add(new T.ConeGeometry(2.0,8,16),materials.gold,pagodaX,212,pagodaZ);
 
+    await yieldBuild(44,'桜並木を生成中',true);
     // Sculpted sakura trees form continuous flowering corridors beside the river.
     const blossomGeometry=genesisCreateSakuraFlowerGeometry(T),blossomCapacity=22000;
     const blossomMesh=new T.InstancedMesh(blossomGeometry,materials.blossom,blossomCapacity);
@@ -7161,20 +7186,25 @@ void main(){
         blossomMesh.setColorAt(blossomIndex,blossomColors[Math.floor(random()*blossomColors.length)]);
         dummy.position.set(px,py+.008,pz);dummy.scale.setScalar(.36*size);dummy.updateMatrix();
         centerMesh.setMatrixAt(blossomIndex,dummy.matrix);
+        if((n&511)===511)await yieldBuild(48,'桜の花びらを配置中');
       }
+      await yieldBuild(50,'桜の木を配置中');
     }
     blossomMesh.count=blossomIndex;centerMesh.count=blossomIndex;
     blossomMesh.instanceMatrix.needsUpdate=true;centerMesh.instanceMatrix.needsUpdate=true;
     if(blossomMesh.instanceColor)blossomMesh.instanceColor.needsUpdate=true;
     root.add(blossomMesh,centerMesh);
+    await yieldBuild(54,'松林を生成中',true);
     genesisAddPineForest(T,root,materials,0x712a9b4,26,{minX:-488,maxX:-470,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    await yieldBuild(56,'松林を配置中');
     genesisAddPineForest(T,root,materials,0x5a821b1,26,{minX:470,maxX:488,minZ:-490,maxZ:390,minHeight:10,maxHeight:24});
+    await yieldBuild(58,'松林を配置中');
     genesisAddPineForest(T,root,materials,0x6bd1c29,22,{minX:-330,maxX:330,minZ:-570,maxZ:-520,minHeight:12,maxHeight:26});
 
     // Detailed machiya, merchant houses, inns and small temple halls fill both districts.
     const signGeometry=new T.BoxGeometry(2.3,3.8,.18),lanternBoxGeometry=new T.BoxGeometry(.9,1.5,.9);
     const buildingStyles=[materials.roof,materials.roofGreen,materials.roofRust];
-    const addUrbanBuilding=(x,z,width,depth,floors,style,seed)=>{
+    const addUrbanBuilding=async(x,z,width,depth,floors,style,seed)=>{
       const localRandom=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
       const floorHeight=7.1,baseY=.48,bodyHeight=floors*floorHeight,topY=baseY+bodyHeight;
       const halfW=width*.5,halfD=depth*.5;
@@ -7215,7 +7245,7 @@ void main(){
       for(const sx of [-1,1])addBox(materials.gold,x+sx*width*.12,baseY+2.1,entryZ+.31,.08,3.9,.08);
       addBox(materials.darkWood,x,topY-.38,z,width+.6,.64,depth+.6);
       const roofDims=roofDimsFor(halfW+2.7,halfD+2.5,4.7,1.65,.94);
-      addRoof(x,z,topY,roofDims,buildingStyles[style%buildingStyles.length],.72);
+      await addRoof(x,z,topY,roofDims,buildingStyles[style%buildingStyles.length],.72);
       addBox(materials.darkWood,x,topY+1.65,z+halfD+.7,width+.8,.32,.5);
       if(style===0||style===3){
         const canopyZ=z+halfD+1.25;
@@ -7248,6 +7278,8 @@ void main(){
     let citySeed=0x16a2bc43;
     const cityRandom=()=>{citySeed=(Math.imul(citySeed,1664525)+1013904223)>>>0;return citySeed/4294967296;};
     const cityColumns=[102,188,276,366,446];
+    await yieldBuild(61,'城下町の建築物を生成中',true);
+    let buildingsBuilt=0;
     for(const side of [-1,1]){
       for(let row=0;row<11;row++){
         const z=352-row*77+(cityRandom()-.5)*10;
@@ -7258,11 +7290,13 @@ void main(){
           const width=widths[Math.floor(cityRandom()*widths.length)];
           const depth=depths[Math.floor(cityRandom()*depths.length)];
           const floors=cityRandom()>.84?3:cityRandom()>.48?2:1;
-          addUrbanBuilding(x,z,width,depth,floors,Math.floor(cityRandom()*5),Math.floor(cityRandom()*4294967295));
+          await addUrbanBuilding(x,z,width,depth,floors,Math.floor(cityRandom()*5),Math.floor(cityRandom()*4294967295));
+          buildingsBuilt++;
+          if((buildingsBuilt&3)===0)await yieldBuild(61+Math.min(16,buildingsBuilt/5),'街並みを組み立て中');
         }
       }
     }
-    const addGrandHall=(x,z,width,depth,floors,roofMaterial)=>{
+    const addGrandHall=async(x,z,width,depth,floors,roofMaterial)=>{
       const baseY=.6,wallHeight=floors*8.4,halfW=width*.5,halfD=depth*.5;
       addBox(materials.darkStone,x,.95,z,width+5,1.3,depth+5);
       addBox(materials.stone,x,1.7,z,width+2,.28,depth+2);
@@ -7277,15 +7311,17 @@ void main(){
         for(let row=0;row<=7;row++)addBox(materials.darkWood,px,baseY+2.2+row*.72,frontZ+.14,3.6,.11,.2);
         for(let col=0;col<=4;col++)addBox(materials.darkWood,px-1.8+col*.9,baseY+4.8,frontZ+.15,.12,5,.2);
       }
-      addRoof(x,z,baseY+wallHeight,roofDimsFor(halfW+5,halfD+4.5,7.4,2.6,1.8),roofMaterial,.86);
+      await addRoof(x,z,baseY+wallHeight,roofDimsFor(halfW+5,halfD+4.5,7.4,2.6,1.8),roofMaterial,.86);
       addBox(materials.darkWood,x,baseY+wallHeight+.4,z+halfD+.8,width+1,.6,.5);
       addLight('#FFB66E',3.3,44,x,baseY+6,z+halfD+4);
     };
-    addGrandHall(-236,248,54,42,2,materials.roofGreen);
-    addGrandHall(244,32,50,40,2,materials.roofRust);
-    addGrandHall(-245,-265,58,46,2,materials.roof);
-    addGrandHall(248,-270,60,48,2,materials.roofGreen);
+    await addGrandHall(-236,248,54,42,2,materials.roofGreen);
+    await yieldBuild(80,'大規模な寺社建築を生成中');
+    await addGrandHall(244,32,50,40,2,materials.roofRust);
+    await addGrandHall(-245,-265,58,46,2,materials.roof);
+    await addGrandHall(248,-270,60,48,2,materials.roofGreen);
 
+    await yieldBuild(82,'街並みの仕上げ中',true);
     // Hundreds of emissive paper sky lanterns fill the open sky above the capital.
     const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D();
     const skyBodyGeometry=new T.CylinderGeometry(.52,.66,1.62,12,8,true);
@@ -7335,9 +7371,9 @@ void main(){
       for(let index=0;index<10;index++)addGardenLantern(side*(72+(index%4)*18),320-index*72,.82+(index%3)*.1,index%4!==0);
     }
 
-    // 36,000 petals form six upward-expanding arms around the lower four storeys.
-    // The crown and fifth storey remain an intentionally clear architectural silhouette.
-    const vortexCount=36000,vortexStrandCount=6,vortexHeight=112,vortexRadiusGrowth=22,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
+    await yieldBuild(89,'桜の螺旋と空の灯籠を生成中',true);
+    // A broad, oblique helix rises around the pagoda and quietly fades before its crown.
+    const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28,vortexGeometry=new T.PlaneGeometry(1,.58,1,1);
     const vortexPhase=new Float32Array(vortexCount),vortexBaseHeight=new Float32Array(vortexCount);
     const vortexRadius=new Float32Array(vortexCount),vortexAngularSpeed=new Float32Array(vortexCount);
     const vortexRiseSpeed=new Float32Array(vortexCount),vortexScale=new Float32Array(vortexCount);
@@ -7350,9 +7386,9 @@ void main(){
       const strandPhase=(strandIndex/vortexStrandCount)*Math.PI*2;
       vortexPhase[index]=strandPhase+(vortexRandom()-.5)*.56;
       vortexBaseHeight[index]=vortexRandom()*vortexHeight;
-      vortexRadius[index]=54+vortexRandom()*12;
-      vortexAngularSpeed[index]=.035+vortexRandom()*.025;
-      vortexRiseSpeed[index]=.42+vortexRandom()*.58;
+      vortexRadius[index]=49+vortexRandom()*11;
+      vortexAngularSpeed[index]=.012+vortexRandom()*.018;
+      vortexRiseSpeed[index]=.34+vortexRandom()*.36;
       vortexScale[index]=.78+vortexRandom()*1.35;
       const tint=vortexPalette[Math.floor(vortexRandom()*vortexPalette.length)];
       vortexColor[index*3]=tint[0];vortexColor[index*3+1]=tint[1];vortexColor[index*3+2]=tint[2];
@@ -7371,12 +7407,13 @@ void main(){
         'attribute float aVortexRadius;','attribute float aVortexAngularSpeed;','attribute float aVortexRiseSpeed;',
         'attribute float aVortexScale;','attribute vec3 aVortexColor;',
         'uniform float uTime;','uniform vec3 uCenter;','uniform float uVortexHeight;','uniform float uRadiusGrowth;',
-        'varying vec2 vPetalUv;','varying vec3 vPetalColor;',
+        'varying vec2 vPetalUv;','varying vec3 vPetalColor;','varying float vPetalAlpha;',
         'void main(){','vPetalUv=uv;','vPetalColor=aVortexColor;',
         'float height=mod(aVortexBaseHeight+uTime*aVortexRiseSpeed,uVortexHeight);',
         'float heightRatio=clamp(height/uVortexHeight,0.0,1.0);',
-        'float angle=aVortexPhase+uTime*aVortexAngularSpeed+heightRatio*18.849556;',
-        'float radius=aVortexRadius+heightRatio*uRadiusGrowth+sin(uTime*.42+aVortexPhase)*2.8;',
+        'vPetalAlpha=smoothstep(0.0,0.075,heightRatio)*(1.0-smoothstep(0.73,1.0,heightRatio));',
+        'float angle=aVortexPhase+uTime*aVortexAngularSpeed+heightRatio*14.137167;',
+        'float radius=aVortexRadius+heightRatio*uRadiusGrowth+sin(uTime*.3+aVortexPhase)*1.8;',
         'vec3 centre=uCenter+vec3(cos(angle)*radius,height,sin(angle)*radius);',
         'vec3 cameraRight=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));',
         'vec3 cameraUp=normalize(vec3(viewMatrix[0][1],viewMatrix[1][1],viewMatrix[2][1]));',
@@ -7388,22 +7425,22 @@ void main(){
         'gl_Position=projectionMatrix*viewMatrix*modelMatrix*vec4(world,1.0);','}'
       ].join('\n'),
       fragmentShader:[
-        'precision highp float;','varying vec2 vPetalUv;','varying vec3 vPetalColor;',
-        'void main(){','float y=clamp(vPetalUv.y,0.0,1.0);',
+        'precision highp float;','varying vec2 vPetalUv;','varying vec3 vPetalColor;','varying float vPetalAlpha;',
+        'void main(){','if(vPetalAlpha<0.018)discard;','float y=clamp(vPetalUv.y,0.0,1.0);',
         'float width=pow(max(0.0,sin(3.14159265*y)),.68)*.48;',
         'float x=abs(vPetalUv.x-.5);',
         'float edge=1.0-smoothstep(width-.035,width+.015,x);',
         'if(edge<.12)discard;',
         'vec3 color=vPetalColor*(.88+.12*sin(y*3.14159265));',
-        'gl_FragColor=vec4(color*(.82+.18*edge),1.0);','}'
+        'gl_FragColor=vec4(color*(.82+.18*edge),vPetalAlpha*.92);','}'
       ].join('\n'),
-      transparent:false,depthWrite:true,depthTest:true,side:T.DoubleSide,toneMapped:false
+      transparent:true,opacity:1,depthWrite:false,depthTest:true,side:T.DoubleSide,toneMapped:false
     });
     const vortex=new T.InstancedMesh(vortexGeometry,vortexMaterial,vortexCount);
-    vortex.name='GENESIS Sakura Vortex | 36,000 GPU-animated petals, clear pagoda crown';
+    vortex.name='GENESIS Sakura Vortex | 28,000 oblique fading helix petals';
     // InstancedMesh initializes all instance matrices to identity in its constructor.
     // Avoid a second 36k-matrix CPU pass; the shader uses its dedicated instanced attributes.
-    const vortexMaxRadius=54+12+vortexRadiusGrowth+2.8+1.2;
+    const vortexMaxRadius=49+11+vortexRadiusGrowth+1.8+1.2;
     vortex.boundingSphere=new T.Sphere(
       new T.Vector3(pagodaX,2+vortexHeight*.5,pagodaZ),
       Math.hypot(vortexMaxRadius,vortexHeight*.5+1.2)
@@ -7411,6 +7448,7 @@ void main(){
     vortex.frustumCulled=true;
     vortex.instanceMatrix.setUsage(T.StaticDrawUsage);vortex.instanceMatrix.needsUpdate=true;root.add(vortex);
     genesisShrinePetalInstances=vortex;genesisShrinePetalMotion=[];
+    await yieldBuild(92,'桜の螺旋を配置中',true);
 
     // Secondary paths, neighborhood gates and outer walls make the city feel inhabited.
     for(const side of [-1,1]){
@@ -7448,27 +7486,41 @@ void main(){
     genesisAddMountainRange(T,root,{z:-632,depth:82,baseY:0,rangeX:1040,color:'#253141',
       peaks:[[-420,62,160],[-180,88,170],[80,58,150],[350,92,180]]});
 
+    await yieldBuild(94,'建築物を描画用にまとめています',true);
+    const packedMatrix=new T.Matrix4();let mergedBatchIndex=0;
     for(const batch of instanceBatches.values()){
-      const mesh=new T.InstancedMesh(batch.geometry,batch.material,batch.matrices.length);
-      mesh.name='GENESIS Capital | batched architectural detail ('+batch.matrices.length+' instances)';
-      for(let index=0;index<batch.matrices.length;index++)mesh.setMatrixAt(index,batch.matrices[index]);
+      const instanceCount=batch.matrices.length/16;
+      const mesh=new T.InstancedMesh(batch.geometry,batch.material,instanceCount);
+      mesh.name='GENESIS Capital | batched architectural detail ('+instanceCount+' instances)';
+      for(let index=0;index<instanceCount;index++){
+        packedMatrix.fromArray(batch.matrices,index*16);
+        mesh.setMatrixAt(index,packedMatrix);
+        if((index&1023)===1023)await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'描画データを転送中');
+      }
       mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
-      mesh.computeBoundingSphere?.();root.add(mesh);
+      mesh.computeBoundingSphere?.();root.add(mesh);mergedBatchIndex++;
+      await yieldBuild(94+Math.min(4,mergedBatchIndex*.15),'街並みを統合中');
     }
     root.traverse(object=>{
       if(object.geometry)geometrySet.add(object.geometry);
       const assigned=Array.isArray(object.material)?object.material:[object.material];
       for(const material of assigned)if(material)materialSet.add(material);
     });
-    root.userData.pstudioGenesisOwned={geometries:geometrySet,materials:materialSet,textures:textureSet};
-    root.scale.setScalar(1);
+    root.scale.setScalar(1.24);
     root.userData.pstudioReferenceComposition={
       name:'GENESIS_RIVER_CAPITAL_AND_SAKURA_PAGODA',aspectRatio:1.5,cameraFov:44,cameraLocked:true,
-      cityBounds:{width:1000,depth:1080},river:{width:56,length:1080},
+      cityBounds:{width:1240,depth:1340},river:{width:69,length:1339},
       landmarkOrder:['arched_crimson_bridge','deep_crimson_torii','monumental_five_storey_pagoda']
     };
+    if(buildToken!==genesisShrineDemoBuildToken||!genesisShrineDemoRequested)throw new Error('GENESIS_BUILD_CANCELLED');
     scene.add(root);genesisShrineDemoGroup=root;
+    try{onProgress?.({progress:100,label:'生成完了'});}catch{}
     return true;
+    }catch(error){
+      if(genesisShrineDemoGroup===root)removeGenesisShrineDemo();
+      if(error?.message==='GENESIS_BUILD_CANCELLED')return false;
+      throw error;
+    }
   }
 
   function removeGenesisShrineDemo(){
@@ -7476,6 +7528,11 @@ void main(){
     if(!root)return false;
     root.parent?.remove(root);
     const owned=root.userData.pstudioGenesisOwned||{};
+    root.traverse?.(object=>{
+      if(object.geometry)owned.geometries?.add?.(object.geometry);
+      const assigned=Array.isArray(object.material)?object.material:[object.material];
+      for(const material of assigned)if(material)owned.materials?.add?.(material);
+    });
     for(const material of owned.materials||[]){
       window.PStudioEnvironmentFX?.releaseMaterial?.(material);
       material?.dispose?.();
@@ -7496,20 +7553,28 @@ void main(){
     return true;
   }
 
-  function setGenesisShrineDemo(enabled){
+  async function setGenesisShrineDemo(enabled,onProgress=()=>{}){
     genesisShrineDemoRequested=!!enabled;
     const referenceCanvas=document.getElementById('game-3d-canvas')||canvas;
     referenceCanvas?.classList?.toggle('pstudio-reference-frame',genesisShrineDemoRequested);
     document.getElementById('game-hud-canvas')?.classList?.toggle('pstudio-reference-frame-hud',genesisShrineDemoRequested);
     if(!genesisShrineDemoRequested){
+      genesisShrineDemoBuildToken++;
       removeGenesisShrineDemo();
+      genesisShrineDemoBuildPromise=null;
       if(camera&&genesisShrinePreviousCameraFov!==null){camera.fov=genesisShrinePreviousCameraFov;camera.updateProjectionMatrix();}
       genesisShrinePreviousCameraFov=null;
       return true;
     }
     if(renderer&&scene){
-      if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=35;camera.updateProjectionMatrix();}
-      return buildGenesisShrineDemo(window.THREE);
+      if(genesisShrineDemoGroup?.parent===scene)return true;
+      if(genesisShrineDemoBuildPromise)return genesisShrineDemoBuildPromise;
+      if(camera){if(genesisShrinePreviousCameraFov===null)genesisShrinePreviousCameraFov=camera.fov;camera.fov=44;camera.updateProjectionMatrix();}
+      const token=++genesisShrineDemoBuildToken;
+      const buildPromise=buildGenesisShrineDemo(window.THREE,onProgress,token);
+      genesisShrineDemoBuildPromise=buildPromise;
+      try{return await buildPromise;}
+      finally{if(genesisShrineDemoBuildPromise===buildPromise)genesisShrineDemoBuildPromise=null;}
     }
     return true;
   }
@@ -7529,7 +7594,14 @@ void main(){
     // Keep the shared GENESIS state for live sun/moon, lighting, fog, clouds,
     // wind, rain and water uniforms without replacing the authored sky texture.
     applyGenesisLiveLighting(state);
-    if(genesisShrineDemoRequested&&!genesisShrineDemoGroup)buildGenesisShrineDemo(window.THREE);
+    if(genesisShrineDemoRequested&&!genesisShrineDemoGroup&&!genesisShrineDemoBuildPromise){
+      const token=++genesisShrineDemoBuildToken;
+      const buildPromise=buildGenesisShrineDemo(window.THREE,()=>{},token);
+      genesisShrineDemoBuildPromise=buildPromise;
+      buildPromise.catch(error=>console.error('GENESIS scene generation failed',error)).finally(()=>{
+        if(genesisShrineDemoBuildPromise===buildPromise)genesisShrineDemoBuildPromise=null;
+      });
+    }
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       if(now-genesisLastWebGPUUpdateAt>=250){
         productionRendererBridge.setEnvironment?.(state);
