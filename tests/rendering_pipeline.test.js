@@ -1468,63 +1468,40 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
 });
 
 
-test('GENESIS reference showcase uses detailed Japanese architecture, a fixed photographic composition and the existing sky presets',()=>{
+test('GENESIS river capital builds a dense Japanese city around a true river, monumental pagoda and GPU sakura vortex',()=>{
   for(const token of [
-    'const addRoofStructure=(',
-    'const addShingleRidge=(',
-    'addRoofStructure(shrineX,shrineZ,mainRoof,.78)',
-    'addRoofStructure(pagodaX,pagodaZ,roofDims,.78)',
-    'const pagodaWindowCount=3',
-    'const shojiLamp=new T.PointLight',
-    'const lanternGlow=new T.PointLight',
-    'const toriiUplight=new T.PointLight',
-    'addLantern(-55,8,1.92,true)',
-    'addLantern(49,7,2.02,true)',
-    'root.scale.setScalar(1)',
-    'frontZ=shrineZ+7.03',
-    'const deerBodyGeometry=new T.SphereGeometry(1,24,16)',
-    'const deerX=50,deerZ=-15',
-    'const pagodaX=-47,pagodaZ=-48',
-    'const gateX=38,gateZ=-65,postSpacing=13.2',
-    'materials.antler',
-    'addBeam(materials.antler,base,fork,.045,7)',
-    'root.userData.pstudioReferenceComposition',
-    'camera.fov=35',
-    'genesisShrinePreviousCameraFov=camera.fov',
-    'camera.fov=genesisShrinePreviousCameraFov',
-    'mix(0.82,0.98,pStudioMirrorFresnel)'
+    'const riverWidth=56,riverLength=1080,riverZ=-25,riverY=.115',
+    "GENESIS River | continuous full planar reflection",
+    'const bridgeHalfSpan=37,bridgeDeckWidth=11',
+    'GENESIS Deep Crimson Timber Bridge | arched deck',
+    'const gateX=0,gateZ=-72,gateSpacing=34,gateHeight=31',
+    'GENESIS Deep Crimson Torii Pillar',
+    'const pagodaWidths=[58,49,40,31,23]',
+    'const pagodaZ=-454',
+    'const blossomCapacity=22000',
+    'const cityColumns=[102,188,276,366,446]',
+    'addGrandHall(-236,248,54,42,2,materials.roofGreen)',
+    'const skyLanternCount=320',
+    'GENESIS Sky Lanterns | warm paper bodies',
+    'const vortexCount=24000',
+    'aVortexAngularSpeed',
+    'uRadiusGrowth',
+    'name:\'GENESIS_RIVER_CAPITAL_AND_SAKURA_PAGODA\'',
+    'cityBounds:{width:1000,depth:1080}',
+    'camera.fov=44',
+    'uniforms?.uTime'
   ])assert.ok(renderer.includes(token),token);
-  assert.ok(renderer.includes('const tileGeometry=new T.BufferGeometry()'),'roof tiles are individual curved ceramic meshes');
-  assert.ok(renderer.includes('const tileRow=(layer,row,column)=>layer*18+row*9+column'),'ceramic tile geometry includes a closed underside');
-  assert.ok(renderer.includes('tiles.name=\'GENESIS Hand-Laid Ceramic Roof Tiles\''),'roof tile instances remain a dedicated instanced batch');
-  assert.ok(renderer.includes('Math.max(0,Math.cos(theta))*.018'),'sakura petals have a shallow cupped surface');
-  assert.ok(renderer.includes('A Japanese black-pine bough frames the upper-right with broad, horizontal needle pads.'),'the upper-right silhouette uses Japanese black pine');
-  assert.ok(renderer.includes('GENESIS Black Pine | flattened needle pads'),'the distant forest uses layered horizontal pine foliage');
-  assert.ok(renderer.includes('const blossomCapacity=14000;'),'the reference keeps dense sakura on the left bank');
-  assert.equal(renderer.includes('const addBankPavilion=(centerX,centerZ,width,depth,ridgeY)=>{'),false,'unreferenced bank pavilions are removed');
-  assert.equal(renderer.includes('const secondaryX=58,secondaryZ=-39;'),false,'the unreferenced second shrine is removed');
-  assert.ok(renderer.includes('new T.PlaneGeometry(180,218,1,1),mirrorMaterial,0,.145,-3'),'mirror lake reaches farther into the foreground');
-  assert.ok(renderer.includes('const value=64+noise*.42+tileGlow+tileLine;'),'roof tile albedo is lifted');
-  assert.ok(renderer.includes('float pStudioMirrorEdgeFade=smoothstep(-0.018,0.016,pStudioMirrorEdge);'),'reflection UV borders fade smoothly');
-  assert.ok(renderer.includes('vPStudioMirrorWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;'),'water ripples use world coordinates');
-  assert.ok(renderer.includes('orbitYaw=0;orbitPitch=0;zoom=1;'),'the reference camera resets inherited editor orbit');
-  assert.ok(renderer.includes('const value=62+grain*12+fine*5+noise;'),'timber albedo is lifted');
-  assert.ok(renderer.includes('const branchCount=10;'),'sakura canopy branch density is increased');
-  assert.ok(renderer.includes("emissiveIntensity:2.9"),'lantern materials use restrained amber emission');
-  assert.ok(renderer.includes("new T.CylinderGeometry(.62,.82,.42,8,1)"),'stone lanterns have octagonal bases');
-  assert.ok(renderer.includes("new T.CylinderGeometry(.58,.92,.34,4,1)"),'stone lanterns have shaped roof caps');
-  assert.ok(renderer.includes("new T.HemisphereLight('#F4D8B6','#1E2B31',.56)"),'showcase fill is warm and leaves the global sky unchanged');
-  assert.ok(renderer.includes("new T.DirectionalLight('#FFD2A0',.24)"),'soft directional fill remains showcase-local');
-  assert.ok(renderer.includes("const size=qualityPreset==='ultra'?1024:512"),'Ultra uses higher-resolution material maps');
-  assert.ok(renderer.includes("const ultraFullDetail=qualityPreset==='ultra'&&!memorySafetyApplied"),'Ultra mirror detail uses full resolution until adaptive frame budgeting is required');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFB45C',2.6,24,shrineX,5.2,frontZ-3.0)"),'the main hall receives restrained warm bounce');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFB88A',1.8,26,-89,5.0,11)"),'the left sakura bank has peach-colored bounce');
-  assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
-  assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
-  assert.ok(html.includes("set_camera(-3, 30, 128, -3, 7, -36)"));
-  assert.ok(html.includes("set_postprocessing(true, true, 0.38)"),'the showcase keeps lantern highlights crisp with restrained bloom');
-  assert.ok(html.includes("window.setPStudioQualityPreset?.('ultra')"),'showcase starts in Ultra');
-  assert.ok(html.includes('20261127-moonlit-reference-scene-r6'));
+  assert.ok(renderer.includes('genesisCreateCurvedRoofGeometry(T,dimensions.halfWidth,dimensions.halfDepth'));
+  assert.ok(renderer.includes('addInstance(tileGeometry,materials.roofTile'));
+  assert.ok(renderer.includes('genesisAddPineForest(T,root,materials'));
+  assert.ok(renderer.includes('genesisShrineDemoWaterState.reflectivity=1'));
+  assert.ok(renderer.includes('genesisShrineDemoWaterState.waveStrength=.0028'));
+  assert.ok(renderer.includes('scene.background=scenePresetTexture'));
+  assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 80, -100)"));
+  assert.ok(html.includes("set_postprocessing(true, true, 0.38)"));
+  assert.ok(html.includes("window.setPStudioQualityPreset?.('ultra')"));
+  assert.ok(html.includes('20261127-river-capital-v1'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1537,7 +1514,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-moonlit-reference-scene-r6'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-river-capital-v1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
