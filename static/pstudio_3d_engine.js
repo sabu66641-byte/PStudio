@@ -6757,6 +6757,9 @@ void main(){
     const trunkGeometry=new T.CylinderGeometry(.12,.28,1,8,2,false);
     const branchGeometry=new T.CylinderGeometry(.035,.105,1,7,1,false);
     const needlePadGeometry=new T.SphereGeometry(1,10,7);
+    const owned=parent.userData?.pstudioGenesisOwned;
+    owned?.geometries?.add?.(trunkGeometry);owned?.geometries?.add?.(branchGeometry);owned?.geometries?.add?.(needlePadGeometry);
+    owned?.materials?.add?.(materials.pineTrunk);owned?.materials?.add?.(materials.pine);
     const dummy=new T.Object3D(),trunkMatrices=[],branchMatrices=[],padMatrices=[];
     const addSegment=(a,b,radius)=>{
       const start=new T.Vector3(a[0],a[1],a[2]),end=new T.Vector3(b[0],b[1],b[2]);
