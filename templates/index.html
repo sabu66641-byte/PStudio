@@ -1042,7 +1042,7 @@ async function openGenesisDemo(){
  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
  try{
  if(genesisDemoCancelRequested){setGenesisDemoLoading(false);return;}
- const cameraScript='func update(dt)\n    set_camera(0, 663, 1364, 0, 99, -124)\n    set_postprocessing(true, true, 0.38)\n';
+ const cameraScript='func update(dt)\n    set_camera(0, 535, 1100, 0, 99, -124)\n    set_postprocessing(true, true, 0.38)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
   {id:'shrine-camera',name:'Night Shrine Camera',x:480,y:260,z:0,rotationX:0,rotationY:0,rotationZ:0,w:32,h:32,sprite:'',script:'shrine_camera.ps',color:'#FFFFFF',shape:'rect'}
