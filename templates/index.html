@@ -1042,6 +1042,10 @@ async function openGenesisDemo(){
  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
  try{
  if(genesisDemoCancelRequested){setGenesisDemoLoading(false);return;}
+ if(window.PStudio3DReady){
+  const ready=await Promise.race([window.PStudio3DReady,new Promise(resolve=>setTimeout(()=>resolve(false),6000))]);
+  if(!ready)throw new Error('3D renderer could not initialize. Check the Three.js connection.');
+ }
  const cameraScript='func update(dt)\n    set_camera(0, 535, 1100, 0, 99, -124)\n    set_postprocessing(true, true, 0.38)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
@@ -1062,8 +1066,9 @@ async function openGenesisDemo(){
  const sceneLabel=document.getElementById('scene-name-label');
  if(sceneLabel)sceneLabel.textContent='genesis_river_capital.scene';
  const created=await window.PStudio3D?.setGenesisShrineDemo?.(true,updateGenesisDemoLoading);
-  if(!created){setGenesisDemoLoading(false);return;}
+  if(!created||genesisDemoCancelRequested){setGenesisDemoLoading(false);return;}
   await window.startPStudioGame?.();
+  if(genesisDemoCancelRequested){if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();setGenesisDemoLoading(false);return;}
   await new Promise(resolve=>requestAnimationFrame(resolve));
   setGenesisDemoLoading(false);
   toast('川沿いの和風都・深紅の鳥居・五重塔・桜の螺旋・天灯シーンを開きました。');
