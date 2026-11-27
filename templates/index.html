@@ -1032,6 +1032,10 @@ function cancelGenesisDemoLoading(){
 }
 async function openGenesisDemo(){
  if(window.PStudioEngine?.isRunning())window.stopPStudioGame?.();
+ setGenesisDemoLoading(true);
+ // Paint the overlay before project setup or scene construction starts.
+ await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+ try{
  const cameraScript='func update(dt)\n    set_camera(0, 663, 1364, 0, 99, -124)\n    set_postprocessing(true, true, 0.38)\n';
  projectFiles['shrine_camera.ps']={type:'ps',content:cameraScript};
  sceneObjects=[
@@ -1046,16 +1050,12 @@ async function openGenesisDemo(){
  syncGenesisEnvironmentControls();
  persistProject();
  renderProjectTree();
- window.setPStudioQualityPreset?.('ultra');
+ window.setPStudioQualityPreset?.('auto');
  window.PStudio3D?.setGenesisEnvironment?.(sceneEnvironment);
  window.PStudioEngine?.setViewMode?.('3d');
  const sceneLabel=document.getElementById('scene-name-label');
  if(sceneLabel)sceneLabel.textContent='genesis_river_capital.scene';
- setGenesisDemoLoading(true);
- // Give the loading screen two paint opportunities before starting CPU-heavy scene work.
- await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
- try{
-  const created=await window.PStudio3D?.setGenesisShrineDemo?.(true,updateGenesisDemoLoading);
+ const created=await window.PStudio3D?.setGenesisShrineDemo?.(true,updateGenesisDemoLoading);
   if(!created){setGenesisDemoLoading(false);return;}
   window.startPStudioGame?.();
   await new Promise(resolve=>requestAnimationFrame(resolve));
