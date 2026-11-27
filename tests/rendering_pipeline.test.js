@@ -1507,9 +1507,9 @@ test('GENESIS reference showcase uses detailed Japanese architecture, a fixed ph
   assert.ok(renderer.includes('const value=64+noise*.42+tileGlow+tileLine;'),'roof tile albedo is lifted');
   assert.ok(renderer.includes('const value=62+grain*12+fine*5+noise;'),'timber albedo is lifted');
   assert.ok(renderer.includes('const branchCount=9;'),'sakura canopy branch density is increased');
-  assert.ok(renderer.includes("emissiveIntensity:4.25"),'lantern emitters are brighter without changing world exposure');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFC18F',1.85,34,shrineX,5.4,frontZ-3.8)"),'the main hall receives a local warm fill light');
-  assert.ok(renderer.includes("addShowcasePointLight('#FFC0D1',1.55,34,-80,4.8,-21)"),'sakura receives local canopy illumination');
+  assert.ok(renderer.includes("emissiveIntensity:7.2"),'lantern emitters are brighter without changing world exposure');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFD09C',5.6,48,shrineX,5.4,frontZ-3.8)"),'the main hall receives a local warm fill light');
+  assert.ok(renderer.includes("addShowcasePointLight('#FFD0DF',3.1,48,-80,5.5,-21)"),'sakura receives local canopy illumination');
   assert.ok(renderer.includes('scene.background=scenePresetTexture'),'the normal authored sky remains in charge');
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'),'GENESIS still uses the existing day/dusk/night environment preset path');
   assert.ok(html.includes("set_camera(-16, 35, 62, -14, 5, -48)"));
