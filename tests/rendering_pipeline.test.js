@@ -129,7 +129,8 @@ test('Mirror Water uses bounded reflection targets coordinated by the shared fra
     'mirrorWaterResolutionScale','new T.WebGLRenderTarget','reflectionCamera.lookAt',
     'renderer.clippingPlanes=[state.plane.clone()]','state.hasRendered=true',
     'const ultraFullDetail=qualityPreset===\'ultra\'&&!memorySafetyApplied;\n    const base=ultraFullDetail?1.0:(memorySafetyApplied||adaptiveTouchResolutionBudget||(hardware.touch&&adaptiveQualityLevel===0)?0.86:1.0)',
-    'return base*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
+    'const genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0',
+    'return Math.min(base,genesisCap)*(renderingFrameBudgetController?renderingFrameBudget.mirrorResolutionScale:1)',
     'renderer.capabilities?.maxTextureSize',
     'Math.floor(size.x*scale)',
     'Math.floor(size.y*scale)',
@@ -1464,8 +1465,8 @@ test('GENESIS day-to-night state reuses one full-resolution authored sky/IBL pre
   assert.doesNotMatch(renderer,/applySceneEnvironmentPreset\(T,presetName,false,null,\.375\)/);
   assert.ok(html.includes('夜景神社・桜・水鏡デモを開く'));
   assert.ok(html.includes("preset:'night',timeOfDay:23.25"));
-  assert.ok(html.includes("setGenesisShrineDemo?.(true)"));
-  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 80, -100)"));
+  assert.ok(html.includes("setGenesisShrineDemo?.(true,updateGenesisDemoLoading)"));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 99, -124)"));
   assert.equal(html.includes('WebGPU Lab'),false);
 });
 
@@ -1483,9 +1484,9 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'baseY=2+tier*31,wallHeight=20',
     'roofDimsFor(halfW+5.2,halfD+4.8,9.5,4.1,2.5)',
     'addRoof(pagodaX,pagodaZ,baseY+wallHeight,roofDims,tier%2===0?materials.roof:materials.roofGreen,.64)',
-    'const vortexCount=36000,vortexStrandCount=6,vortexHeight=112,vortexRadiusGrowth=22',
+    'const vortexCount=28000,vortexStrandCount=7,vortexHeight=138,vortexRadiusGrowth=28',
     'vortexBaseHeight[index]=vortexRandom()*vortexHeight',
-    'vortex.boundingSphere=new T.Sphere(',
+    'vortexGeometry.boundingSphere=new T.Sphere(',
     'vortex.frustumCulled=true',
     'blossomCapacity=22000',
     'const cityColumns=[102,188,276,366,446]',
@@ -1493,14 +1494,16 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D()',
     'skyCoreDummy.rotation.copy(dummy.rotation)',
     'GENESIS Sky Lanterns | warm paper bodies',
-    'vortexRadius[index]=54+vortexRandom()*12',
+    'vortexRadius[index]=49+vortexRandom()*11',
     'uVortexHeight:{value:vortexHeight},uRadiusGrowth:{value:vortexRadiusGrowth}',
-    'heightRatio*18.849556',
-    'vortex.instanceMatrix.setUsage(T.StaticDrawUsage)',
+    'heightRatio*14.137167',
+    'vortexGeometry.instanceCount=vortexCount',
+    'new T.InstancedBufferGeometry().copy(vortexBaseGeometry)',
+    'const vortex=new T.Mesh(vortexGeometry,vortexMaterial)',
     'aVortexAngularSpeed',
     'uRadiusGrowth',
     'name:\'GENESIS_RIVER_CAPITAL_AND_SAKURA_PAGODA\'',
-    'cityBounds:{width:1000,depth:1080}',
+    'cityBounds:{width:1240,depth:1340}',
     'camera.fov=44',
     'uniforms?.uTime'
   ])assert.ok(renderer.includes(token),token);
@@ -1514,10 +1517,22 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('genesisShrineDemoWaterState.waveStrength=.0028'));
   assert.ok(renderer.includes('scene.background=scenePresetTexture'));
   assert.ok(renderer.includes('applySceneEnvironmentPreset(T,presetName,false);'));
-  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 80, -100)"));
+  assert.ok(html.includes("set_camera(0, 535, 1100, 0, 99, -124)"));
   assert.ok(html.includes("set_postprocessing(true, true, 0.38)"));
-  assert.ok(html.includes("window.setPStudioQualityPreset?.('ultra')"));
-  assert.ok(html.includes('20261127-river-capital-v3'));
+  assert.ok(html.includes("window.setPStudioQualityPreset?.('auto')"));
+  assert.ok(html.includes('genesis-loading-overlay'));
+  assert.ok(html.includes('genesis-loading-progress'));
+  assert.ok(renderer.includes('async function buildGenesisShrineDemo'));
+  assert.ok(renderer.includes('await yieldBuild('));
+  assert.ok(renderer.includes('await renderer.compileAsync(scene,camera)'));
+  assert.ok(renderer.includes('batch.matrices=new Float32Array(0)'));
+  assert.ok(renderer.includes('destination.set(batch.matrices.subarray(offset,end),offset)'));
+  assert.ok(renderer.includes('matrices:new Float32Array(256),count:0'));
+  assert.ok(renderer.includes('transparent:true,opacity:1,depthWrite:false'));
+  assert.ok(renderer.includes('genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0'));
+  assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
+  assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
+  assert.ok(html.includes('20261127-genesis-progressive-v4'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1530,7 +1545,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-river-capital-v3'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v4'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
