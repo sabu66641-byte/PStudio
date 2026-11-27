@@ -1488,7 +1488,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'vortexBaseHeight[index]=vortexRandom()*vortexHeight',
     'vortexGeometry.boundingSphere=new T.Sphere(',
     'vortex.frustumCulled=true',
-    'blossomCapacity=22000',
+    'blossomCapacity=constrainedMobile?12000:22000',
     'const cityColumns=[102,188,276,366,446]',
     'addGrandHall(-236,248,54,42,2,materials.roofGreen)',
     'const skyLanternCount=320,skyTopDummy=new T.Object3D(),skyBottomDummy=new T.Object3D(),skyCoreDummy=new T.Object3D()',
