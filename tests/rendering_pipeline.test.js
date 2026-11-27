@@ -1525,6 +1525,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('await renderer.compileAsync(scene,camera)'));
   assert.ok(renderer.includes('batch.matrices=new Float32Array(0)'));
   assert.ok(renderer.includes('destination.set(batch.matrices.subarray(offset,end),offset)'));
+  assert.ok(renderer.includes('matrices:new Float32Array(256),count:0'));
   assert.ok(renderer.includes('transparent:true,opacity:1,depthWrite:false'));
   assert.ok(renderer.includes('genesisCap=genesisShrineDemoRequested?(hardware.touch?0.78:0.92):1.0'));
   assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
