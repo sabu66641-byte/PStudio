@@ -1491,7 +1491,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
     'vortexRadius[index]=54+vortexRandom()*12',
     'uVortexHeight:{value:142},uRadiusGrowth:{value:38}',
     'heightRatio*18.849556',
-    'vortex.instanceMatrix.setUsage(T.StaticDrawUsage)'
+    'vortex.instanceMatrix.setUsage(T.StaticDrawUsage)',
     'aVortexAngularSpeed',
     'uRadiusGrowth',
     'name:\'GENESIS_RIVER_CAPITAL_AND_SAKURA_PAGODA\'',
@@ -1509,7 +1509,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(html.includes("set_camera(0, 535, 1100, 0, 80, -100)"));
   assert.ok(html.includes("set_postprocessing(true, true, 0.38)"));
   assert.ok(html.includes("window.setPStudioQualityPreset?.('ultra')"));
-  assert.ok(html.includes('20261127-river-capital-v1'));
+  assert.ok(html.includes('20261127-river-capital-v2'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1522,7 +1522,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-river-capital-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-river-capital-v2'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
