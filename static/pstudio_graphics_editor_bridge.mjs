@@ -1,4 +1,5 @@
 import { createPStudioGraphicsSceneAsset } from "./pstudio_graphics_scene_asset.mjs";
+import { createPStudioBVHCollisionAdapter } from "./pstudio_graphics_bvh.mjs";
 
 function plain(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -40,6 +41,8 @@ export function createPStudioGraphicsEditorBridge(options = {}) {
   let disposed = false;
   let cachedAsset = null;
   let cachedRevision = -1;
+  let collisionAdapter = null;
+  let collisionRevision = -1;
   let leases = [];
   let syncCount = 0;
   let renderCount = 0;
@@ -95,8 +98,11 @@ export function createPStudioGraphicsEditorBridge(options = {}) {
         throw error;
       }
     }
+    const nextCollisionAdapter = createPStudioBVHCollisionAdapter(nextAsset, options.bvhOptions || {});
     releaseLeases(leases);
     leases = nextLeases;
+    collisionAdapter = nextCollisionAdapter;
+    collisionRevision = snapshot.revision;
     cachedAsset = nextAsset;
     cachedRevision = snapshot.revision;
     syncCount += 1;
@@ -106,6 +112,21 @@ export function createPStudioGraphicsEditorBridge(options = {}) {
     const entity = sceneCore.getEntity(id);
     if (!entity || entity.sceneId !== sceneId) throw new Error("Editor entity is not part of this PStudio scene: " + id);
     return entity;
+  }
+  function raycast(ray, config = {}) {
+    assertLive();
+    const asset = sync();
+    if (!collisionAdapter || collisionRevision !== cachedRevision) {
+      collisionAdapter = createPStudioBVHCollisionAdapter(asset, options.bvhOptions || {});
+      collisionRevision = cachedRevision;
+    }
+    return collisionAdapter.raycast(ray, config);
+  }
+  function selectFromRay(ray, config = {}) {
+    const hit = raycast(ray, config);
+    const selection = hit ? select(hit.entityId) : select(null);
+    try { options.onPick?.(Object.freeze({ hit, selection })); } catch (_) {}
+    return Object.freeze({ hit, selection });
   }
   function select(id) {
     assertLive();
@@ -187,14 +208,17 @@ export function createPStudioGraphicsEditorBridge(options = {}) {
     selectedEntityId = null;
     cachedAsset = null;
     cachedRevision = -1;
+    collisionAdapter = null;
+    collisionRevision = -1;
     disposed = true;
     if (options.ownsRenderer === true) renderer?.dispose?.();
     return true;
   }
   return Object.freeze({
     kind: "pstudio-graphics-editor-bridge",
-    sync, render, select, inspect, createEntity, updateEntity, reparentEntity, removeEntity,
+    sync, render, select, raycast, selectFromRay, inspect, createEntity, updateEntity, reparentEntity, removeEntity,
     setMode, serialize, dispose,
+    getCollisionStats: () => collisionAdapter?.stats?.() || Object.freeze({ cachedGeometryCount: 0, entityCount: 0 }),
     getState: () => Object.freeze({ disposed, sceneId, mode, selectedEntityId, syncedRevision: cachedRevision, syncCount, renderCount, leaseCount: leases.length })
   });
 }
