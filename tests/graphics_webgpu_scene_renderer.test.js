@@ -158,5 +158,5 @@ test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures
   assert.equal(stats.textureWrites, 1, 'the owned Base Color texture uploads once');
   assert.equal(stats.textures, 2, 'only depth plus Base Color GPU textures are allocated');
   assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler, input\.uv\)/);
-  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /rgba8unorm/);
+  assert.equal(scene.textures[0].format, 'rgba8unorm-srgb', 'the owned Base Color texture retains its sRGB encoding');
 });

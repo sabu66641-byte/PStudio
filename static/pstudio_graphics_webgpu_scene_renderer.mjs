@@ -310,9 +310,13 @@ function ensureWhiteTexture(state, device) {
 }
 
 function ensureMaterial(state, device, material, pipeline, textures) {
+  const textureAsset = material.baseColorTextureId ? textures.get(material.baseColorTextureId) : null;
   const signature = JSON.stringify({
     baseColor: material.baseColor, emissive: material.emissive, metallic: material.metallic,
-    roughness: material.roughness, opacity: material.opacity, baseColorTextureId: material.baseColorTextureId
+    roughness: material.roughness, opacity: material.opacity, baseColorTextureId: material.baseColorTextureId,
+    textureRevision: textureAsset?.revision || 0, textureFingerprint: textureAsset?.fingerprint || 0,
+    addressModeU: textureAsset?.addressModeU || 'repeat', addressModeV: textureAsset?.addressModeV || 'repeat',
+    magFilter: textureAsset?.magFilter || 'linear', minFilter: textureAsset?.minFilter || 'linear'
   });
   let record = state.materials.get(material.id);
   if (record && record.signature !== signature) {
@@ -326,7 +330,6 @@ function ensureMaterial(state, device, material, pipeline, textures) {
       size: 48,
       usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
     });
-    const textureAsset = material.baseColorTextureId ? textures.get(material.baseColorTextureId) : null;
     const gpuTexture = textureAsset ? ensureTexture(state, device, textureAsset) : ensureWhiteTexture(state, device);
     const sampler = device.createSampler({
       addressModeU: textureAsset?.addressModeU || 'repeat',
