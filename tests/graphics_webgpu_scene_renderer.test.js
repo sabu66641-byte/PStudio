@@ -277,3 +277,21 @@ test('independent WebGPU renderer resolves static skin and morph deformation bef
  assert.equal(deformed.jointIndices,null);
  assert.equal(deformed.morphTargets.length,0);
 });
+
+test('independent WebGPU renderer supports authored toon materials for the anime-facing shading path',async()=>{
+ const [{createPStudioGraphicsSceneAsset},{renderPStudioGraphicsSceneFrame,PSTUDIO_WEBGPU_SCENE_WGSL}]=await Promise.all([
+  import('../static/pstudio_graphics_scene_asset.mjs'),
+  import('../static/pstudio_graphics_webgpu_scene_renderer.mjs')
+ ]);
+ const scene=createPStudioGraphicsSceneAsset({
+  id:'scene.toon-material',
+  geometries:[{id:'geo',positions:[0,0,0,1,0,0,0,1,0]}],
+  materials:[{id:'mat.toon',model:'toon',baseColor:[.9,.72,.82,1],roughness:.8}],
+  entities:[{id:'entity',geometryId:'geo',materialId:'mat.toon'}]
+ });
+ const {device,stats}=fakeDevice();
+ const api={device,canvas:{width:320,height:180},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
+ assert.equal(renderPStudioGraphicsSceneFrame({scene,view:{viewProjectionMatrix:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),cameraPosition:[0,0,3]}},api,{}),true);
+ assert.equal(stats.drawCalls,1);
+ assert.match(PSTUDIO_WEBGPU_SCENE_WGSL,/toonLuminance/);
+});
