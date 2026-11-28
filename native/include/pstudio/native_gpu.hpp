@@ -21,7 +21,8 @@ struct NativeSurfaceDescriptor {
     NativeSurfacePlatform platform{NativeSurfacePlatform::Headless};
     void* display{nullptr}; // HINSTANCE, Display*, xcb_connection_t*, wl_display*
     void* window{nullptr};  // HWND encoded as void*, Window, xcb_window_t, wl_surface*
-    void* layer{nullptr};   // CAMetalLayer* on Apple platforms
+    void* layer{nullptr};   // CAMetalLayer* on Apple platforms when supplied by a host integration
+    void* hostWindow{nullptr}; // borrowed SDL_Window*; SDL owns OS Surface/Swapchain integration
     std::uint32_t width{1};
     std::uint32_t height{1};
     std::uint32_t framesInFlight{2};
@@ -37,9 +38,9 @@ struct NativeSurfaceDescriptor {
             case NativeSurfacePlatform::Xlib:
             case NativeSurfacePlatform::Xcb:
             case NativeSurfacePlatform::Wayland:
-                return display && window ? true : fail(error, "The selected window-system surface requires display and window handles");
+                return hostWindow || (display && window) ? true : fail(error, "The selected window-system surface requires an SDL_Window* or native display/window handles");
             case NativeSurfacePlatform::MetalLayer:
-                return layer ? true : fail(error, "Metal surface requires a CAMetalLayer handle");
+                return hostWindow || layer ? true : fail(error, "Metal surface requires an SDL_Window* or CAMetalLayer handle");
         }
         return fail(error, "Unknown native surface platform");
     }
@@ -63,6 +64,17 @@ struct GpuShaderDescriptor {
     GpuShaderFormat format{GpuShaderFormat::SpirV};
     std::string entryPoint{"main"};
     std::vector<std::uint8_t> bytecode;
+};
+
+struct GpuTextureDescriptor {
+    std::string id;
+    std::uint32_t width{1};
+    std::uint32_t height{1};
+    GpuPixelFormat format{GpuPixelFormat::Rgba8Unorm};
+    bool sampled{true};
+    bool colorTarget{false};
+    bool depthStencilTarget{false};
+    std::uint32_t mipLevels{1};
 };
 
 struct GpuVertexAttribute {
@@ -135,6 +147,8 @@ public:
     virtual NativeSwapchainInfo swapchainInfo() const = 0;
 
     virtual ResourceHandle createShader(const GpuShaderDescriptor& descriptor, std::string& error) = 0;
+    virtual ResourceHandle createTexture(const GpuTextureDescriptor& descriptor, std::string& error) = 0;
+    virtual bool uploadBuffer(ResourceHandle buffer, const void* data, std::size_t size, std::size_t offset, std::string& error) = 0;
     virtual ResourceHandle createGraphicsPipeline(const GpuPipelineDescriptor& descriptor, std::string& error) = 0;
     virtual bool submitGpuFrame(const GpuFramePacket& frame, std::string& error) = 0;
 
@@ -161,6 +175,17 @@ inline bool validateGpuShaderDescriptor(const GpuShaderDescriptor& shader, std::
             (static_cast<std::uint32_t>(shader.bytecode[2]) << 16) |
             (static_cast<std::uint32_t>(shader.bytecode[3]) << 24);
         if (magic != 0x07230203u) { error = "SPIR-V magic number is invalid"; return false; }
+    }
+    return true;
+}
+
+inline bool validateGpuTextureDescriptor(const GpuTextureDescriptor& texture, std::string& error) {
+    if (texture.id.empty()) { error = "Texture id is required"; return false; }
+    if (texture.width == 0 || texture.height == 0 || texture.mipLevels == 0) {
+        error = "Texture dimensions and mip levels must be positive"; return false;
+    }
+    if (texture.colorTarget && texture.depthStencilTarget) {
+        error = "Texture cannot be both a color target and depth-stencil target"; return false;
     }
     return true;
 }
