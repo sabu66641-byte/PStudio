@@ -2,7 +2,7 @@
  * PStudio-owned rendering-quality layer for the direct WebGPU Graphics Core.
  * Opt-in only: this module does not modify legacy Three.js/TSL production materials.
  */
-export const PSTUDIO_GRAPHICS_QUALITY_WGSL = String.raw\`
+export const PSTUDIO_GRAPHICS_QUALITY_WGSL = String.raw`
 const PSTUDIO_QUALITY_PI: f32 = 3.141592653589793;
 
 fn pstudioQualityDistributionGGX(nDotH: f32, roughness: f32) -> f32 {
@@ -93,7 +93,7 @@ fn pstudioQualityLinearToSRGB(value: vec3<f32>) -> vec3<f32> {
     let high = 1.055 * pow(x, vec3<f32>(1.0 / 2.4)) - 0.055;
     return select(high, low, x <= vec3<f32>(0.0031308));
 }
-\`;
+`;
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max, fallback = min) => Math.min(max, Math.max(min, finite(value, fallback)));

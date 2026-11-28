@@ -2,7 +2,7 @@
  * PStudio-owned atmospheric scattering layer for the direct WebGPU Graphics Core.
  * The shared GENESIS environment state remains the authoritative frame input.
  */
-export const PSTUDIO_GRAPHICS_ATMOSPHERE_WGSL = String.raw\`
+export const PSTUDIO_GRAPHICS_ATMOSPHERE_WGSL = String.raw`
 const PSTUDIO_ATMOSPHERE_PI: f32 = 3.141592653589793;
 
 fn pstudioRayleighPhase(cosTheta: f32) -> f32 {
@@ -114,7 +114,7 @@ fn pstudioAtmosphereAerialPerspective(
     let transmittance = exp(-density * distance);
     return mix(fogColor, sceneColor, clamp(transmittance, 0.0, 1.0));
 }
-\`;
+`;
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max, fallback = min) => Math.min(max, Math.max(min, finite(value, fallback)));

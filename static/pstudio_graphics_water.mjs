@@ -3,7 +3,7 @@
  * Keeps planar reflection, scene depth, Beer-Lambert absorption and weather-driven motion
  * independent from the legacy TSL water implementation.
  */
-export const PSTUDIO_GRAPHICS_WATER_WGSL = String.raw\`
+export const PSTUDIO_GRAPHICS_WATER_WGSL = String.raw`
 const PSTUDIO_WATER_PI: f32 = 3.141592653589793;
 
 fn pstudioWaterWaveHeight(
@@ -58,7 +58,7 @@ fn pstudioWaterCompose(
     let base = mix(transmitted, reflectionColor, reflectance);
     return mix(base, vec3<f32>(0.82, 0.88, 0.91), clamp(foam, 0.0, 1.0) * 0.82);
 }
-\`;
+`;
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max, fallback = min) => Math.min(max, Math.max(min, finite(value, fallback)));
