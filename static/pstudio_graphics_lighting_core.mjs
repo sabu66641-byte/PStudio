@@ -13,16 +13,22 @@ export function createPStudioGraphicsLightingCore(options={}){
     if(type!=='directional'&&(!Number.isFinite(range)||range<=0))throw new RangeError('Local light range must be positive.');
     const inner=Number(input.innerConeRadians??0.35),outer=Number(input.outerConeRadians??0.6);
     if(type==='spot'&&(!Number.isFinite(inner)||!Number.isFinite(outer)||inner<0||outer<=inner||outer>=Math.PI/2))throw new RangeError('Spot cone angles must satisfy 0 <= inner < outer < PI/2.');
-    return Object.freeze({id,type,color:tuple(input.color,[1,1,1],'color',64),intensity,position:tuple(input.position,[0,0,0],'position'),direction:type==='directional'||type==='spot'?normalizeDirection(input.direction||[0,-1,0]):Object.freeze([0,-1,0]),range,innerConeRadians:inner,outerConeRadians:outer,castsShadow:input.castsShadow===true,priority:Math.max(-32768,Math.min(32767,Math.trunc(Number(input.priority)||0))),layerMask:Math.max(0,Math.trunc(Number(input.layerMask??0xffffffff))>>>0)});
+    const layerMaskNumber=Number(input.layerMask??0xffffffff);
+    if(!Number.isFinite(layerMaskNumber)||!Number.isInteger(layerMaskNumber)||layerMaskNumber<0||layerMaskNumber>0xffffffff)throw new RangeError('Light layerMask must be an unsigned 32-bit integer.');
+    const priorityNumber=Number(input.priority??0);
+    if(!Number.isFinite(priorityNumber))throw new RangeError('Light priority must be finite.');
+    return Object.freeze({id,type,color:tuple(input.color,[1,1,1],'color',64),intensity,position:tuple(input.position,[0,0,0],'position'),direction:type==='directional'||type==='spot'?normalizeDirection(input.direction||[0,-1,0]):Object.freeze([0,-1,0]),range,innerConeRadians:inner,outerConeRadians:outer,castsShadow:input.castsShadow===true,priority:Math.max(-32768,Math.min(32767,Math.trunc(priorityNumber))),layerMask:layerMaskNumber>>>0});
   }
   function set(input){assertLive();const light=normalize(input);lights.set(light.id,light);revision++;return light;}
   function remove(id){assertLive();const changed=lights.delete(String(id));if(changed)revision++;return changed;}
   function snapshot({maxLights=options.maxLights||4096}={}){
     assertLive();const limit=Math.max(1,Math.min(65535,Math.floor(Number(maxLights)||4096))),selected=[...lights.values()].sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id)).slice(0,limit),stride=16,packed=new Float32Array(selected.length*stride),layerMasks=new Uint32Array(selected.length);
     selected.forEach((light,index)=>{const o=index*stride;packed[o]=TYPE_CODE[light.type];packed[o+1]=light.intensity;packed[o+2]=light.color[0];packed[o+3]=light.color[1];packed[o+4]=light.color[2];packed[o+5]=light.position[0];packed[o+6]=light.position[1];packed[o+7]=light.position[2];packed[o+8]=light.range;packed[o+9]=light.direction[0];packed[o+10]=light.direction[1];packed[o+11]=light.direction[2];packed[o+12]=Math.cos(light.innerConeRadians);packed[o+13]=Math.cos(light.outerConeRadians);packed[o+14]=light.castsShadow?1:0;packed[o+15]=0;layerMasks[index]=light.layerMask;});
-    return Object.freeze({revision,lightCount:selected.length,records:Object.freeze(selected),packed,layerMasks,stride,omittedCount:Math.max(0,lights.size-selected.length)});
+    const indexById={};selected.forEach((light,index)=>{indexById[light.id]=index;});
+    return Object.freeze({revision,lightCount:selected.length,records:Object.freeze(selected),indexById:Object.freeze(indexById),packed,layerMasks,stride,omittedCount:Math.max(0,lights.size-selected.length)});
   }
+  async function upload(config={}){assertLive();const uploader=config.uploadSnapshot||config.upload||options.uploadSnapshot;if(typeof uploader!=='function')throw new PStudioGraphicsError('No GPU lighting-buffer uploader is configured.',{code:'PSTUDIO_GRAPHICS_LIGHTING_UPLOAD_UNAVAILABLE'});return uploader(snapshot(config));}
   function stats(){return Object.freeze({lightCount:lights.size,revision,byType:Object.freeze({directional:[...lights.values()].filter(v=>v.type==='directional').length,point:[...lights.values()].filter(v=>v.type==='point').length,spot:[...lights.values()].filter(v=>v.type==='spot').length})});}
   function dispose(){if(disposed)return false;lights.clear();disposed=true;return true;}
-  return Object.freeze({kind:'pstudio-graphics-lighting-core',set,remove,get:id=>lights.get(String(id))||null,snapshot,stats,dispose});
+  return Object.freeze({kind:'pstudio-graphics-lighting-core',set,remove,get:id=>lights.get(String(id))||null,snapshot,upload,stats,dispose});
 }

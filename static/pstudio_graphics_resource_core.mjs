@@ -3,12 +3,12 @@ import { PStudioGraphicsError, createPStudioGraphicsResourceDescriptor } from '.
 export function createPStudioGraphicsResourceCore(options = {}) {
   const records = new Map();
   const pending = new Map();
+  let backend = options.backend || null;
   const budgets = {
     cpu: Math.max(0, Number(options.cpuBudgetBytes ?? 134217728)),
     gpu: Math.max(0, Number(options.gpuBudgetBytes ?? 134217728))
   };
   let clock = 0, evictedCount = 0, disposeErrors = 0, disposed = false;
-
   function assertLive() {
     if (disposed) throw new PStudioGraphicsError('Graphics Resource Core is disposed.', { code: 'PSTUDIO_GRAPHICS_RESOURCE_CORE_DISPOSED' });
   }
@@ -29,14 +29,11 @@ export function createPStudioGraphicsResourceCore(options = {}) {
     if (!['cpu', 'gpu'].includes(domain)) throw new TypeError('Resource domain must be cpu or gpu.');
     const target = Math.max(0, Math.floor(Number(targetBytes) || 0));
     let current = total(domain), removed = 0;
-    const candidates = [...records.values()]
-      .filter(record => record.descriptor.domain === domain && record.refs === 0 && !record.pinned && record.descriptor.id !== protectId)
-      .sort((a, b) => a.lastUsed - b.lastUsed);
+    const candidates = [...records.values()].filter(record => record.descriptor.domain === domain && record.refs === 0 && !record.pinned && record.descriptor.id !== protectId).sort((a, b) => a.lastUsed - b.lastUsed);
     for (const record of candidates) {
       if (current <= target) break;
       if (records.get(record.descriptor.id) !== record) continue;
-      records.delete(record.descriptor.id);
-      current -= record.descriptor.estimatedBytes;
+      records.delete(record.descriptor.id); current -= record.descriptor.estimatedBytes;
       if (releaseRecord(record, 'budget')) { removed += 1; evictedCount += 1; }
     }
     return removed;
@@ -45,53 +42,37 @@ export function createPStudioGraphicsResourceCore(options = {}) {
     assertLive();
     const descriptor = createPStudioGraphicsResourceDescriptor(input);
     if (records.has(descriptor.id)) throw new PStudioGraphicsError('Graphics resource already registered: ' + descriptor.id, { code: 'PSTUDIO_GRAPHICS_RESOURCE_DUPLICATE' });
-    const record = { descriptor, value, dispose: config.dispose || null, pinned: config.pinned === true, refs: 0, lastUsed: ++clock, disposed: false };
+    const defaultDispose = descriptor.domain === 'gpu' && backend?.destroyResource
+      ? (resource, reason) => { if (resource?.dispose) resource.dispose(reason); else backend.destroyResource(resource?.handle ?? resource, descriptor); }
+      : null;
+    const record = { descriptor, value, dispose: config.dispose || defaultDispose, pinned: config.pinned === true, refs: 0, lastUsed: ++clock, disposed: false };
     records.set(descriptor.id, record);
     trim(descriptor.domain, budgets[descriptor.domain], descriptor.id);
     return Object.freeze({ descriptor, value });
   }
   function get(id) {
-    assertLive();
-    const record = getRecord(id);
+    assertLive(); const record = getRecord(id);
     if (!record || record.disposed) return null;
-    record.lastUsed = ++clock;
-    return record.value;
+    record.lastUsed = ++clock; return record.value;
   }
   function describe(id) { return getRecord(id)?.descriptor || null; }
   function retain(id) {
-    assertLive();
-    const record = getRecord(id);
+    assertLive(); const record = getRecord(id);
     if (!record || record.disposed) throw new Error('Graphics resource not found: ' + id);
-    record.refs += 1;
-    record.lastUsed = ++clock;
-    let released = false;
-    return Object.freeze({
-      value: record.value,
-      descriptor: record.descriptor,
-      release() {
-        if (released || record.disposed) return false;
-        released = true;
-        record.refs = Math.max(0, record.refs - 1);
-        record.lastUsed = ++clock;
-        return true;
-      }
-    });
+    record.refs += 1; record.lastUsed = ++clock; let released = false;
+    return Object.freeze({ value: record.value, descriptor: record.descriptor, release() {
+      if (released || record.disposed) return false; released = true; record.refs = Math.max(0, record.refs - 1); record.lastUsed = ++clock; return true;
+    } });
   }
   function remove(id, config = {}) {
-    assertLive();
-    const record = getRecord(id);
-    if (!record) return false;
+    assertLive(); const record = getRecord(id); if (!record) return false;
     if (record.refs > 0 && config.force !== true) throw new PStudioGraphicsError('Cannot remove retained resource: ' + id, { code: 'PSTUDIO_GRAPHICS_RESOURCE_RETAINED' });
-    records.delete(record.descriptor.id);
-    releaseRecord(record, config.reason || 'removed');
-    return true;
+    records.delete(record.descriptor.id); releaseRecord(record, config.reason || 'removed'); return true;
   }
   function setBudget(domain, value) {
-    assertLive();
-    const n = Number(value);
+    assertLive(); const n = Number(value);
     if (!['cpu', 'gpu'].includes(domain) || !Number.isFinite(n) || n < 0) throw new TypeError('A valid CPU or GPU resource budget is required.');
-    budgets[domain] = Math.floor(n);
-    return trim(domain, budgets[domain]);
+    budgets[domain] = Math.floor(n); return trim(domain, budgets[domain]);
   }
   async function getOrCreate(input, factory, config = {}) {
     assertLive();
@@ -103,45 +84,67 @@ export function createPStudioGraphicsResourceCore(options = {}) {
     const promise = (async () => {
       const value = await factory(descriptor);
       if (value == null) throw new PStudioGraphicsError('Resource factory returned no value.', { code: 'PSTUDIO_GRAPHICS_RESOURCE_FACTORY_EMPTY' });
-      if (disposed) {
-        try { config.dispose?.(value, 'core-disposed'); } catch (_) {}
-        throw new PStudioGraphicsError('Resource Core was disposed during creation.', { code: 'PSTUDIO_GRAPHICS_RESOURCE_CORE_DISPOSED' });
-      }
+      if (disposed) { try { config.dispose?.(value, 'core-disposed'); } catch (_) {} throw new PStudioGraphicsError('Resource Core was disposed during creation.', { code: 'PSTUDIO_GRAPHICS_RESOURCE_CORE_DISPOSED' }); }
       const existing = getRecord(descriptor.id);
-      if (existing && !existing.disposed) {
-        try { config.dispose?.(value, 'duplicate-factory'); } catch (_) {}
-        return existing.value;
-      }
-      register(descriptor, value, config);
-      return value;
+      if (existing && !existing.disposed) { try { config.dispose?.(value, 'duplicate-factory'); } catch (_) {} return existing.value; }
+      register(descriptor, value, config); return value;
     })().finally(() => { if (pending.get(descriptor.id) === promise) pending.delete(descriptor.id); });
-    pending.set(descriptor.id, promise);
-    return promise;
+    pending.set(descriptor.id, promise); return promise;
+  }
+  function setBackend(nextBackend) {
+    assertLive();
+    if (nextBackend != null && typeof nextBackend.createResource !== 'function') throw new TypeError('GPU resource backend must implement createResource().');
+    backend = nextBackend || null;
+    return !!backend;
+  }
+  async function createGPU(input, config = {}) {
+    assertLive();
+    if (!backend || typeof backend.createResource !== 'function') throw new PStudioGraphicsError('No GPU resource backend is configured.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_BACKEND_UNAVAILABLE' });
+    const descriptor = createPStudioGraphicsResourceDescriptor({ ...input, domain: 'gpu' });
+    return getOrCreate(descriptor, async resourceDescriptor => {
+      let native = await backend.createResource(resourceDescriptor, config);
+      if (!native) throw new PStudioGraphicsError('GPU backend returned no resource handle.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_EMPTY' });
+      let released = false;
+      const wrapper = {
+        get id() { return resourceDescriptor.id; }, get descriptor() { return resourceDescriptor; },
+        get handle() { return native?.handle ?? native; }, get view() { return native?.view ?? null; },
+        get destroyed() { return released || native?.destroyed === true; },
+        write(data, offset = 0) {
+          if (released) throw new PStudioGraphicsError('GPU resource is disposed.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_DISPOSED' });
+          if (typeof backend.writeResource !== 'function') throw new PStudioGraphicsError('GPU backend does not support resource writes.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_WRITE_UNAVAILABLE' });
+          return backend.writeResource(native, data, offset);
+        },
+        async rehydrate() {
+          if (released) return false;
+          if (typeof backend.recreateResource !== 'function') throw new PStudioGraphicsError('The active GPU backend cannot recreate resources after device recovery.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_REHYDRATE_UNAVAILABLE' });
+          native = await backend.recreateResource(resourceDescriptor, native, config);
+          if (!native) throw new PStudioGraphicsError('GPU resource recreation returned no handle.', { code: 'PSTUDIO_GRAPHICS_GPU_RESOURCE_REHYDRATE_EMPTY' });
+          return true;
+        },
+        dispose(reason = 'removed') {
+          if (released) return false; released = true;
+          if (native?.dispose) return native.dispose(reason) !== false;
+          return backend.destroyResource?.(native?.handle ?? native, resourceDescriptor) !== false;
+        }
+      };
+      return Object.freeze(wrapper);
+    }, { ...config, dispose: value => value?.dispose?.('resource-core') });
+  }
+  async function rehydrateGPU() {
+    assertLive(); const targets = [...records.values()].filter(record => record.descriptor.domain === 'gpu' && typeof record.value?.rehydrate === 'function');
+    let restored = 0; for (const record of targets) if (await record.value.rehydrate()) restored += 1;
+    return Object.freeze({ requested: targets.length, restored, unavailable: targets.length - restored });
   }
   function stats() {
     let retainedCount = 0, pinnedCount = 0;
     for (const record of records.values()) { if (record.refs > 0) retainedCount += 1; if (record.pinned) pinnedCount += 1; }
-    return Object.freeze({
-      resourceCount: records.size, pendingCount: pending.size, retainedCount, pinnedCount,
-      cpuBytes: total('cpu'), gpuBytes: total('gpu'), cpuBudgetBytes: budgets.cpu, gpuBudgetBytes: budgets.gpu,
-      evictedCount, disposeErrors,
-      resources: Object.freeze([...records.values()].map(record => Object.freeze({
-        id: record.descriptor.id, type: record.descriptor.type, domain: record.descriptor.domain,
-        estimatedBytes: record.descriptor.estimatedBytes, retainCount: record.refs, pinned: record.pinned,
-        lifetime: record.descriptor.lifetime
-      })))
-    });
+    return Object.freeze({ resourceCount: records.size, pendingCount: pending.size, retainedCount, pinnedCount, cpuBytes: total('cpu'), gpuBytes: total('gpu'), cpuBudgetBytes: budgets.cpu, gpuBudgetBytes: budgets.gpu, evictedCount, disposeErrors, resources: Object.freeze([...records.values()].map(record => Object.freeze({ id: record.descriptor.id, type: record.descriptor.type, domain: record.descriptor.domain, estimatedBytes: record.descriptor.estimatedBytes, retainCount: record.refs, pinned: record.pinned, lifetime: record.descriptor.lifetime }))) });
   }
   function dispose(config = {}) {
     if (disposed) return false;
     const retained = [...records.values()].filter(record => record.refs > 0);
-    if (retained.length && config.force !== true) throw new PStudioGraphicsError('Graphics Resource Core has retained resources.', {
-      code: 'PSTUDIO_GRAPHICS_RESOURCE_CORE_RETAINED', details: { ids: retained.map(record => record.descriptor.id) }
-    });
-    disposed = true;
-    for (const record of records.values()) releaseRecord(record, 'core-disposed');
-    records.clear();
-    return true;
+    if (retained.length && config.force !== true) throw new PStudioGraphicsError('Graphics Resource Core has retained resources.', { code: 'PSTUDIO_GRAPHICS_RESOURCE_CORE_RETAINED', details: { ids: retained.map(record => record.descriptor.id) } });
+    disposed = true; for (const record of records.values()) releaseRecord(record, 'core-disposed'); records.clear(); return true;
   }
-  return Object.freeze({ kind: 'pstudio-graphics-resource-core', register, get, describe, retain, remove, trim, setBudget, getOrCreate, stats, dispose });
+  return Object.freeze({ kind: 'pstudio-graphics-resource-core', register, get, describe, retain, remove, trim, setBudget, getOrCreate, setBackend, createGPU, rehydrateGPU, stats, dispose });
 }

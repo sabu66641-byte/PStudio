@@ -1,8 +1,8 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.1  
+**Roadmap version:** 1.2  
 **Last updated:** 2026-11-28  
-**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 50%.  
+**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 50%.  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
@@ -27,9 +27,9 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 0 | Foundation — 基盤強化・基盤整理・土台作り | **100%** | PVCS instrumentation, diagnostics, context separation, visual-difference utilities, regression coverage and documentation |
 | 1 | Visual Identity — 視覚設計・品質契約 | **100%** | Reality 55 : Anime 45; physical/artistic/material/lighting/atmosphere/water requirements and visual evaluation contract |
 | 2 | Graphics Architecture — 独立アーキテクチャ | **100%** | Contracts, HAL, Scene/View/Material/Resource/command-buffer types, WebGL2 and WebGPU adapters, loss/sync lifecycle, migration and compatibility tests |
-| 3 | Graphics Core — 独自グラフィックスコア | **50%** | Renderer, Resource, Shader, Compute and Lighting core ownership foundations |
-| 4 | Render Graph — 描画依存グラフ | **0%** | Declarative passes, resource edges, scheduling, transient lifetime, barriers and dependency compilation |
-| 5 | Native Renderer — ネイティブ描画基盤 | **0%** | Native runtime and API backends where platform/runtime support is deliberately provided |
+| 3 | Graphics Core — 独自グラフィックスコア | **100%** | GPU resource lifecycle, WGSL compiler, compute dispatch, lighting/cluster buffers, PBR direct-light include, device recovery and independent GPU vertical slice |
+| 4 | Render Graph — 描画依存グラフ | **100%** | Pass/resource graph, hazard scheduling, barriers, lifetimes, transient aliasing, GPU materialization, execution/cancellation/rollback and WebGPU queue submission |
+| 5 | Native Renderer — ネイティブ描画基盤 | **50%** | C++17 native runtime, Backend SPI, resource/frame ownership, loss/recovery and CPU conformance backend; concrete native GPU APIs remain |
 | 6 | Rendering Quality — 描画品質基盤 | **30% (暫定)** | PBR, shadows, indirect lighting, color management and material response |
 | 7 | Atmosphere & Sky — 大気・空 | **45% (暫定)** | Sky radiance, atmosphere, weather, volumetrics and coherent IBL |
 | 8 | Advanced Water — 高度な水面 | **40% (暫定)** | Reflection, refraction, absorption, depth, wave spectrum and temporal stability |
@@ -54,39 +54,53 @@ Reality 55 : Anime 45 is defined as whole-image art direction. Physical coherenc
 - Feature-aware HAL with explicit fallback, cancellation, device/context-loss state and manual alternate-adapter recovery.
 - Existing PStudio3D WebGL2 renderer wrapper; ownership remains with PStudio3D unless explicitly transferred.
 - Three.js r187 WebGPU/TSL scene-session wrapper; its session owns conversions and GPU resources.
-- Adapter synchronization, capabilities and lifecycle reporting.
+- Separate direct WebGPU Core adapter built on browser APIs without a Three.js scene session.
 - Source-level dependency separation, migration/ownership matrix, compatibility and rollback tests.
 - Existing visible production path is deliberately unchanged and can adopt these adapters in a controlled integration.
 
-## Phase 3 — Graphics Core (50%)
+## Phase 3 — Graphics Core (100%)
 
-### Completed half
+- Renderer, Resource, Shader, Compute and Lighting ownership cores are composed through a PStudio-owned root.
+- GPU resources use explicit create/write/destroy/recreate lifecycles and separate resource budgets/leases.
+- Direct WebGPU backend compiles WGSL, creates render/compute pipelines, dispatches workgroups and submits graph command buffers.
+- Directional/point/spot lights are packed into a stable 16-float record plus a separate uint32 layer mask; `indexById` maps scene light ids to packed indices.
+- Sparse clustered-light assignments compile to offset/index arrays and upload to dedicated storage buffers. Visibility policy is provided by the caller and overflow is rejected instead of silently dropping lights.
+- A WGSL direct-light include implements GGX/Smith/Schlick BRDF evaluation with light-layer and cluster-index filtering. Existing IBL, shadow, sky and water paths remain separate.
+- Explicit backend recovery rehydrates GPU resources, recompiles shader variants, recreates stored pipelines and uploads light/cluster data.
+- An independent renderer vertical slice reaches a configured WebGPU surface through Renderer Core, HAL-compatible backend and Render Graph.
 
-- Renderer Core: monotonic frame submission, validated frame/command packets and HAL dispatch.
-- Resource Core: descriptors, independent CPU/GPU budget accounting, leases, concurrent creation deduplication, LRU eviction and deterministic disposal.
-- Shader Core: backend-neutral shader registry, variant keys, concurrent compilation deduplication, invalidation and disposal via injected compiler.
-- Compute Core: kernel registration, workgroup/dispatch validation, feature checks and injected execution.
-- Lighting Core: directional/point/spot normalization and packed typed-array snapshots.
-- Composition root and deterministic Node regression coverage.
+Phase 3 completion means the defined Core APIs and independent WebGPU vertical slice are implemented and covered by deterministic repository tests. It is not proof of visual parity with every Three.js scene or production renderer migration.
 
-### Remaining half
+## Phase 4 — Render Graph (100%)
 
-- GPU resource creation/destruction paths with backend handles and device-loss recovery.
-- Concrete WebGPU shader compiler plus native compiler extension points.
-- Real GPU compute dispatch implementation and resource barriers.
-- GPU lighting buffer upload, clustered-light integration and PBR consumption.
-- Minimal end-to-end independent GPU renderer vertical slice.
-- Resource and pipeline recreation across device-loss/recovery events.
+- Pass and resource declarations, explicit dependencies and stable topological order.
+- RAW / WAR / WAW inference, feedback-loop/read-before-write/unknown-resource/cycle rejection.
+- Resource lifetimes, compatible transient aliasing and physical resource materialization.
+- External-resource borrowing, idempotent release and reverse-order rollback.
+- Read/write state transitions, barrier metadata, async execution hooks, cancellation, pass abort and concurrency protection.
+- Direct WebGPU command recording and a single queue submission per graph execution; WebGPU's own API-managed transition behavior is respected.
 
-Phase 3 at 50% is a PStudio-owned, testable core foundation. It is not yet a complete GPU-executing replacement renderer.
+Phase 4 completion is the Render Graph subsystem implementation and contract validation. It does not mean all legacy PStudio render passes have already been migrated into it.
 
-## Remaining phases
+## Phase 5 — Native Renderer (50%)
 
-- Phase 4 builds the dependency-aware Render Graph. It owns pass declarations, scheduling, resource lifetimes, barriers and safe transient reuse; it must not be folded prematurely into Phase 3.
-- Phase 5 adds native runtime/backends only when a real native platform is in scope.
-- Phases 6–10 implement independent rendering quality, atmosphere, water, world and advanced graphics while preserving Reality 55 : Anime 45.
-- Phase 11 connects measured cost and visual-impact allocation through PVCS; no automatic quality reduction is enabled by this roadmap update.
-- Phase 12 removes Three.js only after feature parity, API migration, rollback and regression gates are satisfied.
+Completed half:
+
+- Header-only C++17 platform-neutral runtime and Backend SPI.
+- Opaque native resource handles and ownership registry.
+- Frame packet validation, strictly increasing frame ids, owned-handle validation and wait-idle contract.
+- Explicit device-lost state and replacement-backend recovery that recreates resources before accepting the replacement.
+- CPU-only `NullBackend` plus a compiler-and-run smoke test.
+
+Remaining half:
+
+- Concrete Vulkan, Direct3D 12 and Metal backend implementations.
+- Native adapter selection and per-API capability negotiation.
+- OS window/surface/swapchain and presentation lifecycle.
+- Native GPU resource, shader, pipeline, command submission, synchronization and device-loss implementations.
+- Native hardware validation and platform-specific regression.
+
+`NullBackend` only validates native contracts. It is not a GPU renderer and does not establish native rendering support.
 
 ## Delivery and rollback
 
@@ -96,3 +110,7 @@ Phase 3 at 50% is a PStudio-owned, testable core foundation. It is not yet a com
 4. Run the full Python/C++17, JavaScript and renderer syntax/TSL CI suite.
 5. Inspect the PR diff, merge by PR and retain a revert path; never rewrite shared main history.
 6. Keep the live production renderer, sky, water and quality defaults untouched until their replacements pass their own gates.
+
+## Validation boundary
+
+The added WebGPU tests use a mock WebGPU device. They cover calls, resource ownership, command recording/submission, shader/pipeline registration and recovery behavior, but do not prove real-device shader validation, rendered output quality, image parity or frame-time performance. The native smoke test compiles and runs with C++17 against `NullBackend`; concrete Vulkan/D3D12/Metal drivers are not implemented in Phase 5's first half.
