@@ -66,7 +66,7 @@ export function createPStudioPVCS(options = {}) {
 
   function measureAsync(id, callback) {
     if (typeof callback !== 'function') throw new TypeError('PVCS measureAsync requires a callback.');
-    if (!monitoringEnabled) return Promise.resolve().then(callback);
+    if (!monitoringEnabled) return callback();
     const startedAt = clock();
     let result;
     try {
@@ -108,6 +108,17 @@ export function createPStudioPVCS(options = {}) {
     };
   }
 
+  function recordFrameMetrics() {
+    if (!monitoringEnabled) return false;
+    const stats = performanceSnapshot();
+    if (!stats) return false;
+    return recordStage('frame-loop', stats.cpuRenderSubmitMs, {
+      gpuRenderMs: stats.gpuTimingFresh === true ? stats.gpuRenderMs : null,
+      frameIntervalMs: stats.frameIntervalMs,
+      memoryBytes: stats.estimatedGpuBytes
+    });
+  }
+
   function analyze() {
     return {
       mode: monitoringEnabled ? 'analysis' : 'disabled',
@@ -127,6 +138,7 @@ export function createPStudioPVCS(options = {}) {
     measure,
     measureAsync,
     recordStage,
+    recordFrameMetrics,
     compareRgbaFrames,
     compareTemporalSequences,
     snapshot,
