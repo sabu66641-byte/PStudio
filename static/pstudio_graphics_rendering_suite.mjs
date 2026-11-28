@@ -8,7 +8,7 @@ const PASS_DEFINITIONS = Object.freeze([
   { id:"depth-prepass", reads:[], writes:[["sceneDepth","depth-attachment"]], feature:"depth", stageId:"depth-prepass" },
   { id:"opaque-forward", reads:[["sceneDepth","sampled"],["shadowDepth","sampled"],["skyRadiance","sampled"],["iblSpecular","sampled"]], writes:[["opaqueHdr","color-attachment"]], feature:"opaque", stageId:"opaque-forward" },
   { id:"water-depth", reads:[["sceneDepth","sampled"]], writes:[["waterLinearDepth","color-attachment"]], feature:"water", stageId:"water-depth" },
-  { id:"mirror-reflection", reads:[["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["mirrorReflection","color-attachment"],["mirrorDepth","depth-attachment"]], feature:"water", stageId:"mirror-reflection" },
+  { id:"mirror-reflection", reads:[["sceneDepth","sampled"],["skyRadiance","sampled"],["iblSpecular","sampled"]], writes:[["mirrorReflection","color-attachment"],["mirrorDepth","depth-attachment"]], feature:"water", stageId:"mirror-reflection" },
   { id:"water-surface", reads:[["opaqueHdr","sampled"],["waterLinearDepth","sampled"],["mirrorReflection","sampled"],["skyRadiance","sampled"]], writes:[["waterHdr","color-attachment"]], feature:"water", stageId:"water-surface" },
   { id:"gi-probes", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["giIrradiance","storage-write"]], feature:"gi", stageId:"gi-probes" },
   { id:"volumetric-lighting", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["shadowDepth","sampled"],["skyRadiance","sampled"]], writes:[["volumeHdr","color-attachment"]], feature:"volumetrics", stageId:"volumetric-lighting" },
@@ -149,7 +149,7 @@ export function createPStudioGraphicsRenderingSuite(options = {}) {
       const passId=prefix+"."+definition.id;
       graph.addPass({
         id:passId,
-        type:definition.id==="gi-probes"?"compute":"render",
+        type:"render",
         reads,writes,
         metadata:{owner:"PStudio",stageId:definition.stageId,feature:definition.feature,requiresBackendExecutor:true},
         execute:async context=>{
