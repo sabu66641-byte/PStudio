@@ -378,7 +378,7 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     const slots = material.textureIds || { baseColor: material.baseColorTextureId };
     for (const [slot, textureId] of Object.entries(slots)) {
       if (textureId && !textureIds.has(textureId)) {
-        throw new Error('Material references an unknown ' + slot + ' texture: ' + textureId);
+        throw new Error('Material references an unknown ' + (slot === 'baseColor' ? 'base-color' : slot) + ' texture: ' + textureId);
       }
     }
   }
@@ -579,7 +579,11 @@ export function importPStudioThreeScene(scene, options = {}) {
       const width = Number(pixels?.width), height = Number(pixels?.height), data = pixels?.data;
       if (!pixels || !Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1 ||
           !ArrayBuffer.isView(data) || data instanceof DataView || data.length !== width * height * 4) {
-        unsupported.push({ objectId, materialId, feature: 'texture-' + slot + '-requires-rgba8-pixels' });
+        unsupported.push({
+          objectId, materialId,
+          feature: slot === 'baseColor' ? 'texture-map' : 'texture-' + slot + '-requires-rgba8-pixels',
+          slot, reason: 'RGBA8 pixel data is unavailable or invalid'
+        });
         return null;
       }
       const srgbSlot = slot === 'baseColor' || slot === 'emissive';
