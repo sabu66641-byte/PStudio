@@ -1,8 +1,8 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.6  
-**Last updated:** 2026-11-28  
-**Current status:** Phases 0–10 = 100%; Phase 11 = 65%; Phase 12 = 35%.  
+**Roadmap version:** 1.7  
+**Last updated:** 2026-11-29  
+**Current status:** Phases 0–10 = 100%; Phase 11 = 75%; Phase 12 = 45% (repository/API scope only).  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
@@ -35,10 +35,10 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
 | 9 | World Rendering — ワールド描画 | **100%** | Heightfield terrain, world chunks, projected-error LOD/hysteresis, AABB visibility, bounded streaming, deterministic foliage, material packing and executor-backed render system |
 | 10 | Advanced Graphics — 高度な描画技術 | **100%** | GPU VFX compute contract, SH probe GI/dirty scheduling, clustered-light assignments, bounded froxel volumes, Beer–Lambert/HG integration, temporal history and volumetric executor |
-| 11 | PVCS Integration — 視覚補償・性能配分 | **65%** | Domain-isolated evidence governor, paired alternating A/B calibration harness, visual/temporal gates, reversible frame-budget overlay and explicit manual transactions; no production auto-actuation |
-| 12 | Three.js Independence — Three.js独立 | **35%** | PStudio-owned Scene Asset schema/importer and an opt-in direct-WebGPU opaque PBR mesh renderer; production renderer, TSL effects, textures, animation, shadows, loaders and BVH still require migration |
+| 11 | PVCS Integration — 視覚補償・性能配分 | **75%** | Domain-isolated governor, paired A/B evidence harness, live production-frame capture runner, CPU/GPU stage capture with context/sequence checks, reversible profile application and rollback; no calibrated production candidate catalogue or automatic actuation |
+| 12 | Three.js Independence — Three.js独立 | **45%** | PStudio-owned Scene/Material/Texture asset records, duck-typed mesh and InstancedMesh import, direct WebGPU opaque PBR with RGBA8 Base Color sampling and GPU instancing; production renderer and most advanced effects/loaders/editor paths remain Three.js-owned |
 
-Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 and 12 percentages describe repository/API milestones only: Phase 11 has a paired calibration harness but no in-repository production scene capture runner, calibrated production candidate registry or automatic actuation; Phase 12 has a basic independently-owned scene asset/import path and a limited WebGPU PBR renderer, but has not migrated the production 3D renderer or removed legacy Three.js dependencies. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
+Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 and 12 percentages describe repository/API milestones only, not full application migration or image-quality/performance uplift. Phase 11 now has a live PStudio frame-capture runner and per-stage telemetry, but still lacks repeatable curated scene/backend calibration, a calibrated candidate catalogue, richer perceptual/edge metrics, long temporal runs and evidence-backed candidate executors. Phase 12 now has owned scene/material/texture data, supported mesh and InstancedMesh import, direct-WebGPU instanced PBR and Base Color texture sampling, but has not migrated the production 3D renderer or removed legacy Three.js dependencies. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
 
 ## Phase 0 — Foundation (100%)
 
@@ -166,39 +166,40 @@ Phase 9 is complete for the declared world data, LOD/visibility, bounded streami
 
 Phase 10 is complete for these independent advanced-GI, clustered-lighting, VFX and volumetric subsystem APIs and the GPU-executor integration contract. A concrete executor is supplied by the consuming backend. Native SDL3 compute is not implemented by the current Phase 5 adapter. No ray tracing/path tracing, production-scene migration, physical-GPU image parity or hardware performance is claimed.
 
-## Phase 11 — PVCS Integration (55%)
+## Phase 11 — PVCS Integration (75%)
 
-The PVCS foundation and Visual Compensation Graph remain the source of performance evidence. The new governor is an opt-in decision and transaction layer:
+The PVCS foundation and Visual Compensation Graph remain the source of performance evidence. The governor is an opt-in decision and transaction layer:
 
-- Reads PVCS's separate CPU-frame, CPU-stage/submission, GPU-frame, GPU-stage, async-elapsed and estimated-memory rankings. It never compares or substitutes one domain for another.
+- Reads PVCS's separate CPU-frame, CPU-stage, GPU-frame, GPU-stage, async-elapsed and estimated-memory domains. It never compares or substitutes one domain for another.
 - Requires a live measurement context matching backend, scene, quality, dimensions, pixel ratio and effect state. Candidate calibration must use the same context for baseline and alternative.
-- Requires bounded repeated A/B P95 samples, an explicitly measured improvement, RGBA image-difference metrics and aligned temporal-delta metrics with caller-defined acceptance limits.
+- Requires bounded repeated A/B P95 samples, explicitly measured improvement, RGBA image-difference metrics and aligned temporal-delta metrics with caller-defined acceptance limits.
 - Ranks eligible candidates by measured improvement, priority and visual/temporal penalty; records explicit rejection reasons for unavailable domains, context mismatch, insufficient samples, calibration drift or quality-limit failure.
 - Uses a narrow action allowlist. It does not accept turning off premium effects, changing quality presets, changing the protected sky/water implementation or unbounded resolution changes.
-- Integrates an additive frame-budget overlay with scale, reflection cadence/resolution, GI cadence and volumetric/contact-shadow sample scales. The overlay can only constrain those bounded values; it cannot change the underlying frame-budget policy or disable the GI/effect state.
-- Applies one compensation transaction at a time through an explicit executor returning a rollback token. Manual rollback restores the previous budget overlay. Concurrent apply/rollback transactions are rejected.
-- Automatic actuation is disabled by default. Even when explicitly enabled at construction, it requires an explicitly registered automaticEligible candidate, repeated confirmations and a cooldown.
-- The browser exposes manual evaluate/apply/rollback entry points for an operator/developer. It does not pre-register guessed candidate thresholds.
+- Integrates an additive frame-budget overlay with scale, reflection cadence/resolution, GI cadence and volumetric/contact-shadow sample scales. The overlay can only constrain those bounded values; it cannot change the underlying frame-budget policy or disable GI/effect state.
+- Applies one compensation transaction at a time through an explicit executor returning a rollback token. The browser runner always rolls an alternative profile back in a finally path, including when capture or evidence collection fails.
+- The browser runner captures an RGBA image from the active PStudio production surface and associates CPU-frame, CPU-submit, GPU-frame, GPU-stage and estimated-memory data with the render context. Named CPU stages carry their own frame sequence and context.
+- GPU timing is only accepted when a fresh GPU timer-query sample is associated with the active variant and the same render context. Missing/stale GPU timing fails calibration; CPU timing is never substituted. WebGPU GPU timing is not currently supplied by this runner.
+- Automatic actuation remains disabled by default. No production candidate thresholds are guessed or pre-registered.
 
-Phase 11 is **65%** at repository/API scope. In addition to the governor, evidence gates, frame-budget bridge and reversible overlay, `static/pstudio_pvcs_calibration.mjs` now provides paired alternating baseline/alternative execution across the six isolated measurement domains. It requires a fixed backend/scene/quality/resolution/effect context, explicit per-variant measurements and byte-image captures, computes P95 A/B results, worst-sample RGBA error and bounded temporal-delta error, and emits evidence in the governor's accepted schema. Calibration is caller-driven: PStudio still needs an in-repository production capture runner, repeatable scene/backend calibration suites, candidate-specific executors, richer spatial/perceptual/edge metrics and longer temporal validation. No candidate is registered by default and no automatic quality adjustment is active.
+The module pstudio_pvcs_calibration.mjs provides paired alternating A/B calibration across six independent domains, fixed-context validation, P95 comparisons, bounded RGBA difference and temporal-delta evidence. The module pstudio_pvcs_browser_runner.mjs connects that harness to PStudio3D.capturePVCSFrame, live telemetry and reversible frame-budget overrides. Repository tests cover fresh/stale samples, same-context requirements, per-stage sampling, monitoring restoration and rollback-on-error.
 
-## Phase 12 — Three.js Independence (35%)
+Remaining work for Phase 11: curated repeatable scene/backend workloads; evidence-backed candidate registration and candidate-specific executors; richer spatial, perceptual and edge-weighted image evaluation; longer temporal stability tests; and policy validation under sustained workload transitions. No automatic quality adjustment is active. This 75% figure is repository/API progress, not proof of a measured performance improvement.
 
-The migration starts by making the PStudio-owned core boundary enforceable without pretending the entire application has already been ported:
+## Phase 12 — Three.js Independence (45%)
 
-- Graphics Core, Render Graph, PVCS/VCG and World/Advanced core modules are protected by regression tests that reject direct Three.js package imports.
-- The direct PStudio WebGPU Graphics Core stays independent of Three.js.
-- `static/pstudio_graphics_scene_asset.mjs` defines PStudio-owned geometry/material/entity scene data, converts supported legacy mesh data without importing Three.js, and reports unsupported features instead of hiding them.
-- `static/pstudio_graphics_webgpu_scene_renderer.mjs` draws the PStudio scene asset through browser WebGPU with cached vertex/index buffers, per-object transforms, depth testing, a direct PBR path and emissive output. This is an opt-in first vertical slice, not a replacement for all existing effects.
-- The scene importer is strict by default. Textures, non-PBR materials, transparency, double-sided materials, scene background/environment, lights, animation/skinning/morphing, instances, unsupported groups/draw ranges and shadows are rejected or listed in its explicit report.
-- The independent renderer currently accepts only opaque, single-sided, untextured PBR meshes with one material per entity; it does not yet implement sky/IBL, shadows, water, GI, post-processing or production editor integration.
-- The file pstudio_three_legacy_runtime.mjs is the explicit lazy-loading boundary for the optional Three.js r187 WebGPU compatibility adapter.
-- The file pstudio_rendering_backend.mjs no longer imports three/webgpu at module evaluation time; it only resolves the legacy runtime when that adapter is explicitly initialized.
-- The legacy adapter accepts an injected runtime for deterministic tests and validates the pinned r187 contract.
+The migration begins with a strict PStudio-owned data and rendering boundary, not package removal:
 
-Phase 12 is **35%** at repository/API scope, not application-wide independence. PStudio now has a data-owned scene asset contract, a duck-typed mesh importer and a separately-created direct-WebGPU PBR renderer that does not import or retain Three.js objects. GPU geometry buffers are revision-cached and reused; 16-bit index uploads are padded to WebGPU's four-byte write alignment. The importer/renderer deliberately fail closed on features the vertical slice cannot preserve. Production rendering still depends on `window.THREE`; TSL modules for material, environment, GI, water, clustered lighting, shadows, toon and post-processing still use Three.js r187. GLTF/KTX2/Draco/meshopt loaders, BVH, skinning, morphs, instancing, editor object/material APIs and asset lifecycle still require independent implementations. The `three` and `three-mesh-bvh` packages remain installed, and the production renderer has not been switched.
+- Graphics Core, Render Graph, PVCS/VCG and World/Advanced core modules are protected by tests rejecting direct Three.js imports.
+- pstudio_three_legacy_runtime.mjs lazy-loads and validates the pinned Three.js r187 runtime only when the optional legacy adapter is explicitly requested. pstudio_rendering_backend.mjs has no eager three/webgpu import.
+- pstudio_graphics_scene_asset.mjs owns geometry, material, RGBA8 texture and entity records. Its duck-typed importer does not import Three.js or retain source objects.
+- Supported legacy InstancedMesh objects are expanded into PStudio entities sharing one geometry/material; the independent renderer re-batches matching geometry/material pairs into an instance-rate GPU buffer and one draw per batch.
+- The PStudio-owned direct-WebGPU scene renderer draws opaque, single-sided PBR geometry with depth testing, direct lighting, emissive output, GPU instance transforms and optional RGBA8 Base Color texture sampling.
+- Base Color texture data is copied into PStudio-owned RGBA8 records and uploaded as WebGPU textures. The first supported sampling path is limited to UV0 and default texture transforms; other maps, alpha modes, multi-material groups and unsupported texture transforms are explicitly rejected or reported.
+- Geometry, texture, material and instance resources are cached and explicitly released. Resource signatures invalidate material bindings when a material or its Base Color texture state changes.
 
-Migration order is compatibility-first: define PStudio scene/material/asset/render-pass contracts; migrate isolated asset and material adapters; provide equivalent shader/pass implementations in PStudio WGSL; connect World/Advanced systems through the Render Graph; compare old/new output and lifecycle behavior; then move one production vertical slice at a time. Keep the current WebGL2 production renderer and legacy Three.js implementation available until each slice passes API, image, temporal, resource-lifetime and rollback gates. No broad import rewrite or default backend switch is part of this step.
+This is **45% migration progress at repository/API scope**, not application-wide independence. The production 3D engine still depends on window.THREE. Production TSL material conversion, authored environment/sky/PMREM/IBL, GI, shadows, water, clustered lighting, toon, volumetrics and post-processing remain coupled to Three.js r187. GLTF/KTX2/Draco/meshopt loaders, BVH/collision ownership, transparency, normal/ORM/emissive texture paths, advanced PBR lobes, animation/skin/morph, scene lights, full multi-material support, the editor/gameplay scene bridge and production resource lifetime integration remain to be migrated. The three and three-mesh-bvh packages remain installed. The new renderer remains opt-in and is not wired to the production canvas/frame loop.
+
+Remaining migration order: (1) complete texture/material semantics including color spaces, UV transforms, normal/ORM/emissive/alpha and sampler/mipmap policy; (2) lossless material groups, alpha, side/culling and shadow support; (3) animation, skinning, morphs and LOD/instance lifecycle; (4) PStudio-owned GLTF/KTX2/Draco/meshopt loading, BVH/collision and asset leases; (5) replace current material, environment/sky/IBL, shadow, water, GI, volumetric, toon and post-processing paths with PStudio WGSL/Render Graph passes; (6) connect editor/gameplay APIs and migrate one production scene at a time. Keep the current production renderer as fallback until each slice passes API/lifecycle, visual, temporal, resource, rollback and repeatable performance gates. Do not remove Three.js or switch the default renderer until full parity is demonstrated.
 
 ## Delivery and rollback
 
@@ -214,12 +215,14 @@ Migration order is compatibility-first: define PStudio scene/material/asset/rend
 The Advanced Graphics executor tests use deterministic mock executors and validate command packets, resource budgets, workgroup sizes and state transitions; they do not prove real GPU compute execution, rendered output quality, image parity or frame-time performance. Native SDL3 adapter CI compiles on Linux, Windows and macOS without creating GPU devices or physical windows. C++17 mock tests validate native resource/recovery contracts. Real-driver execution, rendered image parity and hardware performance remain unmeasured and are outside this progress policy.
 
 
-## Phase 11/12 implementation added on 2026-11-28
+## Phase 11/12 implementation added on 2026-11-29
 
-- PVCS calibration can now be driven through `pvcs.createCalibrationHarness({ runVariant })`. The callback is responsible for rendering the same scene/context for each variant and returning the requested domain metric plus an RGBA frame. The harness alternates A/B order to reduce ordering bias and does not mutate quality or apply a candidate.
-- A calibration run returns evidence only after the configured sample floor and image/temporal acceptance limits are met. A caller may then register that evidence with the PVCS Governor; registration is still separate from proposal evaluation and reversible manual execution.
-- The first independent scene path converts supported mesh geometry and basic PBR material values into PStudio-owned typed arrays/descriptors. Source objects are read only; callers must update world matrices before conversion.
-- The independent WebGPU renderer owns its GPU buffers and render pipeline, reuses geometry resources by ID/revision, renders indexed or non-indexed opaque PBR meshes and writes emissive RGB separately from material color. It is an isolated renderer adapter and does not take over the production canvas or frame loop.
-- The new deterministic tests cover paired calibration/evidence registration, measurement-domain isolation, context drift, visual-limit rejection, legacy mesh conversion, unsupported-feature reporting, direct WebGPU submission, depth target reuse and GPU-buffer cache reuse.
+- PVCS has a browser production-capture runner that reads the active PStudio renderer surface, emits owned RGBA byte frames and associates measurements with backend/scene/quality/resolution/effect context.
+- CPU frame and named CPU stage timings are captured separately. GPU frame/stage data is accepted only with a fresh timer-query sample, source frame sequence and matching context; unavailable GPU metrics remain unavailable rather than being replaced with CPU timings.
+- Alternative frame-budget profiles use opaque rollback tokens and are restored even if capture/evidence collection fails. The runner restores prior PVCS monitoring state after stage capture.
+- The PStudio scene asset schema owns RGBA8 texture bytes and optional Base Color texture references. A caller-provided CPU pixel reader can convert supported legacy Base Color maps without transferring Three.js Texture objects into the independent renderer.
+- The independent WebGPU renderer uploads/samples optional sRGB Base Color textures, maintains a white fallback texture for untextured materials, and invalidates GPU texture/material bindings when their content or sampling settings change.
+- Supported legacy InstancedMesh transforms are converted to PStudio entities while sharing geometry/material data. Independent WebGPU batches compatible entities into instanced draw calls.
+- CI on the PR head verifies JavaScript regression tests and native adapter compile jobs on Windows/D3D12 and macOS/Metal. These are repository/compile checks, not browser shader parity or performance benchmarks.
 
-These additions are **not** evidence that the requested complete Three.js replacement has been achieved. Full acceptance still requires migrating and comparing the actual PStudio production scene, texture/material and animation/skin/instance paths, lighting/IBL/sky, shadows, planar water/refraction/absorption, GI, volumetrics, toon and post-processing; moving asset loading and collision/BVH ownership; integrating the independent renderer with editor/gameplay APIs; then demonstrating no visual regressions and measurable performance/resource improvements in repeatable browser workload runs. Until that is true, both phases remain in progress and the legacy production path stays the fallback.
+These changes are still an additive foundation, not full migration. Production still uses the current Three.js renderer and quality path. No claim is made that the independent path is visually equivalent, tens of times higher quality or faster on real hardware.
