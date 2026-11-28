@@ -41,6 +41,7 @@ public:
     NativeSwapchainInfo swapchainInfo() const override;
     ResourceHandle createShader(const GpuShaderDescriptor& descriptor, std::string& error) override;
     ResourceHandle createTexture(const GpuTextureDescriptor& descriptor, std::string& error) override;
+    bool uploadTexture(ResourceHandle texture, const void* data, std::size_t size, std::string& error) override;
     bool uploadBuffer(ResourceHandle buffer, const void* data, std::size_t size, std::size_t offset, std::string& error) override;
     ResourceHandle createGraphicsPipeline(const GpuPipelineDescriptor& descriptor, std::string& error) override;
     bool submitGpuFrame(const GpuFramePacket& frame, std::string& error) override;
