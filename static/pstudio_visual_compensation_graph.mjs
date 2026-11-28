@@ -76,6 +76,7 @@ export function createVisualCompensationGraph(options = {}) {
   const historyLimit = Math.max(1, Math.min(1200, Math.floor(Number(options.historyLimit) || DEFAULT_HISTORY_LIMIT)));
   const nodes = new Map();
   const edges = new Map();
+  const latestContextByMetric = new Map();
 
   function assertId(id) {
     if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
@@ -151,6 +152,9 @@ export function createVisualCompensationGraph(options = {}) {
       throw new TypeError('Measurement must contain at least one finite, non-negative metric.');
     }
     const contextKey = sample.context ? JSON.stringify(sample.context) : '{}';
+    for (const metric of ['cpuFrameMs', 'cpuSubmitMs', 'gpuRenderMs', 'gpuStageMs', 'frameIntervalMs', 'memoryBytes', 'asyncElapsedMs']) {
+      if (sample[metric] !== null) latestContextByMetric.set(metric, contextKey);
+    }
     let bucket = node.contextHistories.get(contextKey);
     if (!bucket) {
       if (node.contextHistories.size >= 8) {
@@ -242,19 +246,33 @@ export function createVisualCompensationGraph(options = {}) {
   }
 
   function analyzeResourceDomains() {
-    const rows = [...nodes.values()].map((node) => ({
-      id: node.id, label: node.label, metrics: summarizeNodeHistory(node)
-    }));
-    const rank = (key) => rows.filter((row) => Number.isFinite(row.metrics[key]))
-      .map((row) => ({ id: row.id, label: row.label, value: row.metrics[key], metric: key }))
-      .sort((a, b) => b.value - a.value || a.id.localeCompare(b.id));
+    const rank = (valueKey, sampleKey, countKey) => {
+      const contextKey = latestContextByMetric.get(sampleKey);
+      if (!contextKey) return [];
+      return [...nodes.values()].flatMap((node) => {
+        const bucket = node.contextHistories.get(contextKey);
+        if (!bucket) return [];
+        const metrics = summarizeHistory(bucket.history);
+        const value = metrics[valueKey];
+        if (!Number.isFinite(value)) return [];
+        return [{
+          id: node.id,
+          label: node.label,
+          value,
+          metric: valueKey,
+          sampleCount: metrics[countKey],
+          context: metrics.context,
+          contextKey
+        }];
+      }).sort((a, b) => b.value - a.value || a.id.localeCompare(b.id));
+    };
     return {
-      cpuFrame: rank('cpuFrameP95Ms'),
-      cpuStages: rank('cpuSubmitP95Ms'),
-      gpuFrame: rank('gpuRenderP95Ms'),
-      gpuStages: rank('gpuStageP95Ms'),
-      asynchronous: rank('asyncElapsedP95Ms'),
-      memory: rank('memoryP95Bytes')
+      cpuFrame: rank('cpuFrameP95Ms', 'cpuFrameMs', 'cpuFrameSampleCount'),
+      cpuStages: rank('cpuSubmitP95Ms', 'cpuSubmitMs', 'cpuSubmitSampleCount'),
+      gpuFrame: rank('gpuRenderP95Ms', 'gpuRenderMs', 'gpuRenderSampleCount'),
+      gpuStages: rank('gpuStageP95Ms', 'gpuStageMs', 'gpuStageSampleCount'),
+      asynchronous: rank('asyncElapsedP95Ms', 'asyncElapsedMs', 'asyncElapsedSampleCount'),
+      memory: rank('memoryP95Bytes', 'memoryBytes', 'memorySampleCount')
     };
   }
 
