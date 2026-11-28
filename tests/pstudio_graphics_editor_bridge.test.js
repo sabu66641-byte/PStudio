@@ -1,0 +1,50 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {createPStudioGraphicsSceneCore}=require('../static/pstudio_graphics_scene_core.mjs');
+const {createPStudioGraphicsAssetCore}=require('../static/pstudio_graphics_asset_core.mjs');
+const {createPStudioGraphicsEditorBridge}=require('../static/pstudio_graphics_editor_bridge.mjs');
+
+test('PStudio editor bridge builds an owned scene asset and renders through injected native adapter',()=>{
+ const scene=createPStudioGraphicsSceneCore();scene.createScene({id:'world'});
+ const assets=createPStudioGraphicsAssetCore();
+ assets.register({id:'geo.triangle',type:'geometry',estimatedBytes:128},{positions:[0,0,0,1,0,0,0,1,0]});
+ assets.register({id:'mat.stone',type:'material',estimatedBytes:32},{model:'pbr',baseColor:[.5,.5,.5,1]});
+ scene.createEntity({id:'triangle',sceneId:'world',geometryId:'geo.triangle',materialIds:['mat.stone'],transform:{position:[1,0,0]}});
+ const rendered=[];
+ const renderer={render:frame=>{rendered.push(frame);return true;}};
+ const bridge=createPStudioGraphicsEditorBridge({sceneCore:scene,assetCore:assets,renderer,sceneId:'world'});
+ assert.equal(bridge.render({view:{viewProjectionMatrix:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],cameraPosition:[0,0,3]}}),true);
+ assert.equal(rendered.length,1);
+ assert.deepEqual(rendered[0].scene.entities[0].matrixWorld.slice(12,15),[1,0,0]);
+ assert.equal(bridge.getState().leaseCount,2);
+ bridge.dispose();
+ assert.equal(assets.stats().retainedCount,0);
+ assets.dispose();scene.dispose();
+});
+test('PStudio editor bridge proxies hierarchy, selection, inspector and play/pause mode',()=>{
+ const scene=createPStudioGraphicsSceneCore();scene.createScene({id:'world'});
+ const assets=createPStudioGraphicsAssetCore();
+ assets.register({id:'geo',type:'geometry',estimatedBytes:64},{positions:[0,0,0,1,0,0,0,1,0]});
+ assets.register({id:'mat',type:'material',estimatedBytes:32},{model:'pbr'});
+ const bridge=createPStudioGraphicsEditorBridge({sceneCore:scene,assetCore:assets,sceneId:'world'});
+ bridge.createEntity({id:'root'});
+ bridge.createEntity({id:'mesh',parentId:'root',geometryId:'geo',materialIds:['mat']});
+ assert.equal(bridge.select('mesh').entityId,'mesh');
+ assert.equal(bridge.inspect().assets.length,2);
+ bridge.updateEntity('mesh',{transform:{position:[3,0,0]}});
+ assert.deepEqual(bridge.serialize().entities.find(x=>x.id==='mesh').worldMatrix.slice(12,15),[3,0,0]);
+ assert.equal(bridge.setMode('play'),'play');assert.equal(bridge.setMode('pause'),'pause');
+ assert.throws(()=>bridge.setMode('cinematic'),/mode must be/);
+ assert.equal(bridge.removeEntity('root',{recursive:true}),2);
+ bridge.dispose();assets.dispose();scene.dispose();
+});
+test('PStudio editor bridge releases newly acquired asset leases if conversion fails',()=>{
+ const scene=createPStudioGraphicsSceneCore();scene.createScene({id:'world'});
+ const assets=createPStudioGraphicsAssetCore();assets.register({id:'geo',type:'geometry',estimatedBytes:64},{positions:[0,0,0,1,0,0,0,1,0]});
+ scene.createEntity({id:'mesh',sceneId:'world',geometryId:'geo',materialIds:['missing']});
+ const bridge=createPStudioGraphicsEditorBridge({sceneCore:scene,assetCore:assets,sceneId:'world'});
+ assert.throws(()=>bridge.sync(),/material asset is missing/);
+ assert.equal(assets.stats().retainedCount,0);
+ bridge.dispose();assets.dispose({force:true});scene.dispose();
+});
