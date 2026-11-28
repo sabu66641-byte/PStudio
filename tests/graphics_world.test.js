@@ -56,7 +56,7 @@ test("world pass declarations remain explicit and separate from production rende
   const core = createPStudioGraphicsWorldCore();
   const passes = core.buildRenderPasses({ includeDebugBounds: true });
   assert.deepEqual(passes.map(p => p.id), ["world.depth", "world.terrain", "world.foliage", "world.transparent", "world.debug-bounds"]);
-  assert.ok(PSTUDIO_WORLD_TERRAIN_WGSL.includes("textureSampleLevel"));
+  assert.ok(PSTUDIO_WORLD_TERRAIN_WGSL.includes("viewProjection"));
   assert.ok(PSTUDIO_WORLD_FOLIAGE_WGSL.includes("viewProjection"));
   const table = packPStudioWorldMaterialTable([{ id: "z", roughness: 0.5 }, { id: "a", baseColor: [0.5, 0.6, 0.7, 1], metalness: 0.2 }]);
   assert.equal(table.count, 2);
