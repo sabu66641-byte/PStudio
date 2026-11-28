@@ -18,7 +18,7 @@ export function createPStudioGraphicsLightingCore(options={}){
   function set(input){assertLive();const light=normalize(input);lights.set(light.id,light);revision++;return light;}
   function remove(id){assertLive();const changed=lights.delete(String(id));if(changed)revision++;return changed;}
   function snapshot({maxLights=options.maxLights||4096}={}){
-    assertLive();const limit=Math.max(1,Math.min(65535,Math.floor(Number(maxLights)||4096))),selected=[...lights.values()].sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id)).slice(0,limit),stride=16,packed=new Float32Array(selected.length*stride);
+    assertLive();const limit=Math.max(1,Math.min(65535,Math.floor(Number(maxLights)||4096))),selected=[...lights.values()].sort((a,b)=>b.priority-a.priority||a.id.localeCompare(b.id)).slice(0,limit),stride=16,packed=new Float32Array(selected.length*stride),layerMasks=new Uint32Array(selected.length);
     selected.forEach((light,index)=>{const o=index*stride;packed[o]=TYPE_CODE[light.type];packed[o+1]=light.intensity;packed[o+2]=light.color[0];packed[o+3]=light.color[1];packed[o+4]=light.color[2];packed[o+5]=light.position[0];packed[o+6]=light.position[1];packed[o+7]=light.position[2];packed[o+8]=light.range;packed[o+9]=light.direction[0];packed[o+10]=light.direction[1];packed[o+11]=light.direction[2];packed[o+12]=Math.cos(light.innerConeRadians);packed[o+13]=Math.cos(light.outerConeRadians);packed[o+14]=light.castsShadow?1:0;packed[o+15]=0;layerMasks[index]=light.layerMask;});
     return Object.freeze({revision,lightCount:selected.length,records:Object.freeze(selected),packed,layerMasks,stride,omittedCount:Math.max(0,lights.size-selected.length)});
   }
