@@ -179,6 +179,14 @@ export function deformPStudioSkinnedGeometry(input = {}) {
   const matrices = input.jointMatrices || [];
   if (!matrices.length || matrices.length > 256) throw new RangeError("Joint matrix palette must contain 1–256 matrices.");
   const palette = matrices.map((m, i) => vec(m, 16, "joint matrix " + i));
+  const normalPalette = palette.map((matrix, index) => {
+    const inverse = inverse4(matrix);
+    return [
+      inverse[0], inverse[1], inverse[2],
+      inverse[4], inverse[5], inverse[6],
+      inverse[8], inverse[9], inverse[10]
+    ];
+  });
   const morphTargets = input.morphTargets || [];
   const morphWeights = input.morphWeights || [];
   if (morphTargets.length !== morphWeights.length) throw new RangeError("Morph target and weight counts must match.");
@@ -204,8 +212,13 @@ export function deformPStudioSkinnedGeometry(input = {}) {
       if (weight < 0) throw new RangeError("Skin joint weights cannot be negative.");
       if (weight === 0) continue;
       const matrix = palette[joint];
+      const normal = normalPalette[joint];
       const wp = multiplyPoint(matrix, p, 1);
-      const wn = multiplyPoint(matrix, n, 0);
+      const wn = [
+        normal[0] * n[0] + normal[1] * n[1] + normal[2] * n[2],
+        normal[3] * n[0] + normal[4] * n[1] + normal[5] * n[2],
+        normal[6] * n[0] + normal[7] * n[1] + normal[8] * n[2]
+      ];
       outP = outP.map((value, axis) => value + wp[axis] * weight);
       outN = outN.map((value, axis) => value + wn[axis] * weight);
       total += weight;
