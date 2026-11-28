@@ -1,7 +1,7 @@
 # PStudio Visual Compensation System — Foundation
 
-**Status:** Original analysis foundation merged into `main` through PR #126. Phase 0 instrumentation expansion is implemented on the Draft PR #127 branch; it is not yet merged into `main`.  
-**Main baseline:** `48599f90db4c5ea3cf6996317e0966d6b7c91ddf`  
+**Status (2026-11-28):** Phase 0 completed at source, documentation and CI scope. The PVCS foundation from PR #126 and instrumentation expansion from PR #127 are merged into `main`. Physical-device validation is explicitly excluded from the current roadmap progress gate.  
+**Main baseline:** `5f6ab6db674268a87b857103456837dfc77c57d9`  
 **Sky lock:** `6b973a50c781f7fb2ea24fdffeb24d0d482556a9` — preserve the Nov 24 authored day/dusk/night panorama as the single visible sky and PMREM/IBL source.
 
 ## Scope and safety
@@ -67,9 +67,9 @@ These are reproducible baseline metrics, not a validated perceptual metric, opti
 ## Validation and rollback
 
 - Monitoring remains off by default; automatic quality actuation remains absent.
-- The Phase 0 code changes are isolated on PR #127's feature branch and must pass CI before merge.
+- The Phase 0 instrumentation and regression tests are merged into `main`; the post-merge CI run for PR #127 passed.
 - The pre-PVCS backup branch `backup/pre-pvcs-sky-20261124-20261128` retains the known-good pre-PVCS main snapshot.
-- Browser visual checks and named-device profiling are still required before any visual/performance optimization or backend promotion.
+- Browser visual checks and named-device profiling are not required for the current roadmap completion percentages or repository integration. Missing device measurements remain explicitly unmeasured; they must never be inferred from source inspection or CPU submission timings.
 - Keep the Nov 24 sky baseline unchanged during PVCS instrumentation and early optimization work.
 
 ## Related specifications

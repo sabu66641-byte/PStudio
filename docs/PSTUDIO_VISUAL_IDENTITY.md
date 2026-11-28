@@ -1,7 +1,7 @@
 # PStudio Visual Identity Specification
 
 **Phase:** 1 — Visual Identity  
-**Status:** Design specification; no rendering defaults, shaders, assets or scene output are changed by this document.  
+**Status (2026-11-28):** Phase 1 complete as a visual-identity contract. This document defines the rendering principles, system-level target behaviors, preservation constraints and review rubric. Completion does not claim that every target effect is implemented or that an unperformed visual capture has passed; no rendering defaults, shaders, assets or scene output are changed by this document.  
 **Governing art direction:** **Reality 55 : Anime 45**
 
 ## 1. Purpose
