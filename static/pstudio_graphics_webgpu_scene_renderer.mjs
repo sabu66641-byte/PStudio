@@ -145,7 +145,9 @@ const WGSL = [
 '    let bitangent = normalize(-dp1 * duv2.x + dp2 * duv1.x);',
 '    n = normalize(mat3x3<f32>(tangent, bitangent, n) * vec3<f32>(mapped.xy * material.surface.z, mapped.z));',
 '  }',
-'  if (!frontFacing && material.materialFlags.y > 0.5) { n = -n; }',
+'  if (!frontFacing) {',
+'    if (material.materialFlags.y > 0.5) { n = -n; } else { discard; }',
+'  }',
 '  let v = normalize(frame.cameraPosition.xyz - input.worldPosition);',
 '  var direct = evaluateDirectBRDF(albedo, metallic, roughness, n, v, -frame.sunDirection.xyz, frame.sunColor.rgb * frame.sunColor.w);',
 '  for (var index: u32 = 0u; index < 8u; index += 1u) {',
@@ -180,12 +182,15 @@ const WGSL = [
 '  let sheenColor = material.sheen.rgb * material.sheen.a;',
 '  let sheenResponse = pow(1.0 - max(dot(n, v), 0.0), 5.0);',
 '  direct += sheenColor * sheenResponse * (1.0 - roughness) * 0.25;',
-'  let linearColor = max(direct + ambient + emissive * material.emissiveColor.a, vec3<f32>(0.0));',
+'  let specularTint = mix(vec3<f32>(1.0), material.specular.rgb, clamp(material.specular.a, 0.0, 1.0));',
+'  direct *= specularTint;',
+'  if (material.materialFlags.x > 0.5) { direct = vec3<f32>(0.0); ambient = vec3<f32>(0.0); }',
+'  let linearColor = max((material.materialFlags.x > 0.5 ? albedo : direct + ambient) + emissive * material.emissiveColor.a, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
 '  let srgb = select(1.055 * pow(mapped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), mapped * 12.92, mapped <= vec3<f32>(0.0031308));',
 '  var alpha = material.baseColor.a * material.surface.w * texel.a;',
 '  if (material.textureFlags2.w > 0.5) { alpha *= textureSample(alphaTexture, alphaSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[15].z > 0.5), 14u)).g; }',
-'  if (material.materialFlags.x > 0.5 && alpha < material.materialFlags.w) { discard; }',
+'  if (material.physical.w > 0.5 && material.physical.w < 1.5 && alpha < material.materialFlags.w) { discard; }',
 '  return vec4<f32>(srgb, alpha);',
 '}'
 ].join('\n');
@@ -255,8 +260,10 @@ function geometryVertexData(geometry) {
   if (!positions || !normals || !uvs || positions.length % 3 || normals.length !== positions.length || uvs.length !== positions.length / 3 * 2) {
     throw new TypeError('PStudio WebGPU renderer received an invalid geometry attribute set.');
   }
-  const vertices = new Float32Array((positions.length / 3) * 8);
-  for (let index = 0, vertex = 0; index < positions.length / 3; index += 1, vertex += 8) {
+  const uv2s = geometry.uv2s || new Float32Array((positions.length / 3) * 2);
+  if (uv2s.length !== positions.length / 3 * 2) throw new TypeError('PStudio WebGPU renderer received an invalid secondary UV set.');
+  const vertices = new Float32Array((positions.length / 3) * 10);
+  for (let index = 0, vertex = 0; index < positions.length / 3; index += 1, vertex += 10) {
     vertices[vertex] = positions[index * 3];
     vertices[vertex + 1] = positions[index * 3 + 1];
     vertices[vertex + 2] = positions[index * 3 + 2];
@@ -265,6 +272,8 @@ function geometryVertexData(geometry) {
     vertices[vertex + 5] = normals[index * 3 + 2];
     vertices[vertex + 6] = uvs[index * 2];
     vertices[vertex + 7] = uvs[index * 2 + 1];
+    vertices[vertex + 8] = uv2s[index * 2];
+    vertices[vertex + 9] = uv2s[index * 2 + 1];
   }
   return vertices;
 }
@@ -315,45 +324,82 @@ function validateScene(scene) {
   return { geometries, materials, textures };
 }
 function ensurePipeline(state, api) {
-  if (state.pipeline) return;
+  if (state.pipeline && state.pipelineTransparent) return;
   const device = api.device;
-  if (!device?.createShaderModule || !device?.createRenderPipeline) throw new Error('WebGPU device cannot create graphics pipelines.');
+  if (!device?.createShaderModule || !device?.createRenderPipeline ||
+      !device?.createBindGroupLayout || !device?.createPipelineLayout) {
+    throw new Error('WebGPU device cannot create PStudio material layouts and graphics pipelines.');
+  }
   const module = device.createShaderModule({ label: 'PStudio Independent PBR Scene', code: WGSL });
   const format = api.getCapabilities?.()?.format || 'bgra8unorm';
+  const shaderStage = globalThis.GPUShaderStage || { VERTEX: 1, FRAGMENT: 2 };
+  const visibility = shaderStage.VERTEX | shaderStage.FRAGMENT;
+  state.frameLayout = device.createBindGroupLayout({
+    label: 'PStudio Frame Bind Group Layout',
+    entries: [{ binding: 0, visibility, buffer: { type: 'uniform', minBindingSize: 656 } }]
+  });
+  const materialEntries = [
+    { binding: 0, visibility: shaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 400 } }
+  ];
+  for (let slot = 0; slot < 8; slot += 1) {
+    materialEntries.push({ binding: 1 + slot * 2, visibility: shaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } });
+    materialEntries.push({ binding: 2 + slot * 2, visibility: shaderStage.FRAGMENT, sampler: { type: 'filtering' } });
+  }
+  state.materialLayout = device.createBindGroupLayout({ label: 'PStudio Material Bind Group Layout', entries: materialEntries });
+  state.pipelineLayout = device.createPipelineLayout({ label: 'PStudio Scene Pipeline Layout', bindGroupLayouts: [state.frameLayout, state.materialLayout] });
+  const vertex = {
+    module, entryPoint: 'vs_main',
+    buffers: [{
+      arrayStride: 40, stepMode: 'vertex',
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+        { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        { shaderLocation: 2, offset: 24, format: 'float32x2' },
+        { shaderLocation: 3, offset: 32, format: 'float32x2' }
+      ]
+    }, {
+      arrayStride: 112, stepMode: 'instance',
+      attributes: [
+        { shaderLocation: 4, offset: 0, format: 'float32x4' },
+        { shaderLocation: 5, offset: 16, format: 'float32x4' },
+        { shaderLocation: 6, offset: 32, format: 'float32x4' },
+        { shaderLocation: 7, offset: 48, format: 'float32x4' },
+        { shaderLocation: 8, offset: 64, format: 'float32x4' },
+        { shaderLocation: 9, offset: 80, format: 'float32x4' },
+        { shaderLocation: 10, offset: 96, format: 'float32x4' }
+      ]
+    }]
+  };
+  const primitive = { topology: 'triangle-list', frontFace: 'ccw', cullMode: 'none' };
+  const depthStencil = { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' };
   state.pipeline = device.createRenderPipeline({
-    label: 'PStudio Independent Scene PBR',
-    layout: 'auto',
-    vertex: {
-      module, entryPoint: 'vs_main',
-      buffers: [{
-        arrayStride: 32,
-        stepMode: 'vertex',
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },
-          { shaderLocation: 1, offset: 12, format: 'float32x3' },
-          { shaderLocation: 2, offset: 24, format: 'float32x2' }
-        ]
-      }, {
-        arrayStride: 112,
-        stepMode: 'instance',
-        attributes: [
-          { shaderLocation: 3, offset: 0, format: 'float32x4' },
-          { shaderLocation: 4, offset: 16, format: 'float32x4' },
-          { shaderLocation: 5, offset: 32, format: 'float32x4' },
-          { shaderLocation: 6, offset: 48, format: 'float32x4' },
-          { shaderLocation: 7, offset: 64, format: 'float32x4' },
-          { shaderLocation: 8, offset: 80, format: 'float32x4' },
-          { shaderLocation: 9, offset: 96, format: 'float32x4' }
-        ]
+    label: 'PStudio Independent Scene PBR Opaque',
+    layout: state.pipelineLayout, vertex,
+    fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
+    primitive, depthStencil
+  });
+  state.pipelineTransparent = device.createRenderPipeline({
+    label: 'PStudio Independent Scene PBR Transparent',
+    layout: state.pipelineLayout, vertex,
+    fragment: {
+      module, entryPoint: 'fs_main',
+      targets: [{
+        format,
+        blend: {
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+        }
       }]
     },
-    fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
-    primitive: { topology: 'triangle-list', frontFace: 'ccw', cullMode: 'back' },
-    depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' }
+    primitive,
+    depthStencil: { ...depthStencil, depthWriteEnabled: false }
   });
-  state.frameBuffer = device.createBuffer({ label: 'PStudio Frame Uniforms', size: 656, usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST') });
+  state.frameBuffer = device.createBuffer({
+    label: 'PStudio Frame Uniforms', size: 656,
+    usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
+  });
   state.frameBindGroup = device.createBindGroup({
-    layout: state.pipeline.getBindGroupLayout(0),
+    layout: state.frameLayout,
     entries: [{ binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 656 } }]
   });
 }
