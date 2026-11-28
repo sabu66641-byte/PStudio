@@ -1,4 +1,5 @@
 import { createPStudioGraphicsSceneAsset } from "./pstudio_graphics_scene_asset.mjs";
+import { createPStudioAnimationClip, createPStudioSkinDescriptor } from "./pstudio_graphics_animation_core.mjs";
 
 const GLB_MAGIC = 0x46546c67;
 const JSON_CHUNK = 0x4e4f534a;
@@ -171,7 +172,7 @@ export async function loadPStudioGLB(input, options = {}) {
   for (const extension of document.extensionsRequired || []) {
     if (!["KHR_lights_punctual"].includes(extension)) unsupported.push({ feature: "required-extension", extension });
   }
-  const reader=makeReader(document,binary), geometries=new Map(),materials=[],textures=[],entities=[];
+  const reader=makeReader(document,binary), geometries=new Map(),materials=[],textures=[],entities=[],sceneNodes=[];
   const decodedImages=new Map();
   async function textureFor(index) {
     const sourceTexture=document.textures?.[index];
@@ -219,12 +220,30 @@ export async function loadPStudioGLB(input, options = {}) {
       if(position.components!==3)throw new TypeError("glTF POSITION accessor must be VEC3.");
       const normals=primitive.attributes.NORMAL==null?null:reader.accessor(primitive.attributes.NORMAL).data;
       const uvs=primitive.attributes.TEXCOORD_0==null?null:reader.accessor(primitive.attributes.TEXCOORD_0).data;
-      if(primitive.attributes.TANGENT!=null||primitive.attributes.JOINTS_0!=null||primitive.attributes.WEIGHTS_0!=null||mesh.weights!=null||mesh.primitives[primitiveIndex].targets?.length)unsupported.push({feature:"skinning-morph-or-tangent",meshIndex,primitiveIndex});
+      const tangentAccessor=primitive.attributes.TANGENT==null?null:reader.accessor(primitive.attributes.TANGENT);
+      if(tangentAccessor&&tangentAccessor.components!==4)throw new TypeError("glTF TANGENT accessor must be VEC4.");
+      const jointAccessor=primitive.attributes.JOINTS_0==null?null:reader.accessor(primitive.attributes.JOINTS_0);
+      const weightAccessor=primitive.attributes.WEIGHTS_0==null?null:reader.accessor(primitive.attributes.WEIGHTS_0);
+      if((jointAccessor==null)!==(weightAccessor==null))throw new TypeError("glTF skinning requires both JOINTS_0 and WEIGHTS_0.");
+      if(jointAccessor&&jointAccessor.components!==4)throw new TypeError("glTF JOINTS_0 accessor must be VEC4.");
+      if(weightAccessor&&weightAccessor.components!==4)throw new TypeError("glTF WEIGHTS_0 accessor must be VEC4.");
+      if(jointAccessor&&![5121,5123].includes(jointAccessor.componentType))throw new TypeError("glTF JOINTS_0 must use UNSIGNED_BYTE or UNSIGNED_SHORT components.");
+      if(primitive.attributes.JOINTS_1!=null||primitive.attributes.WEIGHTS_1!=null)unsupported.push({feature:"more-than-four-skin-influences",meshIndex,primitiveIndex});
+      const jointIndices=jointAccessor?jointAccessor.data:null;
+      const jointWeights=weightAccessor?weightAccessor.data:null;
+      const morphTargets=(primitive.targets||[]).map((target,targetIndex)=>{
+        const targetPositions=target.POSITION==null?null:reader.accessor(target.POSITION).data;
+        const targetNormals=target.NORMAL==null?null:reader.accessor(target.NORMAL).data;
+        if(target.TANGENT!=null)unsupported.push({feature:"morph-tangent",meshIndex,primitiveIndex,targetIndex});
+        if(targetPositions&&targetPositions.length!==position.data.length)throw new RangeError("glTF morph POSITION count does not match the base geometry.");
+        if(targetNormals&&normals&&targetNormals.length!==normals.length)throw new RangeError("glTF morph NORMAL count does not match the base geometry.");
+        return {positions:targetPositions,normals:targetNormals};
+      });
       const indices=primitive.indices==null?null:reader.accessor(primitive.indices).data;
       const geometryId="glb.geometry."+meshIndex+"."+primitiveIndex;
-      geometries.set(geometryId,{id:geometryId,positions:position.data,normals,uvs,indices,revision:1});
+      geometries.set(geometryId,{id:geometryId,positions:position.data,normals,uvs,tangents:tangentAccessor?.data||null,indices,jointIndices,jointWeights,morphTargets,revision:1});
       const materialId=await materialFor(primitive.material);
-      meshPrimitives.push({geometryId,materialId});
+      meshPrimitives.push({meshIndex,primitiveIndex,geometryId,materialId});
     }
   }
   const nodes=document.nodes||[],worlds=new Map(),parents=new Map();
@@ -236,19 +255,88 @@ export async function loadPStudioGLB(input, options = {}) {
     if(stack.has(nodeIndex))throw new Error("glTF node hierarchy contains a cycle.");
     const node=nodes[nodeIndex],local=matrixTRS(node),world=multiply4(parentWorld,local);
     worlds.set(nodeIndex,world);
+    const nodeId="glb.node."+nodeIndex;
+    sceneNodes.push({
+      id:nodeId,name:node.name||"",parentId:parents.has(nodeIndex)?"glb.node."+parents.get(nodeIndex):null,
+      translation:node.translation||[0,0,0],rotation:node.rotation||[0,0,0,1],scale:node.scale||[1,1,1],
+      matrix:local,worldMatrix:world,weights:node.weights||[]
+    });
     if(node.mesh!=null){
-      const matching=meshPrimitives.filter(item=>item.geometryId.startsWith("glb.geometry."+node.mesh+"."));
-      matching.forEach((item,primitiveIndex)=>entities.push({id:"glb.node."+nodeIndex+".primitive."+primitiveIndex,geometryId:item.geometryId,materialId:item.materialId,matrixWorld:world,visible:true}));
+      const matching=meshPrimitives.filter(item=>item.meshIndex===node.mesh);
+      const skinId=node.skin==null?null:"glb.skin."+node.skin;
+      if(node.skin!=null&&(!document.skins||!document.skins[node.skin]))throw new RangeError("glTF node references a missing skin: "+node.skin);
+      matching.forEach((item,primitiveIndex)=>{
+        const geometry=geometries.get(item.geometryId);
+        if(skinId&&(!geometry.jointIndices||!geometry.jointWeights))throw new Error("glTF node uses a skin but its mesh primitive has no JOINTS_0/WEIGHTS_0 attributes.");
+        if(!skinId&&(geometry.jointIndices||geometry.jointWeights))throw new Error("glTF mesh has skin attributes but its node does not reference a skin.");
+        const meshWeights=node.weights||document.meshes[node.mesh]?.weights||[];
+        if(meshWeights.length&&meshWeights.length!==geometry.morphTargets.length)throw new RangeError("glTF node morph weight count does not match its mesh targets.");
+        entities.push({
+          id:nodeId+".primitive."+item.primitiveIndex,geometryId:item.geometryId,materialId:item.materialId,
+          matrixWorld:world,visible:true,skinId,morphWeights:meshWeights
+        });
+      });
     }
     const next=new Set(stack);next.add(nodeIndex);
     for(const child of node.children||[])walk(child,world,next);
   };
   for(const root of rootNodes)walk(root,identity,new Set());
-  if((document.skins||[]).length)unsupported.push({feature:"skin-skeleton-import",count:document.skins.length});
-  if((document.animations||[]).length)unsupported.push({feature:"animation-clip-import",count:document.animations.length});
+
+  const skinAssets=(document.skins||[]).map((skin,skinIndex)=>{
+    if(!Array.isArray(skin.joints)||!skin.joints.length)throw new TypeError("glTF skin must contain at least one joint.");
+    const joints=skin.joints.map(index=>{
+      if(!Number.isSafeInteger(index)||index<0||index>=nodes.length)throw new RangeError("glTF skin joint node index is invalid.");
+      return "glb.node."+index;
+    });
+    let inverseBindMatrices=joints.map(()=>identity.slice());
+    if(skin.inverseBindMatrices!=null){
+      const accessor=reader.accessor(skin.inverseBindMatrices);
+      if(accessor.components!==16||accessor.count!==joints.length)throw new RangeError("glTF inverse bind matrix accessor must contain one MAT4 per joint.");
+      inverseBindMatrices=Array.from({length:accessor.count},(_,index)=>accessor.data.slice(index*16,index*16+16));
+    }
+    const skeletonRoot=skin.skeleton==null?null:"glb.node."+skin.skeleton;
+    if(skin.skeleton!=null&&(!Number.isSafeInteger(skin.skeleton)||skin.skeleton<0||skin.skeleton>=nodes.length))throw new RangeError("glTF skin skeleton root node index is invalid.");
+    return createPStudioSkinDescriptor({id:"glb.skin."+skinIndex,joints,inverseBindMatrices,skeletonRoot});
+  });
+
+  const animationClips=[];
+  for(let animationIndex=0;animationIndex<(document.animations||[]).length;animationIndex++){
+    const animation=document.animations[animationIndex],tracks=[];
+    for(const [channelIndex,channel] of (animation.channels||[]).entries()){
+      const sampler=animation.samplers?.[channel.sampler];
+      const target=channel.target||{},path=String(target.path||"");
+      if(!sampler||!Number.isSafeInteger(target.node)||target.node<0||target.node>=nodes.length||
+          !["translation","rotation","scale","weights"].includes(path)){
+        unsupported.push({feature:"animation-channel",animationIndex,channelIndex});
+        continue;
+      }
+      const interpolation=String(sampler.interpolation||"LINEAR").toUpperCase();
+      if(!["LINEAR","STEP"].includes(interpolation)){
+        unsupported.push({feature:"animation-interpolation-"+interpolation,animationIndex,channelIndex});
+        continue;
+      }
+      const inputAccessor=reader.accessor(sampler.input),outputAccessor=reader.accessor(sampler.output);
+      if(inputAccessor.components!==1)throw new TypeError("glTF animation input accessor must be SCALAR.");
+      const times=inputAccessor.data;
+      const components=path==="rotation"?4:path==="weights"
+        ?outputAccessor.data.length/times.length:3;
+      if(!Number.isSafeInteger(components)||components<1||components>64||
+          (path!=="weights"&&outputAccessor.components!==components)||
+          outputAccessor.data.length!==times.length*components){
+        throw new RangeError("glTF animation output accessor does not match its target channel.");
+      }
+      tracks.push({
+        targetId:"glb.node."+target.node,path,components,times,values:outputAccessor.data,interpolation
+      });
+    }
+    if(tracks.length)animationClips.push(createPStudioAnimationClip({
+      id:"glb.animation."+animationIndex,tracks,metadata:{source:"gltf-2.0",name:animation.name||""}
+    }));
+  }
   if(document.extensionsUsed?.includes("KHR_lights_punctual"))unsupported.push({feature:"KHR_lights_punctual-node-import"});
   const asset=createPStudioGraphicsSceneAsset({
     id:options.id||"glb.scene",geometries:[...geometries.values()],materials,textures,entities,
+    nodes:sceneNodes,skins:skinAssets,animations:animationClips,
     metadata:{source:"pstudio-glb-loader",glbByteLength:byteLength,gltfVersion:"2.0"}
   });
   const report=Object.freeze({supported:unsupported.length===0,geometryCount:asset.geometries.length,materialCount:asset.materials.length,textureCount:asset.textures.length,entityCount:asset.entities.length,unsupported:Object.freeze(unsupported.map(item=>Object.freeze({...item})))});
