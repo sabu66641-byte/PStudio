@@ -343,3 +343,16 @@ The Scene Environment inspector persists this state in `.scene` and the project 
 - All rain GPU particle resources are released when rain stops or the scene is cleared. Editor particle stepping and Play render stepping have a single owner to avoid double integration. Water/cloud/foliage state updates write existing uniforms and do not create new materials per frame.
 
 Real GPU shader compilation, water/sky image parity, reflection stability during the camera path, rain-particle appearance, long-duration memory behavior and WebGPU device-loss recovery remain physical-device acceptance tasks.
+
+
+## Independent Graphics Engine boundary (Phase 2 foundation)
+
+The Independent Graphics Engine work introduces a vendor-neutral boundary alongside the current renderer. It is additive and does not yet replace the production renderer:
+
+- static/pstudio_graphics_contract.mjs defines backend descriptors, frame context and lifecycle contracts without Three.js or browser globals.
+- static/pstudio_graphics_hal.mjs owns backend registration, feature filtering, explicit fallback state, initialization cancellation and late-resource disposal.
+- static/pstudio_graphics_engine.mjs provides a generic engine facade over an injected HAL.
+- The current production renderer remains in pstudio_3d_engine.js and the existing Three.js WebGL2/WebGPU bridge. Production adapter migration is a remaining Phase 2 task.
+- The detailed boundary, adapter contract and remaining work are maintained in PSTUDIO_GRAPHICS_ARCHITECTURE.md.
+
+The new contract/HAL/facade modules must remain free of Three.js imports and browser-global dependencies. Backend adapters may depend on a concrete graphics API; the PStudio-owned contracts must not.

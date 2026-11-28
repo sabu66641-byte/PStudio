@@ -47,6 +47,7 @@ export function createPStudioGraphicsEngine(options = {}) {
         publish(next, { selectedBackend: result?.backend || null });
         return snapshot();
       } catch (error) {
+        if (disposed) throw error;
         lastError = error;
         publish('failed');
         throw error;

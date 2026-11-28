@@ -91,6 +91,15 @@ export function createPStudioGraphicsHAL(options = {}) {
     return !disposed && ticket === generation && !controller.signal.aborted;
   }
 
+  function cancelledError(ticket, cause) {
+    const error = cause instanceof Error ? cause : new PStudioGraphicsError('Graphics initialization was cancelled.', { code: 'PSTUDIO_GRAPHICS_INITIALIZATION_CANCELLED' });
+    if (!disposed && ticket === generation && state === 'initializing') {
+      lastError = error;
+      publish('failed');
+    }
+    return error;
+  }
+
   async function initialize(context = {}) {
     if (disposed) throw new PStudioGraphicsError('Graphics HAL is disposed.', { code: 'PSTUDIO_GRAPHICS_DISPOSED' });
     if (active) return snapshot();
@@ -135,11 +144,15 @@ export function createPStudioGraphicsHAL(options = {}) {
           }
         }
 
-        const candidatesToTry = allowFallback ? eligible : eligible.slice(0, 1);
+        const primaryBackend = String(context.preferredBackend || options.preferredBackend || context.backendOrder?.[0] || options.backendOrder?.[0] || candidates[0]?.descriptor.backend || '').toLowerCase();
+        const candidatesToTry = allowFallback
+          ? eligible
+          : eligible.filter(item => item.descriptor.backend === primaryBackend).slice(0, 1);
         for (let index = 0; index < candidatesToTry.length; index++) {
           const item = candidatesToTry[index];
-          if (!isCurrent(ticket)) throw new PStudioGraphicsError('Graphics initialization was cancelled.', { code: 'PSTUDIO_GRAPHICS_INITIALIZATION_CANCELLED' });
+          if (!isCurrent(ticket)) throw cancelledError(ticket);
           let handle = null;
+          let handleDisposed = false;
           try {
             handle = await item.adapter.initialize(Object.freeze({
               ...context,
@@ -149,32 +162,36 @@ export function createPStudioGraphicsHAL(options = {}) {
             }));
             if (!isCurrent(ticket)) {
               try { handle?.dispose?.(); } catch (_) {}
+              handleDisposed = true;
               throw new PStudioGraphicsError('Late graphics backend initialization was discarded.', { code: 'PSTUDIO_GRAPHICS_STALE_INITIALIZATION' });
             }
             if (!handle || typeof handle.render !== 'function') {
               try { handle?.dispose?.(); } catch (_) {}
+              handleDisposed = true;
               throw new TypeError('Initialized graphics backend must return an object with render(frame).');
             }
             active = { adapter: item.adapter, descriptor: item.descriptor, handle };
-            attempts.push({ adapterId: item.descriptor.id, backend: item.descriptor.backend, status: index === 0 ? 'selected' : 'fallback' });
-            publish(index === 0 ? 'ready' : 'fallback', {
-              fallback: index > 0,
+            const usedFallback = attempts.some(entry => entry.status === 'failed') || item.descriptor.backend !== primaryBackend || index > 0;
+            attempts.push({ adapterId: item.descriptor.id, backend: item.descriptor.backend, status: usedFallback ? 'fallback' : 'selected' });
+            publish(usedFallback ? 'fallback' : 'ready', {
+              fallback: usedFallback,
               selectedBackend: item.descriptor.backend,
               selectedAdapter: item.descriptor.id
             });
             return snapshot();
           } catch (error) {
-            if (handle && !active) {
+            if (handle && !active && !handleDisposed) {
               try { handle.dispose?.(); } catch (_) {}
+              handleDisposed = true;
             }
-            if (!isCurrent(ticket)) throw error;
+            if (!isCurrent(ticket)) throw cancelledError(ticket, error);
             lastError = error;
             attempts.push({ adapterId: item.descriptor.id, backend: item.descriptor.backend, status: 'failed', reason: String(error?.message || error) });
             if (!allowFallback) break;
           }
         }
 
-        if (!isCurrent(ticket)) throw new PStudioGraphicsError('Graphics initialization was cancelled.', { code: 'PSTUDIO_GRAPHICS_INITIALIZATION_CANCELLED' });
+        if (!isCurrent(ticket)) throw cancelledError(ticket);
         const summary = attempts.length ? attempts.map(item => item.adapterId + ': ' + item.status).join(', ') : 'no eligible backend adapters';
         const error = new PStudioGraphicsError('No graphics backend could be initialized (' + summary + ').', {
           code: 'PSTUDIO_GRAPHICS_NO_BACKEND',

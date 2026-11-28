@@ -1,6 +1,6 @@
 # PVCS Cause Analysis and Implementation Roadmap
 
-**Status:** Static source audit complete. Phase 0 instrumentation corrections are under validation on this Draft PR branch; physical-device bottleneck ranking and visual review remain pending.  
+**Status (2026-11-28):** Static source audit and Phase 0 instrumentation are merged into `main`. Physical-device bottleneck ranking and image capture are optional follow-up evidence, not a completion or integration gate.  
 **Main baseline:** `48599f90db4c5ea3cf6996317e0966d6b7c91ddf` (PVCS foundation merged from PR #126).  
 **Sky constraint:** Preserve the Nov 24 authored sky state at `6b973a50c781f7fb2ea24fdffeb24d0d482556a9`. Do not use PVCS work as a reason to modify sky assets, sky composition, or sky cache keys.
 
@@ -179,7 +179,7 @@ Measure cold-start and warmed runs separately. Do not redesign the existing prep
 
 ## 4. PVCS implementation and validation sequence
 
-### PVCS Step 0 — Decision-grade instrumentation (implemented on PR #127 branch)
+### PVCS Step 0 — Decision-grade instrumentation (merged into main through PR #127)
 
 The branch implementation adds:
 1. Full `drawFrame` callback CPU duration, separate from render-section CPU submission and frame interval.
@@ -196,22 +196,13 @@ Known boundaries:
 - WebGL2 GPU render-path sampling is intentionally sparse; the target is the active composer or direct-render path. Query-start context and monitoring-session generation are retained until completion. The per-effect composer sub-passes are not yet individually GPU-timed.
 - Composer CPU stage measurements are nested within the overall composer timing; they are diagnostic and must not be added to the parent duration. The overall composer GPU query is a single non-nested measurement.
 - Mirror count/target size and shadow-map dimensions are not yet in every sample context.
-- Physical-device measurements and visual review have not been performed by CI.
+- CI does not perform physical-device measurements or image review. Those results are intentionally outside the current Phase 0 progress gate; unavailable hardware evidence remains unmeasured.
 
-### PVCS Step 1 — Controlled baseline on real hardware
+### PVCS Step 1 — Optional controlled baseline capture
 
-Use a fixed camera path and repeatable scene state. Warm up first, then take at least three runs with enough samples for p50/p95/p99.
+Where a browser/GPU measurement environment is available, use a fixed camera path and repeatable scene state. Warm up first and collect repeated samples. The shrine, water/reflection, day/dusk/night, Dynamic GI and cold/warmed cases remain useful comparison scenarios.
 
-Required cases:
-- Static scene with no camera movement.
-- Standard camera movement through the shrine.
-- Water/reflection scene.
-- High/Maximum/Ultra effect stack, where the device can safely run it.
-- Day, dusk and night environment states.
-- Dynamic GI off versus on.
-- Cold load versus warmed steady-state.
-
-Capture CPU frame time, CPU render submission, GPU frame time, pass timings, frame interval, draw calls, triangles, memory estimates and actual render dimensions. A source-code audit cannot replace this device run.
+This step is optional for the current roadmap target. When no suitable hardware is available, continue with source audits, unit/regression tests, API contract validation and CI. Record GPU execution time as unavailable rather than substituting CPU submission or inventing a bottleneck ranking.
 
 ### PVCS Step 2 — Fix the measured bottlenecks one at a time
 
@@ -222,7 +213,7 @@ For each candidate:
 4. Keep the change only if the relevant CPU/GPU bottleneck improves and visual/temporal quality remains within the agreed tolerance.
 5. Keep each subsystem change isolated so it can be reverted independently.
 
-Start with the subsystem that consumes the largest repeatable share of the real-device frame budget—not the subsystem that looks most complicated in source code.
+With valid measurements, start with the subsystem that consumes the largest repeatable share of the measured frame budget. Without them, treat source-audit candidates as hypotheses only and prefer isolated, testable improvements that do not change quality defaults.
 
 ### PVCS Step 3 — Strengthen Visual Difference Evaluation
 
@@ -263,6 +254,6 @@ A compensation candidate is accepted only when:
 
 ## 6. Immediate next task
 
-Review PR #127 and retain the instrumentation changes only while the full repository CI remains green. Then collect a controlled baseline on the target Android/browser device and any available desktop reference. The device run must capture p50/p95/p99 for frame interval and CPU/GPU domains, and compare the same shrine scene and camera path before changing reflection cadence, depth resolution, cloud samples, shadow maps or quality defaults.
+PR #127 is merged into `main`, and its post-merge CI passed. Continue from the current main commit using isolated changes, source-level bottleneck hypotheses, regression tests and the visual contract. A target Android/browser or desktop GPU capture may be added when available, but it does not block the current Phase 0/1 completion or Phase 2 integration. Do not change reflection cadence, depth resolution, cloud samples, shadow maps or quality defaults based solely on unverified assumptions.
 
 The Phase 1 visual-identity specification is maintained separately in [PSTUDIO_VISUAL_IDENTITY.md](PSTUDIO_VISUAL_IDENTITY.md).

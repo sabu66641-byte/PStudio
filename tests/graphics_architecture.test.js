@@ -166,3 +166,38 @@ test('independent graphics contract, HAL and facade do not depend on Three.js or
     assert.doesNotMatch(source, /\b(?:window|document|GPUDevice|WebGLRenderer|WebGPURenderer)\b/, name + ' must not depend on browser/backend globals');
   }
 });
+
+test('HAL with fallback disabled does not select a different backend when the preferred adapter is unsupported', async () => {
+  const hal = createPStudioGraphicsHAL({ preferredBackend: 'webgpu', allowFallback: false });
+  hal.register(makeAdapter({
+    id: 'preferred.unsupported',
+    backend: 'webgpu',
+    supports: () => false
+  }));
+  hal.register(makeAdapter({ id: 'other.webgl', backend: 'webgl2' }));
+  await assert.rejects(hal.initialize(), error => error.code === 'PSTUDIO_GRAPHICS_NO_BACKEND');
+  assert.equal(hal.getState().backend, null);
+  assert.equal(hal.getState().state, 'failed');
+  hal.dispose();
+});
+
+test('external abort moves the HAL out of initializing instead of leaving a stuck lifecycle', async () => {
+  const hal = createPStudioGraphicsHAL({ preferredBackend: 'webgpu' });
+  const controller = new AbortController();
+  hal.register(makeAdapter({
+    id: 'abort.webgpu',
+    backend: 'webgpu',
+    initialize: async ({ signal }) => {
+      await new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      });
+      return { render: () => true };
+    }
+  }));
+  const pending = hal.initialize({ signal: controller.signal });
+  await Promise.resolve();
+  controller.abort();
+  await assert.rejects(pending);
+  assert.equal(hal.getState().state, 'failed');
+  hal.dispose();
+});
