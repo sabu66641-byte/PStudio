@@ -1,6 +1,6 @@
 # PVCS Cause Analysis and Implementation Roadmap
 
-**Status:** Static source audit complete. Phase 0 instrumentation is implemented on this PR branch and passed CI run 1506; physical-device bottleneck ranking and visual review remain pending.  
+**Status:** Static source audit complete. Phase 0 instrumentation corrections are under validation on this Draft PR branch; physical-device bottleneck ranking and visual review remain pending.  
 **Main baseline:** `48599f90db4c5ea3cf6996317e0966d6b7c91ddf` (PVCS foundation merged from PR #126).  
 **Sky constraint:** Preserve the Nov 24 authored sky state at `6b973a50c781f7fb2ea24fdffeb24d0d482556a9`. Do not use PVCS work as a reason to modify sky assets, sky composition, or sky cache keys.
 
@@ -8,7 +8,7 @@
 
 Do not begin automatic quality reduction or visual compensation yet.
 
-The Phase 0 implementation on this branch adds full `drawFrame` CPU timing, separate CPU render-submission measurements, CPU timings for world/occlusion/instance work and individual composer passes, sparse non-nested WebGL2 GPU pass sampling, context metadata and independent CPU/GPU/async/memory-domain rankings. The WebGPU path continues to report GPU timing as unavailable. See [PVCS Foundation](PVCS_FOUNDATION.md) for the precise limits and measurement boundaries.
+The Phase 0 implementation on this branch adds full `drawFrame` CPU timing, separate CPU render-submission measurements, CPU timings for world/occlusion/instance work and individual composer passes, sparse non-nested WebGL2 GPU render-path sampling, frame-start context metadata and independent CPU/GPU/async/memory-domain rankings that do not compare unlike contexts. The WebGPU path continues to report GPU timing as unavailable. See [PVCS Foundation](PVCS_FOUNDATION.md) for the precise limits and measurement boundaries.
 
 The source audit identifies several high-priority cost candidates. These are code-backed reasons to measure them, **not proof that any one candidate is the dominant bottleneck on a real device**.
 
@@ -31,7 +31,7 @@ The WebGPU stage currently exposes CPU render-submit timing in PVCS. PVCS does n
 Relevant code:
 - [PVCS stage registration and measurement](../static/pstudio_pvcs.mjs#L4)
 - [PVCS frame-root recording and ranking entry point](../static/pstudio_pvcs.mjs#L119)
-- [Graph's current CPU-P95 ranking](../static/pstudio_visual_compensation_graph.mjs#L148)
+- [Context-aware resource-domain ranking](../static/pstudio_visual_compensation_graph.mjs#L190)
 - [Renderer timing/counter collection](../static/pstudio_3d_engine.js#L1490)
 - [Render-section GPU timer boundaries](../static/pstudio_3d_engine.js#L1784)
 
@@ -45,7 +45,7 @@ Why this matters: full-screen pixel cost grows with output pixel count, and the 
 
 Measure separately:
 - Per-effect enabled state, actual buffer dimensions and effective pixel ratio.
-- GPU time per pass, where supported; CPU submission time separately.
+- GPU time for the active full composer/direct render path; CPU submission per individual pass separately. Do not describe composer-subpass GPU timing as available yet.
 - Cloud/fog/contact-shadow step counts and AO/SSR quality settings.
 - Number of active full-screen passes and their internal render-target scales.
 
@@ -185,16 +185,16 @@ The branch implementation adds:
 1. Full `drawFrame` callback CPU duration, separate from render-section CPU submission and frame interval.
 2. CPU stages for camera/environment preparation, clustered lighting, world visibility, occlusion, instance-batch rebuild, water depth, planar reflection, per-mirror scene rendering and cloud composition.
 3. CPU instrumentation around individual EffectComposer passes when the pass exposes a render method: source, TAA/SMAA, GTAO/SSAO, SSR, contact shadows, bloom, volumetric fog/clouds, God Rays and output.
-4. Sparse WebGL2 GPU-stage sampling. One analysis frame in four samples one selected pass; the aggregate timer is omitted on that frame, so elapsed queries do not nest. Query results are polled without blocking.
+4. Sparse WebGL2 GPU render-path sampling. One analysis frame in four samples the active full EffectComposer path or the direct scene-render path; the aggregate timer is omitted on that frame, so elapsed queries do not nest. Individual composer sub-passes remain CPU-only. Query results are polled without blocking.
 5. Disjoint query results are discarded and invalidate the previous aggregate GPU sample. Stale query results are discarded.
-6. Context metadata for backend, scene label, quality preset, render dimensions, pixel ratio and selected effect flags.
-7. Separate graph metrics and rankings for CPU frame, CPU stages, GPU frame, GPU stages, async elapsed and estimated memory.
+6. Frame-start context metadata for backend, scene label, quality preset, render dimensions, pixel ratio and selected effect flags. History is partitioned by context (up to eight recent contexts per node), with a shared context per frame.
+7. Separate graph metrics and rankings for CPU frame, CPU stages, GPU frame, GPU stages, async elapsed and estimated memory. Each metric exposes its sample count; rankings compare only samples from the same context.
 8. Regression tests for domain separation, explicit unavailable values, renderer backend attribution and composer instrumentation.
 
 Known boundaries:
 - WebGPU per-stage GPU timing remains unavailable; there is no CPU-to-GPU relabelling.
-- WebGL2 GPU stage sampling is intentionally sparse and can have no result when a targeted pass is disabled or skipped.
-- Composer CPU stage measurements are nested within the overall composer timing; they are diagnostic and must not be added to the parent duration.
+- WebGL2 GPU render-path sampling is intentionally sparse; the target is the active composer or direct-render path. The per-effect composer sub-passes are not yet individually GPU-timed.
+- Composer CPU stage measurements are nested within the overall composer timing; they are diagnostic and must not be added to the parent duration. The overall composer GPU query is a single non-nested measurement.
 - Mirror count/target size and shadow-map dimensions are not yet in every sample context.
 - Physical-device measurements and visual review have not been performed by CI.
 
