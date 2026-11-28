@@ -85,7 +85,7 @@ test('r187 SH probe readback is async, backend-native and excludes stale legacy/
   assert.match(engine, /Target:T\.WebGLCubeRenderTarget/);
   assert.match(engine, /pstudioTSLProbeUniforms/);
   assert.match(engine, /dynamicProbeCaptureInFlight/);
-  assert.match(engine, /void serviceDynamicRadianceCache\(now\)\.catch/);
+  assert.ok(engine.includes("void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(now)).catch"));
   assert.match(runtime, /getRenderer\(\)/);
   assert.match(host, /getRenderer: runtime\.getRenderer/);
   assert.match(bridge, /getRenderer\(\)/);
