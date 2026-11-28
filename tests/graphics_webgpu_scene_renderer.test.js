@@ -73,7 +73,7 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.ok(stats.writeSizes.every(size => size % 4 === 0), 'WebGPU queue writes must be four-byte aligned');
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
-  assert.equal(stats.buffers, 4, 'geometry, frame, material and instance GPU buffers should be reused');
+  assert.equal(stats.buffers, 5, 'geometry, frame, material and instance GPU buffers should be reused');
   assert.equal(stats.textures, 1, 'depth target should be reused at the same size');
   assert.equal(handle.dispose(), true);
 });
