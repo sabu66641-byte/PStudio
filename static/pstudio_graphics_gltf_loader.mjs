@@ -459,7 +459,7 @@ export async function loadPStudioGLB(input, options = {}) {
     const position=[world[12],world[13],world[14]];
     const rawDirection=[-world[8],-world[9],-world[10]];
     const length=Math.hypot(...rawDirection);
-    const direction=length>1e-8?rawDirection.map(value=>value/length):[0,-1,0];
+    const direction=length>1e-8?rawDirection.map(value=>{const normalized=value/length;return Math.abs(normalized)<1e-12?0:normalized;}):[0,-1,0];
     const color=definition.color||[1,1,1];
     if(!["directional","point","spot"].includes(definition.type)){
       unsupported.push({feature:"KHR_lights_punctual-type",nodeIndex,lightIndex,type:definition.type});
