@@ -64,6 +64,14 @@ export function createPStudioPVCS(options = {}) {
     }
   }
 
+  function recordAsyncStage(id, asyncElapsedMs) {
+    const value = Number(asyncElapsedMs);
+    if (!Number.isFinite(value) || value < 0) return false;
+    graph.recordMeasurement(id, { sampledAt: clock(), asyncElapsedMs: value });
+    totalMeasurements += 1;
+    return true;
+  }
+
   function measureAsync(id, callback) {
     if (typeof callback !== 'function') throw new TypeError('PVCS measureAsync requires a callback.');
     if (!monitoringEnabled) return callback();
@@ -72,11 +80,11 @@ export function createPStudioPVCS(options = {}) {
     try {
       result = callback();
     } catch (error) {
-      recordStage(id, Math.max(0, clock() - startedAt));
+      recordAsyncStage(id, Math.max(0, clock() - startedAt));
       throw error;
     }
     return Promise.resolve(result).finally(() => {
-      recordStage(id, Math.max(0, clock() - startedAt));
+      recordAsyncStage(id, Math.max(0, clock() - startedAt));
     });
   }
 
@@ -138,6 +146,7 @@ export function createPStudioPVCS(options = {}) {
     measure,
     measureAsync,
     recordStage,
+    recordAsyncStage,
     recordFrameMetrics,
     compareRgbaFrames,
     compareTemporalSequences,
