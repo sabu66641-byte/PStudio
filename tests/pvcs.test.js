@@ -159,6 +159,22 @@ test('VCG keeps context histories separate and reports per-metric sample counts'
   assert.equal(cpuStageRanking[0].context.quality, 'mobile');
 });
 
+test('VCG bounds the total retained history across multiple contexts', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph({ historyLimit: 3 });
+  graph.registerNode({ id: 'frame-loop' });
+  for (let index = 0; index < 10; index += 1) {
+    graph.recordMeasurement('frame-loop', {
+      cpuFrameMs: index + 1,
+      context: { backend: 'webgl2', scene: 'scene-' + index, quality: 'high' }
+    });
+  }
+  const metrics = graph.snapshot().nodes[0].metrics;
+  assert.equal(metrics.totalSampleCount, 3);
+  assert.ok(metrics.contextCount <= 3);
+  assert.ok(graph.snapshot().nodes[0].contextMetrics.length <= 3);
+});
+
 test('VCG treats explicit null metrics as unavailable instead of zero', async () => {
   const { createVisualCompensationGraph } = await loadModules();
   const graph = createVisualCompensationGraph();
