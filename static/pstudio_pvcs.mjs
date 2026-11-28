@@ -220,7 +220,7 @@ export function createPStudioPVCS(options = {}) {
     };
   }
 
-  function recordFrameMetrics(cpuFrameMs = null, options = {}) {
+  function recordFrameMetrics(cpuFrameMs = null) {
     if (!monitoringEnabled) return false;
     const stats = performanceSnapshot();
     if (!stats) {
