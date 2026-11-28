@@ -35,7 +35,7 @@
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastFrameIntervalSampleAt=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let pvcsGpuStageSampleTarget=null,pvcsGpuStageSampleCursor=0,pvcsGpuStageSampleConsumed=false;
-  let pvcsActiveFrameContext=null,pvcsActiveFrameGeneration=null;
+  let pvcsActiveFrameContext=null,pvcsActiveFrameGeneration=null,pvcsFrameContextActive=false;
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
   let worldFrustum=null,worldFrustumMatrix=null,worldFrustumSphere=null;
@@ -1749,9 +1749,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       &&!!gpuTimerGl&&!!gpuTimerExtension;
     const query=shouldSampleGpu?beginGpuTimerQuery():null;
     if(query)pvcsGpuStageSampleConsumed=true;
+    const sampleContext=pvcsFrameContextActive?pvcsActiveFrameContext:profiler.captureContext?.();
     let completed=false;
     try{
-      const result=profiler.measure(stageId,callback);
+      const result=profiler.measure(stageId,callback,sampleContext);
       completed=true;
       return result;
     }finally{
@@ -1812,6 +1813,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const pvcsFrameStartedAt=pvcsMonitoringEnabled?(window.performance?.now?.()??Date.now()):0;
     pvcsActiveFrameContext=pvcsMonitoringEnabled?(pvcsProfiler.beginFrame?.()||null):null;
     pvcsActiveFrameGeneration=pvcsMonitoringEnabled?(pvcsProfiler.getMonitoringGeneration?.()??null):null;
+    pvcsFrameContextActive=pvcsMonitoringEnabled;
     try{
       const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
       let frameStarted=window.performance?.now?.()??Date.now();
@@ -2040,6 +2042,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       if(pvcsMonitoringEnabled)pvcsProfiler.recordFrameMetrics(Math.max(0,pvcsFrameEndedAt-pvcsFrameStartedAt));
       pvcsActiveFrameContext=null;
       pvcsActiveFrameGeneration=null;
+      pvcsFrameContextActive=false;
       pvcsGpuStageSampleTarget=null;
       pvcsGpuStageSampleConsumed=false;
     }
