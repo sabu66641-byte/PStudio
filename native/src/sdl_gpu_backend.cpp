@@ -701,11 +701,39 @@ bool SdlGpuBackend::submitGpuFrame(const GpuFramePacket& frame, std::string& err
         error = "Configure a native surface or headless target before submitting GPU frames";
         return false;
     }
+
+    // Validate every logical resource before acquiring a swapchain image. SDL
+    // forbids cancelling a command buffer after a non-null swapchain texture
+    // has been acquired, so no recoverable validation branch may occur later.
+    for (const auto& draw : frame.draws) {
+        const auto pipeline = s.objects.find(draw.pipeline.value);
+        const auto vertex = s.objects.find(draw.vertexBuffer.value);
+        if (pipeline == s.objects.end() || vertex == s.objects.end() ||
+            pipeline->second.type != Impl::ObjectType::Pipeline ||
+            vertex->second.type != Impl::ObjectType::Buffer ||
+            !draw.vertexCount || !draw.instanceCount) {
+            error = "GPU draw references invalid pipeline/buffer handles or zero draw counts";
+            return false;
+        }
+    }
+
+    // Prepare the depth target before touching the swapchain. This also means
+    // a failed allocation never leaves an acquired presentation image pending.
+    if (s.present) {
+        int pixelWidth = 0, pixelHeight = 0;
+        if (SDL_GetWindowSizeInPixels(s.window, &pixelWidth, &pixelHeight) && pixelWidth > 0 && pixelHeight > 0) {
+            if (!s.ensureTargets(static_cast<Uint32>(pixelWidth), static_cast<Uint32>(pixelHeight), error)) return false;
+        }
+    } else if (!s.ensureTargets(frame.width, frame.height, error)) {
+        return false;
+    }
+
     SDL_GPUCommandBuffer* command = SDL_AcquireGPUCommandBuffer(s.device);
     if (!command) { s.setError(error, "GPU command buffer acquisition failed"); return false; }
 
     SDL_GPUTexture* colorTexture = nullptr;
     Uint32 targetWidth = frame.width, targetHeight = frame.height;
+    bool swapchainTextureAcquired = false;
     if (s.present) {
         if (!SDL_WaitAndAcquireGPUSwapchainTexture(command, s.window, &colorTexture, &targetWidth, &targetHeight)) {
             s.setError(error, "Unable to acquire GPU swapchain texture");
@@ -713,24 +741,23 @@ bool SdlGpuBackend::submitGpuFrame(const GpuFramePacket& frame, std::string& err
             return false;
         }
         if (!colorTexture) {
-            SDL_CancelGPUCommandBuffer(command); // minimized/zero-sized host window
+            SDL_CancelGPUCommandBuffer(command); // minimized/zero-sized host window; no image was acquired
             return true;
         }
+        swapchainTextureAcquired = true;
         if (targetWidth == 0 || targetHeight == 0) {
-            SDL_CancelGPUCommandBuffer(command);
+            SDL_SubmitGPUCommandBuffer(command);
             return true;
         }
         s.width = targetWidth;
         s.height = targetHeight;
     } else {
-        if (!s.ensureTargets(frame.width, frame.height, error)) {
-            SDL_CancelGPUCommandBuffer(command);
-            return false;
-        }
         colorTexture = s.offscreenColor;
     }
+
     if (!s.ensureTargets(targetWidth, targetHeight, error)) {
-        SDL_CancelGPUCommandBuffer(command);
+        if (swapchainTextureAcquired) SDL_SubmitGPUCommandBuffer(command);
+        else SDL_CancelGPUCommandBuffer(command);
         return false;
     }
 
@@ -750,7 +777,8 @@ bool SdlGpuBackend::submitGpuFrame(const GpuFramePacket& frame, std::string& err
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(command, &colorInfo, 1, &depthInfo);
     if (!pass) {
         s.setError(error, "GPU render pass creation failed");
-        SDL_CancelGPUCommandBuffer(command);
+        if (swapchainTextureAcquired) SDL_SubmitGPUCommandBuffer(command);
+        else SDL_CancelGPUCommandBuffer(command);
         return false;
     }
     SDL_GPUViewport viewport{};
@@ -763,19 +791,10 @@ bool SdlGpuBackend::submitGpuFrame(const GpuFramePacket& frame, std::string& err
     SDL_SetGPUViewport(pass, &viewport);
 
     for (const auto& draw : frame.draws) {
-        const auto pipeline = s.objects.find(draw.pipeline.value);
-        const auto vertex = s.objects.find(draw.vertexBuffer.value);
-        if (pipeline == s.objects.end() || vertex == s.objects.end() ||
-            pipeline->second.type != Impl::ObjectType::Pipeline ||
-            vertex->second.type != Impl::ObjectType::Buffer ||
-            !draw.vertexCount || !draw.instanceCount) {
-            SDL_EndGPURenderPass(pass);
-            SDL_CancelGPUCommandBuffer(command);
-            error = "GPU draw references invalid pipeline/buffer handles or zero draw counts";
-            return false;
-        }
-        SDL_BindGPUGraphicsPipeline(pass, pipeline->second.pipeline);
-        SDL_GPUBufferBinding binding{vertex->second.buffer, 0};
+        const auto& pipeline = s.objects.find(draw.pipeline.value)->second;
+        const auto& vertex = s.objects.find(draw.vertexBuffer.value)->second;
+        SDL_BindGPUGraphicsPipeline(pass, pipeline.pipeline);
+        SDL_GPUBufferBinding binding{vertex.buffer, 0};
         SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
         SDL_DrawGPUPrimitives(pass, draw.vertexCount, draw.instanceCount, draw.firstVertex, 0);
     }
