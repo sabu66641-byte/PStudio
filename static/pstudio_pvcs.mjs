@@ -165,9 +165,10 @@ export function createPStudioPVCS(options = {}) {
     }
   }
 
-  function recordAsyncStage(id, asyncElapsedMs, context = undefined) {
+  function recordAsyncStage(id, asyncElapsedMs, context = undefined, generation = null) {
     const value = Number(asyncElapsedMs);
-    if (!Number.isFinite(value) || value < 0) return false;
+    if (!monitoringEnabled || (generation !== null && generation !== monitoringGeneration)
+      || !Number.isFinite(value) || value < 0) return false;
     graph.recordMeasurement(id, {
       sampledAt: clock(),
       asyncElapsedMs: value,
@@ -182,15 +183,16 @@ export function createPStudioPVCS(options = {}) {
     if (!monitoringEnabled) return callback();
     const startedAt = clock();
     const contextAtStart = measurementContext();
+    const generationAtStart = monitoringGeneration;
     let result;
     try {
       result = callback();
     } catch (error) {
-      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart);
+      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart, generationAtStart);
       throw error;
     }
     return Promise.resolve(result).finally(() => {
-      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart);
+      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart, generationAtStart);
     });
   }
 
