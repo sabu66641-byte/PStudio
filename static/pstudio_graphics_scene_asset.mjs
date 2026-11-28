@@ -103,7 +103,6 @@ function geometryDescriptor(input) {
       (uv2s && !Array.from(uv2s).every(Number.isFinite))) {
     throw new TypeError('Geometry normals and UV sets must match the position vertex count.');
   }
-  const vertexCount = positions.length / 3;
   const tangents = input.tangents == null ? null : Float32Array.from(input.tangents, Number);
   if (tangents && (tangents.length !== vertexCount * 4 || !Array.from(tangents).every(Number.isFinite))) {
     throw new TypeError('Geometry tangents must contain finite vec4 values for every vertex.');
