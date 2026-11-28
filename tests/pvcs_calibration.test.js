@@ -9,7 +9,7 @@ const CONTEXT = Object.freeze({
   renderWidth: 640,
   renderHeight: 360,
   renderPixelRatio: 1,
-  effects: { ao: true, ssr: false, volumetricClouds: true, volumetricFog: true, contactShadows: true }
+  effects: { volumetricClouds: true }
 });
 function frame(index, offset = 0) {
   const data = new Uint8Array(4 * 4 * 4);

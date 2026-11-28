@@ -41,8 +41,10 @@ function normalizeContext(value) {
   if (value.effects != null) {
     if (typeof value.effects !== 'object' || Array.isArray(value.effects)) throw new TypeError('Render context effects must be an object.');
     result.effects = {};
-    for (const key of ['ao', 'ssr', 'volumetricClouds', 'volumetricFog', 'contactShadows']) {
-      if (typeof value.effects[key] !== 'boolean') throw new TypeError('Render context effect ' + key + ' must be explicitly boolean when effects are supplied.');
+    for (const key of Object.keys(value.effects).sort()) {
+      if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) || typeof value.effects[key] !== 'boolean') {
+        throw new TypeError('Render context effect flags must have stable keys and explicit boolean values.');
+      }
       result.effects[key] = value.effects[key];
     }
   }
