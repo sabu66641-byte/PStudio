@@ -39,6 +39,19 @@ jobs:
       - name: Run Python regression tests (including C++17 compile tests)
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Configure optional native SDL3 GPU backend (compile-only)
+        run: >-
+          cmake -S . -B build/native-gpu
+          -DPSTUDIO_BUILD_NATIVE_GPU_BACKEND=ON
+          -DSDL_SHARED=OFF
+          -DSDL_STATIC=ON
+          -DSDL_TESTS=OFF
+          -DSDL_EXAMPLES=OFF
+          -DSDL_INSTALL=OFF
+
+      - name: Compile Vulkan, Direct3D 12 and Metal SDL3 adapter (no device access)
+        run: cmake --build build/native-gpu --target pstudio_native_gpu_backend --parallel 2
+
       - name: Check TSL CSM shadow module syntax
         run: node --check static/pstudio_rendering_csm_tsl.mjs
 
