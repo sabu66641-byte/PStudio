@@ -17,13 +17,16 @@ function summarizeHistory(history) {
   const cpu = history.map((item) => item.cpuSubmitMs).filter(Number.isFinite);
   const gpu = history.map((item) => item.gpuRenderMs).filter(Number.isFinite);
   const memory = history.map((item) => item.memoryBytes).filter(Number.isFinite);
+  const asyncElapsed = history.map((item) => item.asyncElapsedMs).filter(Number.isFinite);
   return {
     sampleCount: history.length,
     cpuSubmitP50Ms: percentile(cpu, 50),
     cpuSubmitP95Ms: percentile(cpu, 95),
     gpuRenderP50Ms: percentile(gpu, 50),
     gpuRenderP95Ms: percentile(gpu, 95),
-    memoryP95Bytes: percentile(memory, 95)
+    memoryP95Bytes: percentile(memory, 95),
+    asyncElapsedP50Ms: percentile(asyncElapsed, 50),
+    asyncElapsedP95Ms: percentile(asyncElapsed, 95)
   };
 }
 
@@ -98,7 +101,8 @@ export function createVisualCompensationGraph(options = {}) {
       cpuSubmitMs: finiteNonNegative(measurement.cpuSubmitMs),
       gpuRenderMs: finiteNonNegative(measurement.gpuRenderMs),
       frameIntervalMs: finiteNonNegative(measurement.frameIntervalMs),
-      memoryBytes: finiteNonNegative(measurement.memoryBytes)
+      memoryBytes: finiteNonNegative(measurement.memoryBytes),
+      asyncElapsedMs: finiteNonNegative(measurement.asyncElapsedMs)
     };
     if (!Object.values(sample).some((value) => value !== null)) {
       throw new TypeError('Measurement must contain at least one finite, non-negative metric.');
