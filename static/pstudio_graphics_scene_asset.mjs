@@ -226,6 +226,7 @@ function entityDescriptor(input) {
     receiveShadow: input.receiveShadow === true,
     layers: Math.max(0, Math.floor(Number(input.layers) || 0)),
     sourceObjectId: input.sourceObjectId == null ? null : String(input.sourceObjectId),
+    nodeId: input.nodeId == null ? null : String(input.nodeId),
     skinId: input.skinId == null ? null : String(input.skinId),
     morphWeights: Object.freeze(Array.from(input.morphWeights || [], (value, index) => {
       const number = Number(value);
