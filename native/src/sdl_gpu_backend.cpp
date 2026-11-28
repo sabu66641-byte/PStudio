@@ -130,9 +130,19 @@ struct SdlGpuBackend::Impl {
     explicit Impl(BackendKind requested, SdlGpuBackendOptions config)
         : kind(requested), options(std::move(config)) {}
 
+    void markDeviceLost(const std::string& reason) noexcept {
+        if (deviceLost) return;
+        deviceLost = true;
+        try {
+            if (options.onDeviceLost) options.onDeviceLost(reason);
+        } catch (...) {
+            // Device-loss observers must never escape into the GPU backend.
+        }
+    }
+
     void setError(std::string& error, const char* fallback) {
         error = sdlError(fallback);
-        if (looksLikeDeviceLoss(error)) deviceLost = true;
+        if (looksLikeDeviceLoss(error)) markDeviceLost(error);
     }
 
     void releaseObject(Object& object) noexcept {
@@ -833,7 +843,7 @@ GpuWaitResult SdlGpuBackend::waitForFence(std::uint64_t fenceValue, std::uint64_
         SDL_GPUFence* fence = found->second;
         if (!SDL_WaitForGPUFences(s.device, true, &fence, 1)) {
             const std::string message = sdlError("GPU fence wait failed");
-            if (looksLikeDeviceLoss(message)) { s.deviceLost = true; return GpuWaitResult::DeviceLost; }
+            if (looksLikeDeviceLoss(message)) { s.markDeviceLost(message); return GpuWaitResult::DeviceLost; }
             return GpuWaitResult::Failed;
         }
         s.releaseCompletedFences();
@@ -861,7 +871,7 @@ bool SdlGpuBackend::waitIdle() {
     if (!s.device || s.deviceLost) return false;
     if (!SDL_WaitForGPUIdle(s.device)) {
         const std::string message = sdlError("GPU idle wait failed");
-        if (looksLikeDeviceLoss(message)) s.deviceLost = true;
+        if (looksLikeDeviceLoss(message)) s.markDeviceLost(message);
         return false;
     }
     for (auto& entry : s.fences) {
