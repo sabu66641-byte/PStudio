@@ -12,7 +12,7 @@ const PASS_DEFINITIONS = Object.freeze([
   { id:"gi-probes", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["giIrradiance","storage-write"]], feature:"gi", stageId:"gi-probes" },
   { id:"volumetric-lighting", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["shadowDepth","sampled"],["skyRadiance","sampled"]], writes:[["volumeHdr","color-attachment"]], feature:"volumetrics", stageId:"volumetric-lighting" },
   { id:"post-processing", reads:[["waterHdr","sampled"],["giIrradiance","sampled"],["volumeHdr","sampled"]], writes:[["postHdr","color-attachment"]], feature:"post", stageId:"post-processing" },
-  { id:"tone-map-present", reads:[["postHdr","sampled"]], writes:[["outputSurface","present"]], feature:"present", stageId:"tone-map-present" }
+  { id:"tone-map-present", reads:[["postHdr","sampled"]], writes:[["outputSurface","color-attachment"]], feature:"present", stageId:"tone-map-present" }
 ]);
 const FEATURES = Object.freeze(["atmosphere","shadows","depth","opaque","water","gi","volumetrics","post","present"]);
 function enabledFeatures(input) {

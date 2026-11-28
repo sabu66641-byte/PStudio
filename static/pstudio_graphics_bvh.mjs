@@ -177,8 +177,13 @@ export function createPStudioBVHCollisionAdapter(sceneAsset, options = {}) {
       const inverse = inverseMatrix4(world);
       const localOrigin = transformPoint(inverse, origin);
       const localDirection = transformDirection(inverse, direction);
-      const hit = getTree(entity.geometryId).raycast({ origin: localOrigin, direction: localDirection }, { maxDistance: best?.distance ?? config.maxDistance, backfaceCulling: config.backfaceCulling });
-      if (!hit || hit.distance >= (best?.distance ?? Infinity)) continue;
+      const localDirectionLength = Math.hypot(...localDirection);
+      if (!(localDirectionLength > EPSILON)) continue;
+      const worldLimit = best?.distance ?? config.maxDistance;
+      const localLimit = worldLimit == null ? undefined : worldLimit * localDirectionLength;
+      const hit = getTree(entity.geometryId).raycast({ origin: localOrigin, direction: localDirection }, { maxDistance: localLimit, backfaceCulling: config.backfaceCulling });
+      const worldDistance = hit ? hit.distance / localDirectionLength : Infinity;
+      if (!hit || worldDistance >= (best?.distance ?? Infinity)) continue;
       const worldPosition = transformPoint(world, hit.position);
       const localNormal = hit.normal;
       const normalMatrix = inverse;
@@ -187,7 +192,7 @@ export function createPStudioBVHCollisionAdapter(sceneAsset, options = {}) {
         normalMatrix[4] * localNormal[0] + normalMatrix[5] * localNormal[1] + normalMatrix[6] * localNormal[2],
         normalMatrix[8] * localNormal[0] + normalMatrix[9] * localNormal[1] + normalMatrix[10] * localNormal[2]
       ]);
-      best = Object.freeze({ entityId: entity.id, geometryId: entity.geometryId, triangleIndex: hit.triangleIndex, distance: hit.distance, position: Object.freeze(worldPosition), normal: Object.freeze(worldNormal), barycentric: hit.barycentric });
+      best = Object.freeze({ entityId: entity.id, geometryId: entity.geometryId, triangleIndex: hit.triangleIndex, distance: worldDistance, position: Object.freeze(worldPosition), normal: Object.freeze(worldNormal), barycentric: hit.barycentric });
     }
     return best;
   }

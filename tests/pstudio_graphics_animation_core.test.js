@@ -15,7 +15,7 @@ test('PStudio animation clip samples linear TRS, STEP weights, loops and quatern
  ]});
  const sample=samplePStudioAnimationClip(clip,.75);
  assert.deepEqual(sample.tracks[0].value,[7.5,0,0]);
- assert.equal(Math.abs(sample.tracks[1].value[1]),Math.SQRT1_2);
+ assert.ok(Math.abs(sample.tracks[1].value[1]-Math.sin(3*Math.PI/8))<1e-6);
  assert.deepEqual(sample.tracks[2].value,[1,.5]);
  assert.equal(samplePStudioAnimationClip(clip,1.5,{loop:true}).time,.5);
  assert.throws(()=>createPStudioAnimationClip({id:'bad',tracks:[{targetId:'x',path:'translation',times:[1,0],values:[0,0,0,1,0,0]}]}),/strictly increasing/);

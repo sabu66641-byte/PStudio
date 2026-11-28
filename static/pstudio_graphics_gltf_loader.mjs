@@ -194,6 +194,8 @@ export async function loadPStudioGLB(input, options = {}) {
     const baseTextureId=pbr.baseColorTexture?await textureFor(pbr.baseColorTexture.index):null;
     const id="glb.material."+index;
     const alphaMode=String(source.alphaMode||"OPAQUE").toLowerCase();
+    if(alphaMode!=="opaque")unsupported.push({feature:"alpha-mode-"+alphaMode,materialId:id});
+    if(source.doubleSided===true)unsupported.push({feature:"double-sided-material",materialId:id});
     materials.push({
       id,model:"pbr",baseColor:pbr.baseColorFactor||[1,1,1,1],metallic:pbr.metallicFactor??1,
       roughness:pbr.roughnessFactor??1,emissive:source.emissiveFactor||[0,0,0],
@@ -257,7 +259,7 @@ export async function loadPStudioGLB(input, options = {}) {
 /** Registers the native GLB loader through the PStudio-owned Asset Core injection boundary. */
 export function createPStudioGLBAssetLoader(options = {}) {
   return async (descriptor, dependencies = {}) => {
-    const buffer = dependencies[descriptor.id] || options.resolveBytes?.(descriptor);
+    const buffer = options.getBytes?.(descriptor, dependencies) || options.resolveBytes?.(descriptor, dependencies);
     if (!buffer) throw new Error("GLB byte source is unavailable for asset: " + descriptor.id);
     const result = await loadPStudioGLB(buffer, { ...options, id: descriptor.id });
     return { value: result, dispose: () => { try { options.onDispose?.(result); } catch (_) {} } };
