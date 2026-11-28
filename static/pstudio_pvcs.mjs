@@ -1,5 +1,6 @@
 import { createVisualCompensationGraph } from './pstudio_visual_compensation_graph.mjs?v=20261128-pvcs-graph-v1';
 import { compareRgbaFrames, compareTemporalSequences } from './pstudio_visual_difference.mjs?v=20261128-pvcs-diff-v1';
+import { createPStudioPVCSGovernor } from './pstudio_pvcs_governor.mjs?v=20261128-pvcs-governor-v1';
 
 const STAGES = [
   ['frame-loop', 'Frame loop', 'root', 'shared', 'One drawFrame callback; full CPU time and renderer submission are separate metrics.'],
@@ -277,8 +278,14 @@ export function createPStudioPVCS(options = {}) {
     return monitoringEnabled;
   }
 
+  const createGovernor = (governorOptions = {}) => createPStudioPVCSGovernor({
+    ...governorOptions,
+    pvcs: Object.freeze({ isMonitoringEnabled: () => monitoringEnabled, analyze, snapshot, graph })
+  });
+
   return Object.freeze({
     graph,
+    createGovernor,
     measure,
     measureAsync,
     captureContext,

@@ -1,6 +1,6 @@
 # PStudio Independent Graphics Engine — Architecture Foundation
 
-**Status (2026-11-28):** Phases 2–10 = 100% at their defined repository/API contract and deterministic-test scope. Phase 5 includes native SDL3 graphics backends for Vulkan/D3D12/Metal with Linux/Windows/macOS compile CI; Phase 9 and 10 are opt-in world and advanced-graphics subsystem/executor APIs. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
+**Status (2026-11-28):** Phases 2–10 = 100%; Phase 11 PVCS Integration = 55%; Phase 12 Three.js Independence = 15% at repository/API-boundary scope. Phase 5 includes native SDL3 graphics backends for Vulkan/D3D12/Metal with Linux/Windows/macOS compile CI. The production UI still uses the existing PStudio3D / Three.js renderer. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
 
 ## 1. Target dependency direction
 
@@ -177,7 +177,36 @@ Terrain/asset loaders and the concrete render executor are caller-supplied. The 
 
 A real GPU executor is supplied by the consuming backend. The SDL3 native adapter in Phase 5 does not advertise Compute support. Phase 10 is complete for the specified advanced subsystem algorithms, bounded API contracts and executor integration; it does not claim native Compute, ray tracing, full scene integration or measured visual/performance parity.
 
-## 11. Invariants that remain protected
+## 11. Phase 11 — PVCS Integration (55%)
+
+The PVCS governor composes with the existing PVCS and Visual Compensation Graph rather than duplicating their measurement storage:
+
+- Consumes six independent resource domains: CPU frame, CPU stage/submission, GPU frame, GPU stage, asynchronous elapsed and estimated memory.
+- Requires exact context parity for backend, scene, quality, output dimensions, pixel ratio and active effects.
+- Candidate registration validates repeated A/B baseline/alternative P95 evidence, domain identity, minimum improvement, aligned RGBA difference and temporal-delta values against explicit limits.
+- The evaluator ranks only same-domain/same-context evidence and reports rejection reasons. Unavailable GPU data remains unavailable; CPU timing is not a substitute.
+- The action contract is bounded and rejects premium-effect disabling, quality-preset changes and arbitrary/unbounded controls.
+- The rendering-budget module gains an additive overlay for bounded render scale, reflection cadence/resolution, GI cadence and cloud/fog/contact-shadow sample scales. Overlay composition never changes the base controller algorithm or GI/effect enablement.
+- PStudio3D exposes apply/rollback methods backed by opaque rollback tokens. The governor serializes transactions and requires an executor to return an atomic apply result with a rollback token.
+- Automatic actuation is off by default. Constructor-level opt-in, candidate opt-in, hysteresis confirmations and cooldown are all required before tick() may apply a proposal.
+- Manual evaluate/apply/rollback entry points are available from the PVCS browser bootstrap.
+
+Phase 11 is 55% for the defined decision/governor/transaction foundation. It does not yet register calibrated production candidates or automatically change quality. Candidate evidence must be collected under repeatable workload/context conditions. Remaining tasks include a curated per-scene candidate catalogue, longer temporal/edge-weighted visual evaluation, and candidate-specific adapters only where repeatable evidence warrants them.
+
+## 12. Phase 12 — Three.js Independence (15%)
+
+The current migration begins with a hard boundary rather than an unsafe package removal:
+
+- The pure PStudio Graphics Core, direct WebGPU backend, Render Graph, PVCS and World/Advanced subsystem modules are tested for absence of direct Three.js package imports.
+- The module pstudio_three_legacy_runtime.mjs lazily loads and validates the pinned Three.js r187 runtime only when the optional legacy adapter is explicitly requested.
+- The module pstudio_rendering_backend.mjs no longer has a top-level three/webgpu import; it accepts an injected r187 runtime for deterministic adapter tests.
+- The PStudio direct WebGPU Core stays separate from the Three.js scene-session adapter.
+
+This is 15% boundary isolation, not full Three.js independence. The production 3D engine still relies on window.THREE, and the TSL modules for material conversion, environment, GI, shadows, water, clustered lighting, toon and post-processing continue to import Three.js r187 modules/addons. GLTF loaders, BVH, scene graph object types and existing editor integration also remain legacy-dependent. The pinned packages remain installed.
+
+Next migration slices are: (1) formal PStudio-owned Scene/Entity/Material/Asset descriptors and lossless conversion tests; (2) asset-loader and BVH adapters; (3) material/shader migration for built-in and user/plugin materials; (4) environment, water, lighting, shadows and post-processing passes on the PStudio Render Graph; (5) one compatibility-gated production vertical slice at a time. Keep the current production renderer as the fallback until each slice passes API/lifecycle, visual, temporal, resource and rollback gates. No global import rewrite, legacy package removal or default renderer switch is part of this release.
+
+## 13. Invariants that remain protected
 
 1. Nov 24 authored sky/panorama and PMREM/IBL source are untouched.
 2. Signature planar water reflection, water depth and absorption shaders are untouched.
@@ -187,8 +216,8 @@ A real GPU executor is supplied by the consuming backend. The SDL3 native adapte
 6. Missing GPU metrics/capabilities are unavailable, never inferred from CPU time or feature declarations.
 7. Reality 55 : Anime 45 remains the image-level target; no automatic visual compromise is introduced.
 
-## 12. Validation boundary
+## 14. Validation boundary
 
-Repository validation includes deterministic Node tests for world terrain/chunk/LOD/streaming/foliage/material behavior and advanced VFX/GI/cluster/froxel/volumetric algorithms and executor packets, alongside Render Graph, direct WebGPU, PBR and Core recovery tests. Python invokes a C++17 compiler for native runtime/registry/recovery mock tests. SDL3 native adapter compilation is checked on Linux, Windows and macOS CI; those jobs do not initialize GPU devices or OS windows. Full CI also runs existing Python, Three.js runtime, TSL and JavaScript regression tests.
+Repository validation includes deterministic Node tests for the PVCS governor domain/context/evidence gates and reversible frame-budget overlay, for the Three.js import boundary/lazy adapter, for world terrain/chunk/LOD/streaming/foliage/material behavior and advanced VFX/GI/cluster/froxel/volumetric algorithms, alongside Render Graph, direct WebGPU, PBR and Core recovery tests. Python invokes a C++17 compiler for native runtime/registry/recovery mock tests. SDL3 native adapter compilation is checked on Linux, Windows and macOS CI; those jobs do not initialize GPU devices or OS windows. Full CI also runs existing Python, Three.js runtime, TSL and JavaScript regression tests.
 
-The WebGPU and Advanced Graphics tests use mock devices/executors and deterministic references; they validate API wiring, resource ownership, command packets and numeric invariants, not real hardware shader validation, rendered image quality or frame-time performance. Native C++ runtime tests use mock backends; SDL3 adapters are compile-checked per OS but no physical GPU/device or real OS window is created. No browser/device screenshot, real-driver execution or physical-device performance result is claimed here.
+The WebGPU, Advanced Graphics and PVCS A/B-governor tests use mock devices/executors and synthetic calibration fixtures; they validate API wiring, resource ownership, command packets and numeric invariants, not real hardware shader validation, rendered image quality or frame-time performance. Native C++ runtime tests use mock backends; SDL3 adapters are compile-checked per OS but no physical GPU/device or real OS window is created. No browser/device screenshot, real-driver execution or physical-device performance result is claimed here.

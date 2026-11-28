@@ -115,7 +115,7 @@ test('PVCS renderer-stage integration remains opt-in and sky assets remain pinne
   assert.match(html, /togglePStudioPVCSAnalysis/);
   assert.match(html, /pstudio_scene_environment\.js\?v=20261124-daylight-hq-r1/);
   assert.match(html, /pstudio_genesis_environment\.js\?v=20261127-genesis-snap-v2/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-foundation-v1/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-governor-v1/);
 });
 
 
@@ -355,4 +355,28 @@ test('PVCS instruments individual composer passes without changing quality state
     assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
   }
   assert.match(renderer, /if\(disjoint\)[\s\S]{0,220}lastGpuRenderDurationMs=0/);
+});
+
+
+test('PVCS exposes an evidence-gated governor while preserving analysis-only defaults', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.resolve(__dirname, '..');
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({ now: () => 900 });
+  const governor = pvcs.createGovernor();
+  assert.equal(typeof governor.evaluate, 'function');
+  assert.equal(typeof governor.applyProposal, 'function');
+  assert.equal(typeof governor.rollback, 'function');
+  assert.equal(governor.getState().automaticAllowed, false);
+  assert.equal(governor.getState().automaticEnabled, false);
+  const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  assert.match(html, /window\.PStudioPVCSGovernor/);
+  assert.match(html, /allowAutomaticActuation: false/);
+  assert.match(html, /window\.evaluatePStudioPVCSCompensation/);
+  assert.match(html, /window\.applyPStudioPVCSCompensation/);
+  assert.match(html, /window\.rollbackPStudioPVCSCompensation/);
+  assert.match(engine, /applyPVCSFrameBudgetOverride:profile=>/);
+  assert.match(engine, /rollbackPVCSFrameBudgetOverride:rollbackToken=>/);
 });

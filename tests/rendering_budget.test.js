@@ -96,5 +96,47 @@ test('renderer, planar reflections, Dynamic GI and post FX consume the shared br
   assert.equal(budgetIntegration.includes('waterMaterials.size'),false,'water surfaces are hidden during reflection and should not alone force refreshes');
   assert.ok(budgetIntegration.includes('dynamicLights.size>0'));
   assert.ok(budgetIntegration.includes("activeEnvironmentPreset==='night'"));
-  assert.ok(html.includes('pstudio_rendering_budget.js?v=20261125-frame-budget-v1'));
+  assert.ok(html.includes('pstudio_rendering_budget.js?v=20261128-frame-budget-compensation-v1'));
+});
+
+
+test('PVCS compensation overlay is bounded, reversible and never suppresses configured effects', () => {
+  const controller=budget.createPStudioFrameBudgetController();
+  const state=controller.update(8,true,0,16.67,0,true,true,true,true);
+  const giAllowedBefore=state.giCaptureAllowed;
+  const token=controller.applyCompensation({
+    scale:0.9, mirrorIntervalFrames:4, mirrorResolutionScale:0.8,
+    giCadenceMultiplier:3, cloudStepScale:0.75, fogStepScale:0.8, contactShadowStepScale:0.7
+  });
+  assert.equal(state.compensationActive,true);
+  assert.equal(state.scale,0.9);
+  assert.equal(state.mirrorIntervalFrames,4);
+  assert.equal(state.mirrorResolutionScale,0.8);
+  assert.equal(state.giCadenceMultiplier,3);
+  assert.equal(state.giCaptureAllowed,giAllowedBefore);
+  assert.equal(state.cloudStepScale,0.75);
+  assert.equal(state.fogStepScale,0.8);
+  assert.equal(state.contactShadowStepScale,0.7);
+  controller.update(5,true,0,16.67,0,true,true,true,true);
+  assert.equal(state.scale,0.9);
+  assert.equal(state.giCaptureAllowed,giAllowedBefore);
+  assert.equal(controller.restoreCompensation(token),true);
+  assert.equal(state.compensationActive,false);
+  assert.equal(state.scale,1);
+  assert.equal(state.mirrorIntervalFrames,1);
+  assert.equal(state.mirrorResolutionScale,1);
+  assert.equal(state.giCadenceMultiplier,1);
+  assert.equal(controller.restoreCompensation(token),false);
+});
+
+test('PVCS compensation rejects unsafe scales and cannot increase quality beyond the live budget', () => {
+  const controller=budget.createPStudioFrameBudgetController();
+  const state=controller.update(22,true,0,16.67,0,true,true,true,true);
+  assert.throws(()=>controller.applyCompensation({scale:0.4}),/scale must be between/);
+  assert.throws(()=>controller.applyCompensation({mirrorIntervalFrames:0}),/mirrorIntervalFrames must be between/);
+  const token=controller.applyCompensation({scale:0.95,mirrorResolutionScale:1,cloudStepScale:1});
+  assert.ok(state.scale<=0.95);
+  assert.ok(state.mirrorResolutionScale<=1);
+  assert.ok(state.cloudStepScale<=1);
+  controller.restoreCompensation(token);
 });

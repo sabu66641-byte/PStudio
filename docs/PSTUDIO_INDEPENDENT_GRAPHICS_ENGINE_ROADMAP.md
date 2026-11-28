@@ -1,6 +1,6 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.4  
+**Roadmap version:** 1.5  
 **Last updated:** 2026-11-28  
 **Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 100%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%, Phase 9 = 100%, Phase 10 = 100%.  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
@@ -35,10 +35,10 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
 | 9 | World Rendering — ワールド描画 | **100%** | Heightfield terrain, world chunks, projected-error LOD/hysteresis, AABB visibility, bounded streaming, deterministic foliage, material packing and executor-backed render system |
 | 10 | Advanced Graphics — 高度な描画技術 | **100%** | GPU VFX compute contract, SH probe GI/dirty scheduling, clustered-light assignments, bounded froxel volumes, Beer–Lambert/HG integration, temporal history and volumetric executor |
-| 11 | PVCS Integration — 視覚補償・性能配分 | **25% (暫定)** | Evidence-based quality/cost selection and reversible runtime allocation |
-| 12 | Three.js Independence — Three.js独立 | **0%** | Replace implementation dependencies only after parity, compatibility and migration gates |
+| 11 | PVCS Integration — 視覚補償・性能配分 | **55%** | Domain-isolated evidence governor, calibrated A/B + visual/temporal gates, reversible frame-budget overlay and explicit manual transactions; no default automatic actuation |
+| 12 | Three.js Independence — Three.js独立 | **15%** | PStudio-owned Core import boundary enforced by tests; lazy r187 legacy WebGPU adapter boundary; broad legacy runtime/TSL dependency replacement remains |
 
-Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 remains a provisional source-level estimate. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
+Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 and 12 percentages describe repository/API milestones only: Phase 11 has not registered a default calibrated candidate or enabled automatic actuation; Phase 12 has not removed legacy Three.js dependencies or migrated the production 3D renderer. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
 
 ## Phase 0 — Foundation (100%)
 
@@ -165,6 +165,36 @@ Phase 9 is complete for the declared world data, LOD/visibility, bounded streami
 - Explicit in-flight protection, frame sequencing, disposal and input/memory bounds.
 
 Phase 10 is complete for these independent advanced-GI, clustered-lighting, VFX and volumetric subsystem APIs and the GPU-executor integration contract. A concrete executor is supplied by the consuming backend. Native SDL3 compute is not implemented by the current Phase 5 adapter. No ray tracing/path tracing, production-scene migration, physical-GPU image parity or hardware performance is claimed.
+
+## Phase 11 — PVCS Integration (55%)
+
+The PVCS foundation and Visual Compensation Graph remain the source of performance evidence. The new governor is an opt-in decision and transaction layer:
+
+- Reads PVCS's separate CPU-frame, CPU-stage/submission, GPU-frame, GPU-stage, async-elapsed and estimated-memory rankings. It never compares or substitutes one domain for another.
+- Requires a live measurement context matching backend, scene, quality, dimensions, pixel ratio and effect state. Candidate calibration must use the same context for baseline and alternative.
+- Requires bounded repeated A/B P95 samples, an explicitly measured improvement, RGBA image-difference metrics and aligned temporal-delta metrics with caller-defined acceptance limits.
+- Ranks eligible candidates by measured improvement, priority and visual/temporal penalty; records explicit rejection reasons for unavailable domains, context mismatch, insufficient samples, calibration drift or quality-limit failure.
+- Uses a narrow action allowlist. It does not accept turning off premium effects, changing quality presets, changing the protected sky/water implementation or unbounded resolution changes.
+- Integrates an additive frame-budget overlay with scale, reflection cadence/resolution, GI cadence and volumetric/contact-shadow sample scales. The overlay can only constrain those bounded values; it cannot change the underlying frame-budget policy or disable the GI/effect state.
+- Applies one compensation transaction at a time through an explicit executor returning a rollback token. Manual rollback restores the previous budget overlay. Concurrent apply/rollback transactions are rejected.
+- Automatic actuation is disabled by default. Even when explicitly enabled at construction, it requires an explicitly registered automaticEligible candidate, repeated confirmations and a cooldown.
+- The browser exposes manual evaluate/apply/rollback entry points for an operator/developer. It does not pre-register guessed candidate thresholds.
+
+Phase 11 is **55%** at repository/API scope. The governor, evidence gates, frame-budget bridge, reversible overlay and deterministic tests are implemented. No live compensation candidate is registered by default, and no automatic quality adjustment is active. Remaining work includes collecting repeatable per-scene/per-backend calibration evidence, adding candidate-specific executors only where the measured evidence justifies them, expanding spatial/edge/perceptual visual evaluation, and validating long-run temporal behavior. Until that evidence exists, the governor correctly returns no proposal rather than guessing.
+
+## Phase 12 — Three.js Independence (15%)
+
+The migration starts by making the PStudio-owned core boundary enforceable without pretending the entire application has already been ported:
+
+- Graphics Core, Render Graph, PVCS/VCG and World/Advanced core modules are protected by regression tests that reject direct Three.js package imports.
+- The direct PStudio WebGPU Graphics Core stays independent of Three.js.
+- The file pstudio_three_legacy_runtime.mjs is the explicit lazy-loading boundary for the optional Three.js r187 WebGPU compatibility adapter.
+- The file pstudio_rendering_backend.mjs no longer imports three/webgpu at module evaluation time; it only resolves the legacy runtime when that adapter is explicitly initialized.
+- The legacy adapter accepts an injected runtime for deterministic tests and validates the pinned r187 contract.
+
+Phase 12 is **15%** at repository boundary scope only. Production rendering still depends on window.THREE; TSL modules for materials, environment, GI, water, clustered lighting, shadows, toon and post-processing still import Three.js r187 modules/addons. GLTF and related asset loaders, BVH, scene graph/object/material compatibility and existing editor integrations also remain Three-dependent. The three and three-mesh-bvh packages must not be removed.
+
+Migration order is compatibility-first: define PStudio scene/material/asset/render-pass contracts; migrate isolated asset and material adapters; provide equivalent shader/pass implementations in PStudio WGSL; connect World/Advanced systems through the Render Graph; compare old/new output and lifecycle behavior; then move one production vertical slice at a time. Keep the current WebGL2 production renderer and legacy Three.js implementation available until each slice passes API, image, temporal, resource-lifetime and rollback gates. No broad import rewrite or default backend switch is part of this step.
 
 ## Delivery and rollback
 
