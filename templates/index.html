@@ -3198,7 +3198,7 @@ try {
 <script src="/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2"></script>
 <script src="/static/pstudio_scene_environment.js?v=20261124-daylight-hq-r1"></script>
 <script src="/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2"></script>
-<script src="/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v5"></script>
+<script src="/static/pstudio_3d_engine.js?v=20261128-pvcs-foundation-v1"></script>
 <script src="/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2"></script>
 <script src="/static/pstudio_modules.js"></script>
 <script src="/static/pstudio_ecs.js"></script>
@@ -3218,6 +3218,15 @@ try {
 <script src="/static/pstudio_ecs_scene.js"></script>
 <script src="/static/pstudio_ecs_inspector.js"></script>
 <script src="/static/pstudio_selects.js?v=20261124-custom-selects1"></script>
+</script>
+<script type="module">
+try {
+  const { createPStudioPVCS } = await import('/static/pstudio_pvcs.mjs?v=20261128-pvcs-foundation-v1');
+  window.PStudioPVCS = createPStudioPVCS({ getRenderer: () => window.PStudio3D });
+  window.dispatchEvent(new CustomEvent('pstudio-pvcs-ready'));
+} catch (error) {
+  console.error('[PStudio] Visual Compensation System foundation unavailable; renderer behavior is unchanged.', error);
+}
 </script>
 </body>
 </html>
