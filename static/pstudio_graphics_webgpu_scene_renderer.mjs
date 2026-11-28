@@ -819,8 +819,13 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
     );
   }
   state = state && typeof state === 'object' ? state : {};
-  const hasUnresolvedSkin = scene.entities?.some(entity => entity.visible && entity.skinId);
-  if (hasUnresolvedSkin && !animation?.clipId) {
+  const geometryById = new Map((scene.geometries || []).map(geometry => [geometry.id, geometry]));
+  const requiresBindPose = scene.entities?.some(entity => {
+    if (!entity.visible) return false;
+    const geometry = geometryById.get(entity.geometryId);
+    return !!entity.skinId || !!geometry?.morphTargets?.length;
+  });
+  if (requiresBindPose && !animation?.clipId) {
     const cacheKey = String(scene.id) + "@" + String(scene.revision);
     state.bindPoseCache ||= new Map();
     if (!state.bindPoseCache.has(cacheKey)) {
