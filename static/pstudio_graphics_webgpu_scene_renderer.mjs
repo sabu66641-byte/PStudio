@@ -236,6 +236,12 @@ function validateScene(scene) {
         throw new Error('PStudio material references a missing base-color texture: ' + material.baseColorTextureId);
       }
     }
+    if (entity.skinId || geometry.jointIndices || geometry.jointWeights) {
+      throw new Error('Independent WebGPU scene renderer does not yet execute skeletal skinning: ' + entity.id);
+    }
+    if (geometry.morphTargets?.length || entity.morphWeights?.length) {
+      throw new Error('Independent WebGPU scene renderer does not yet execute morph-target deformation: ' + entity.id);
+    }
     if (entity.castShadow || entity.receiveShadow) throw new Error('Independent WebGPU renderer does not yet implement shadow casting/receiving: ' + entity.id);
     if (geometry.indices && !(geometry.indices instanceof Uint16Array) && !(geometry.indices instanceof Uint32Array)) throw new TypeError('Geometry indices must be Uint16Array or Uint32Array.');
   }
