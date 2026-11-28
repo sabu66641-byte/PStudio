@@ -242,3 +242,38 @@ test('independent WebGPU renderer evaluates PStudio animation before scene submi
  assert.equal(stats.drawCalls,1);
  assert.equal(stats.submits,1);
 });
+
+test('independent WebGPU renderer resolves static skin and morph deformation before GPU upload',async()=>{
+ const [{createPStudioGraphicsSceneAsset},{createPStudioSkinDescriptor},{renderPStudioGraphicsSceneFrame}]=await Promise.all([
+  import('../static/pstudio_graphics_scene_asset.mjs'),
+  import('../static/pstudio_graphics_animation_core.mjs'),
+  import('../static/pstudio_graphics_webgpu_scene_renderer.mjs')
+ ]);
+ const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+ const meshWorld=identity.slice();meshWorld[12]=2;
+ const scene=createPStudioGraphicsSceneAsset({
+  id:'scene.static-skinned',
+  geometries:[{id:'geo',positions:[0,0,0,1,0,0,0,1,0],jointIndices:[0,0,0,0,0,0,0,0,0,0,0,0],jointWeights:[1,0,0,0,1,0,0,0,1,0,0,0],morphTargets:[{positions:[0,0,0,0,0,0,0,1,0]}]}],
+  materials:[{id:'mat',model:'pbr'}],
+  nodes:[
+   {id:'node.mesh',translation:[2,0,0],rotation:[0,0,0,1],scale:[1,1,1],matrix:meshWorld,worldMatrix:meshWorld},
+   {id:'node.joint',translation:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1],matrix:identity,worldMatrix:identity}
+  ],
+  skins:[createPStudioSkinDescriptor({id:'skin',joints:['node.joint'],inverseBindMatrices:[identity]})],
+  entities:[{id:'entity',nodeId:'node.mesh',geometryId:'geo',materialId:'mat',skinId:'skin',morphWeights:[1]}]
+ });
+ const {device,stats}=fakeDevice();
+ const api={device,canvas:{width:320,height:180},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
+ const state={};
+ assert.equal(renderPStudioGraphicsSceneFrame({scene,view:{viewProjectionMatrix:new Float32Array(identity),cameraPosition:[0,0,3]}},api,state),true);
+ assert.equal(stats.drawCalls,1);
+ assert.equal(stats.submits,1);
+ assert.equal(state.bindPoseCache.size,1);
+ const resolved=[...state.bindPoseCache.values()][0];
+ assert.equal(resolved.entities[0].skinId,null);
+ assert.equal(resolved.entities[0].morphWeights.length,0);
+ const deformed=resolved.geometries.find(item=>item.id===resolved.entities[0].geometryId);
+ assert.ok(deformed);
+ assert.equal(deformed.jointIndices,null);
+ assert.equal(deformed.morphTargets.length,0);
+});
