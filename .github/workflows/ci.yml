@@ -39,6 +39,22 @@ jobs:
       - name: Run Python regression tests (including C++17 compile tests)
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Configure optional native SDL3 GPU backend (compile-only)
+        run: >-
+          cmake -S . -B build/native-gpu
+          -DPSTUDIO_BUILD_NATIVE_GPU_BACKEND=ON
+          -DSDL_SHARED=OFF
+          -DSDL_STATIC=ON
+          -DSDL_TESTS=OFF
+          -DSDL_EXAMPLES=OFF
+          -DSDL_INSTALL=OFF
+          -DSDL_UNIX_CONSOLE_BUILD=ON
+          -DSDL_X11=OFF
+          -DSDL_WAYLAND=OFF
+
+      - name: Compile Vulkan, Direct3D 12 and Metal SDL3 adapter (no device access)
+        run: cmake --build build/native-gpu --target pstudio_native_gpu_backend --parallel 2
+
       - name: Check TSL CSM shadow module syntax
         run: node --check static/pstudio_rendering_csm_tsl.mjs
 
@@ -62,3 +78,31 @@ jobs:
 
       - name: Run JavaScript regression tests
         run: node --test tests/*.test.js
+  native-gpu-platform-compile:
+    name: Native GPU adapter compile (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows / Direct3D 12 host integration
+          - os: macos-latest
+            platform: macOS / Metal host integration
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure optional SDL3 native GPU adapter (compile-only)
+        run: >-
+          cmake -S . -B build/native-gpu
+          -DPSTUDIO_BUILD_NATIVE_GPU_BACKEND=ON
+          -DSDL_SHARED=OFF
+          -DSDL_STATIC=ON
+          -DSDL_TESTS=OFF
+          -DSDL_EXAMPLES=OFF
+          -DSDL_INSTALL=OFF
+
+      - name: Compile native GPU adapter without creating a GPU device
+        run: cmake --build build/native-gpu --config Release --target pstudio_native_gpu_backend --parallel 2
