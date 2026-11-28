@@ -190,10 +190,11 @@ const WGSL = [
 '  let linearColor = max(litColor + emissive * material.emissiveColor.a, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
 '  let srgb = select(1.055 * pow(mapped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), mapped * 12.92, mapped <= vec3<f32>(0.0031308));',
+'  let outputColor = select(srgb, linearColor, frame.lightCount.w > 0.5);',
 '  var alpha = material.baseColor.a * material.surface.w * texel.a;',
 '  if (material.textureFlags2.w > 0.5) { alpha *= textureSample(alphaTexture, alphaSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[15].z > 0.5), 14u)).g; }',
 '  if (material.physical.w > 0.5 && material.physical.w < 1.5 && alpha < material.materialFlags.w) { discard; }',
-'  return vec4<f32>(srgb, alpha);',
+'  return vec4<f32>(outputColor, alpha);',
 '}'
 ].join('\n');
 
@@ -327,15 +328,23 @@ function validateScene(scene) {
   if ((scene.lighting?.lights || []).length > 8) throw new RangeError('Independent WebGPU renderer supports up to eight additional scene lights.');
   return { geometries, materials, textures };
 }
-function ensurePipeline(state, api) {
-  if (state.pipeline && state.pipelineTransparent) return;
+function ensurePipeline(state, api, target = {}) {
+  const format = target.colorFormat || api.getCapabilities?.()?.format || 'bgra8unorm';
+  const depthFormat = target.depthFormat || 'depth24plus';
+  const pipelineKey = format + '|' + depthFormat;
+  if (state.pipeline && state.pipelineTransparent && state.pipelineKey === pipelineKey) return;
+  if (state.pipelineKey && state.pipelineKey !== pipelineKey) {
+    for (const material of state.materials.values()) { try { material.buffer.destroy(); } catch (_) {} }
+    state.materials.clear();
+    state.pipeline = null;
+    state.pipelineTransparent = null;
+  }
   const device = api.device;
   if (!device?.createShaderModule || !device?.createRenderPipeline ||
       !device?.createBindGroupLayout || !device?.createPipelineLayout) {
     throw new Error('WebGPU device cannot create PStudio material layouts and graphics pipelines.');
   }
   const module = device.createShaderModule({ label: 'PStudio Independent PBR Scene', code: WGSL });
-  const format = api.getCapabilities?.()?.format || 'bgra8unorm';
   const shaderStage = globalThis.GPUShaderStage || { VERTEX: 1, FRAGMENT: 2 };
   const visibility = shaderStage.VERTEX | shaderStage.FRAGMENT;
   state.frameLayout = device.createBindGroupLayout({
@@ -375,7 +384,7 @@ function ensurePipeline(state, api) {
     }]
   };
   const primitive = { topology: 'triangle-list', frontFace: 'ccw', cullMode: 'none' };
-  const depthStencil = { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' };
+  const depthStencil = { format: depthFormat, depthWriteEnabled: true, depthCompare: 'less' };
   state.pipeline = device.createRenderPipeline({
     label: 'PStudio Independent Scene PBR Opaque',
     layout: state.pipelineLayout, vertex,
@@ -406,6 +415,7 @@ function ensurePipeline(state, api) {
     layout: state.frameLayout,
     entries: [{ binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 656 } }]
   });
+  state.pipelineKey = pipelineKey;
 }
 function ensureGeometry(state, device, geometry) {
   const cached = state.geometries.get(geometry.id);
@@ -663,7 +673,7 @@ function updateFrameUniforms(state, device, frame, scene) {
   data.set([sun[0], sun[1], sun[2], Number(lighting.sunIntensity ?? 3)], 20);
   data.set([sunColor[0], sunColor[1], sunColor[2], Number(lighting.sunIntensity ?? 3)], 24);
   data.set([ambient[0], ambient[1], ambient[2], Number(lighting.ambientIntensity ?? 1)], 28);
-  data.set([lights.length, 0, 0, 0], 32);
+  data.set([lights.length, 0, 0, frame.renderTarget?.linearOutput === true ? 1 : 0], 32);
   lights.forEach((light, index) => {
     const offset = 36 + index * 16;
     const type = light.type === 'point' ? 1 : light.type === 'spot' ? 2 : 0;
@@ -674,15 +684,18 @@ function updateFrameUniforms(state, device, frame, scene) {
   });
   device.queue.writeBuffer(state.frameBuffer, 0, data);
 }
-function ensureDepthTarget(state, api) {
+function ensureDepthTarget(state, api, target = {}) {
   const device = api.device, canvas = api.canvas;
-  const width = Math.max(1, Number(canvas?.width) || 1), height = Math.max(1, Number(canvas?.height) || 1);
-  if (state.depthTexture && state.depthWidth === width && state.depthHeight === height) return;
+  const width = Math.max(1, Number(target.width || canvas?.width) || 1);
+  const height = Math.max(1, Number(target.height || canvas?.height) || 1);
+  const format = target.depthFormat || 'depth24plus';
+  if (state.depthTexture && state.depthWidth === width && state.depthHeight === height && state.depthFormat === format) return;
   try { state.depthTexture?.destroy?.(); } catch (_) {}
   const usage = (globalThis.GPUTextureUsage || TEXTURE_USAGE).RENDER_ATTACHMENT;
-  state.depthTexture = device.createTexture({ label: 'PStudio Independent Scene Depth', size: [width, height, 1], format: 'depth24plus', usage });
+  state.depthTexture = device.createTexture({ label: 'PStudio Independent Scene Depth', size: [width, height, 1], format, usage });
   state.depthWidth = width;
   state.depthHeight = height;
+  state.depthFormat = format;
 }
 function disposeSceneRuntime(state) {
   for (const record of state.geometries.values()) {
@@ -698,6 +711,7 @@ function disposeSceneRuntime(state) {
   state.textures.clear();
   state.pipeline = null;
   state.pipelineTransparent = null;
+  state.pipelineKey = null;
   state.frameLayout = null;
   state.materialLayout = null;
   state.pipelineLayout = null;
@@ -731,23 +745,25 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   state.pipelineTransparent ||= null;
   const { geometries, materials, textures } = validateScene(scene);
   const device = api?.device;
-  if (!device?.createCommandEncoder || !api.getCurrentSurfaceView) throw new Error('PStudio WebGPU scene rendering requires a configured WebGPU surface.');
-  ensurePipeline(state, api);
-  ensureDepthTarget(state, api);
+  const target = frame.renderTarget || {};
+  const surfaceView = target.colorView || api?.getCurrentSurfaceView?.();
+  if (!device?.createCommandEncoder || !surfaceView) throw new Error('PStudio WebGPU scene rendering requires a configured WebGPU surface or explicit Render Graph colorView.');
+  ensurePipeline(state, api, target);
+  if (!target.depthView) ensureDepthTarget(state, api, target);
   updateFrameUniforms(state, device, frame, scene);
   const encoder = device.createCommandEncoder({ label: 'PStudio Independent Scene Frame' });
   const pass = encoder.beginRenderPass({
     label: 'PStudio Independent Scene PBR Pass',
     colorAttachments: [{
-      view: api.getCurrentSurfaceView(),
-      clearValue: scene.clearColor || { r: 0.015, g: 0.025, b: 0.04, a: 1 },
-      loadOp: 'clear', storeOp: 'store'
+      view: surfaceView,
+      clearValue: target.clearColor || scene.clearColor || { r: 0.015, g: 0.025, b: 0.04, a: 1 },
+      loadOp: target.loadOp || 'clear', storeOp: target.storeOp || 'store'
     }],
     depthStencilAttachment: {
-      view: state.depthTexture.createView(),
-      depthClearValue: 1,
-      depthLoadOp: 'clear',
-      depthStoreOp: 'store'
+      view: target.depthView || state.depthTexture.createView(),
+      depthClearValue: target.depthClearValue ?? 1,
+      depthLoadOp: target.depthLoadOp || 'clear',
+      depthStoreOp: target.depthStoreOp || 'store'
     }
   });
   pass.setBindGroup(0, state.frameBindGroup);
