@@ -1,6 +1,6 @@
 # PStudio Independent Graphics Engine — Architecture Foundation
 
-**Status (2026-11-28):** Phase 2 = 100%; Phase 3 = 100%; Phase 4 = 100%; Phase 5 = 65%; Phases 6–8 = 100% at repository implementation and deterministic reference-test scope. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
+**Status (2026-11-28):** Phase 2 = 100%; Phase 3 = 100%; Phase 4 = 100%; Phase 5 = 70%; Phases 6–10 = 100% at repository implementation and deterministic reference-test scope. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
 
 ## 1. Target dependency direction
 
@@ -99,15 +99,17 @@ Phase 3 is 100% for the defined PStudio-owned Core API and the direct WebGPU bac
 
 Phase 4 is complete as a dependency/lifetime/materialization/execution API with deterministic tests. It does not mean every current PStudio3D/Three.js render pass has been migrated into the graph. The live production pipeline remains unchanged.
 
-## 5. Phase 5 — Native Renderer (65%)
+## 5. Phase 5 — Native Renderer (70%)
 
 The C++17 native layer now includes:
 
-- `graphics.hpp`: platform-neutral Runtime, Backend SPI, opaque resource ownership, monotonic frames, validation, wait-idle and device-loss recovery.
-- `backend_registry.hpp`: native backend descriptor registry, required-feature negotiation, preferred ordering, priority and explicit fallback.
-- `software_raster_backend.hpp`: bounded CPU triangle-list rasterizer and readable framebuffer output for deterministic native reference tests.
+- graphics.hpp: platform-neutral Runtime, Backend SPI, opaque resource ownership, monotonic frames, validation, wait-idle and device-loss recovery.
+- backend_registry.hpp: native backend descriptor registry, required-feature negotiation, preferred ordering, priority and explicit fallback.
+- software_raster_backend.hpp: bounded CPU triangle-list rasterizer and readable framebuffer output for deterministic native reference tests.
+- presentation.hpp: native surface/swapchain descriptor, acquire/present/abandon/resize/release contract and a thread-safe generation-checked PresentationRuntime. Stale images, duplicate presentation and resize with outstanding images are rejected.
+- Python-driven C++17 compile-and-run smoke tests exercise runtime, negotiation, rasterization and presentation state transitions.
 
-This is a native software reference renderer and adapter-selection foundation, not proof of native GPU API support. Concrete Vulkan, Direct3D 12 and Metal GPU devices, GPU resources/pipelines, native surfaces/swapchains, submission/fences and per-platform driver validation remain. Phase 5 is therefore 65%, not 100%.
+The presentation layer is a backend-neutral contract, not a concrete OS integration. Vulkan, Direct3D 12 and Metal device/resource/pipeline/command/fence implementations and platform surface adapters are still missing. Therefore Phase 5 is 70%, not complete. Physical-device testing is not required for this percentage, but real API implementations and platform compile coverage are.
 
 ## 6. Phase 6 — Rendering Quality (100%)
 
@@ -147,7 +149,35 @@ The existing authored day/dusk/night panorama and PMREM/IBL source are not repla
 
 Pass callbacks and imported scene/surface handles are supplied by the caller. Existing production planar reflection and water shaders remain untouched.
 
-## 9. Invariants that remain protected
+## 9. Phase 9 — World Rendering (100%)
+
+static/pstudio_graphics_world.mjs is additive and independent of PStudio3D/Three.js:
+
+- Bounded heightfield terrain tile meshes (positions/normals/UV/index) with skirts for adjacent LOD seams.
+- Screen-space geometric-error LOD, frustum/AABB visibility and hysteresis.
+- Deterministic slope-aware foliage placement, compact instance records and wind vertex WGSL.
+- Priority-based asynchronous tile streaming with bounded concurrency, cancellation, stale result disposal, byte budget, pinning and LRU eviction.
+- Stable PBR world-material table and material-id to packed-index map.
+- Explicit depth/opaque/transparent Render Graph pass declarations.
+- Transactional terrain GPU buffer upload helper with partial-allocation rollback.
+
+Terrain hierarchies, asset loaders, sampled height/slope functions and render callbacks are caller supplied. The module does not silently connect to existing production chunks or replace their meshes.
+
+## 10. Phase 10 — Advanced Graphics (100%)
+
+static/pstudio_graphics_advanced.mjs adds:
+
+- SH9 radiance-probe cache with temporal blend, spatial invalidation, trilinear sampling and diffuse convolution.
+- GPU storage-buffer binding for SH coefficients/validity.
+- Conservative logarithmic view-space cluster construction, stable offsets/indices and overflow rejection.
+- Fixed-step CPU particle reference plus a real direct-WebGPU compute pipeline helper for the matching storage-buffer ABI.
+- Front-to-back single-scattering volumetric integration, HG phase, froxel budget validation and temporal history rejection/clamping.
+- Direct-WebGPU volumetric ray-batch compute pipeline and bounded sample/result/parameter buffers.
+- Advanced Render Graph pass declarations for GI, VFX, volumetric processing and composition.
+
+The caller provides capture inputs, light positions in positive-forward view space, spawn data, volumetric samples and graph pass callbacks. The new path is opt-in. It is not proof of ray tracing, multi-bounce path tracing, production image parity or hardware performance.
+
+## 11. Invariants that remain protected
 
 1. Nov 24 authored sky/panorama and PMREM/IBL source are untouched.
 2. Signature planar water reflection, water depth and absorption shaders are untouched.
@@ -157,8 +187,8 @@ Pass callbacks and imported scene/surface handles are supplied by the caller. Ex
 6. Missing GPU metrics/capabilities are unavailable, never inferred from CPU time or feature declarations.
 7. Reality 55 : Anime 45 remains the image-level target; no automatic visual compromise is introduced.
 
-## 10. Validation boundary
+## 12. Validation boundary
 
-Repository validation includes deterministic Node tests for Render Graph hazards, aliasing/materialization rollback, direct WebGPU backend calls, clustered-light packing/upload, PBR ABI structure, explicit GPU resource/shader/pipeline/lighting recovery and the Renderer Core vertical slice. Python invokes a C++17 compiler and runs the native runtime smoke test. Full CI additionally runs the existing Python, C++17, Three.js runtime, TSL and JavaScript regression suite.
+Repository validation includes deterministic Node tests for Render Graph hazards, aliasing/materialization rollback, direct WebGPU backend calls, clustered-light packing/upload, PBR ABI structure, explicit GPU resource/shader/pipeline/lighting recovery and the Renderer Core vertical slice. Python invokes a C++17 compiler and runs the native runtime, backend-registry and presentation-runtime smoke tests. Full CI additionally runs the existing Python, C++17, Three.js runtime, TSL and JavaScript regression suite.
 
-The WebGPU backend tests use a mock WebGPU device in CI; they validate API wiring and ownership, not real hardware shader validation, rendered image quality or frame-time performance. Phase 6–8 CPU reference tests verify numeric invariants and Render Graph ordering; they do not certify visual parity or temporal stability on a physical GPU. The native software backend is a CPU reference, not a Vulkan/D3D12/Metal implementation. No browser/device screenshot or physical-device run is claimed here.
+The WebGPU backend tests use a mock WebGPU device in CI; they validate API wiring and ownership, not real hardware shader validation, rendered image quality or frame-time performance. Phase 6–10 CPU reference and mock-backend tests verify numeric invariants and Render Graph ordering; they do not certify visual parity or temporal stability on a physical GPU. The native software backend is a CPU reference, not a Vulkan/D3D12/Metal implementation. No browser/device screenshot or physical-device run is claimed here.

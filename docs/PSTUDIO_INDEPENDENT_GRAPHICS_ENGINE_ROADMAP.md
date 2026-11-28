@@ -1,8 +1,8 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.3  
+**Roadmap version:** 1.4  
 **Last updated:** 2026-11-28  
-**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 65%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%.  
+**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 70%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%, Phase 9 = 100%, Phase 10 = 100%.  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
@@ -29,16 +29,16 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 2 | Graphics Architecture — 独立アーキテクチャ | **100%** | Contracts, HAL, Scene/View/Material/Resource/command-buffer types, WebGL2 and WebGPU adapters, loss/sync lifecycle, migration and compatibility tests |
 | 3 | Graphics Core — 独自グラフィックスコア | **100%** | GPU resource lifecycle, WGSL compiler, compute dispatch, lighting/cluster buffers, PBR direct-light include, device recovery and independent GPU vertical slice |
 | 4 | Render Graph — 描画依存グラフ | **100%** | Pass/resource graph, hazard scheduling, barriers, lifetimes, transient aliasing, GPU materialization, execution/cancellation/rollback and WebGPU queue submission |
-| 5 | Native Renderer — ネイティブ描画基盤 | **65%** | C++17 runtime, backend SPI/registry, feature negotiation, CPU reference rasterizer; native GPU API implementations remain |
+| 5 | Native Renderer — ネイティブ描画基盤 | **70%** | C++17 runtime, backend registry, CPU reference rasterizer and backend-neutral surface acquire/present/resize lifecycle; concrete native GPU APIs remain |
 | 6 | Rendering Quality — 描画品質基盤 | **100%** | PBR direct/indirect reference, material packing, PCF shadow sampling, cascade selection, ACES and sRGB output helpers |
 | 7 | Atmosphere & Sky — 大気・空 | **100%** | GENESIS state normalization/packing, Rayleigh/Mie integration, cloud density/drift, sun/moon disks and aerial perspective helpers |
 | 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
-| 9 | World Rendering — ワールド描画 | **25% (暫定)** | Terrain, foliage, world visibility, LOD, streaming and material scale |
-| 10 | Advanced Graphics — 高度な描画技術 | **15% (暫定)** | GPU VFX, advanced GI, clustered lighting and volumetric effects |
+| 9 | World Rendering — ワールド描画 | **100%** | Terrain tile generation/GPU upload, screen-space LOD, frustum visibility, deterministic foliage, bounded streaming, material tables and Render Graph pass declarations |
+| 10 | Advanced Graphics — 高度な描画技術 | **100%** | SH radiance cache/GPU upload, view-space clustered-light assignment, WebGPU particle and volumetric compute pipelines, froxel layout and temporal history validation |
 | 11 | PVCS Integration — 視覚補償・性能配分 | **25% (暫定)** | Evidence-based quality/cost selection and reversible runtime allocation |
 | 12 | Three.js Independence — Three.js独立 | **0%** | Replace implementation dependencies only after parity, compatibility and migration gates |
 
-Phase 9–11 percentages remain provisional source-level estimates. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not mean the future independent renderer has completed those phases.
+Phase 9 and 10 are complete for the explicitly defined independent subsystem APIs, GPU buffer/pipeline integration contracts and deterministic repository tests. They remain opt-in and are not wired into the production renderer; visual parity and performance are not claimed. Phase 11 remains a provisional source-level estimate. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for implementation in the independent engine.
 
 ## Phase 0 — Foundation (100%)
 
@@ -82,25 +82,25 @@ Phase 3 completion means the defined Core APIs and independent WebGPU vertical s
 
 Phase 4 completion is the Render Graph subsystem implementation and contract validation. It does not mean all legacy PStudio render passes have already been migrated into it.
 
-## Phase 5 — Native Renderer (65%)
+## Phase 5 — Native Renderer (70%)
 
 Completed repository scope:
 
-- Header-only C++17 platform-neutral runtime, Backend SPI and opaque native resource handles.
-- Frame packet validation, strictly increasing frame ids, owned-handle validation and wait-idle contract.
-- Explicit device-lost state and replacement-backend recovery that recreates resources before accepting the replacement.
-- `NativeBackendRegistry` with feature filtering, priority/preference ordering, explicit fallback and initialized-backend ownership.
-- `SoftwareRasterBackend` as a bounded CPU reference rasterizer for position-buffer triangle lists, framebuffer captures and deterministic contract tests.
-- C++17 compile-and-run tests for runtime recovery, feature negotiation and reference rasterization.
+- Header-only C++17 platform-neutral Runtime, Backend SPI and opaque native resource handles.
+- Frame packet validation, monotonic frame ids, owned-handle validation, wait-idle and explicit device-lost recovery.
+- NativeBackendRegistry with feature filtering, preference/priority ordering, explicit fallback and initialized-backend ownership.
+- SoftwareRasterBackend as a bounded CPU reference rasterizer for position-buffer triangle lists and deterministic framebuffer contract tests.
+- presentation.hpp adds a backend-neutral native-surface/swapchain presentation contract and PresentationRuntime: configure, acquire, present, abandon, resize generation, device-loss and release lifecycle. Stale/double-presented images and resize races are rejected.
+- C++17 compile-and-run tests cover runtime recovery, backend selection, CPU rasterization and presentation lifecycle.
 
 Remaining work preventing 100%:
 
 - Concrete Vulkan, Direct3D 12 and Metal GPU device implementations.
 - Per-API GPU resource allocation, shader/pipeline creation, command execution, fences and device-loss recovery.
-- OS window/surface/swapchain and presentation lifecycle.
-- Platform-specific build and driver validation.
+- OS window/surface/swapchain implementations that satisfy the new presentation contract.
+- Platform-specific build validation for the concrete API source and runtime initialization.
 
-The CPU reference rasterizer is an actual native software renderer, not a GPU renderer. The registry negotiates declared capabilities but does not create Vulkan/D3D12/Metal devices. Therefore Phase 5 is deliberately **65%, not 100%** until concrete native GPU backends are implemented.
+The CPU reference rasterizer and presentation contract are not GPU API implementations. The registry still has no concrete Vulkan/D3D12/Metal backend. Phase 5 is deliberately **70%, not 100%**; claiming completion without those implementations would be inaccurate.
 
 ## Phase 6 — Rendering Quality (100%)
 
@@ -155,3 +155,33 @@ The pass declaration requires caller-supplied GPU pass callbacks and imported sc
 ## Validation boundary
 
 The added WebGPU tests use a mock WebGPU device. They cover API wiring, resource ownership, command recording/submission, shader/pipeline registration and recovery behavior, but do not prove real-device shader validation, rendered output quality, image parity or frame-time performance. The native tests compile/run the C++17 runtime, feature registry and CPU reference rasterizer; concrete Vulkan/D3D12/Metal GPU drivers are still absent.
+
+## Phase 9 — World Rendering (100%)
+
+static/pstudio_graphics_world.mjs is an independent, opt-in world-rendering subsystem:
+
+- Heightfield terrain tile generation with positions, normals, UVs, indexed triangles, validated vertex budgets and seam-hiding skirts.
+- Screen-space geometric-error LOD selection with stable threshold hysteresis and AABB frustum culling.
+- Deterministic, slope-aware foliage placement with height sampling, compact typed instance records and GPU wind vertex-shader source.
+- World tile streaming with priority queue, bounded concurrent loads, cancellation, stale-completion disposal, caller-reported resident-byte accounting, pin/unpin and pin-aware LRU eviction.
+- Stable packed PBR world-material table with roughness/metalness/emissive/alpha controls and deterministic material-ID indexing.
+- Explicit depth/opaque/transparent/debug Render Graph pass declarations.
+- uploadPStudioWorldTile uploads validated terrain vertex/index data to caller-owned WebGPU buffers and rolls back partial allocation failures.
+
+Phase 9 completion is the defined world data, visibility, LOD, streaming, material-table and GPU-upload API scope with deterministic tests. The caller supplies tile hierarchy/bounds, height/slope samplers, asset loader, pass callbacks and the scene-specific material shader. It does not claim generalized procedural world authoring, occlusion-query/Hi-Z implementation, automatic biome generation or production-scene migration.
+
+## Phase 10 — Advanced Graphics (100%)
+
+static/pstudio_graphics_advanced.mjs supplies an independent advanced-lighting/effects subsystem:
+
+- 3D SH9 irradiance-probe cache with temporal blending, AABB invalidation, trilinear sampling and diffuse irradiance evaluation.
+- Persistent GPU storage-buffer binding/upload for SH coefficients and probe validity.
+- Positive-forward view-space clustered-light assignment with logarithmic depth slices, conservative frustum-cell bounds, deterministic packed offsets/indices and explicit overflow rejection; it uses the Phase 3 clustered-buffer upload contract.
+- Bounded fixed-step CPU particle reference with deterministic state, capacity/drop accounting and explicit dropped-time telemetry.
+- Actual direct-WebGPU particle compute pipeline helper using WGSL, storage/uniform buffers, bind groups, device workgroup limits and dispatch.
+- Front-to-back single-scattering reference integration, Henyey–Greenstein phase, froxel-grid sizing and temporal-history rejection/clamping for frame gaps, depth discontinuities and camera cuts.
+- Direct-WebGPU volumetric ray-batch compute pipeline helper with per-ray sample packing, output storage, uniform parameters and bounded memory/workgroup limits.
+- Declared Render Graph pass sequence for probe updates, VFX simulation, volumetric injection/integration and final composition.
+
+Phase 10 completion is the specified advanced subsystem and direct WebGPU compute/buffer integration API scope with deterministic mock-backend tests. The caller supplies light/view-space transforms, probe capture/update data, particle spawn data, volumetric sample fields and Render Graph execution callbacks. Full production-scene visual parity, ray tracing, multi-bounce path tracing and hardware performance are not claimed.
+
