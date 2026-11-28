@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -51,7 +53,7 @@ public:
     ResourceHandle createBuffer(const ResourceDescriptor& descriptor, std::string* errorOut = nullptr) {
         if (!ready(errorOut)) return {};
         if (!uniqueId(descriptor.id, errorOut)) return {};
-        if (descriptor.type.empty() || descriptor.sizeBytes == 0) { fail(errorOut, "Native GPU buffer descriptor is invalid"); return {}; }
+        if (descriptor.type.empty() || descriptor.sizeBytes == 0 || descriptor.sizeBytes > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) { fail(errorOut, "Native GPU buffer descriptor is invalid"); return {}; }
         std::string error;
         const auto actual = backend_->createResource(descriptor, error);
         if (!actual) { updateLostState(); fail(errorOut, error.empty() ? "Native GPU buffer creation failed" : error); return {}; }
@@ -105,7 +107,7 @@ public:
                       std::size_t offset = 0, std::string* errorOut = nullptr) {
         if (!ready(errorOut)) return false;
         Entry* entry = find(handle);
-        if (!entry || entry->kind != EntryKind::Buffer || !data ||
+        if (!entry || entry->kind != EntryKind::Buffer || !data || size == 0 ||
             offset > entry->buffer.sizeBytes || size > entry->buffer.sizeBytes - offset) {
             return fail(errorOut, "Native GPU buffer handle or upload range is invalid");
         }
