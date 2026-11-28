@@ -20,7 +20,8 @@ export function compareRgbaFrames(reference, candidate, options = {}) {
   if (a.width !== b.width || a.height !== b.height || a.channels !== b.channels) {
     throw new RangeError('Frames must have identical dimensions and channel counts.');
   }
-  const pixelThreshold = Math.max(0, Math.min(255, Number(options.pixelThreshold) || 2));
+  const requestedThreshold = Number(options.pixelThreshold);
+  const pixelThreshold = Number.isFinite(requestedThreshold) ? Math.max(0, Math.min(255, requestedThreshold)) : 2;
   const compareAlpha = options.compareAlpha === true && a.channels === 4;
   const channelCount = compareAlpha ? a.channels : 3;
   const pixelCount = a.width * a.height;
