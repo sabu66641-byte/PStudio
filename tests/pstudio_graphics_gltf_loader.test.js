@@ -13,6 +13,30 @@ function makeGlb(){
  out.setUint32(20+jsonLength,36,true);out.setUint32(24+jsonLength,0x004e4942,true);new Uint8Array(glb,28+jsonLength,36).set(new Uint8Array(bin));
  return glb;
 }
+function withPunctualLight(source){
+ const bytes=new Uint8Array(source),view=new DataView(source);
+ const jsonLength=view.getUint32(12,true),json=JSON.parse(new TextDecoder().decode(bytes.slice(20,20+jsonLength)).replace(/[\\u0000\\u0020]+$/g,''));
+ const binOffset=20+jsonLength+8,binLength=view.getUint32(20+jsonLength,true);
+ json.extensions={KHR_lights_punctual:{lights:[
+  {type:'directional',color:[1,.8,.6],intensity:3},
+  {type:'point',color:[.2,.4,1],intensity:2,range:12},
+  {type:'spot',intensity:4,spot:{innerConeAngle:.2,outerConeAngle:.6}}
+ ]}};
+ json.extensionsUsed=['KHR_lights_punctual'];
+ json.nodes.push(
+  {name:'sun',translation:[1,2,3],extensions:{KHR_lights_punctual:{light:0}}},
+  {name:'lamp',translation:[4,5,6],extensions:{KHR_lights_punctual:{light:1}}},
+  {name:'spot',rotation:[0,0,0,1],extensions:{KHR_lights_punctual:{light:2}}}
+ );
+ json.scenes[0].nodes.push(1,2,3);
+ const encoded=new TextEncoder().encode(JSON.stringify(json)),padded=(encoded.length+3)&~3;
+ const total=12+8+padded+8+binLength,glb=new ArrayBuffer(total),out=new DataView(glb);
+ out.setUint32(0,0x46546c67,true);out.setUint32(4,2,true);out.setUint32(8,total,true);
+ out.setUint32(12,padded,true);out.setUint32(16,0x4e4f534a,true);new Uint8Array(glb,20,encoded.length).set(encoded);
+ out.setUint32(20+padded,binLength,true);out.setUint32(24+padded,0x004e4942,true);
+ new Uint8Array(glb,28+padded,binLength).set(bytes.slice(binOffset,binOffset+binLength));
+ return glb;
+}
 test('PStudio-native GLB loader creates owned geometry, material and transformed entities',async()=>{
  const {asset,report}=await loadPStudioGLB(makeGlb());
  assert.equal(report.supported,true);assert.equal(asset.geometries.length,1);assert.equal(asset.entities.length,1);
@@ -196,4 +220,20 @@ test('GLB loader imports PBR texture slots, UV transforms and common KHR materia
  assert.deepEqual(material.textureTransforms.baseColor.offset,[.25,.5]);
  assert.deepEqual(material.textureTransforms.baseColor.scale,[2,3]);
  assert.ok(Math.abs(material.textureTransforms.baseColor.rotation-.2)<1e-9);
+});
+
+test('GLB loader imports KHR_lights_punctual types and applies node world transforms',async()=>{
+ const {asset,report}=await loadPStudioGLB(withPunctualLight(makeGlb()));
+ assert.equal(report.supported,true);
+ assert.equal(asset.lighting.lights.length,3);
+ assert.equal(asset.lighting.lights[0].type,'directional');
+ assert.deepEqual(asset.lighting.lights[0].position,[1,2,3]);
+ assert.deepEqual(asset.lighting.lights[0].direction,[0,0,-1]);
+ assert.equal(asset.lighting.lights[0].intensity,3);
+ assert.equal(asset.lighting.lights[1].type,'point');
+ assert.deepEqual(asset.lighting.lights[1].position,[4,5,6]);
+ assert.equal(asset.lighting.lights[1].range,12);
+ assert.equal(asset.lighting.lights[2].type,'spot');
+ assert.ok(Math.abs(asset.lighting.lights[2].innerConeCos-Math.cos(.2))<1e-9);
+ assert.ok(Math.abs(asset.lighting.lights[2].outerConeCos-Math.cos(.6))<1e-9);
 });
