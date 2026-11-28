@@ -89,7 +89,10 @@ test('scene import fails closed for textures, alpha, unsupported material types 
     return true;
   });
   const transparent = fakeScene({ material: { transparent: true, opacity: 0.5 } });
-  assert.throws(() => importPStudioThreeScene(transparent), /not yet losslessly supported/);
+  const transparentResult = importPStudioThreeScene(transparent);
+  assert.equal(transparentResult.report.supported, true);
+  assert.equal(transparentResult.asset.materials[0].alphaMode, 'blend');
+  assert.equal(transparentResult.asset.materials[0].opacity, 0.5);
   const unknownMaterial = fakeScene({ material: { isMeshStandardMaterial: false, type: 'MeshPhongMaterial' } });
   assert.throws(() => importPStudioThreeScene(unknownMaterial), /not yet losslessly supported/);
   const light = { uuid: 'light.sun', isLight: true, visible: true };
