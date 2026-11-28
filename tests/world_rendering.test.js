@@ -1,15 +1,17 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {
-  createPStudioTerrainHeightfield,
-  createPStudioWorldChunkDescriptor,
-  selectPStudioWorldLOD,
-  isPStudioAABBVisible,
-  rankPStudioWorldStreamingRequests,
-  scatterPStudioFoliage,
-  packPStudioWorldMaterialLayers,
-  createPStudioWorldRenderingCore
-} from '../static/pstudio_graphics_world_core.mjs';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+let {
+  createPStudioTerrainHeightfield, createPStudioWorldChunkDescriptor,
+  selectPStudioWorldLOD, isPStudioAABBVisible, rankPStudioWorldStreamingRequests,
+  scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore
+} = {};
+test.before(async () => {
+  ({
+    createPStudioTerrainHeightfield, createPStudioWorldChunkDescriptor,
+    selectPStudioWorldLOD, isPStudioAABBVisible, rankPStudioWorldStreamingRequests,
+    scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore
+  } = await import('../static/pstudio_graphics_world_core.mjs'));
+});
 
 test('heightfield samples bilinearly in world coordinates and returns finite normals', () => {
   const terrain = createPStudioTerrainHeightfield({
