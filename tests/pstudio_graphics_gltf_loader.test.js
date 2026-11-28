@@ -15,7 +15,7 @@ function makeGlb(){
 }
 function withPunctualLight(source){
  const bytes=new Uint8Array(source),view=new DataView(source);
- const jsonLength=view.getUint32(12,true),json=JSON.parse(new TextDecoder().decode(bytes.slice(20,20+jsonLength)).replace(/[\\u0000\\u0020]+$/g,''));
+ const jsonLength=view.getUint32(12,true),json=JSON.parse(new TextDecoder().decode(bytes.slice(20,20+jsonLength)).replace(/\0+$/g,'').trimEnd());
  const binOffset=20+jsonLength+8,binLength=view.getUint32(20+jsonLength,true);
  json.extensions={KHR_lights_punctual:{lights:[
   {type:'directional',color:[1,.8,.6],intensity:3},
