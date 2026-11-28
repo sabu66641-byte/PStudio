@@ -131,6 +131,34 @@ test('VCG keeps CPU frame, render submission, GPU frame, GPU stage and async dom
   assert.equal(rankings.asynchronous[0].id, 'mirror-reflection');
 });
 
+test('VCG keeps context histories separate and reports per-metric sample counts', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph({ historyLimit: 8 });
+  graph.registerNode({ id: 'frame-loop' });
+  graph.registerNode({ id: 'mirror-reflection' });
+  const high = { backend: 'webgl2', scene: 'shrine', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const mobile = { backend: 'webgl2', scene: 'shrine', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  graph.recordMeasurement('frame-loop', { cpuFrameMs: 24, cpuSubmitMs: 7, context: high });
+  graph.recordMeasurement('mirror-reflection', { cpuSubmitMs: 11, context: high });
+  graph.recordMeasurement('frame-loop', { cpuFrameMs: 6, cpuSubmitMs: 2, context: mobile });
+  const frame = graph.snapshot().nodes.find((node) => node.id === 'frame-loop');
+  assert.equal(frame.metrics.cpuFrameP95Ms, 6);
+  assert.equal(frame.metrics.cpuFrameSampleCount, 1);
+  assert.equal(frame.metrics.cpuSubmitSampleCount, 1);
+  assert.equal(frame.metrics.totalSampleCount, 2);
+  assert.equal(frame.metrics.contextCount, 2);
+  assert.equal(frame.contextMetrics.length, 2);
+  assert.equal(frame.metrics.context.quality, 'mobile');
+  const cpuFrameRanking = graph.analyzeResourceDomains().cpuFrame;
+  assert.equal(cpuFrameRanking.length, 1);
+  assert.equal(cpuFrameRanking[0].id, 'frame-loop');
+  assert.equal(cpuFrameRanking[0].context.quality, 'mobile');
+  assert.equal(cpuFrameRanking[0].sampleCount, 1);
+  const cpuStageRanking = graph.analyzeResourceDomains().cpuStages;
+  assert.equal(cpuStageRanking.length, 1);
+  assert.equal(cpuStageRanking[0].context.quality, 'mobile');
+});
+
 test('VCG treats explicit null metrics as unavailable instead of zero', async () => {
   const { createVisualCompensationGraph } = await loadModules();
   const graph = createVisualCompensationGraph();
@@ -161,6 +189,25 @@ test('PVCS records the full drawFrame CPU duration separately from render submis
   assert.equal(frame.context.scene, 'genesis-shrine');
   assert.equal(frame.context.renderHeight, 900);
   assert.equal(pvcs.analyze().rankings.cpuFrame[0].id, 'frame-loop');
+});
+
+test('PVCS binds stage and frame measurements to one frame-start context', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 400;
+  let stats = { backend: 'webgl2', scene: 'shrine-day', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const pvcs = createPStudioPVCS({ getRenderer: () => ({ getPerformanceStats: () => stats }), now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.beginFrame(), true);
+  pvcs.measure('mirror-reflection', () => { now += 2; });
+  stats = { backend: 'webgpu', scene: 'editor', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  assert.equal(pvcs.recordFrameMetrics(16, { includeAggregateGpu: false }), true);
+  const snapshot = pvcs.graph.snapshot();
+  const frame = snapshot.nodes.find((node) => node.id === 'frame-loop');
+  const mirror = snapshot.nodes.find((node) => node.id === 'mirror-reflection');
+  assert.equal(frame.metrics.context.backend, 'webgl2');
+  assert.equal(frame.metrics.context.scene, 'shrine-day');
+  assert.equal(mirror.metrics.context.backend, 'webgl2');
+  assert.equal(mirror.metrics.context.scene, 'shrine-day');
 });
 
 test('PVCS does not attribute a stale WebGL timer to a WebGPU frame', async () => {
@@ -196,7 +243,12 @@ test('PVCS instruments individual composer passes without changing quality state
   const pvcs = fs.readFileSync(path.join(root, 'static/pstudio_pvcs.mjs'), 'utf8');
   assert.match(renderer, /function instrumentPVCSComposerPasses\(\)/);
   assert.match(renderer, /originalRender\.apply\(this,args\)/);
-  assert.match(renderer, /stageGpuSampleSlots=\[/);
+  assert.match(renderer, /pvcsPostProcessingPathActive/);
+  assert.match(renderer, /pvcsGpuStageSampleTarget=stageGpuSampleTurn\?\(pvcsPostProcessingPathActive\?'post-processing':'scene-render'\):null/);
+  assert.match(renderer, /pvcsAggregateGpuTimerStarted=!!gpuQuery/);
+  assert.match(renderer, /if\(window\.PStudioPVCS\?\.isMonitoringEnabled\?\.\(\)!==true\)return originalRender\.apply\(this,args\)/);
+  assert.match(renderer, /if\(pvcsMonitoringEnabled\)pvcsProfiler\.beginFrame\?\.\(\)/);
+  assert.doesNotMatch(renderer, /const stageGpuSampleSlots=\[/);
   for (const id of ['post-aa-taar','post-volumetric-fog','post-gtao','post-ssr','post-bloom','post-volumetric-clouds','post-god-rays','post-output']) {
     assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
   }
