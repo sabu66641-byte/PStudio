@@ -58,13 +58,69 @@ export function createPStudioGraphicsView(input={}){
   const projectionMatrix=input.projectionMatrix==null?null:finiteArray(input.projectionMatrix,16,[],'projectionMatrix');
   return Object.freeze({id,camera:input.camera??null,viewport:Object.freeze({width,height,pixelRatio}),viewMatrix,projectionMatrix,near:input.near==null?null:Math.max(0,finite(input.near)),far:input.far==null?null:Math.max(0,finite(input.far)),metadata:freezeRecord(input.metadata)});
 }
-export function createPStudioGraphicsMaterial(input={}){
-  const id=String(input.id||'').trim();if(!id)throw new TypeError('Graphics material id is required.');
-  const model=String(input.model||'pbr').toLowerCase();if(!['unlit','lambert','phong','pbr','toon'].includes(model))throw new TypeError('Unsupported graphics material model: '+model);
-  const metallic=finite(input.metallic,0),roughness=finite(input.roughness,0.7),opacity=finite(input.opacity,1);
-  if(metallic<0||metallic>1||roughness<0||roughness>1||opacity<0||opacity>1)throw new RangeError('Material metallic, roughness and opacity must be in the range [0, 1].');
-  const baseColorTextureId=input.baseColorTextureId==null?null:String(input.baseColorTextureId).trim()||null;
-  return Object.freeze({id,model,baseColor:finiteArray(input.baseColor||[1,1,1,1],4,[1,1,1,1],'baseColor'),emissive:finiteArray(input.emissive||[0,0,0],3,[0,0,0],'emissive'),metallic,roughness,opacity,alphaMode:['opaque','mask','blend'].includes(input.alphaMode)?input.alphaMode:'opaque',doubleSided:input.doubleSided===true,baseColorTextureId,textures:normalizeFeatureList(input.textures),metadata:freezeRecord(input.metadata)});
+export function createPStudioGraphicsMaterial(input={}) {
+  const id = String(input.id || '').trim();
+  if (!id) throw new TypeError('Graphics material id is required.');
+  const model = String(input.model || 'pbr').toLowerCase();
+  if (!['unlit', 'lambert', 'phong', 'pbr', 'toon'].includes(model)) throw new TypeError('Unsupported graphics material model: ' + model);
+  const metallic = finite(input.metallic, 0), roughness = finite(input.roughness, 0.7), opacity = finite(input.opacity, 1);
+  if ([metallic, roughness, opacity].some(value => value < 0 || value > 1)) {
+    throw new RangeError('Material metallic, roughness and opacity must be in the range [0, 1].');
+  }
+  const textureSource = input.textureIds || {};
+  const textureIds = {};
+  for (const slot of ['baseColor', 'normal', 'metallicRoughness', 'metalness', 'roughness', 'occlusion', 'emissive', 'alpha']) {
+    const legacy = slot === 'baseColor' ? input.baseColorTextureId : null;
+    const value = textureSource[slot] ?? legacy;
+    textureIds[slot] = value == null ? null : String(value).trim() || null;
+  }
+  const textureTransforms = {};
+  for (const [slot, transform] of Object.entries(input.textureTransforms || {})) {
+    if (!Object.prototype.hasOwnProperty.call(textureIds, slot) || !transform || typeof transform !== 'object') {
+      throw new TypeError('Material texture transform references an unknown slot: ' + slot);
+    }
+    const offset = finiteArray(transform.offset || [0, 0], 2, [0, 0], slot + '.offset');
+    const scale = finiteArray(transform.scale || [1, 1], 2, [1, 1], slot + '.scale');
+    const rotation = finite(transform.rotation, 0);
+    textureTransforms[slot] = Object.freeze({ offset, scale, rotation, texCoord: Math.max(0, Math.floor(finite(transform.texCoord, 0))) });
+  }
+  const normalScale = finite(input.normalScale, 1);
+  const occlusionStrength = finite(input.occlusionStrength, 1);
+  const alphaCutoff = finite(input.alphaCutoff, 0.5);
+  const ior = finite(input.ior, 1.5);
+  const transmission = finite(input.transmission, 0);
+  const thickness = finite(input.thickness, 0);
+  const clearcoat = finite(input.clearcoat, 0);
+  const clearcoatRoughness = finite(input.clearcoatRoughness, 0);
+  const sheen = finite(input.sheen, 0);
+  const specularIntensity = finite(input.specularIntensity, 1);
+  const emissiveStrength = finite(input.emissiveStrength, 1);
+  for (const [name, value, min, max] of [
+    ['normalScale', normalScale, 0, 16], ['occlusionStrength', occlusionStrength, 0, 1],
+    ['alphaCutoff', alphaCutoff, 0, 1], ['ior', ior, 1, 2.5],
+    ['transmission', transmission, 0, 1], ['thickness', thickness, 0, 1000],
+    ['clearcoat', clearcoat, 0, 1], ['clearcoatRoughness', clearcoatRoughness, 0, 1],
+    ['sheen', sheen, 0, 1], ['specularIntensity', specularIntensity, 0, 1],
+    ['emissiveStrength', emissiveStrength, 0, 10000]
+  ]) {
+    if (value < min || value > max) throw new RangeError('Material ' + name + ' is out of range.');
+  }
+  const baseColorTextureId = textureIds.baseColor;
+  return Object.freeze({
+    id, model,
+    baseColor: finiteArray(input.baseColor || [1, 1, 1, 1], 4, [1, 1, 1, 1], 'baseColor'),
+    emissive: finiteArray(input.emissive || [0, 0, 0], 3, [0, 0, 0], 'emissive'),
+    metallic, roughness, opacity,
+    alphaMode: ['opaque', 'mask', 'blend'].includes(input.alphaMode) ? input.alphaMode : 'opaque',
+    alphaCutoff, doubleSided: input.doubleSided === true,
+    baseColorTextureId, textureIds: Object.freeze(textureIds),
+    textureTransforms: Object.freeze(textureTransforms),
+    normalScale, occlusionStrength, ior, transmission, thickness,
+    clearcoat, clearcoatRoughness, sheen, specularIntensity, emissiveStrength,
+    unlit: input.unlit === true,
+    textures: normalizeFeatureList(input.textures),
+    metadata: freezeRecord(input.metadata)
+  });
 }
 export function createPStudioGraphicsResourceDescriptor(input={}){
   const id=String(input.id||'').trim(),type=String(input.type||'').trim().toLowerCase();if(!id||!type)throw new TypeError('Graphics resource id and type are required.');
