@@ -159,5 +159,6 @@ test('volumetric GPU system declares bounded injection, front-to-back integratio
   assert.equal(frame.result.submitted, true);
   assert.equal(calls.length, 1);
   volumetric.dispose();
-  assert.throws(() => volumetric.stats().disposed, /disposed/);
+  assert.equal(volumetric.stats().disposed, true);
+  await assert.rejects(volumetric.renderFrame(), /disposed/);
 });
