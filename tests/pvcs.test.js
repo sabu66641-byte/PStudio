@@ -73,6 +73,19 @@ test('PVCS is analysis-only and does not mutate quality controls', async () => {
   assert.equal(pvcs.snapshot().automaticQualityChanges, false);
 });
 
+
+test('async timing is kept separate from CPU submit timing', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 20;
+  const pvcs = createPStudioPVCS({ now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  await pvcs.measureAsync('dynamic-gi-capture', async () => { now += 12; return true; });
+  const node = pvcs.graph.analyzeBottlenecks().find((item) => item.id === 'dynamic-gi-capture');
+  const graphNode = pvcs.graph.snapshot().nodes.find((item) => item.id === 'dynamic-gi-capture');
+  assert.equal(node.metrics.cpuSubmitP95Ms, null);
+  assert.equal(graphNode.metrics.asyncElapsedP95Ms, 12);
+});
+
 test('PVCS renderer-stage integration remains opt-in and sky assets remain pinned', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
@@ -82,6 +95,8 @@ test('PVCS renderer-stage integration remains opt-in and sky assets remain pinne
   assert.match(renderer, /function measurePVCSStage/);
   assert.match(renderer, /window\.PStudioPVCS\?\.measure/);
   assert.match(html, /pstudio_pvcs\.mjs/);
+  assert.match(html, /id="pvcs-analysis-toggle"/);
+  assert.match(html, /togglePStudioPVCSAnalysis/);
   assert.match(html, /pstudio_scene_environment\.js\?v=20261124-daylight-hq-r1/);
   assert.match(html, /pstudio_genesis_environment\.js\?v=20261127-genesis-snap-v2/);
   assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-foundation-v1/);
