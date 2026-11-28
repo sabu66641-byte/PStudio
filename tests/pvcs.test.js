@@ -93,7 +93,7 @@ test('PVCS renderer-stage integration remains opt-in and sky assets remain pinne
   const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'templates/index.html'), 'utf8');
   assert.match(renderer, /function measurePVCSStage/);
-  assert.match(renderer, /window\.PStudioPVCS\?\.measure/);
+  assert.match(renderer, /profiler\?\.measure/);
   assert.match(html, /pstudio_pvcs\.mjs/);
   assert.match(html, /id="pvcs-analysis-toggle"/);
   assert.match(html, /togglePStudioPVCSAnalysis/);
