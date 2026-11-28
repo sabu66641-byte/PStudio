@@ -28,7 +28,7 @@ if(PSTUDIO_BUILD_NATIVE_GPU_BACKEND)
         native/src/sdl_gpu_backend.cpp
     )
     target_include_directories(pstudio_native_gpu_backend
-        PRIVATE \${CMAKE_CURRENT_SOURCE_DIR}/native/include
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/native/include
     )
     target_compile_features(pstudio_native_gpu_backend PRIVATE cxx_std_17)
     target_link_libraries(pstudio_native_gpu_backend PRIVATE SDL3::SDL3)
