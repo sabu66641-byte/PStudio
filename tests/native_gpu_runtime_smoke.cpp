@@ -88,6 +88,7 @@ public:
         surface_.width = w; surface_.height = h; return true;
     }
     bool isDeviceLost() const noexcept override { return deviceLost_; }
+    void notifyDeviceLost(const std::string&) noexcept override { deviceLost_ = true; }
     bool waitIdle() override { return initialized_ && !disposed_ && !deviceLost_; }
     bool destroyResource(ResourceHandle h) noexcept override { return resources_.erase(h.value) == 1; }
     void dispose() noexcept override { resources_.clear(); disposed_ = true; initialized_ = false; }
@@ -196,6 +197,7 @@ int main() {
 
     // A failed replacement is rolled back. The previous lost backend remains owned.
     assert(runtime.markDeviceLost());
+    assert(first->isDeviceLost());
     auto rejected = std::make_shared<MockNativeGpuBackend>(BackendKind::Vulkan, true);
     assert(!runtime.recover(rejected, &error));
     assert(runtime.state() == NativeGpuRuntimeState::Lost);
