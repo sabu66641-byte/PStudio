@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {loadPStudioGLB}=require('../static/pstudio_graphics_gltf_loader.mjs');
-const {samplePStudioAnimationClip}=require('../static/pstudio_graphics_animation_core.mjs');
+const {samplePStudioAnimationClip,evaluatePStudioSceneBindPose}=require('../static/pstudio_graphics_animation_core.mjs');
 function makeGlb(){
  const bin=new ArrayBuffer(36),view=new DataView(bin);
  const values=[0,0,0,1,0,0,0,1,0];values.forEach((v,i)=>view.setFloat32(i*4,v,true));
@@ -236,4 +236,18 @@ test('GLB loader imports KHR_lights_punctual types and applies node world transf
  assert.equal(asset.lighting.lights[2].type,'spot');
  assert.ok(Math.abs(asset.lighting.lights[2].innerConeCos-Math.cos(.2))<1e-9);
  assert.ok(Math.abs(asset.lighting.lights[2].outerConeCos-Math.cos(.6))<1e-9);
+});
+
+test('static GLB skin is fully deformed in bind pose without requiring an animation clip',async()=>{
+ const {asset}=await loadPStudioGLB(makeSkinnedAnimatedGlb());
+ const resolved=evaluatePStudioSceneBindPose(asset);
+ assert.equal(resolved.entities[0].skinId,null);
+ assert.equal(resolved.entities[0].geometryId.includes('@deformed@'),true);
+ const geometry=resolved.geometries.find(item=>item.id===resolved.entities[0].geometryId);
+ assert.ok(geometry);
+ assert.equal(geometry.jointIndices,null);
+ assert.equal(geometry.jointWeights,null);
+ assert.ok(Math.abs(geometry.positions[0]+2)<1e-6);
+ assert.equal(resolved.animations.length,asset.animations.length);
+ assert.equal(resolved.metadata.bindPoseResolved,true);
 });
