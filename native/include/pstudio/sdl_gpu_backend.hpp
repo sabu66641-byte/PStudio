@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -11,6 +12,7 @@ namespace pstudio::graphics {
 struct SdlGpuBackendOptions {
     bool debug{false};
     std::string applicationName{"PStudio"};
+    std::function<void(const std::string&)> onDeviceLost;
 };
 
 /**
