@@ -59,5 +59,5 @@ test('browser runner rejects CPU-stage samples from another render context',asyn
  const engine=fakeEngine({metrics:(state,current)=>({cpuStageMetrics:{'scene-render':{cpuStageMs:2.75,sourceFrameSequence:current.renderFrameSequence,context:{...CONTEXT,quality:'low'}}}})});
  const pvcsState={isMonitoringEnabled:()=>true,setMonitoringEnabled:()=>true};
  const runner=createPStudioPVCSBrowserRunner({getEngine:()=>engine,getPVCS:()=>pvcsState,stageId:'scene-render',settleFrames:0});
- await assert.rejects(runner.runVariant({variant:'baseline',domain:'cpu-stage',context:CONTEXT}),/requested PVCS metric cpuStageMs is unavailable/);
+ await assert.rejects(runner.runVariant({variant:'baseline',domain:'cpu-stage',context:CONTEXT}),/requested PVCS metric cpuSubmitMs is unavailable/);
 });
