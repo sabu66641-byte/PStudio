@@ -161,3 +161,7 @@ export function createPStudioPVCSCalibrationRunner(options = {}) {
   }
   return Object.freeze({ kind: "pstudio-pvcs-calibration-runner", run, getState: () => Object.freeze({ running }) });
 }
+
+
+// Backwards-compatible name used by PStudioPVCS.createCalibrationHarness.
+export const createPStudioPVCSCalibrationHarness = createPStudioPVCSCalibrationRunner;
