@@ -414,22 +414,33 @@ export async function loadPStudioGLB(input, options = {}) {
         continue;
       }
       const interpolation=String(sampler.interpolation||"LINEAR").toUpperCase();
-      if(!["LINEAR","STEP"].includes(interpolation)){
+      if(!["LINEAR","STEP","CUBICSPLINE"].includes(interpolation)){
         unsupported.push({feature:"animation-interpolation-"+interpolation,animationIndex,channelIndex});
         continue;
       }
       const inputAccessor=reader.accessor(sampler.input),outputAccessor=reader.accessor(sampler.output);
       if(inputAccessor.components!==1)throw new TypeError("glTF animation input accessor must be SCALAR.");
       const times=inputAccessor.data;
+      const splineStride=interpolation==="CUBICSPLINE"?3:1;
       const components=path==="rotation"?4:path==="weights"
-        ?outputAccessor.data.length/times.length:3;
+        ?outputAccessor.data.length/(times.length*splineStride):3;
       if(!Number.isSafeInteger(components)||components<1||components>64||
           (path!=="weights"&&outputAccessor.components!==components)||
-          outputAccessor.data.length!==times.length*components){
+          outputAccessor.data.length!==times.length*splineStride*components){
         throw new RangeError("glTF animation output accessor does not match its target channel.");
       }
+      const values=[],inTangents=[],outTangents=[];
+      for(let key=0;key<times.length;key++){
+        const base=key*splineStride*components;
+        if(interpolation==="CUBICSPLINE"){
+          inTangents.push(...outputAccessor.data.slice(base,base+components));
+          values.push(...outputAccessor.data.slice(base+components,base+components*2));
+          outTangents.push(...outputAccessor.data.slice(base+components*2,base+components*3));
+        }else values.push(...outputAccessor.data.slice(base,base+components));
+      }
       tracks.push({
-        targetId:"glb.node."+target.node,path,components,times,values:outputAccessor.data,interpolation
+        targetId:"glb.node."+target.node,path,components,times,values,interpolation,
+        ...(interpolation==="CUBICSPLINE"?{inTangents,outTangents}:{})
       });
     }
     if(tracks.length)animationClips.push(createPStudioAnimationClip({
