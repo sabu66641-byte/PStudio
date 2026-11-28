@@ -1335,8 +1335,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           const cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars].filter(object=>object?.position);
           const originalSkyPositions=cameraAnchoredSky.map(object=>object.position.clone());
           for(const object of cameraAnchoredSky){object.position.add(skyOffset);object.updateMatrixWorld?.(true);}
-          try{measurePVCSStage('mirror-reflection-scene-render',()=>renderer.render(scene,reflectionCamera));}
-          finally{for(let index=0;index<cameraAnchoredSky.length;index++){cameraAnchoredSky[index].position.copy(originalSkyPositions[index]);cameraAnchoredSky[index].updateMatrixWorld?.(true);}}
+          try{
+            if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-reflection-scene-render',()=>renderer.render(scene,reflectionCamera));
+            else renderer.render(scene,reflectionCamera);
+          }finally{for(let index=0;index<cameraAnchoredSky.length;index++){cameraAnchoredSky[index].position.copy(originalSkyPositions[index]);cameraAnchoredSky[index].updateMatrixWorld?.(true);}}
           let reflectionTexture=state.target.texture;
           if(volumetricCloudsEnabled&&volumetricCloudPass?.enabled&&state.cloudTarget){
             const cloudUniforms=volumetricCloudPass.uniforms||{};
@@ -1347,7 +1349,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             const oldRenderToScreen=volumetricCloudPass.renderToScreen;
             volumetricCloudPass.renderToScreen=false;
             try{
-              measurePVCSStage('mirror-cloud-composite',()=>volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false));
+              if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-cloud-composite',()=>volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false));
+              else volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false);
               reflectionTexture=state.cloudTarget.texture;
             }finally{volumetricCloudPass.renderToScreen=oldRenderToScreen;}
           }
@@ -3297,7 +3300,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       updateModelLOD(instance);
       requestVisibleVirtualTextureTiles(instance);
     }
-    measurePVCSStage('occlusion-visibility',()=>updateOcclusionVisibility());
+    if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('occlusion-visibility',()=>updateOcclusionVisibility());
+    else updateOcclusionVisibility();
     for(const batch of instancedBatches.values()){
       const sources=batch.userData.instanceSources||[],dummy=new T.Object3D(),owners=[],keys=[];let count=0;
       for(const source of sources){
@@ -3478,7 +3482,8 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     camera.position.copy(collisionSafePosition);camera.lookAt(smoothedTarget);if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();}
     for(const instance of modelInstances.values())updateModelLOD(instance);
     applyPendingLightmaps();
-    measurePVCSStage('world-visibility',()=>updateWorldVisibility());
+    if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('world-visibility',()=>updateWorldVisibility());
+    else updateWorldVisibility();
     resize();
     drawFrame();
   }
@@ -8414,7 +8419,8 @@ void main(){
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)&&!preservedOwners.has(mesh.userData.ownerId)){disposeMesh(mesh);meshCache.delete(key);}else if(preservedOwners.has(mesh.userData.ownerId))mesh.visible=false;}
-    measurePVCSStage('instance-batch-rebuild',()=>updateInstancedBatches());
+    if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('instance-batch-rebuild',()=>updateInstancedBatches());
+    else updateInstancedBatches();
     for(const [key,emitter] of particleEmitters){
       if(stoppedEmitters.has(key)||(!usedEmitters.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':')))){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
     }
