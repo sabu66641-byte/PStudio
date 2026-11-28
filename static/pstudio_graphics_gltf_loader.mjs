@@ -375,7 +375,7 @@ export async function loadPStudioGLB(input, options = {}) {
         const meshWeights=node.weights||document.meshes[node.mesh]?.weights||[];
         if(meshWeights.length&&meshWeights.length!==geometry.morphTargets.length)throw new RangeError("glTF node morph weight count does not match its mesh targets.");
         entities.push({
-          id:nodeId+".primitive."+item.primitiveIndex,geometryId:item.geometryId,materialId:item.materialId,
+          id:nodeId+".primitive."+item.primitiveIndex,nodeId,geometryId:item.geometryId,materialId:item.materialId,
           matrixWorld:world,visible:true,skinId,morphWeights:meshWeights
         });
       });
