@@ -3,13 +3,15 @@ const assert = require('node:assert/strict');
 let {
   createPStudioTerrainHeightfield, createPStudioWorldChunkDescriptor,
   selectPStudioWorldLOD, isPStudioAABBVisible, rankPStudioWorldStreamingRequests,
-  scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore
+  scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore,
+  createPStudioWorldRenderingSystem
 } = {};
 test.before(async () => {
   ({
     createPStudioTerrainHeightfield, createPStudioWorldChunkDescriptor,
     selectPStudioWorldLOD, isPStudioAABBVisible, rankPStudioWorldStreamingRequests,
-    scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore
+    scatterPStudioFoliage, packPStudioWorldMaterialLayers, createPStudioWorldRenderingCore,
+    createPStudioWorldRenderingSystem
   } = await import('../static/pstudio_graphics_world_core.mjs'));
 });
 
@@ -117,4 +119,93 @@ test('world core registration, update and disposal are isolated and deterministi
   assert.equal(core.dispose(), true);
   assert.equal(core.dispose(), false);
   assert.throws(() => core.listChunks(), /disposed/);
+});
+
+
+test('world system connects frustum visibility, LOD, budgeted streaming, foliage upload and frame rendering', async () => {
+  const calls = [];
+  const system = createPStudioWorldRenderingSystem({
+    executor: {
+      async loadChunkData(descriptor) { calls.push('load:' + descriptor.id); return { mesh: descriptor.id }; },
+      async uploadChunk({ descriptor, data }) { calls.push('upload:' + data.mesh); return 'gpu:' + descriptor.id; },
+      async uploadFoliage(packet) { calls.push('foliage:' + packet.chunk.id); return 'foliage:' + packet.chunk.id; },
+      async renderWorldFrame(packet) { calls.push('render:' + packet.chunks.length); return { drawCount: packet.chunks.length }; },
+      async releaseChunk(handle) { calls.push('release:' + handle); },
+      async releaseFoliage(handle) { calls.push('release:' + handle); }
+    }
+  });
+  system.registerChunk({
+    id: 'near', boundsMin: [1, 0, -11], boundsMax: [2, 1, -10],
+    geometricError: 4, estimatedBytes: 40, revision: 1
+  });
+  system.registerChunk({
+    id: 'far', boundsMin: [10, 0, -31], boundsMax: [12, 2, -29],
+    geometricError: 1, estimatedBytes: 30, revision: 1
+  });
+  const planes = [
+    [1, 0, 0, 100], [-1, 0, 0, 100],
+    [0, 1, 0, 100], [0, -1, 0, 100],
+    [0, 0, 1, 100], [0, 0, -1, 100]
+  ];
+  const view = system.updateView({
+    cameraPosition: [0, 0, 0], frustumPlanes: planes,
+    viewportHeight: 1080, fovYRadians: Math.PI / 3
+  });
+  assert.equal(view.visibleChunks.length, 2);
+  assert.ok(view.visibleChunks.every(item => Number.isInteger(item.lod)));
+  const streamed = await system.streamTick({ maxConcurrent: 1, maxBytes: 45 });
+  assert.equal(streamed.selected.length, 1);
+  assert.equal(streamed.deferred.length, 1);
+  assert.equal(streamed.outcomes[0].status, 'resident');
+  const terrain = createPStudioTerrainHeightfield({
+    width: 2, height: 2, origin: [0, 0, -12],
+    spacingX: 20, spacingZ: 20, heights: [0, 0, 0, 0]
+  });
+  const foliage = await system.prepareFoliage('near', terrain, {
+    count: 6, seed: 9, boundsMin: [1, 0, -11], boundsMax: [2, 1, -10],
+    maxSlopeRadians: 0.2
+  });
+  assert.equal(foliage.count, 6);
+  const rendered = await system.renderFrame({ environment: { timeOfDay: 0.5 }, materials: { id: 'world-materials' } });
+  assert.equal(rendered.result.drawCount, 1);
+  assert.equal(system.stats().residentCount, 1);
+  await system.dispose();
+  assert.equal(system.stats().disposed, true);
+  assert.ok(calls.some(value => value.startsWith('render:')));
+  assert.ok(calls.some(value => value.startsWith('release:gpu:')));
+  assert.ok(calls.some(value => value.startsWith('release:foliage:')));
+});
+
+test('world system discards a completed load when the chunk generation changes', async () => {
+  let resolveLoad, uploadCount = 0;
+  const load = new Promise(resolve => { resolveLoad = resolve; });
+  const system = createPStudioWorldRenderingSystem({
+    executor: {
+      loadChunkData: () => load,
+      async uploadChunk() { uploadCount++; return 'gpu:stale'; }
+    }
+  });
+  const descriptor = {
+    id: 'changing', boundsMin: [0, 0, -2], boundsMax: [1, 1, -1],
+    geometricError: 1, estimatedBytes: 1, revision: 1
+  };
+  system.registerChunk(descriptor);
+  system.updateView({
+    cameraPosition: [0, 0, 0],
+    frustumPlanes: [
+      [1, 0, 0, 10], [-1, 0, 0, 10],
+      [0, 1, 0, 10], [0, -1, 0, 10],
+      [0, 0, 1, 10], [0, 0, -1, 10]
+    ],
+    viewportHeight: 720
+  });
+  const pending = system.streamTick({ maxConcurrent: 1, maxBytes: 10 });
+  await Promise.resolve();
+  await system.updateChunk({ ...descriptor, revision: 2 });
+  resolveLoad({ mesh: 'old-generation' });
+  const result = await pending;
+  assert.equal(result.outcomes[0].status, 'stale-after-load');
+  assert.equal(uploadCount, 0);
+  assert.equal(system.stats().residentCount, 0);
+  await system.dispose();
 });
