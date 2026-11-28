@@ -356,3 +356,14 @@ The Independent Graphics Engine work introduces a vendor-neutral boundary alongs
 - The detailed boundary, adapter contract and remaining work are maintained in PSTUDIO_GRAPHICS_ARCHITECTURE.md.
 
 The new contract/HAL/facade modules must remain free of Three.js imports and browser-global dependencies. Backend adapters may depend on a concrete graphics API; the PStudio-owned contracts must not.
+
+
+## Independent Graphics Engine progress (2026-11-28)
+
+Phase 2 architecture contracts are complete at repository scope, and Phase 3 contains the first PStudio-owned Graphics Core foundation. See PSTUDIO_INDEPENDENT_GRAPHICS_ENGINE_ROADMAP.md for formal phase criteria and PSTUDIO_GRAPHICS_ARCHITECTURE.md for ownership boundaries.
+
+The new modules are opt-in and must not be confused with the current production owner:
+- PStudio3D and static/pstudio_resources.js remain the active renderer/resource owners in the production editor.
+- static/pstudio_graphics_adapters.mjs wraps an existing WebGL2 renderer or a Three.js r187 WebGPU TSL scene session. It does not switch the active production canvas or take ownership unless explicitly configured.
+- PStudio Graphics Core owns its own logical resource registry, shader variant registry, compute-kernel contract and light snapshot model. It must not mirror/register the same live Three.js resources a second time.
+- Phase 4 owns dependency-ordered render passes, resource barriers, transient aliasing and scheduling. Do not prematurely add these responsibilities to Graphics Core.
