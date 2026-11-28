@@ -604,6 +604,7 @@
       volumetricCloudPass=window.PStudioEnvironmentFX?.createVolumetricCloudPass?.(FX,T)||null;if(volumetricCloudPass){volumetricCloudPass.enabled=false;composer.addPass(volumetricCloudPass);}
 godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godRaysPass){godRaysPass.enabled=false;composer.addPass(godRaysPass);}
       outputPass=new FX.OutputPass();composer.addPass(outputPass);
+      instrumentPVCSComposerPasses();
     }
     primitiveGroup=new T.Group();modelGroup=new T.Group();gridGroup=new T.Group();selectionGroup=new T.Group();editorHelperGroup=new T.Group();
     editorOverlayVisibility=readEditorOverlayVisibility();
@@ -1020,7 +1021,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     if(!gpuTimerGl||!gpuTimerExtension)return;
     try{
       const disjoint=!!gpuTimerGl.getParameter(gpuTimerExtension.GPU_DISJOINT_EXT);
-      if(disjoint){for(const entry of gpuTimerQueries)gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.length=0;return;}
+      if(disjoint){
+        for(const entry of gpuTimerQueries)gpuTimerGl.deleteQuery(entry.query);
+        gpuTimerQueries.length=0;
+        lastGpuRenderDurationMs=0;
+        lastGpuTimerTimestamp=0;
+        return;
+      }
       const now=window.performance?.now?.()??Date.now();
       for(let i=gpuTimerQueries.length-1;i>=0;i--){
         const entry=gpuTimerQueries[i],available=gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT_AVAILABLE);
@@ -1726,6 +1733,40 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     return typeof profiler?.measureAsync==='function'?profiler.measureAsync(stageId,callback):callback();
   }
 
+  function instrumentPVCSComposerPasses(){
+    if(!composer?.passes||!Array.isArray(composer.passes))return 0;
+    const stageByPass=new Map([
+      [taaPass,'post-aa-taar'],
+      [volumetricFogPass,'post-volumetric-fog'],
+      [smaaPass,'post-aa-smaa'],
+      [ssaoPass,gtaoPass?'post-gtao':'post-ssao'],
+      [ssrPass,'post-ssr'],
+      [contactShadowPass,'post-contact-shadows'],
+      [bloomPass,'post-bloom'],
+      [volumetricCloudPass,'post-volumetric-clouds'],
+      [godRaysPass,'post-god-rays'],
+      [outputPass,'post-output']
+    ]);
+    let instrumented=0;
+    for(let index=0;index<composer.passes.length;index++){
+      const pass=composer.passes[index];
+      if(!pass||typeof pass.render!=='function'||pass.__pstudioPVCSInstrumented)continue;
+      const stageId=stageByPass.get(pass)||(index===0?'post-render-source':null);
+      if(!stageId)continue;
+      const originalRender=pass.render;
+      try{
+        pass.render=function(...args){
+          return measurePVCSStage(stageId,()=>originalRender.apply(this,args));
+        };
+        Object.defineProperty(pass,'__pstudioPVCSInstrumented',{value:true,configurable:true});
+        instrumented++;
+      }catch(error){
+        console.warn('[PStudio] PVCS could not instrument a composer pass; existing render behavior is retained.',stageId,error);
+      }
+    }
+    return instrumented;
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     // Keep the last valid WebGL frame on screen while legacy PBR materials are
@@ -1802,7 +1843,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       return;
     }
     renderer.info?.reset?.();pollGpuTimerQueries();
-    const stageGpuSampleSlots=['water-depth-prepass','mirror-reflection','post-processing','scene-render'];
+    // One sampled GPU pass per four analysis frames; the aggregate GPU timer is omitted on that frame.
+    const stageGpuSampleSlots=[
+      'water-depth-prepass','mirror-reflection','post-processing','post-render-source',
+      'post-aa-taar','post-volumetric-fog','post-aa-smaa','post-gtao','post-ssao',
+      'post-ssr','post-contact-shadows','post-bloom','post-volumetric-clouds',
+      'post-god-rays','post-output','scene-render'
+    ];
     const stageGpuSampleTurn=window.PStudioPVCS?.isMonitoringEnabled?.()===true&&!!gpuTimerGl&&!!gpuTimerExtension&&(pvcsGpuStageSampleCursor%4===0);
     pvcsGpuStageSampleTarget=stageGpuSampleTurn?stageGpuSampleSlots[Math.floor(pvcsGpuStageSampleCursor/4)%stageGpuSampleSlots.length]:null;
     pvcsGpuStageSampleCursor++;
