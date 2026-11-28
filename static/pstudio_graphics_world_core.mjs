@@ -340,7 +340,8 @@ export function createPStudioWorldRenderingSystem(options = {}) {
       foliageHandle: null,
       loading: false,
       loadError: null,
-      lastVisibleRevision: 0
+      lastVisibleRevision: 0,
+      lastDistance: Infinity
     });
     return descriptor;
   }
@@ -413,6 +414,7 @@ export function createPStudioWorldRenderingSystem(options = {}) {
       });
       record.lod = selection.lod;
       record.lastVisibleRevision = viewRevision + 1;
+      record.lastDistance = distance;
       candidates.push(Object.freeze({
         id: descriptor.id, descriptor, center: Object.freeze(center), distance,
         lod: selection.lod, projectedError: selection.projectedError,
@@ -428,6 +430,47 @@ export function createPStudioWorldRenderingSystem(options = {}) {
       visibleChunks: Object.freeze(candidates)
     });
     return lastView;
+  }
+
+  async function evictInvisible(limits = {}) {
+    assertLive();
+    const graceFrames = Math.max(0, Math.floor(finite(limits.graceFrames ?? 0, 0, 'eviction graceFrames')));
+    const maxResidentChunks = limits.maxResidentChunks == null
+      ? Infinity : Math.max(0, Math.floor(finite(limits.maxResidentChunks, 0, 'maxResidentChunks')));
+    const maxResidentBytes = limits.maxResidentBytes == null
+      ? Infinity : Math.max(0, finite(limits.maxResidentBytes, 0, 'maxResidentBytes'));
+    const currentlyVisible = new Set(visible.map(item => item.id));
+    const residentRecords = () => [...chunks.values()].filter(record => record.residentHandle != null);
+    const metrics = () => {
+      const records = residentRecords();
+      return {
+        residentCount: records.length,
+        residentBytes: records.reduce((sum, record) => sum + record.estimatedBytes, 0)
+      };
+    };
+    const evicted = [];
+    const candidates = residentRecords().filter(record =>
+      !currentlyVisible.has(record.descriptor.id) &&
+      !record.loading &&
+      viewRevision - record.lastVisibleRevision > graceFrames
+    ).sort((a, b) =>
+      a.lastVisibleRevision - b.lastVisibleRevision ||
+      b.lastDistance - a.lastDistance ||
+      a.descriptor.id.localeCompare(b.descriptor.id)
+    );
+    for (const record of candidates) {
+      const current = metrics();
+      if (current.residentCount <= maxResidentChunks && current.residentBytes <= maxResidentBytes) break;
+      await releaseRecordHandles(record);
+      evicted.push(record.descriptor.id);
+    }
+    const finalMetrics = metrics();
+    return Object.freeze({
+      evicted: Object.freeze(evicted),
+      residentCount: finalMetrics.residentCount,
+      residentBytes: finalMetrics.residentBytes,
+      overBudget: finalMetrics.residentCount > maxResidentChunks || finalMetrics.residentBytes > maxResidentBytes
+    });
   }
 
   async function streamTick(limits = {}) {
@@ -576,6 +619,7 @@ export function createPStudioWorldRenderingSystem(options = {}) {
       chunkCount: chunks.size,
       visibleCount: visible.length,
       residentCount: [...chunks.values()].filter(record => record.residentHandle != null).length,
+      residentBytes: [...chunks.values()].filter(record => record.residentHandle != null).reduce((sum, record) => sum + record.estimatedBytes, 0),
       loadingCount: [...chunks.values()].filter(record => record.loading).length,
       streaming,
       viewRevision,
@@ -588,7 +632,7 @@ export function createPStudioWorldRenderingSystem(options = {}) {
     kind: 'pstudio-world-rendering-system',
     core,
     registerChunk, updateChunk, removeChunk,
-    updateView, streamTick, prepareFoliage, renderFrame,
+    updateView, streamTick, evictInvisible, prepareFoliage, renderFrame,
     stats, dispose
   });
 }
