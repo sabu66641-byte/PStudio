@@ -99,6 +99,46 @@ function geometryDescriptor(input) {
       !Array.from(normals).every(Number.isFinite) || !Array.from(uvs).every(Number.isFinite)) {
     throw new TypeError('Geometry normals and UVs must match the position vertex count.');
   }
+  const vertexCount = positions.length / 3;
+  const tangents = input.tangents == null ? null : Float32Array.from(input.tangents, Number);
+  if (tangents && (tangents.length !== vertexCount * 4 || !Array.from(tangents).every(Number.isFinite))) {
+    throw new TypeError('Geometry tangents must contain finite vec4 values for every vertex.');
+  }
+  let jointIndices = null, jointWeights = null;
+  if (input.jointIndices != null || input.jointWeights != null) {
+    const rawJoints = input.jointIndices;
+    if ((!Array.isArray(rawJoints) && !ArrayBuffer.isView(rawJoints)) || rawJoints instanceof DataView ||
+        (!Array.isArray(input.jointWeights) && !ArrayBuffer.isView(input.jointWeights)) || input.jointWeights instanceof DataView) {
+      throw new TypeError('Geometry skin indices and weights must be array-like.');
+    }
+    if (rawJoints.length !== vertexCount * 4 || input.jointWeights.length !== vertexCount * 4) {
+      throw new RangeError('Geometry skin indices and weights must provide four influences per vertex.');
+    }
+    const jointValues = Array.from(rawJoints, Number);
+    const weightValues = Array.from(input.jointWeights, Number);
+    if (!jointValues.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 65535) ||
+        !weightValues.every(value => Number.isFinite(value) && value >= 0)) {
+      throw new RangeError('Geometry skin indices or weights contain invalid values.');
+    }
+    jointIndices = Uint16Array.from(jointValues);
+    jointWeights = Float32Array.from(weightValues);
+    for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+      const offset = vertex * 4;
+      const sum = jointWeights[offset] + jointWeights[offset + 1] + jointWeights[offset + 2] + jointWeights[offset + 3];
+      if (!(sum > 1e-8)) throw new RangeError('Each skinned vertex must have a positive total joint weight.');
+      for (let influence = 0; influence < 4; influence += 1) jointWeights[offset + influence] /= sum;
+    }
+  }
+  const morphTargets = Object.freeze((input.morphTargets || []).map((target, index) => {
+    const morphPositions = target.positions == null ? null : Float32Array.from(target.positions, Number);
+    const morphNormals = target.normals == null ? null : Float32Array.from(target.normals, Number);
+    if ((!morphPositions && !morphNormals) ||
+        (morphPositions && (morphPositions.length !== positions.length || !Array.from(morphPositions).every(Number.isFinite))) ||
+        (morphNormals && (morphNormals.length !== normals.length || !Array.from(morphNormals).every(Number.isFinite)))) {
+      throw new TypeError('Morph target ' + index + ' must contain finite per-vertex position or normal deltas.');
+    }
+    return Object.freeze({ positions: morphPositions, normals: morphNormals });
+  }));
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
   for (let index = 0; index < positions.length; index += 3) {
     for (let axis = 0; axis < 3; axis += 1) { min[axis] = Math.min(min[axis], positions[index + axis]); max[axis] = Math.max(max[axis], positions[index + axis]); }
@@ -121,8 +161,8 @@ function geometryDescriptor(input) {
   }
   return Object.freeze({
     id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
-    positions, normals, uvs, indices,
-    vertexCount: positions.length / 3, indexCount: indices?.length || 0,
+    positions, normals, uvs, tangents, indices, jointIndices, jointWeights, morphTargets,
+    vertexCount, indexCount: indices?.length || 0,
     bounds: Object.freeze({ min: Object.freeze(min), max: Object.freeze(max) }),
     groups: Object.freeze(groups)
   });
@@ -182,8 +222,63 @@ function entityDescriptor(input) {
     castShadow: input.castShadow === true,
     receiveShadow: input.receiveShadow === true,
     layers: Math.max(0, Math.floor(Number(input.layers) || 0)),
-    sourceObjectId: input.sourceObjectId == null ? null : String(input.sourceObjectId)
+    sourceObjectId: input.sourceObjectId == null ? null : String(input.sourceObjectId),
+    skinId: input.skinId == null ? null : String(input.skinId),
+    morphWeights: Object.freeze(Array.from(input.morphWeights || [], (value, index) => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) throw new TypeError('Entity morph weight ' + index + ' must be finite.');
+      return number;
+    }))
   });
+}
+
+function nodeDescriptor(input) {
+  const id = String(input.id || '').trim();
+  if (!id) throw new TypeError('Scene node id is required.');
+  const translation = vector(input.translation || [0, 0, 0], 3, 'Scene node translation');
+  const rotation = vector(input.rotation || [0, 0, 0, 1], 4, 'Scene node rotation');
+  const scale = vector(input.scale || [1, 1, 1], 3, 'Scene node scale');
+  const matrix = vector(input.matrix || IDENTITY, 16, 'Scene node local matrix');
+  const worldMatrix = vector(input.worldMatrix || matrix, 16, 'Scene node world matrix');
+  return Object.freeze({
+    id,
+    name: input.name == null ? '' : String(input.name),
+    parentId: input.parentId == null ? null : String(input.parentId),
+    translation: Object.freeze(translation),
+    rotation: Object.freeze(rotation),
+    scale: Object.freeze(scale),
+    matrix: Object.freeze(matrix),
+    worldMatrix: Object.freeze(worldMatrix),
+    weights: Object.freeze(Array.from(input.weights || [], (value, index) => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) throw new TypeError('Scene node weight ' + index + ' must be finite.');
+      return number;
+    }))
+  });
+}
+
+function skinAssetDescriptor(input) {
+  if (input?.kind !== 'pstudio-skin') throw new TypeError('Scene skin must be a PStudio-owned skin descriptor.');
+  const id = String(input.id || '').trim();
+  const joints = Array.from(input.joints || [], String);
+  const inverseBindMatrices = Array.from(input.inverseBindMatrices || [], (matrix, index) => vector(matrix, 16, 'Skin inverse bind matrix ' + index));
+  if (!id || !joints.length || joints.length > 256 || new Set(joints).size !== joints.length ||
+      joints.some(joint => !joint.trim()) || inverseBindMatrices.length !== joints.length) {
+    throw new RangeError('Scene skin joints and inverse bind matrices are inconsistent.');
+  }
+  return Object.freeze({
+    kind: 'pstudio-skin', id,
+    joints: Object.freeze(joints),
+    inverseBindMatrices: Object.freeze(inverseBindMatrices.map(Object.freeze)),
+    skeletonRoot: input.skeletonRoot == null ? null : String(input.skeletonRoot)
+  });
+}
+
+function animationAssetDescriptor(input) {
+  if (input?.kind !== 'pstudio-animation-clip' || !String(input.id || '').trim() || !Array.isArray(input.tracks)) {
+    throw new TypeError('Scene animation must be a PStudio-owned animation clip.');
+  }
+  return input;
 }
 
 function sceneVector3Like(value, fallback, label) {
@@ -256,6 +351,9 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
   const materials = (input.materials || []).map(materialDescriptor);
   const textures = (input.textures || []).map(textureDescriptor);
   const entities = (input.entities || []).map(entityDescriptor);
+  const nodes = (input.nodes || []).map(nodeDescriptor);
+  const skins = (input.skins || []).map(skinAssetDescriptor);
+  const animations = (input.animations || []).map(animationAssetDescriptor);
   const clearColor = sceneColor4(input.clearColor, 'Scene clear color');
   const lighting = sceneLightingDescriptor(input.lighting);
   const geometryIds = new Set(), materialIds = new Set(), textureIds = new Set();
@@ -276,6 +374,17 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
       throw new Error('Material references an unknown base-color texture: ' + material.baseColorTextureId);
     }
   }
+  const nodeIds = new Set(nodes.map(node => node.id));
+  if (nodeIds.size !== nodes.length) throw new Error('Scene node ids must be unique.');
+  for (const node of nodes) {
+    if (node.parentId && !nodeIds.has(node.parentId)) throw new Error('Scene node references an unknown parent: ' + node.id);
+  }
+  const skinIds = new Set(skins.map(skin => skin.id));
+  if (skinIds.size !== skins.length) throw new Error('Scene skin ids must be unique.');
+  for (const skin of skins) {
+    if (skin.skeletonRoot && !nodeIds.has(skin.skeletonRoot)) throw new Error('Scene skin references an unknown skeleton root: ' + skin.id);
+    for (const joint of skin.joints) if (!nodeIds.has(joint)) throw new Error('Scene skin references an unknown joint node: ' + joint);
+  }
   const entityIds = new Set();
   for (const entity of entities) {
     if (entityIds.has(entity.id)) throw new Error('Duplicate entity id: ' + entity.id);
@@ -283,6 +392,17 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     if (!geometryIds.has(entity.geometryId)) throw new Error('Entity references an unknown geometry: ' + entity.geometryId);
     for (const materialId of entity.materialIds) if (!materialIds.has(materialId)) throw new Error('Entity references an unknown material: ' + materialId);
     const geometry = geometries.find(item => item.id === entity.geometryId);
+    if (entity.skinId) {
+      const skin = skins.find(item => item.id === entity.skinId);
+      if (!skin) throw new Error('Entity references an unknown skin: ' + entity.skinId);
+      if (!geometry.jointIndices || !geometry.jointWeights) throw new Error('Skinned entity geometry must contain joint indices and weights: ' + entity.id);
+      for (const jointIndex of geometry.jointIndices) if (jointIndex >= skin.joints.length) throw new RangeError('Skinned geometry references a joint outside its skin palette: ' + entity.id);
+    } else if (geometry.jointIndices || geometry.jointWeights) {
+      throw new Error('Geometry with skin attributes must be attached to an entity with a skin: ' + entity.id);
+    }
+    if (entity.morphWeights.length && entity.morphWeights.length !== geometry.morphTargets.length) {
+      throw new RangeError('Entity morph weight count must match its geometry morph targets: ' + entity.id);
+    }
     const requiredSlots = geometry.groups.length ? Math.max(...geometry.groups.map(group => group.materialIndex)) + 1 : 1;
     if (entity.materialIds.length < requiredSlots || (!geometry.groups.length && entity.materialIds.length !== 1)) {
       throw new Error('Entity material slots do not match its geometry material groups: ' + entity.id);
@@ -296,6 +416,9 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     materials: Object.freeze(materials),
     textures: Object.freeze(textures),
     entities: Object.freeze(entities),
+    nodes: Object.freeze(nodes),
+    skins: Object.freeze(skins),
+    animations: Object.freeze(animations),
     clearColor,
     lighting,
     metadata: Object.freeze({ ...(input.metadata || {}) })
