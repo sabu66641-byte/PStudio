@@ -1,21 +1,23 @@
 # PStudio Graphics Work — Rollback Record
 
-**Change set:** Independent Graphics Engine Phase 0–2 foundation  
-**Pre-change main:** `5f6ab6db674268a87b857103456837dfc77c57d9`  
-**Backup branch:** `backup/pre-independent-graphics-20261128`  
-**Work branch:** `feat/independent-graphics-phase0-2-20261128`
+**Change set:** Independent Graphics Engine Phase 2 completion and Phase 3 core foundation  
+**Pre-change main:** d2f1172ad78c5c6229602e87b415c532184f7ccb  
+**Backup branch:** backup/pre-phase2-3-20261128  
+**Work branch:** feat/graphics-phase2-100-phase3-50-20261128
 
 ## Recovery guarantees
 
 - The backup branch points to the exact main commit before this work.
-- Phase 0/1 changes update documentation and tests only; they do not alter renderer defaults or scene appearance.
-- Phase 2 adds isolated vendor-neutral modules. Existing production rendering code, Three.js imports, visible WebGL2 default, sky assets and water shaders are not replaced.
-- Do not force-push or reset shared `main` history.
+- New adapter and core files are additive. Existing production renderer, Three.js integration, editor/gameplay APIs, quality defaults, sky panorama, PMREM/IBL, water reflection, depth and shader files are not altered by the new architecture.
+- WebGL2 remains the live production renderer. The WebGL2 adapter wraps the existing renderer and does not dispose it unless the caller explicitly transfers ownership.
+- The WebGPU adapter wraps the existing TSL scene session. It does not promote WebGPU to the visible production path.
+- The new Graphics Core is opt-in. It does not mirror or double-register resources owned by PStudioResources or Three.js.
 
 ## Rollback procedure
 
-1. Prefer reverting the integration merge commit through a new reviewed PR.
-2. If the merge cannot be reverted cleanly, branch from `backup/pre-independent-graphics-20261128` and compare the result before restoring any files.
-3. Keep the backup branch until the new engine contracts have been exercised by a real production adapter and the following phase has passed its CI gates.
+1. Prefer reverting the integration merge commit through a new PR.
+2. To inspect the exact pre-change repository, check out backup/pre-phase2-3-20261128 at d2f1172ad78c5c6229602e87b415c532184f7ccb.
+3. If individual core services regress, stop instantiating the new modules; current production rendering does not import them.
+4. Never force-push or reset shared main history.
 
-The backup branch is a recovery point, not a deployed rollback. It does not change the live website until the repository's deployment mechanism publishes a commit.
+The backup branch is a repository recovery point; it is not an automatic website/deployment rollback.
