@@ -22,7 +22,7 @@ function vector3(value, label) {
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
 /** GPU VFX compute shader ABI: one independent particle record per invocation. */
-export const PSTUDIO_GPU_VFX_WGSL = /* wgsl */\`
+export const PSTUDIO_GPU_VFX_WGSL = /* wgsl */`
 struct Particle {
   position_age: vec4<f32>,
   velocity_lifetime: vec4<f32>,
@@ -47,7 +47,7 @@ fn pstudioSimulateParticles(@builtin(global_invocation_id) invocation: vec3<u32>
   if (particle.position_age.w >= particle.velocity_lifetime.w) { particle.color_size.w = 0.0; }
   particles[index] = particle;
 }
-\`;
+`;
 
 /** GPU VFX orchestration with bounded emitters and an injected GPU compute executor. */
 export function createPStudioGpuVFXSystem(options = {}) {
@@ -120,7 +120,7 @@ export function createPStudioGpuVFXSystem(options = {}) {
 /** Probe-based SH Global Illumination reference core with dirty regions and temporal stability. */
 export function createPStudioGraphicsGiCore(options = {}) {
   const probes = new Map();
-  let revision = 0, disposed = false;
+  let revision = 0, disposed = false, dirtyCursor = 0;
   const halfLifeMs = Math.max(1, finite(options.halfLifeMs ?? 240, 240, 'halfLifeMs'));
   function assertLive() { if (disposed) throw new PStudioGraphicsError('Graphics GI Core is disposed.', { code: 'PSTUDIO_GRAPHICS_GI_DISPOSED' }); }
   function normalize(input = {}) {
@@ -161,6 +161,14 @@ export function createPStudioGraphicsGiCore(options = {}) {
     if (changed) revision++;
     return changed;
   }
+  function nextDirtyProbe() {
+    assertLive();
+    const dirty = [...probes.values()].filter(probe => probe.dirty).sort((a, b) => a.id.localeCompare(b.id));
+    if (!dirty.length) return null;
+    const selected = dirty[dirtyCursor % dirty.length];
+    dirtyCursor = (dirtyCursor + 1) % dirty.length;
+    return snapshotProbe(selected);
+  }
   function removeProbe(id) { assertLive(); const removed = probes.delete(String(id)); if (removed) revision++; return removed; }
   function sample(position, options = {}) {
     assertLive();
@@ -188,7 +196,7 @@ export function createPStudioGraphicsGiCore(options = {}) {
   }
   function stats() { return Object.freeze({ revision, probeCount: probes.size, dirtyProbeCount: [...probes.values()].filter(probe => probe.dirty).length, disposed }); }
   function dispose() { if (disposed) return false; probes.clear(); disposed = true; return true; }
-  return Object.freeze({ kind: 'pstudio-graphics-gi-core', setProbe, updateProbe, invalidateSphere, removeProbe, sample, snapshot, stats, dispose });
+  return Object.freeze({ kind: 'pstudio-graphics-gi-core', setProbe, updateProbe, invalidateSphere, nextDirtyProbe, removeProbe, sample, snapshot, stats, dispose });
 }
 
 function depthSlice(depth, near, far, slices) {
@@ -326,7 +334,7 @@ export function blendPStudioVolumetricHistory(current, history, weight, confiden
 }
 
 /** WGSL include for physically motivated volumetric transmittance and phase. */
-export const PSTUDIO_VOLUMETRIC_WGSL = /* wgsl */\`
+export const PSTUDIO_VOLUMETRIC_WGSL = /* wgsl */`
 fn pstudioHG(cosTheta: f32, anisotropy: f32) -> f32 {
   let g = clamp(anisotropy, -0.95, 0.95);
   let denominator = max(1e-6, 1.0 + g * g - 2.0 * g * clamp(cosTheta, -1.0, 1.0));
@@ -340,4 +348,95 @@ fn pstudioVolumeIntegrate(previousRadiance: vec3<f32>, previousTransmittance: f3
   let transmittance = previousTransmittance * segmentTransmittance;
   return vec4<f32>(radiance, transmittance);
 }
-\`;
+`;
+
+export const PSTUDIO_VOLUMETRIC_COMPUTE_WGSL = /* wgsl */`
+struct VolumeParams { grid_x: u32, grid_y: u32, grid_z: u32, _padding: u32, };
+@group(0) @binding(0) var<storage, read> segment_data: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> source_radiance: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> injected_segments: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read_write> integrated_volume: array<vec4<f32>>;
+@group(0) @binding(4) var<uniform> volume_params: VolumeParams;
+
+fn pstudioVolumePhase(cos_theta: f32, anisotropy: f32) -> f32 {
+  let g = clamp(anisotropy, -0.95, 0.95);
+  let denominator = max(1e-6, 1.0 + g * g - 2.0 * g * clamp(cos_theta, -1.0, 1.0));
+  return (1.0 - g * g) / (12.5663706144 * pow(denominator, 1.5));
+}
+
+@compute @workgroup_size(64)
+fn pstudioInjectVolumetricSegments(@builtin(global_invocation_id) invocation: vec3<u32>) {
+  let index = invocation.x;
+  let total = volume_params.grid_x * volume_params.grid_y * volume_params.grid_z;
+  if (index >= total) { return; }
+  let segment = segment_data[index];
+  let density = max(0.0, segment.x);
+  let length = max(0.0, segment.y);
+  let transmittance = exp(-density * length);
+  let phase = pstudioVolumePhase(segment.z, segment.w);
+  let incident = source_radiance[index].rgb;
+  let albedo = clamp(source_radiance[index].a, 0.0, 1.0);
+  let source = incident * albedo * phase * (1.0 - transmittance);
+  injected_segments[index] = vec4<f32>(source, transmittance);
+}
+
+@compute @workgroup_size(4, 4, 1)
+fn pstudioIntegrateVolumetricColumns(@builtin(global_invocation_id) invocation: vec3<u32>) {
+  let x = invocation.x;
+  let y = invocation.y;
+  if (x >= volume_params.grid_x || y >= volume_params.grid_y) { return; }
+  var radiance = vec3<f32>(0.0);
+  var transmittance = 1.0;
+  for (var z = 0u; z < volume_params.grid_z; z = z + 1u) {
+    let index = (z * volume_params.grid_y + y) * volume_params.grid_x + x;
+    let segment = injected_segments[index];
+    radiance = radiance + transmittance * segment.rgb;
+    transmittance = transmittance * segment.a;
+    integrated_volume[index] = vec4<f32>(radiance, transmittance);
+  }
+}
+`;
+
+export function createPStudioVolumetricGpuSystem(options = {}) {
+  const grid = options.grid || createPStudioFroxelGrid(options);
+  const executor = options.executor;
+  let frameId = 0, inFlight = false, disposed = false;
+  function assertLive() {
+    if (disposed) throw new PStudioGraphicsError('Volumetric GPU system is disposed.', { code: 'PSTUDIO_VOLUMETRIC_DISPOSED' });
+  }
+  async function renderFrame(input = {}) {
+    assertLive();
+    if (inFlight) throw new PStudioGraphicsError('Volumetric dispatch is already in flight.', { code: 'PSTUDIO_VOLUMETRIC_BUSY' });
+    if (typeof executor?.dispatchVolumetric !== 'function') {
+      throw new PStudioGraphicsError('A volumetric GPU executor is required.', { code: 'PSTUDIO_VOLUMETRIC_EXECUTOR_UNAVAILABLE' });
+    }
+    const deltaSeconds = clamp(finite(input.deltaSeconds ?? 0, 0, 'deltaSeconds'), 0, 0.25);
+    const historyWeight = clamp(finite(input.historyWeight ?? 0.85, 0.85, 'historyWeight'), 0, 0.98);
+    const command = Object.freeze({
+      frameId: ++frameId,
+      grid,
+      deltaSeconds,
+      historyWeight,
+      injectionWorkgroups: Math.ceil(grid.count / 64),
+      integrationWorkgroups: Object.freeze([Math.ceil(grid.width / 4), Math.ceil(grid.height / 4), 1]),
+      passes: Object.freeze(['inject-segment-lighting', 'integrate-front-to-back', 'temporal-history']),
+      shader: PSTUDIO_VOLUMETRIC_COMPUTE_WGSL,
+      inputs: Object.freeze({
+        segmentData: input.segmentData ?? null,
+        sourceRadiance: input.sourceRadiance ?? null,
+        previousHistory: input.previousHistory ?? null,
+        output: input.output ?? null
+      })
+    });
+    inFlight = true;
+    try {
+      const result = await executor.dispatchVolumetric(command);
+      return Object.freeze({ ...command, result: result ?? null });
+    } finally {
+      inFlight = false;
+    }
+  }
+  function stats() { return Object.freeze({ frameId, inFlight, grid, disposed }); }
+  function dispose() { if (disposed) return false; disposed = true; return true; }
+  return Object.freeze({ kind: 'pstudio-volumetric-gpu-system', grid, renderFrame, stats, dispose });
+}
