@@ -1,3 +1,5 @@
+import { createPStudioGraphicsSceneAsset } from "./pstudio_graphics_scene_asset.mjs";
+
 const PATHS = new Set(["translation", "rotation", "scale", "weights"]);
 const INTERPOLATIONS = new Set(["LINEAR", "STEP", "CUBICSPLINE"]);
 const finite = (value, label) => {
@@ -344,7 +346,9 @@ export function evaluatePStudioSceneAnimation(sceneAsset, clipId, timeSeconds, o
     const source = geometryMap.get(entity.geometryId);
     if (!source) throw new Error("Renderable entity geometry is missing: " + entity.geometryId);
     const nodeWeights = node?.weights || [];
-    const morphWeights = entity.morphWeights?.length ? Array.from(entity.morphWeights) : nodeWeights;
+    const requestedMorphWeights = entity.morphWeights?.length ? Array.from(entity.morphWeights) : nodeWeights;
+    const morphWeights = source.morphTargets?.length && requestedMorphWeights.length === 0
+      ? new Array(source.morphTargets.length).fill(0) : requestedMorphWeights;
     let geometryId = entity.geometryId, skinId = entity.skinId, finalMorphWeights = morphWeights;
     if (skinId) {
       const skin = skinMap.get(skinId);
@@ -383,7 +387,6 @@ export function evaluatePStudioSceneAnimation(sceneAsset, clipId, timeSeconds, o
       matrixWorld: Object.freeze(Array.from(world))
     });
   });
-  const { createPStudioGraphicsSceneAsset } = await import("./pstudio_graphics_scene_asset.mjs");
   return createPStudioGraphicsSceneAsset({
     id: sceneAsset.id, revision: sceneAsset.revision + 1,
     geometries, materials: sceneAsset.materials, textures: sceneAsset.textures, entities,
