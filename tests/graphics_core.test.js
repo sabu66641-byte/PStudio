@@ -27,7 +27,7 @@ test('Resource Core provides leases and independent CPU/GPU budget accounting wi
   core.register({id:'gpu.a',type:'texture',domain:'gpu',estimatedBytes:80},{});
   core.register({id:'cpu.b',type:'buffer',domain:'cpu',estimatedBytes:60},{});
   assert.ok(core.get('cpu.a'));assert.ok(core.get('cpu.b'));assert.equal(core.stats().gpuBytes,80);assert.equal(core.stats().cpuBytes,120);
-  assert.equal(lease.release(),true);assert.equal(core.trim('cpu',60),1);assert.deepEqual(reasons,['budget']);
+  assert.equal(lease.release(),true);core.get('cpu.b');assert.equal(core.trim('cpu',60),1);assert.deepEqual(reasons,['budget']);
   assert.equal(core.stats().cpuBytes,60);core.dispose();
 });
 
