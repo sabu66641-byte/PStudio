@@ -45,6 +45,13 @@ function summarizeHistory(history) {
   const context = history.slice().reverse().find((item) => item.context)?.context || null;
   return {
     sampleCount: history.length,
+    cpuFrameSampleCount: cpuFrame.length,
+    cpuSubmitSampleCount: cpuSubmit.length,
+    gpuRenderSampleCount: gpuFrame.length,
+    gpuStageSampleCount: gpuStage.length,
+    frameIntervalSampleCount: frameInterval.length,
+    memorySampleCount: memory.length,
+    asyncElapsedSampleCount: asyncElapsed.length,
     cpuFrameP50Ms: percentile(cpuFrame, 50),
     cpuFrameP95Ms: percentile(cpuFrame, 95),
     cpuFrameP99Ms: percentile(cpuFrame, 99),
@@ -107,7 +114,7 @@ export function createVisualCompensationGraph(options = {}) {
       qualityLevel: finiteNonNegative(descriptor.qualityLevel),
       updateFrequencyHz: finiteNonNegative(descriptor.updateFrequencyHz),
       dependencies: [],
-      history: []
+      contextHistories: new Map()
     };
     nodes.set(id, node);
     return Object.freeze({ id });
@@ -143,9 +150,40 @@ export function createVisualCompensationGraph(options = {}) {
     if (!Object.entries(sample).some(([key, value]) => key !== 'context' && value !== null)) {
       throw new TypeError('Measurement must contain at least one finite, non-negative metric.');
     }
-    node.history.push(sample);
-    if (node.history.length > historyLimit) node.history.splice(0, node.history.length - historyLimit);
-    return summarizeHistory(node.history);
+    const contextKey = sample.context ? JSON.stringify(sample.context) : '{}';
+    let bucket = node.contextHistories.get(contextKey);
+    if (!bucket) {
+      if (node.contextHistories.size >= 8) {
+        const oldestKey = node.contextHistories.keys().next().value;
+        node.contextHistories.delete(oldestKey);
+      }
+      bucket = { key: contextKey, context: sample.context, history: [] };
+    } else {
+      node.contextHistories.delete(contextKey);
+    }
+    bucket.history.push(sample);
+    if (bucket.history.length > historyLimit) bucket.history.splice(0, bucket.history.length - historyLimit);
+    node.contextHistories.set(contextKey, bucket);
+    return summarizeNodeHistory(node);
+  }
+
+  function summarizeNodeHistory(node) {
+    const buckets = [...node.contextHistories.values()];
+    const latest = buckets[buckets.length - 1];
+    const metrics = summarizeHistory(latest?.history || []);
+    const totalSampleCount = buckets.reduce((total, bucket) => total + bucket.history.length, 0);
+    return {
+      ...metrics,
+      totalSampleCount,
+      contextCount: buckets.length
+    };
+  }
+
+  function summarizeNodeContexts(node) {
+    return [...node.contextHistories.values()].map((bucket) => ({
+      contextKey: bucket.key,
+      ...summarizeHistory(bucket.history)
+    }));
   }
 
   function updateNode(id, patch = {}) {
@@ -175,7 +213,8 @@ export function createVisualCompensationGraph(options = {}) {
         qualityLevel: node.qualityLevel,
         updateFrequencyHz: node.updateFrequencyHz,
         dependencies: node.dependencies.slice(),
-        metrics: summarizeHistory(node.history)
+        metrics: summarizeNodeHistory(node),
+        contextMetrics: summarizeNodeContexts(node)
       })),
       edges: [...edges.values()].map((edge) => ({ ...edge }))
     };
@@ -183,7 +222,7 @@ export function createVisualCompensationGraph(options = {}) {
 
   function analyzeBottlenecks() {
     return [...nodes.values()].map((node) => {
-      const metrics = summarizeHistory(node.history);
+      const metrics = summarizeNodeHistory(node);
       return {
         id: node.id,
         label: node.label,
@@ -204,7 +243,7 @@ export function createVisualCompensationGraph(options = {}) {
 
   function analyzeResourceDomains() {
     const rows = [...nodes.values()].map((node) => ({
-      id: node.id, label: node.label, metrics: summarizeHistory(node.history)
+      id: node.id, label: node.label, metrics: summarizeNodeHistory(node)
     }));
     const rank = (key) => rows.filter((row) => Number.isFinite(row.metrics[key]))
       .map((row) => ({ id: row.id, label: row.label, value: row.metrics[key], metric: key }))
