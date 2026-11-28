@@ -223,6 +223,23 @@ test('PVCS records the full drawFrame CPU duration separately from render submis
   assert.equal(pvcs.analyze().rankings.cpuFrame[0].id, 'frame-loop');
 });
 
+test('PVCS captures fresh context for CPU stages outside drawFrame', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 350;
+  let stats = { backend: 'webgl2', scene: 'scene-before', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const pvcs = createPStudioPVCS({ getRenderer: () => ({ getPerformanceStats: () => stats }), now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  pvcs.captureContext();
+  now += 1;
+  stats = { backend: 'webgpu', scene: 'scene-after', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  const currentContext = pvcs.captureContext();
+  pvcs.measure('world-visibility', () => { now += 2; }, currentContext);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'world-visibility').metrics;
+  assert.equal(metrics.context.backend, 'webgpu');
+  assert.equal(metrics.context.scene, 'scene-after');
+  assert.equal(metrics.context.quality, 'mobile');
+});
+
 test('PVCS binds stage and frame measurements to one frame-start context', async () => {
   const { createPStudioPVCS } = await loadModules();
   let now = 400;
@@ -332,6 +349,7 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(pvcs, /function recordGpuFrameMetrics\(gpuRenderMs, context = null, generation = null\)/);
   assert.match(renderer, /pvcsActiveFrameContext=pvcsMonitoringEnabled\?\(pvcsProfiler\.beginFrame\?\.\(\)\|\|null\):null/);
   assert.match(renderer, /pvcsActiveFrameGeneration=pvcsMonitoringEnabled\?\(pvcsProfiler\.getMonitoringGeneration\?\.\(\)\?\?null\):null/);
+  assert.match(renderer, /sampleContext=pvcsFrameContextActive\?pvcsActiveFrameContext:profiler\.captureContext\?\.\(\)/);
   assert.doesNotMatch(renderer, /const stageGpuSampleSlots=\[/);
   for (const id of ['post-aa-taar','post-volumetric-fog','post-gtao','post-ssr','post-bloom','post-volumetric-clouds','post-god-rays','post-output']) {
     assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
