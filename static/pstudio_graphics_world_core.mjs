@@ -360,6 +360,7 @@ export function createPStudioWorldRenderingSystem(options = {}) {
     const record = chunks.get(descriptor.id);
     if (!record) throw new PStudioGraphicsError('World chunk runtime record is missing: ' + descriptor.id, { code: 'PSTUDIO_WORLD_CHUNK_RUNTIME_MISSING' });
     record.generation++;
+    record.loading = false;
     record.descriptor = descriptor;
     record.estimatedBytes = normalizeBytes(input.estimatedBytes ?? record.estimatedBytes);
     record.lod = null;
@@ -518,6 +519,7 @@ export function createPStudioWorldRenderingSystem(options = {}) {
       count: scatter.count,
       generation
     });
+    if (handle == null) throw new Error('Foliage uploader returned no GPU handle.');
     const current = chunks.get(record.descriptor.id);
     if (!current || current.generation !== generation) {
       try { await executor.releaseFoliage?.(handle, record.descriptor); } catch (_) {}
@@ -558,6 +560,10 @@ export function createPStudioWorldRenderingSystem(options = {}) {
   async function dispose() {
     if (disposed) return false;
     disposed = true;
+    for (const record of chunks.values()) {
+      record.generation++;
+      record.loading = false;
+    }
     for (const record of chunks.values()) await releaseRecordHandles(record);
     chunks.clear();
     visible = [];
