@@ -177,7 +177,7 @@ Terrain/asset loaders and the concrete render executor are caller-supplied. The 
 
 A real GPU executor is supplied by the consuming backend. The SDL3 native adapter in Phase 5 does not advertise Compute support. Phase 10 is complete for the specified advanced subsystem algorithms, bounded API contracts and executor integration; it does not claim native Compute, ray tracing, full scene integration or measured visual/performance parity.
 
-## 11. Phase 11 — PVCS Integration (55%)
+## 11. Phase 11 — PVCS Integration (70%)
 
 The PVCS governor composes with the existing PVCS and Visual Compensation Graph rather than duplicating their measurement storage:
 
