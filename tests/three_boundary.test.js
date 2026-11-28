@@ -28,7 +28,10 @@ test('PStudio-owned Graphics Core and Render Graph remain free of direct Three.j
     'pstudio_pvcs.mjs',
     'pstudio_pvcs_governor.mjs',
     'pstudio_visual_compensation_graph.mjs',
-    'pstudio_visual_difference.mjs'
+    'pstudio_visual_difference.mjs',
+    'pstudio_graphics_scene_asset.mjs',
+    'pstudio_graphics_webgpu_scene_renderer.mjs',
+    'pstudio_pvcs_browser_runner.mjs'
   ];
   const patterns = [
     /from\s*['"]three(?:\/[^'"]*)?['"]/,

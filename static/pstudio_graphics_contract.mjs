@@ -63,7 +63,8 @@ export function createPStudioGraphicsMaterial(input={}){
   const model=String(input.model||'pbr').toLowerCase();if(!['unlit','lambert','phong','pbr','toon'].includes(model))throw new TypeError('Unsupported graphics material model: '+model);
   const metallic=finite(input.metallic,0),roughness=finite(input.roughness,0.7),opacity=finite(input.opacity,1);
   if(metallic<0||metallic>1||roughness<0||roughness>1||opacity<0||opacity>1)throw new RangeError('Material metallic, roughness and opacity must be in the range [0, 1].');
-  return Object.freeze({id,model,baseColor:finiteArray(input.baseColor||[1,1,1,1],4,[1,1,1,1],'baseColor'),emissive:finiteArray(input.emissive||[0,0,0],3,[0,0,0],'emissive'),metallic,roughness,opacity,alphaMode:['opaque','mask','blend'].includes(input.alphaMode)?input.alphaMode:'opaque',doubleSided:input.doubleSided===true,textures:normalizeFeatureList(input.textures),metadata:freezeRecord(input.metadata)});
+  const baseColorTextureId=input.baseColorTextureId==null?null:String(input.baseColorTextureId).trim()||null;
+  return Object.freeze({id,model,baseColor:finiteArray(input.baseColor||[1,1,1,1],4,[1,1,1,1],'baseColor'),emissive:finiteArray(input.emissive||[0,0,0],3,[0,0,0],'emissive'),metallic,roughness,opacity,alphaMode:['opaque','mask','blend'].includes(input.alphaMode)?input.alphaMode:'opaque',doubleSided:input.doubleSided===true,baseColorTextureId,textures:normalizeFeatureList(input.textures),metadata:freezeRecord(input.metadata)});
 }
 export function createPStudioGraphicsResourceDescriptor(input={}){
   const id=String(input.id||'').trim(),type=String(input.type||'').trim().toLowerCase();if(!id||!type)throw new TypeError('Graphics resource id and type are required.');

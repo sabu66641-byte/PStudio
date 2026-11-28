@@ -3221,9 +3221,15 @@ try {
 </script>
 <script type="module">
 try {
-  const { createPStudioPVCS } = await import('/static/pstudio_pvcs.mjs?v=20261128-pvcs-governor-v1');
+  const { createPStudioPVCS } = await import('/static/pstudio_pvcs.mjs?v=20261129-pvcs-browser-runner-v1');
   const { createPStudioPVCSFrameBudgetExecutor } = await import('/static/pstudio_pvcs_governor.mjs?v=20261128-pvcs-governor-v1');
+  const { createPStudioPVCSBrowserRunner } = await import('/static/pstudio_pvcs_browser_runner.mjs?v=20261129-pvcs-browser-runner-v1');
   window.PStudioPVCS = createPStudioPVCS({ getRenderer: () => window.PStudio3D });
+  window.createPStudioPVCSBrowserRunner = options => createPStudioPVCSBrowserRunner({
+    ...options,
+    getEngine: options?.getEngine || (() => window.PStudio3D),
+    getPVCS: options?.getPVCS || (() => window.PStudioPVCS)
+  });
   window.PStudioPVCSGovernor = window.PStudioPVCS.createGovernor({
     executor: createPStudioPVCSFrameBudgetExecutor({ getRenderer: () => window.PStudio3D }),
     allowAutomaticActuation: false
