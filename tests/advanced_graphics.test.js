@@ -4,14 +4,16 @@ let {
   createPStudioGpuVFXSystem, PSTUDIO_GPU_VFX_WGSL, createPStudioGraphicsGiCore,
   buildPStudioGraphicsClusterAssignments, createPStudioFroxelGrid,
   evaluatePStudioHenyeyGreenstein, evaluatePStudioVolumetricSegment,
-  integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL
+  integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL,
+  createPStudioVolumetricGpuSystem, PSTUDIO_VOLUMETRIC_COMPUTE_WGSL
 } = {};
 test.before(async () => {
   ({
     createPStudioGpuVFXSystem, PSTUDIO_GPU_VFX_WGSL, createPStudioGraphicsGiCore,
     buildPStudioGraphicsClusterAssignments, createPStudioFroxelGrid,
     evaluatePStudioHenyeyGreenstein, evaluatePStudioVolumetricSegment,
-    integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL
+    integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL,
+    createPStudioVolumetricGpuSystem, PSTUDIO_VOLUMETRIC_COMPUTE_WGSL
   } = await import('../static/pstudio_graphics_advanced_core.mjs'));
 });
 
@@ -66,6 +68,7 @@ test('GI probes blend temporally, invalidate spatially and produce stable weight
   assert.ok(Math.abs(gi.snapshot().probes[0].coefficients[0] - 4) < 1e-5);
   assert.equal(gi.invalidateSphere([0, 0, 0], 2), 1);
   assert.deepEqual(gi.snapshot().dirtyProbeIds, ['a']);
+  assert.equal(gi.nextDirtyProbe().id, 'a', 'dirty probe scheduler returns pending captures in a stable order');
   assert.equal(gi.removeProbe('b'), true);
   assert.equal(gi.stats().probeCount, 1);
   gi.dispose();
@@ -133,4 +136,28 @@ test('volumetric temporal history is confidence weighted and WGSL library expose
   assert.equal(blend.historyWeight, 0.25);
   assert.match(PSTUDIO_VOLUMETRIC_WGSL, /pstudioBeerLambert/);
   assert.match(PSTUDIO_VOLUMETRIC_WGSL, /pstudioHG/);
+});
+
+
+test('volumetric GPU system declares bounded injection, front-to-back integration and temporal history passes', async () => {
+  const calls = [];
+  const volumetric = createPStudioVolumetricGpuSystem({
+    width: 2, height: 2, depth: 4, budgetBytes: 4096,
+    executor: { async dispatchVolumetric(command) { calls.push(command); return { submitted: true }; } }
+  });
+  const frame = await volumetric.renderFrame({
+    deltaSeconds: 1 / 60, historyWeight: 0.8,
+    segmentData: { id: 'density-buffer' },
+    sourceRadiance: { id: 'lighting-buffer' },
+    previousHistory: { id: 'history-buffer' }
+  });
+  assert.deepEqual(frame.passes, ['inject-segment-lighting', 'integrate-front-to-back', 'temporal-history']);
+  assert.equal(frame.injectionWorkgroups, 1);
+  assert.deepEqual(frame.integrationWorkgroups, [1, 1, 1]);
+  assert.match(frame.shader, /@compute @workgroup_size\(4, 4, 1\)/);
+  assert.match(frame.shader, /pstudioIntegrateVolumetricColumns/);
+  assert.equal(frame.result.submitted, true);
+  assert.equal(calls.length, 1);
+  volumetric.dispose();
+  assert.throws(() => volumetric.stats().disposed, /disposed/);
 });
