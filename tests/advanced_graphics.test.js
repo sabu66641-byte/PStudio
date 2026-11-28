@@ -1,17 +1,19 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {
-  createPStudioGpuVFXSystem,
-  PSTUDIO_GPU_VFX_WGSL,
-  createPStudioGraphicsGiCore,
-  buildPStudioGraphicsClusterAssignments,
-  createPStudioFroxelGrid,
-  evaluatePStudioHenyeyGreenstein,
-  evaluatePStudioVolumetricSegment,
-  integratePStudioVolumetricSegments,
-  blendPStudioVolumetricHistory,
-  PSTUDIO_VOLUMETRIC_WGSL
-} from '../static/pstudio_graphics_advanced_core.mjs';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+let {
+  createPStudioGpuVFXSystem, PSTUDIO_GPU_VFX_WGSL, createPStudioGraphicsGiCore,
+  buildPStudioGraphicsClusterAssignments, createPStudioFroxelGrid,
+  evaluatePStudioHenyeyGreenstein, evaluatePStudioVolumetricSegment,
+  integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL
+} = {};
+test.before(async () => {
+  ({
+    createPStudioGpuVFXSystem, PSTUDIO_GPU_VFX_WGSL, createPStudioGraphicsGiCore,
+    buildPStudioGraphicsClusterAssignments, createPStudioFroxelGrid,
+    evaluatePStudioHenyeyGreenstein, evaluatePStudioVolumetricSegment,
+    integratePStudioVolumetricSegments, blendPStudioVolumetricHistory, PSTUDIO_VOLUMETRIC_WGSL
+  } = await import('../static/pstudio_graphics_advanced_core.mjs'));
+});
 
 test('GPU VFX emits a bounded deterministic dispatch packet through the injected compute executor', async () => {
   const packets = [];
