@@ -450,6 +450,79 @@ ResourceHandle SdlGpuBackend::createTexture(const GpuTextureDescriptor& descript
     return s.insert(std::move(object));
 }
 
+bool SdlGpuBackend::uploadTexture(ResourceHandle handle, const void* data, std::size_t size, std::string& error) {
+    auto& s = *impl_;
+    if (!s.ready || s.deviceLost || !handle || !data) {
+        error = "Invalid GPU texture upload request";
+        return false;
+    }
+    auto found = s.objects.find(handle.value);
+    if (found == s.objects.end() || found->second.type != Impl::ObjectType::Texture) {
+        error = "GPU texture handle is invalid";
+        return false;
+    }
+    const auto& object = found->second;
+    std::uint32_t bytesPerPixel = 4;
+    if (object.pixelFormat == GpuPixelFormat::Rgba16Float) bytesPerPixel = 8;
+    if (object.pixelFormat == GpuPixelFormat::Depth32Float) {
+        error = "CPU uploads to depth-stencil textures are not supported by this adapter";
+        return false;
+    }
+    const std::uint64_t tightRowBytes = static_cast<std::uint64_t>(object.width) * bytesPerPixel;
+    const std::uint64_t tightSize = tightRowBytes * object.height;
+    const std::uint64_t paddedRowBytes = ((tightRowBytes + 255u) / 256u) * 256u;
+    const std::uint64_t paddedSize = paddedRowBytes * object.height;
+    if (!object.width || !object.height || tightSize != size ||
+        paddedRowBytes / bytesPerPixel > std::numeric_limits<Uint32>::max() ||
+        paddedSize > std::numeric_limits<Uint32>::max()) {
+        error = "GPU texture upload data size or row pitch is invalid";
+        return false;
+    }
+
+    SDL_GPUTransferBufferCreateInfo transferInfo{};
+    transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    transferInfo.size = static_cast<Uint32>(paddedSize);
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(s.device, &transferInfo);
+    if (!transfer) { s.setError(error, "GPU texture transfer buffer creation failed"); return false; }
+    void* mapped = SDL_MapGPUTransferBuffer(s.device, transfer, false);
+    if (!mapped) {
+        s.setError(error, "GPU texture transfer buffer mapping failed");
+        SDL_ReleaseGPUTransferBuffer(s.device, transfer);
+        return false;
+    }
+    auto* destinationBytes = static_cast<std::uint8_t*>(mapped);
+    const auto* sourceBytes = static_cast<const std::uint8_t*>(data);
+    for (std::uint32_t row = 0; row < object.height; ++row) {
+        std::memcpy(destinationBytes + static_cast<std::size_t>(row * paddedRowBytes),
+                    sourceBytes + static_cast<std::size_t>(row * tightRowBytes),
+                    static_cast<std::size_t>(tightRowBytes));
+    }
+    SDL_UnmapGPUTransferBuffer(s.device, transfer);
+
+    SDL_GPUCommandBuffer* command = SDL_AcquireGPUCommandBuffer(s.device);
+    if (!command) {
+        s.setError(error, "GPU texture upload command buffer acquisition failed");
+        SDL_ReleaseGPUTransferBuffer(s.device, transfer);
+        return false;
+    }
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(command);
+    if (!copy) {
+        s.setError(error, "GPU texture upload copy pass creation failed");
+        SDL_CancelGPUCommandBuffer(command);
+        SDL_ReleaseGPUTransferBuffer(s.device, transfer);
+        return false;
+    }
+    SDL_GPUTextureTransferInfo source{transfer, 0, static_cast<Uint32>(paddedRowBytes / bytesPerPixel), object.height};
+    SDL_GPUTextureRegion target{object.texture, 0, 0, 0, 0, 0, object.width, object.height, 1};
+    SDL_UploadToGPUTexture(copy, &source, &target, true);
+    SDL_EndGPUCopyPass(copy);
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(command);
+    SDL_ReleaseGPUTransferBuffer(s.device, transfer);
+    if (!fence) { s.setError(error, "GPU texture upload submission failed"); return false; }
+    s.fences.emplace(s.nextFence++, fence);
+    return true;
+}
+
 ResourceHandle SdlGpuBackend::createShader(const GpuShaderDescriptor& descriptor, std::string& error) {
     auto& s = *impl_;
     if (!s.ready || s.deviceLost) { error = "GPU backend is not ready"; return {}; }
