@@ -1,5 +1,5 @@
 const PATHS = new Set(["translation", "rotation", "scale", "weights"]);
-const INTERPOLATIONS = new Set(["LINEAR", "STEP"]);
+const INTERPOLATIONS = new Set(["LINEAR", "STEP", "CUBICSPLINE"]);
 const finite = (value, label) => {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(label + " must be finite.");
@@ -36,8 +36,25 @@ function sampleTrack(track, time) {
   const left = right - 1;
   const a = values.slice(left * width, (left + 1) * width);
   const b = values.slice(right * width, (right + 1) * width);
+  const deltaTime = times[right] - times[left];
+  const t = (time - times[left]) / deltaTime;
   if (track.interpolation === "STEP") return a;
-  const t = (time - times[left]) / (times[right] - times[left]);
+  if (track.interpolation === "CUBICSPLINE") {
+    const outgoing = track.outTangents.slice(left * width, (left + 1) * width);
+    const incoming = track.inTangents.slice(right * width, (right + 1) * width);
+    const t2 = t * t, t3 = t2 * t;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+    const value = a.map((component, index) =>
+      h00 * component +
+      h10 * deltaTime * outgoing[index] +
+      h01 * b[index] +
+      h11 * deltaTime * incoming[index]
+    );
+    return track.path === "rotation" ? normalize(value) : value;
+  }
   if (track.path === "rotation") return slerp(a, b, t);
   return a.map((value, index) => value + (b[index] - value) * t);
 }
@@ -57,6 +74,16 @@ export function createPStudioAnimationClip(input = {}) {
     if (values.length !== times.length * components) throw new RangeError("Animation track value count does not match its keyframes.");
     const interpolation = String(source.interpolation || "LINEAR").toUpperCase();
     if (!INTERPOLATIONS.has(interpolation)) throw new TypeError("Unsupported animation interpolation: " + interpolation);
+    const inTangents = interpolation === "CUBICSPLINE"
+      ? Array.from(source.inTangents || [], (value, i) => finite(value, "track in tangent " + i))
+      : null;
+    const outTangents = interpolation === "CUBICSPLINE"
+      ? Array.from(source.outTangents || [], (value, i) => finite(value, "track out tangent " + i))
+      : null;
+    if (interpolation === "CUBICSPLINE" &&
+        (inTangents.length !== values.length || outTangents.length !== values.length)) {
+      throw new RangeError("CUBICSPLINE animation requires one in- and out-tangent vector per keyframe.");
+    }
     if (path === "rotation") {
       for (let i = 0; i < times.length; i += 1) {
         const q = values.slice(i * 4, i * 4 + 4);
@@ -65,7 +92,12 @@ export function createPStudioAnimationClip(input = {}) {
         values.splice(i * 4, 4, ...normalized);
       }
     }
-    return Object.freeze({ targetId, path, components, times: Object.freeze(times), values: Object.freeze(values), interpolation });
+    return Object.freeze({
+      targetId, path, components, times: Object.freeze(times), values: Object.freeze(values),
+      inTangents: inTangents ? Object.freeze(inTangents) : null,
+      outTangents: outTangents ? Object.freeze(outTangents) : null,
+      interpolation
+    });
   });
   const duration = Math.max(finite(input.duration ?? 0, "clip duration"), ...tracks.flatMap(track => [track.times[track.times.length - 1]]), 0);
   if (duration < 0) throw new RangeError("Animation duration must be non-negative.");
