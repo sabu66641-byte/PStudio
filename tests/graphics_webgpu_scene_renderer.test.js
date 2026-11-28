@@ -93,7 +93,7 @@ test('independent WebGPU scene renderer rejects unsupported PBR features instead
     materials: [{ id: 'mat', model: 'pbr', textures: ['albedo'] }],
     entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
   });
-  assert.throws(() => renderPStudioGraphicsSceneFrame({ scene }, { device: {} }, {}), /opaque, single-sided PBR materials with only an optional base-color texture/);
+  assert.throws(() => renderPStudioGraphicsSceneFrame({ scene }, { device: {} }, {}), /without legacy texture feature flags/);
 });
 
 test('independent WebGPU scene renderer batches repeated geometry and materials into instanced draws', async () => {
