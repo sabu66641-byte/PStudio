@@ -129,6 +129,28 @@ static GpuShaderDescriptor shader(const std::string& id, GpuShaderStage stage) {
 
 int main() {
     std::string error;
+    NativeSurfaceDescriptor headless;
+    assert(headless.valid(&error));
+    assert(!NativeSurfaceDescriptor{NativeSurfacePlatform::Win32}.valid(&error));
+    NativeSurfaceDescriptor win32;
+    win32.platform = NativeSurfacePlatform::Win32;
+    win32.hostWindow = reinterpret_cast<void*>(1);
+    assert(win32.valid(&error));
+    NativeSurfaceDescriptor xlib;
+    xlib.platform = NativeSurfacePlatform::Xlib;
+    xlib.hostWindow = reinterpret_cast<void*>(1);
+    assert(xlib.valid(&error));
+    NativeSurfaceDescriptor wayland;
+    wayland.platform = NativeSurfacePlatform::Wayland;
+    wayland.hostWindow = reinterpret_cast<void*>(1);
+    assert(wayland.valid(&error));
+    NativeSurfaceDescriptor metal;
+    metal.platform = NativeSurfacePlatform::MetalLayer;
+    metal.hostWindow = reinterpret_cast<void*>(1);
+    assert(metal.valid(&error));
+    NativeSurfaceDescriptor invalidSize;
+    invalidSize.width = 0;
+    assert(!invalidSize.valid(&error));
     auto first = std::make_shared<MockNativeGpuBackend>();
     NativeGpuRuntime runtime(first, NativeSurfaceDescriptor{});
     assert(runtime.initialize(&error));
