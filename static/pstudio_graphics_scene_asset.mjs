@@ -551,7 +551,7 @@ export function importPStudioThreeScene(scene, options = {}) {
       unsupported.push({ objectId, feature: 'multi-materials-require-matching-geometry-groups' });
     }
     const materialIds = [];
-    const importTextureSlot = (texture, slot, uv0, uv1) => {
+    const importTextureSlot = (texture, slot, uv0, uv1, materialId) => {
       if (!texture) return null;
       const textureId = String(texture.uuid || texture.name || objectId + '.texture.' + slot);
       const channel = Math.max(0, Math.floor(Number(texture.channel) || 0));
@@ -629,13 +629,13 @@ export function importPStudioThreeScene(scene, options = {}) {
       const materialId = String(source.uuid || source.id || objectId + '.material.' + index);
       materialIds.push(materialId);
       const textureSlots = {
-        baseColor: importTextureSlot(source.map, 'baseColor', uvAttribute, uv2Attribute),
-        normal: importTextureSlot(source.normalMap, 'normal', uvAttribute, uv2Attribute),
-        metalness: importTextureSlot(source.metalnessMap, 'metalness', uvAttribute, uv2Attribute),
-        roughness: importTextureSlot(source.roughnessMap, 'roughness', uvAttribute, uv2Attribute),
-        occlusion: importTextureSlot(source.aoMap, 'occlusion', uvAttribute, uv2Attribute),
-        emissive: importTextureSlot(source.emissiveMap, 'emissive', uvAttribute, uv2Attribute),
-        alpha: importTextureSlot(source.alphaMap, 'alpha', uvAttribute, uv2Attribute)
+        baseColor: importTextureSlot(source.map, 'baseColor', uvAttribute, uv2Attribute, materialId),
+        normal: importTextureSlot(source.normalMap, 'normal', uvAttribute, uv2Attribute, materialId),
+        metalness: importTextureSlot(source.metalnessMap, 'metalness', uvAttribute, uv2Attribute, materialId),
+        roughness: importTextureSlot(source.roughnessMap, 'roughness', uvAttribute, uv2Attribute, materialId),
+        occlusion: importTextureSlot(source.aoMap, 'occlusion', uvAttribute, uv2Attribute, materialId),
+        emissive: importTextureSlot(source.emissiveMap, 'emissive', uvAttribute, uv2Attribute, materialId),
+        alpha: importTextureSlot(source.alphaMap, 'alpha', uvAttribute, uv2Attribute, materialId)
       };
       const textureIds = Object.fromEntries(Object.entries(textureSlots).map(([slot, record]) => [slot, record?.id || null]));
       const textureTransforms = Object.fromEntries(Object.entries(textureSlots).filter(([, record]) => record).map(([slot, record]) => [slot, record.transform]));
