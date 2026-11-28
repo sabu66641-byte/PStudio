@@ -23,7 +23,7 @@ test('PStudio-native GLB loader rejects malformed containers and external buffer
  const source=makeGlb();const bad=source.slice(0);new DataView(bad).setUint32(8,12,true);
  await assert.rejects(loadPStudioGLB(bad),/declared length/);
  const external=makeGlb();const bytes=new Uint8Array(external);const jsonOffset=20;const jsonLength=new DataView(external).getUint32(12,true);
- const json=JSON.parse(new TextDecoder().decode(bytes.slice(jsonOffset,jsonOffset+jsonLength)).replace(/[\\u0000\\u0020]+$/g,''));
+ const json=JSON.parse(new TextDecoder().decode(bytes.slice(jsonOffset,jsonOffset+jsonLength)).replace(/[\u0000\u0020]+$/g,''));
  json.buffers[0].uri='mesh.bin';
  // The separate external-buffer rejection is validated by a minimal valid JSON GLB below.
  const encoded=new TextEncoder().encode(JSON.stringify({...json,meshes:[],nodes:[],scenes:[{nodes:[]}]}));
