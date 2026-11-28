@@ -27,18 +27,18 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 0 | Foundation — 基盤強化・基盤整理・土台作り | **100%** | PVCS analysis foundation, diagnostics, context separation, visual-difference utilities, regression coverage and accurate documentation |
 | 1 | Visual Identity — 視覚設計・品質契約 | **100%** | Reality 55 : Anime 45, physical/artistic principles, material/lighting/atmosphere/water requirements and reference-scene rubric |
 | 2 | Graphics Architecture — 独立アーキテクチャ | **50%** | Vendor-neutral contracts, backend adapter model, HAL lifecycle/fallback, engine facade and architecture tests |
-| 3 | Graphics Core — 独自グラフィックスコア | 0% | PStudio-owned renderer, resource, shader, compute and lighting core implementations |
-| 4 | Render Graph — 描画依存グラフ | 0% | Declarative passes, resource edges, scheduling, transient lifetime and barriers |
-| 5 | Native Renderer — ネイティブ描画基盤 | 0% | Native runtime and API backends where platform/runtime support is deliberately provided |
-| 6 | Rendering Quality — 描画品質基盤 | Existing assets; formal phase pending | PBR, shadows, indirect lighting, color management and material response |
-| 7 | Atmosphere & Sky — 大気・空 | Existing assets; formal phase pending | Sky radiance, atmosphere, weather, volumetrics and coherent IBL |
-| 8 | Advanced Water — 高度な水面 | Existing assets; formal phase pending | Reflection, refraction, absorption, depth, wave spectrum and temporal stability |
-| 9 | World Rendering — ワールド描画 | Existing assets; formal phase pending | Terrain, foliage, world visibility, LOD, streaming and material scale |
-| 10 | Advanced Graphics — 高度な描画技術 | Existing assets; formal phase pending | GPU VFX, advanced GI, clustered lighting and volumetric effects |
-| 11 | PVCS Integration — 視覚補償・性能配分 | Foundation only; allocator pending | Evidence-based quality/cost selection and reversible runtime allocation |
-| 12 | Three.js Independence — Three.js独立 | 0% | Replace implementation dependencies only after parity, compatibility and migration gates |
+| 3 | Graphics Core — 独自グラフィックスコア | **0%** | PStudio-owned renderer, resource, shader, compute and lighting core implementations |
+| 4 | Render Graph — 描画依存グラフ | **0%** | Declarative passes, resource edges, scheduling, transient lifetime and barriers |
+| 5 | Native Renderer — ネイティブ描画基盤 | **0%** | Native runtime and API backends where platform/runtime support is deliberately provided |
+| 6 | Rendering Quality — 描画品質基盤 | **30% (暫定)** | PBR, shadows, indirect lighting, color management and material response |
+| 7 | Atmosphere & Sky — 大気・空 | **45% (暫定)** | Sky radiance, atmosphere, weather, volumetrics and coherent IBL |
+| 8 | Advanced Water — 高度な水面 | **40% (暫定)** | Reflection, refraction, absorption, depth, wave spectrum and temporal stability |
+| 9 | World Rendering — ワールド描画 | **25% (暫定)** | Terrain, foliage, world visibility, LOD, streaming and material scale |
+| 10 | Advanced Graphics — 高度な描画技術 | **15% (暫定)** | GPU VFX, advanced GI, clustered lighting and volumetric effects |
+| 11 | PVCS Integration — 視覚補償・性能配分 | **25% (暫定)** | Evidence-based quality/cost selection and reversible runtime allocation |
+| 12 | Three.js Independence — Three.js独立 | **0%** | Replace implementation dependencies only after parity, compatibility and migration gates |
 
-The percentages describe progress toward the independent-engine target, not the maturity of all existing rendering features. Phases marked "existing assets" must not be interpreted as phase completion.
+The percentages describe progress toward the independent-engine target, not the maturity of all existing rendering features. Phase 6–11 values are provisional source-level estimates and must be revised when each phase is formally decomposed into acceptance items. The overall percentage is not a simple arithmetic average because phase scope and effort are unequal.
 
 ## Phase 0 — Foundation (100%)
 

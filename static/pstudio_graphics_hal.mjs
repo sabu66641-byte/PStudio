@@ -148,6 +148,13 @@ export function createPStudioGraphicsHAL(options = {}) {
         const candidatesToTry = allowFallback
           ? eligible
           : eligible.filter(item => item.descriptor.backend === primaryBackend).slice(0, 1);
+        if (!allowFallback) {
+          for (const item of eligible) {
+            if (!candidatesToTry.includes(item)) {
+              attempts.push({ adapterId: item.descriptor.id, backend: item.descriptor.backend, status: 'skipped', reason: 'fallback-disabled' });
+            }
+          }
+        }
         for (let index = 0; index < candidatesToTry.length; index++) {
           const item = candidatesToTry[index];
           if (!isCurrent(ticket)) throw cancelledError(ticket);

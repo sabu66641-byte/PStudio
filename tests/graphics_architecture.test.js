@@ -178,6 +178,7 @@ test('HAL with fallback disabled does not select a different backend when the pr
   await assert.rejects(hal.initialize(), error => error.code === 'PSTUDIO_GRAPHICS_NO_BACKEND');
   assert.equal(hal.getState().backend, null);
   assert.equal(hal.getState().state, 'failed');
+  assert.ok(hal.getState().attempts.some(entry => entry.adapterId === 'other.webgl' && entry.reason === 'fallback-disabled'));
   hal.dispose();
 });
 

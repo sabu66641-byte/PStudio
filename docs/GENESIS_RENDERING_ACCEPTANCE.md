@@ -166,7 +166,7 @@ The torii-and-water-mirror fixture becomes one interactive demonstration, not a 
 
 Work one subsystem at a time. Before implementation, read its current owner module, callers, tests, and resource lifecycle. Add or update focused regression tests with each change. Do not rewrite adjacent systems merely for stylistic consistency. Keep changes additive or reversible until parity is demonstrated. Update this document and `docs/ARCHITECTURE.md` whenever actual implementation boundaries or known limitations change.
 
-A phase is complete only when its exit gate passes. A green Node.js test suite alone is not a hardware-rendering pass.
+A GENESIS hardware-rendering acceptance claim requires its stated hardware evidence; a green Node.js test suite alone is not such a pass. This hardware-specific acceptance contract is separate from the user's current Independent Graphics Engine roadmap scoring, which explicitly excludes physical-device testing as a progress gate.
 
 
 ## Current Independent Graphics Engine progress-gate clarification (2026-11-28)
