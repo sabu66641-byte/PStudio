@@ -1,4 +1,5 @@
 import { createPStudioWebGPUCoreAdapter } from './pstudio_graphics_webgpu_backend.mjs';
+import { evaluatePStudioSceneAnimation } from './pstudio_graphics_animation_core.mjs';
 
 const BUFFER_USAGE = Object.freeze({ COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64 });
 const TEXTURE_USAGE = Object.freeze({ COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 });
@@ -709,8 +710,19 @@ function disposeSceneRuntime(state) {
 
 /** Draw a PStudio scene asset through the direct WebGPU API, without a Three.js renderer. */
 export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
-  const scene = frame?.scene;
+  let scene = frame?.scene;
   if (!scene || scene.kind !== 'pstudio-graphics-scene-asset') return false;
+  const animation = frame.animation || (frame.animationClipId ? {
+    clipId: frame.animationClipId,
+    timeSeconds: frame.timeSeconds ?? 0,
+    loop: frame.animationLoop === true
+  } : null);
+  if (animation?.clipId) {
+    scene = evaluatePStudioSceneAnimation(
+      scene, animation.clipId, animation.timeSeconds ?? frame.timeSeconds ?? 0,
+      { loop: animation.loop === true }
+    );
+  }
   state = state && typeof state === 'object' ? state : {};
   state.geometries ||= new Map();
   state.materials ||= new Map();
