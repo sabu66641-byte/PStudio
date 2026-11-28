@@ -169,8 +169,14 @@ export async function loadPStudioGLB(input, options = {}) {
   const { document, binary, byteLength } = parseGlb(input);
   if (String(document.asset?.version || "") !== "2.0") throw new TypeError("glTF asset version 2.0 is required.");
   const unsupported = [];
+  const supportedRequiredExtensions = new Set([
+    "KHR_lights_punctual", "KHR_texture_transform", "KHR_materials_unlit",
+    "KHR_materials_emissive_strength", "KHR_materials_ior", "KHR_materials_transmission",
+    "KHR_materials_volume", "KHR_materials_clearcoat", "KHR_materials_sheen",
+    "KHR_materials_specular"
+  ]);
   for (const extension of document.extensionsRequired || []) {
-    if (!["KHR_lights_punctual"].includes(extension)) unsupported.push({ feature: "required-extension", extension });
+    if (!supportedRequiredExtensions.has(extension)) unsupported.push({ feature: "required-extension", extension });
   }
   const reader=makeReader(document,binary), geometries=new Map(),materials=[],textures=[],entities=[],sceneNodes=[];
   const decodedImages=new Map();
@@ -283,9 +289,15 @@ export async function loadPStudioGLB(input, options = {}) {
       clearcoat: clearcoatExtension.clearcoatFactor ?? 0,
       clearcoatRoughness: clearcoatExtension.clearcoatRoughnessFactor ?? 0,
       sheen: sheenExtension.sheenRoughnessFactor ?? 0,
+      sheenRoughness: sheenExtension.sheenRoughnessFactor ?? 0,
+      sheenColor: sheenExtension.sheenColorFactor || [0,0,0],
       specularIntensity: specularExtension.specularFactor ?? 1,
+      specularColor: specularExtension.specularColorFactor || [1,1,1],
+      attenuationColor: volumeExtension.attenuationColor || [1,1,1],
+      attenuationDistance: volumeExtension.attenuationDistance ?? null,
       metadata: {
         source: "gltf-2.0", sourceMaterialIndex: index,
+        extensions: extensions,
         extensionNames: extensionNames.filter(name => supportedExtensions.has(name))
       }
     });
