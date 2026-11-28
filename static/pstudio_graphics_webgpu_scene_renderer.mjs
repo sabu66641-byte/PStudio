@@ -207,8 +207,14 @@ const WGSL = [
 '  direct += sheenColor * sheenResponse * (1.0 - roughness) * 0.25;',
 '  let specularTint = mix(vec3<f32>(1.0), material.specular.rgb, clamp(material.specular.a, 0.0, 1.0));',
 '  direct *= specularTint;',
-'  if (material.materialFlags.x > 0.5) { direct = vec3<f32>(0.0); ambient = vec3<f32>(0.0); }',
-'  let litColor = select(direct + ambient, albedo, material.materialFlags.x > 0.5);',
+'  if (material.materialFlags.x > 0.5 && material.materialFlags.x < 1.5) { direct = vec3<f32>(0.0); ambient = vec3<f32>(0.0); }',
+'  if (material.materialFlags.x > 1.5) {',
+'    let toonLuminance = dot(direct, vec3<f32>(0.2126, 0.7152, 0.0722));',
+'    let toonBand = select(0.28, select(0.62, 1.0, toonLuminance > 0.68), toonLuminance > 0.24);',
+'    direct = albedo * toonBand;',
+'  }',
+'  let isUnlit = material.materialFlags.x > 0.5 && material.materialFlags.x < 1.5;',
+'  let litColor = select(direct + ambient, albedo, isUnlit);',
 '  let linearColor = max(litColor + emissive * material.emissiveColor.a, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
 '  let srgb = select(1.055 * pow(mapped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), mapped * 12.92, mapped <= vec3<f32>(0.0031308));',
@@ -329,7 +335,7 @@ function validateScene(scene, renderTarget = {}) {
       const materialId = entity.materialIds[group.materialIndex];
       if (!materials.has(materialId)) throw new Error('Missing PStudio material: ' + materialId);
       const material = materials.get(materialId);
-      if (!['pbr', 'unlit'].includes(material.model) || material.textures?.length) {
+      if (!['pbr', 'unlit', 'toon'].includes(material.model) || material.textures?.length) {
         throw new Error('Independent WebGPU renderer requires PStudio PBR or unlit material records without legacy texture feature flags: ' + material.id);
       }
       const supportedTextureSlots = new Set(['baseColor','normal','metallicRoughness','metalness','roughness','occlusion','emissive','alpha']);
@@ -601,7 +607,7 @@ function ensureMaterial(state, device, material, textures) {
   ], 16);
   const alphaMode = material.alphaMode === 'mask' ? 1 : material.alphaMode === 'blend' ? 2 : 0;
   data.set([
-    material.unlit === true || material.model === 'unlit' ? 1 : 0,
+    material.unlit === true || material.model === 'unlit' ? 1 : material.model === 'toon' ? 2 : 0,
     material.doubleSided === true ? 1 : 0,
     material.occlusionStrength ?? 1,
     material.alphaCutoff ?? 0.5
