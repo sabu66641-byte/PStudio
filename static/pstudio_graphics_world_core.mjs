@@ -194,9 +194,12 @@ export function scatterPStudioFoliage(input = {}) {
   const sampleNormal = input.sampleNormal || (() => [0, 1, 0]);
   if (typeof sampleHeight !== 'function' || typeof sampleNormal !== 'function') throw new TypeError('Foliage terrain samplers must be functions.');
   const random = rng(stableHash(seed, Math.floor(min[0] * 31), Math.floor(min[2] * 31)));
-  const positions = [], normals = [], accepted = [];
+  const positions = [], normals = [];
   const minDistanceSquared = minSpacing * minSpacing;
-  for (let attempt = 0; attempt < maxAttempts && positions.length / 3 < count; attempt++) {
+  const spatialBuckets = new Map();
+  const bucketKey = (x, z) => x + ',' + z;
+  let attempts = 0;
+  for (; attempts < maxAttempts && positions.length / 3 < count; attempts++) {
     const x = min[0] + random() * (max[0] - min[0]);
     const z = min[2] + random() * (max[2] - min[2]);
     const y = sampleHeight(x, z);
@@ -208,14 +211,32 @@ export function scatterPStudioFoliage(input = {}) {
     const normalized = normal.map(value => value / normalLength);
     const slope = Math.acos(Math.max(-1, Math.min(1, normalized[1])));
     if (slope > maxSlopeRadians) continue;
-    if (minSpacing > 0 && accepted.some(p => ((p[0] - x) ** 2 + (p[2] - z) ** 2) < minDistanceSquared)) continue;
+    let cellX = 0, cellZ = 0;
+    if (minSpacing > 0) {
+      cellX = Math.floor(x / minSpacing);
+      cellZ = Math.floor(z / minSpacing);
+      let tooClose = false;
+      for (let dz = -1; dz <= 1 && !tooClose; dz++) {
+        for (let dx = -1; dx <= 1 && !tooClose; dx++) {
+          const bucket = spatialBuckets.get(bucketKey(cellX + dx, cellZ + dz));
+          if (bucket && bucket.some(p => ((p[0] - x) ** 2 + (p[1] - z) ** 2) < minDistanceSquared)) {
+            tooClose = true;
+          }
+        }
+      }
+      if (tooClose) continue;
+    }
     positions.push(x, Number(y), z);
     normals.push(...normalized);
-    accepted.push([x, z]);
+    if (minSpacing > 0) {
+      const key = bucketKey(cellX, cellZ);
+      if (!spatialBuckets.has(key)) spatialBuckets.set(key, []);
+      spatialBuckets.get(key).push([x, z]);
+    }
   }
   return Object.freeze({
     positions: new Float32Array(positions), normals: new Float32Array(normals),
-    count: positions.length / 3, requestedCount: count, attempts: Math.min(maxAttempts, accepted.length ? undefined : maxAttempts)
+    count: positions.length / 3, requestedCount: count, attempts
   });
 }
 
