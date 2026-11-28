@@ -154,9 +154,11 @@ function textureDescriptor(input) {
   if (!filters.has(magFilter) || !filters.has(minFilter)) throw new TypeError('Unsupported PStudio texture filter.');
   const format = String(input.format || 'rgba8unorm-srgb');
   if (format !== 'rgba8unorm-srgb' && format !== 'rgba8unorm') throw new TypeError('PStudio RGBA8 textures support rgba8unorm-srgb or rgba8unorm.');
+  let fingerprint = 2166136261;
+  for (const value of data) fingerprint = Math.imul(fingerprint ^ value, 16777619) >>> 0;
   return Object.freeze({
     id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
-    width, height, data, format, addressModeU, addressModeV, magFilter, minFilter
+    fingerprint, width, height, data, format, addressModeU, addressModeV, magFilter, minFilter
   });
 }
 function entityDescriptor(input) {
@@ -371,7 +373,7 @@ export function importPStudioThreeScene(scene, options = {}) {
             unsupported.push({ objectId, materialId, feature: 'texture-map-requires-uv0' });
           } else {
             const textureInput = {
-              id: textureId, width, height, data,
+              id: textureId, revision: baseColorMap.version || 1, width, height, data,
               format: pixels.format || 'rgba8unorm-srgb',
               addressModeU: baseColorMap.wrapS === 1001 ? 'clamp-to-edge' : baseColorMap.wrapS === 1002 ? 'mirror-repeat' : 'repeat',
               addressModeV: baseColorMap.wrapT === 1001 ? 'clamp-to-edge' : baseColorMap.wrapT === 1002 ? 'mirror-repeat' : 'repeat',

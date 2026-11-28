@@ -270,7 +270,7 @@ function ensureGeometry(state, device, geometry) {
 }
 function ensureTexture(state, device, texture) {
   const cached = state.textures.get(texture.id);
-  if (cached && cached.revision === texture.revision) return cached;
+  if (cached && cached.revision === texture.revision && cached.fingerprint === texture.fingerprint) return cached;
   if (cached) {
     try { cached.texture.destroy(); } catch (_) {}
     state.textures.delete(texture.id);
@@ -287,7 +287,7 @@ function ensureTexture(state, device, texture) {
     { bytesPerRow: texture.width * 4, rowsPerImage: texture.height },
     { width: texture.width, height: texture.height, depthOrArrayLayers: 1 }
   );
-  const record = Object.freeze({ revision: texture.revision, texture: gpuTexture, view: gpuTexture.createView() });
+  const record = Object.freeze({ revision: texture.revision, fingerprint: texture.fingerprint, texture: gpuTexture, view: gpuTexture.createView() });
   state.textures.set(texture.id, record);
   return record;
 }
@@ -310,7 +310,16 @@ function ensureWhiteTexture(state, device) {
 }
 
 function ensureMaterial(state, device, material, pipeline, textures) {
+  const signature = JSON.stringify({
+    baseColor: material.baseColor, emissive: material.emissive, metallic: material.metallic,
+    roughness: material.roughness, opacity: material.opacity, baseColorTextureId: material.baseColorTextureId
+  });
   let record = state.materials.get(material.id);
+  if (record && record.signature !== signature) {
+    try { record.buffer.destroy(); } catch (_) {}
+    state.materials.delete(material.id);
+    record = null;
+  }
   if (!record) {
     const buffer = device.createBuffer({
       label: 'PStudio Material Uniform ' + material.id,
@@ -337,7 +346,7 @@ function ensureMaterial(state, device, material, pipeline, textures) {
         { binding: 2, resource: sampler }
       ]
     });
-    record = { buffer, bindGroup, sampler };
+    record = { buffer, bindGroup, sampler, signature };
     state.materials.set(material.id, record);
   }
   const data = new Float32Array(12);

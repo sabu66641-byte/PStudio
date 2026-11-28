@@ -76,7 +76,7 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
   assert.equal(stats.buffers, 5, 'geometry, frame, material and instance GPU buffers should be reused');
-  assert.equal(stats.textures, 1, 'depth target should be reused at the same size');
+  assert.equal(stats.textures, 2, 'depth and white fallback textures should be reused at the same size');
   assert.equal(handle.dispose(), true);
 });
 
@@ -91,7 +91,7 @@ test('independent WebGPU scene renderer rejects unsupported PBR features instead
     materials: [{ id: 'mat', model: 'pbr', textures: ['albedo'] }],
     entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
   });
-  assert.throws(() => renderPStudioGraphicsSceneFrame({ scene }, { device: {} }, {}), /opaque, single-sided, untextured PBR/);
+  assert.throws(() => renderPStudioGraphicsSceneFrame({ scene }, { device: {} }, {}), /opaque, single-sided PBR materials with only an optional base-color texture/);
 });
 
 test('independent WebGPU scene renderer batches repeated geometry and materials into instanced draws', async () => {
