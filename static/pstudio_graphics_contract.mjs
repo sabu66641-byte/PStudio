@@ -69,7 +69,7 @@ export function createPStudioGraphicsMaterial(input={}) {
   }
   const textureSource = input.textureIds || {};
   const textureIds = {};
-  for (const slot of ['baseColor', 'normal', 'metallicRoughness', 'metalness', 'roughness', 'occlusion', 'emissive', 'alpha']) {
+  for (const slot of ['baseColor', 'normal', 'metallicRoughness', 'metalness', 'roughness', 'occlusion', 'emissive', 'alpha', 'transmission', 'thickness', 'clearcoat', 'clearcoatRoughness', 'clearcoatNormal', 'sheenColor', 'sheenRoughness', 'specular', 'specularColor']) {
     const legacy = slot === 'baseColor' ? input.baseColorTextureId : null;
     const value = textureSource[slot] ?? legacy;
     textureIds[slot] = value == null ? null : String(value).trim() || null;
@@ -95,13 +95,21 @@ export function createPStudioGraphicsMaterial(input={}) {
   const sheen = finite(input.sheen, 0);
   const specularIntensity = finite(input.specularIntensity, 1);
   const emissiveStrength = finite(input.emissiveStrength, 1);
+  const sheenRoughness = finite(input.sheenRoughness, input.sheen ?? 0);
+  const clearcoatNormalScale = finite(input.clearcoatNormalScale, 1);
+  const sheenColor = finiteArray(input.sheenColor || [0, 0, 0], 3, [0, 0, 0], 'sheenColor');
+  const specularColor = finiteArray(input.specularColor || [1, 1, 1], 3, [1, 1, 1], 'specularColor');
+  const attenuationColor = finiteArray(input.attenuationColor || [1, 1, 1], 3, [1, 1, 1], 'attenuationColor');
+  const attenuationDistance = input.attenuationDistance == null ? null : finite(input.attenuationDistance, 'attenuationDistance');
   for (const [name, value, min, max] of [
     ['normalScale', normalScale, 0, 16], ['occlusionStrength', occlusionStrength, 0, 1],
     ['alphaCutoff', alphaCutoff, 0, 1], ['ior', ior, 1, 2.5],
     ['transmission', transmission, 0, 1], ['thickness', thickness, 0, 1000],
     ['clearcoat', clearcoat, 0, 1], ['clearcoatRoughness', clearcoatRoughness, 0, 1],
-    ['sheen', sheen, 0, 1], ['specularIntensity', specularIntensity, 0, 1],
-    ['emissiveStrength', emissiveStrength, 0, 10000]
+    ['sheen', sheen, 0, 1], ['sheenRoughness', sheenRoughness, 0, 1],
+    ['clearcoatNormalScale', clearcoatNormalScale, 0, 16],
+    ['specularIntensity', specularIntensity, 0, 1], ['emissiveStrength', emissiveStrength, 0, 10000],
+    ['attenuationDistance', attenuationDistance ?? 1, 0, Number.MAX_SAFE_INTEGER]
   ]) {
     if (value < min || value > max) throw new RangeError('Material ' + name + ' is out of range.');
   }
@@ -116,7 +124,9 @@ export function createPStudioGraphicsMaterial(input={}) {
     baseColorTextureId, textureIds: Object.freeze(textureIds),
     textureTransforms: Object.freeze(textureTransforms),
     normalScale, occlusionStrength, ior, transmission, thickness,
-    clearcoat, clearcoatRoughness, sheen, specularIntensity, emissiveStrength,
+    clearcoat, clearcoatRoughness, clearcoatNormalScale, sheen, sheenRoughness, sheenColor,
+    specularIntensity, specularColor, emissiveStrength,
+    attenuationColor, attenuationDistance,
     unlit: input.unlit === true,
     textures: normalizeFeatureList(input.textures),
     metadata: freezeRecord(input.metadata)
