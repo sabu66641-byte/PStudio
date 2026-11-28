@@ -447,31 +447,63 @@ function ensureTexture(state, device, texture) {
   return record;
 }
 
-function ensureWhiteTexture(state, device) {
-  const id = '__pstudio-white-base-color';
+function defaultTextureId(slot) {
+  return slot === 'baseColor' ? '__pstudio-white-base-color' : '__pstudio-default-' + slot;
+}
+function ensureDefaultMaterialTexture(state, device, slot) {
+  const id = defaultTextureId(slot);
   const cached = state.textures.get(id);
   if (cached) return cached;
+  const normal = slot === 'normal';
+  const srgb = slot === 'baseColor' || slot === 'emissive';
   const texture = device.createTexture({
-    label: 'PStudio White Base Color',
+    label: 'PStudio Default ' + slot + ' Texture',
     size: [1, 1, 1],
-    format: 'rgba8unorm-srgb',
+    format: srgb ? 'rgba8unorm-srgb' : 'rgba8unorm',
     usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.COPY_DST
   });
-  device.queue.writeTexture({ texture }, new Uint8Array([255, 255, 255, 255]),
+  const pixel = normal ? [128, 128, 255, 255] : [255, 255, 255, 255];
+  device.queue.writeTexture({ texture }, new Uint8Array(pixel),
     { bytesPerRow: 4, rowsPerImage: 1 }, { width: 1, height: 1, depthOrArrayLayers: 1 });
-  const record = Object.freeze({ revision: 1, texture, view: texture.createView() });
+  const record = Object.freeze({ revision: 1, fingerprint: 0, texture, view: texture.createView() });
   state.textures.set(id, record);
   return record;
 }
 
-function ensureMaterial(state, device, material, pipeline, textures) {
-  const textureAsset = material.baseColorTextureId ? textures.get(material.baseColorTextureId) : null;
+const MATERIAL_TEXTURE_SLOTS = Object.freeze([
+  'baseColor', 'normal', 'metallicRoughness', 'metalness',
+  'roughness', 'occlusion', 'emissive', 'alpha'
+]);
+function samplerForTexture(device, textureAsset) {
+  return device.createSampler({
+    addressModeU: textureAsset?.addressModeU || 'repeat',
+    addressModeV: textureAsset?.addressModeV || 'repeat',
+    magFilter: textureAsset?.magFilter || 'linear',
+    minFilter: textureAsset?.minFilter || 'linear',
+    mipmapFilter: 'nearest',
+    lodMinClamp: 0,
+    lodMaxClamp: 0,
+    maxAnisotropy: 1
+  });
+}
+function ensureMaterial(state, device, material, textures) {
+  const ids = material.textureIds || { baseColor: material.baseColorTextureId };
+  const textureAssets = Object.fromEntries(MATERIAL_TEXTURE_SLOTS.map(slot => [
+    slot, ids[slot] ? textures.get(ids[slot]) : null
+  ]));
   const signature = JSON.stringify({
     baseColor: material.baseColor, emissive: material.emissive, metallic: material.metallic,
-    roughness: material.roughness, opacity: material.opacity, baseColorTextureId: material.baseColorTextureId,
-    textureRevision: textureAsset?.revision || 0, textureFingerprint: textureAsset?.fingerprint || 0,
-    addressModeU: textureAsset?.addressModeU || 'repeat', addressModeV: textureAsset?.addressModeV || 'repeat',
-    magFilter: textureAsset?.magFilter || 'linear', minFilter: textureAsset?.minFilter || 'linear'
+    roughness: material.roughness, opacity: material.opacity, alphaMode: material.alphaMode,
+    doubleSided: material.doubleSided, normalScale: material.normalScale,
+    occlusionStrength: material.occlusionStrength, alphaCutoff: material.alphaCutoff,
+    clearcoat: material.clearcoat, clearcoatRoughness: material.clearcoatRoughness,
+    sheen: material.sheen, sheenRoughness: material.sheenRoughness,
+    sheenColor: material.sheenColor, specularColor: material.specularColor,
+    specularIntensity: material.specularIntensity, emissiveStrength: material.emissiveStrength,
+    unlit: material.unlit, textureIds: ids, textureTransforms: material.textureTransforms,
+    textureRevisions: Object.fromEntries(MATERIAL_TEXTURE_SLOTS.map(slot => [
+      slot, [textureAssets[slot]?.revision || 0, textureAssets[slot]?.fingerprint || 0]
+    ]))
   });
   let record = state.materials.get(material.id);
   if (record && record.signature !== signature) {
@@ -482,35 +514,77 @@ function ensureMaterial(state, device, material, pipeline, textures) {
   if (!record) {
     const buffer = device.createBuffer({
       label: 'PStudio Material Uniform ' + material.id,
-      size: 48,
+      size: 400,
       usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
     });
-    const gpuTexture = textureAsset ? ensureTexture(state, device, textureAsset) : ensureWhiteTexture(state, device);
-    const sampler = device.createSampler({
-      addressModeU: textureAsset?.addressModeU || 'repeat',
-      addressModeV: textureAsset?.addressModeV || 'repeat',
-      magFilter: textureAsset?.magFilter || 'linear',
-      minFilter: textureAsset?.minFilter || 'linear',
-      mipmapFilter: 'nearest',
-      lodMinClamp: 0,
-      lodMaxClamp: 0,
-      maxAnisotropy: 1
-    });
-    const bindGroup = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(1),
-      entries: [
-        { binding: 0, resource: { buffer, offset: 0, size: 48 } },
-        { binding: 1, resource: gpuTexture.view },
-        { binding: 2, resource: sampler }
-      ]
-    });
-    record = { buffer, bindGroup, sampler, signature };
+    const entries = [{ binding: 0, resource: { buffer, offset: 0, size: 400 } }];
+    const records = {};
+    for (let index = 0; index < MATERIAL_TEXTURE_SLOTS.length; index += 1) {
+      const slot = MATERIAL_TEXTURE_SLOTS[index];
+      const textureAsset = textureAssets[slot];
+      const gpuTexture = textureAsset
+        ? ensureTexture(state, device, textureAsset)
+        : ensureDefaultMaterialTexture(state, device, slot);
+      const sampler = samplerForTexture(device, textureAsset);
+      records[slot] = { gpuTexture, sampler };
+      entries.push({ binding: 1 + index * 2, resource: gpuTexture.view });
+      entries.push({ binding: 2 + index * 2, resource: sampler });
+    }
+    const bindGroup = device.createBindGroup({ layout: state.materialLayout, entries });
+    record = { buffer, bindGroup, signature, textures: records };
     state.materials.set(material.id, record);
   }
-  const data = new Float32Array(12);
+  const data = new Float32Array(100);
   data.set(material.baseColor || [1, 1, 1, 1], 0);
-  data.set([material.metallic || 0, material.roughness ?? 0.7, material.baseColorTextureId ? 1 : 0, material.opacity ?? 1], 4);
-  data.set([...(material.emissive || [0, 0, 0]).slice(0, 3).map(Number), 0], 8);
+  data.set([
+    material.metallic ?? 0, material.roughness ?? 0.7,
+    material.normalScale ?? 1, material.opacity ?? 1
+  ], 4);
+  data.set([
+    ...(material.emissive || [0, 0, 0]).slice(0, 3).map(Number),
+    material.emissiveStrength ?? 1
+  ], 8);
+  data.set([
+    ids.baseColor ? 1 : 0,
+    ids.normal ? 1 : 0,
+    ids.metallicRoughness ? 1 : 0,
+    ids.occlusion ? 1 : 0
+  ], 12);
+  data.set([
+    ids.emissive ? 1 : 0,
+    ids.metalness ? 1 : 0,
+    ids.roughness ? 1 : 0,
+    ids.alpha ? 1 : 0
+  ], 16);
+  const alphaMode = material.alphaMode === 'mask' ? 1 : material.alphaMode === 'blend' ? 2 : 0;
+  data.set([
+    material.unlit === true || material.model === 'unlit' ? 1 : 0,
+    material.doubleSided === true ? 1 : 0,
+    material.occlusionStrength ?? 1,
+    material.alphaCutoff ?? 0.5
+  ], 20);
+  data.set([
+    material.clearcoat ?? 0, material.clearcoatRoughness ?? 0,
+    material.transmission ?? 0, alphaMode
+  ], 24);
+  data.set([
+    ...(material.sheenColor || [0, 0, 0]).slice(0, 3).map(Number),
+    material.sheen ?? 0
+  ], 28);
+  data.set([
+    ...(material.specularColor || [1, 1, 1]).slice(0, 3).map(Number),
+    material.specularIntensity ?? 1
+  ], 32);
+  const transforms = material.textureTransforms || {};
+  MATERIAL_TEXTURE_SLOTS.forEach((slot, index) => {
+    const transform = transforms[slot] || {};
+    const offset = transform.offset || [0, 0];
+    const scale = transform.scale || [1, 1];
+    const rotation = Number(transform.rotation || 0);
+    const base = 36 + index * 8;
+    data.set([Number(offset[0] || 0), Number(offset[1] || 0), Number(scale[0] ?? 1), Number(scale[1] ?? 1)], base);
+    data.set([Math.cos(rotation), Math.sin(rotation), Number(transform.texCoord || 0), 0], base + 4);
+  });
   device.queue.writeBuffer(record.buffer, 0, data);
   return record;
 }
