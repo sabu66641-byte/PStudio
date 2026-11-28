@@ -74,9 +74,9 @@ export function createPStudioAnimationClip(input = {}) {
 
 export function samplePStudioAnimationClip(clip, timeSeconds, options = {}) {
   if (clip?.kind !== "pstudio-animation-clip") throw new TypeError("A PStudio animation clip is required.");
-  const time = Math.max(0, Math.min(clip.duration, finite(timeSeconds, "animation time")));
+  const requestedTime = Math.max(0, finite(timeSeconds, "animation time"));
   const loop = options.loop === true && clip.duration > 0;
-  const sampleTime = loop ? time % clip.duration : time;
+  const sampleTime = loop ? requestedTime % clip.duration : Math.min(clip.duration, requestedTime);
   return Object.freeze({
     clipId: clip.id, time: sampleTime,
     tracks: Object.freeze(clip.tracks.map(track => Object.freeze({
