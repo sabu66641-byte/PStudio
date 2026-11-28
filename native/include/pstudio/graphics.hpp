@@ -12,7 +12,7 @@
 
 namespace pstudio::graphics {
 
-enum class BackendKind { Null, Vulkan, Direct3D12, Metal };
+enum class BackendKind { Null, Software, Vulkan, Direct3D12, Metal };
 enum class RuntimeState { Idle, Ready, Lost, Failed, Disposed };
 enum class CommandKind { BeginPass, EndPass, Draw, DrawIndexed, Dispatch, Copy, Present };
 

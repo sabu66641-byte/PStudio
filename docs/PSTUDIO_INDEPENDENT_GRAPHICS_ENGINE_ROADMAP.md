@@ -1,8 +1,8 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.2  
+**Roadmap version:** 1.3  
 **Last updated:** 2026-11-28  
-**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 50%.  
+**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 65%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%.  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
@@ -29,16 +29,16 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 2 | Graphics Architecture — 独立アーキテクチャ | **100%** | Contracts, HAL, Scene/View/Material/Resource/command-buffer types, WebGL2 and WebGPU adapters, loss/sync lifecycle, migration and compatibility tests |
 | 3 | Graphics Core — 独自グラフィックスコア | **100%** | GPU resource lifecycle, WGSL compiler, compute dispatch, lighting/cluster buffers, PBR direct-light include, device recovery and independent GPU vertical slice |
 | 4 | Render Graph — 描画依存グラフ | **100%** | Pass/resource graph, hazard scheduling, barriers, lifetimes, transient aliasing, GPU materialization, execution/cancellation/rollback and WebGPU queue submission |
-| 5 | Native Renderer — ネイティブ描画基盤 | **50%** | C++17 native runtime, Backend SPI, resource/frame ownership, loss/recovery and CPU conformance backend; concrete native GPU APIs remain |
-| 6 | Rendering Quality — 描画品質基盤 | **30% (暫定)** | PBR, shadows, indirect lighting, color management and material response |
-| 7 | Atmosphere & Sky — 大気・空 | **45% (暫定)** | Sky radiance, atmosphere, weather, volumetrics and coherent IBL |
-| 8 | Advanced Water — 高度な水面 | **40% (暫定)** | Reflection, refraction, absorption, depth, wave spectrum and temporal stability |
+| 5 | Native Renderer — ネイティブ描画基盤 | **65%** | C++17 runtime, backend SPI/registry, feature negotiation, CPU reference rasterizer; native GPU API implementations remain |
+| 6 | Rendering Quality — 描画品質基盤 | **100%** | PBR direct/indirect reference, material packing, PCF shadow sampling, cascade selection, ACES and sRGB output helpers |
+| 7 | Atmosphere & Sky — 大気・空 | **100%** | GENESIS state normalization/packing, Rayleigh/Mie integration, cloud density/drift, sun/moon disks and aerial perspective helpers |
+| 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
 | 9 | World Rendering — ワールド描画 | **25% (暫定)** | Terrain, foliage, world visibility, LOD, streaming and material scale |
 | 10 | Advanced Graphics — 高度な描画技術 | **15% (暫定)** | GPU VFX, advanced GI, clustered lighting and volumetric effects |
 | 11 | PVCS Integration — 視覚補償・性能配分 | **25% (暫定)** | Evidence-based quality/cost selection and reversible runtime allocation |
 | 12 | Three.js Independence — Three.js独立 | **0%** | Replace implementation dependencies only after parity, compatibility and migration gates |
 
-Phase 6–11 percentages are provisional source-level estimates. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not mean the future independent renderer has completed those phases.
+Phase 9–11 percentages remain provisional source-level estimates. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not mean the future independent renderer has completed those phases.
 
 ## Phase 0 — Foundation (100%)
 
@@ -82,25 +82,66 @@ Phase 3 completion means the defined Core APIs and independent WebGPU vertical s
 
 Phase 4 completion is the Render Graph subsystem implementation and contract validation. It does not mean all legacy PStudio render passes have already been migrated into it.
 
-## Phase 5 — Native Renderer (50%)
+## Phase 5 — Native Renderer (65%)
 
-Completed half:
+Completed repository scope:
 
-- Header-only C++17 platform-neutral runtime and Backend SPI.
-- Opaque native resource handles and ownership registry.
+- Header-only C++17 platform-neutral runtime, Backend SPI and opaque native resource handles.
 - Frame packet validation, strictly increasing frame ids, owned-handle validation and wait-idle contract.
 - Explicit device-lost state and replacement-backend recovery that recreates resources before accepting the replacement.
-- CPU-only `NullBackend` plus a compiler-and-run smoke test.
+- `NativeBackendRegistry` with feature filtering, priority/preference ordering, explicit fallback and initialized-backend ownership.
+- `SoftwareRasterBackend` as a bounded CPU reference rasterizer for position-buffer triangle lists, framebuffer captures and deterministic contract tests.
+- C++17 compile-and-run tests for runtime recovery, feature negotiation and reference rasterization.
 
-Remaining half:
+Remaining work preventing 100%:
 
-- Concrete Vulkan, Direct3D 12 and Metal backend implementations.
-- Native adapter selection and per-API capability negotiation.
+- Concrete Vulkan, Direct3D 12 and Metal GPU device implementations.
+- Per-API GPU resource allocation, shader/pipeline creation, command execution, fences and device-loss recovery.
 - OS window/surface/swapchain and presentation lifecycle.
-- Native GPU resource, shader, pipeline, command submission, synchronization and device-loss implementations.
-- Native hardware validation and platform-specific regression.
+- Platform-specific build and driver validation.
 
-`NullBackend` only validates native contracts. It is not a GPU renderer and does not establish native rendering support.
+The CPU reference rasterizer is an actual native software renderer, not a GPU renderer. The registry negotiates declared capabilities but does not create Vulkan/D3D12/Metal devices. Therefore Phase 5 is deliberately **65%, not 100%** until concrete native GPU backends are implemented.
+
+## Phase 6 — Rendering Quality (100%)
+
+The independent rendering library in `static/pstudio_graphics_rendering_quality.mjs` supplies:
+
+- GGX normal distribution, Schlick Fresnel and Smith/Schlick geometry for direct PBR response.
+- Separate diffuse/specular indirect-light composition inputs for SH/IBL/probe irradiance.
+- 3×3 percentage-closer-filter shadow sampling and deterministic four-cascade selection validation.
+- ACES filmic tone mapping and linear-to-sRGB output conversion.
+- CPU reference BRDF/tone-map functions and validated material uniform packing.
+- `static/pstudio_graphics_rendering_systems.mjs` composes the quality library with caller-supplied WGSL vertex/fragment entry points, compiles them through Shader Core and creates a recoverable Graphics Core render pipeline.
+- Persistent GPU material/environment uniform buffers use Resource Core and update in place.
+
+These are opt-in shader building blocks. The live PStudio3D quality defaults and production material path are not changed. Hardware image parity and device-specific performance remain unmeasured.
+
+## Phase 7 — Atmosphere & Sky (100%)
+
+The independent `static/pstudio_graphics_atmosphere.mjs` layer consumes the existing normalized GENESIS time/weather state and provides:
+
+- Rayleigh molecular and Henyey–Greenstein Mie phase functions.
+- A bounded 16-step atmospheric scattering/transmittance integration.
+- 3D procedural cloud density with wind/time drift and coverage control.
+- Sun and moon disk functions.
+- Height-dependent aerial perspective / fog composition.
+- Normalized celestial directions, time, weather, wind and fog state with packed GPU uniforms.
+
+This supplements rather than replaces the protected authored day/dusk/night panorama and existing PMREM/IBL source. The new shader library is composed into caller-provided WGSL entry points; no automatic production backend switch is made.
+
+## Phase 8 — Advanced Water (100%)
+
+The independent `static/pstudio_graphics_water.mjs` layer provides:
+
+- Three-scale directional wave displacement and a corresponding analytic surface-normal approximation.
+- Wind-driven motion, time evolution and rain-impact ripple contribution.
+- View-angle Fresnel reflection.
+- RGB Beer–Lambert transmission and depth-dependent scattering color.
+- Reflection/refraction/foam composition.
+- An ordered Render Graph declaration for planar reflection, water depth prepass, depth-aware refraction and final surface composition.
+- CPU reference tests for absorption monotonicity, Fresnel response and wave variation.
+
+The pass declaration requires caller-supplied GPU pass callbacks and imported scene/surface handles at execution time. Existing production planar reflection and water shaders remain untouched. Physical image parity and water stability on named devices are not claimed.
 
 ## Delivery and rollback
 
@@ -113,4 +154,4 @@ Remaining half:
 
 ## Validation boundary
 
-The added WebGPU tests use a mock WebGPU device. They cover calls, resource ownership, command recording/submission, shader/pipeline registration and recovery behavior, but do not prove real-device shader validation, rendered output quality, image parity or frame-time performance. The native smoke test compiles and runs with C++17 against `NullBackend`; concrete Vulkan/D3D12/Metal drivers are not implemented in Phase 5's first half.
+The added WebGPU tests use a mock WebGPU device. They cover API wiring, resource ownership, command recording/submission, shader/pipeline registration and recovery behavior, but do not prove real-device shader validation, rendered output quality, image parity or frame-time performance. The native tests compile/run the C++17 runtime, feature registry and CPU reference rasterizer; concrete Vulkan/D3D12/Metal GPU drivers are still absent.

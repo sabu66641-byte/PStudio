@@ -1,6 +1,6 @@
 # PStudio Independent Graphics Engine — Architecture Foundation
 
-**Status (2026-11-28):** Phase 2 = 100%; Phase 3 = 100%; Phase 4 = 100%; Phase 5 = 50% at repository implementation and deterministic contract-test scope. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
+**Status (2026-11-28):** Phase 2 = 100%; Phase 3 = 100%; Phase 4 = 100%; Phase 5 = 65%; Phases 6–8 = 100% at repository implementation and deterministic reference-test scope. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
 
 ## 1. Target dependency direction
 
@@ -99,19 +99,55 @@ Phase 3 is 100% for the defined PStudio-owned Core API and the direct WebGPU bac
 
 Phase 4 is complete as a dependency/lifetime/materialization/execution API with deterministic tests. It does not mean every current PStudio3D/Three.js render pass has been migrated into the graph. The live production pipeline remains unchanged.
 
-## 5. Phase 5 — Native Renderer (50%)
+## 5. Phase 5 — Native Renderer (65%)
 
-`native/include/pstudio/graphics.hpp` provides a platform-neutral C++17 native runtime contract:
+The C++17 native layer now includes:
 
-- Backend SPI for initialization, resource creation/destruction, frame submission, wait-idle and disposal.
-- Native resource descriptors and opaque handles, owned-resource tracking and monotonic frame ids.
-- Frame validation, including rejection of resource handles not owned by the runtime.
-- Lost-state handling and explicit replacement-backend recovery. Resource descriptors are recreated on the replacement before the runtime commits the new backend.
-- A CPU-only `NullBackend` for deterministic contract/conformance tests.
+- `graphics.hpp`: platform-neutral Runtime, Backend SPI, opaque resource ownership, monotonic frames, validation, wait-idle and device-loss recovery.
+- `backend_registry.hpp`: native backend descriptor registry, required-feature negotiation, preferred ordering, priority and explicit fallback.
+- `software_raster_backend.hpp`: bounded CPU triangle-list rasterizer and readable framebuffer output for deterministic native reference tests.
 
-The `NullBackend` is **not** a native GPU renderer. Concrete Vulkan, Direct3D 12 and Metal adapters, OS window/surface/swapchain management, native shader/pipeline/resource implementations and real native GPU validation remain the second half of Phase 5.
+This is a native software reference renderer and adapter-selection foundation, not proof of native GPU API support. Concrete Vulkan, Direct3D 12 and Metal GPU devices, GPU resources/pipelines, native surfaces/swapchains, submission/fences and per-platform driver validation remain. Phase 5 is therefore 65%, not 100%.
 
-## 6. Invariants that remain protected
+## 6. Phase 6 — Rendering Quality (100%)
+
+`static/pstudio_graphics_rendering_quality.mjs` adds a PStudio-owned WGSL function library:
+
+- GGX distribution, Schlick Fresnel and Smith/Schlick geometry for direct PBR.
+- Separate diffuse and prefiltered-specular indirect-light composition inputs for SH/IBL/probe data.
+- 3×3 PCF shadow filtering and deterministic four-cascade selection.
+- ACES filmic tone mapping and linear-to-sRGB conversion.
+- CPU reference BRDF/tone-map evaluators and validated packed material data.
+
+`static/pstudio_graphics_rendering_systems.mjs` composes the libraries with caller-supplied WGSL entry points, compiles through Shader Core, creates a recoverable render pipeline and maintains persistent Resource Core uniform buffers. The path is opt-in; production quality defaults are unchanged.
+
+## 7. Phase 7 — Atmosphere & Sky (100%)
+
+`static/pstudio_graphics_atmosphere.mjs` consumes the normalized GENESIS environment state and supplies:
+
+- Rayleigh molecular and Henyey–Greenstein Mie phase functions.
+- Bounded 16-step atmospheric scattering and transmittance integration.
+- 3D procedural cloud density, coverage and wind/time drift.
+- Sun/moon disk contribution helpers.
+- Height-dependent aerial perspective/fog composition.
+- Normalized state and GPU uniform packing for time, celestial directions, clouds, fog, wind and weather.
+
+The existing authored day/dusk/night panorama and PMREM/IBL source are not replaced or modified.
+
+## 8. Phase 8 — Advanced Water (100%)
+
+`static/pstudio_graphics_water.mjs` supplies:
+
+- Three-scale directional wave displacement and analytic normal approximation.
+- Wind and time-driven wave motion plus rain-ripple contribution.
+- View-dependent Fresnel reflection.
+- RGB Beer–Lambert transmission with depth-dependent scattering color.
+- Reflection/refraction/foam composition.
+- Render Graph passes ordered as planar reflection → depth prepass → depth-aware refraction → final water composite.
+
+Pass callbacks and imported scene/surface handles are supplied by the caller. Existing production planar reflection and water shaders remain untouched.
+
+## 9. Invariants that remain protected
 
 1. Nov 24 authored sky/panorama and PMREM/IBL source are untouched.
 2. Signature planar water reflection, water depth and absorption shaders are untouched.
@@ -121,8 +157,8 @@ The `NullBackend` is **not** a native GPU renderer. Concrete Vulkan, Direct3D 12
 6. Missing GPU metrics/capabilities are unavailable, never inferred from CPU time or feature declarations.
 7. Reality 55 : Anime 45 remains the image-level target; no automatic visual compromise is introduced.
 
-## 7. Validation boundary
+## 10. Validation boundary
 
 Repository validation includes deterministic Node tests for Render Graph hazards, aliasing/materialization rollback, direct WebGPU backend calls, clustered-light packing/upload, PBR ABI structure, explicit GPU resource/shader/pipeline/lighting recovery and the Renderer Core vertical slice. Python invokes a C++17 compiler and runs the native runtime smoke test. Full CI additionally runs the existing Python, C++17, Three.js runtime, TSL and JavaScript regression suite.
 
-The WebGPU backend tests use a mock WebGPU device in CI; they validate API wiring and ownership, not real hardware shader validation, rendered image quality or frame-time performance. No browser/device screenshot, physical-device run or visual-parity measurement is claimed here.
+The WebGPU backend tests use a mock WebGPU device in CI; they validate API wiring and ownership, not real hardware shader validation, rendered image quality or frame-time performance. Phase 6–8 CPU reference tests verify numeric invariants and Render Graph ordering; they do not certify visual parity or temporal stability on a physical GPU. The native software backend is a CPU reference, not a Vulkan/D3D12/Metal implementation. No browser/device screenshot or physical-device run is claimed here.
