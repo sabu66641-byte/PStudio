@@ -78,6 +78,7 @@ export function createPStudioPVCS(options = {}) {
   let cachedContext = null;
   let cachedContextAt = -Infinity;
   let frameContext = null;
+  let frameContextCaptured = false;
   let monitoringGeneration = 0;
 
   function contextFromStats(stats) {
@@ -94,7 +95,7 @@ export function createPStudioPVCS(options = {}) {
   }
 
   function measurementContext() {
-    if (frameContext) return frameContext;
+    if (frameContextCaptured) return frameContext;
     const now = clock();
     if (!cachedContext || now - cachedContextAt >= 250) {
       cachedContext = contextFromStats(performanceSnapshot());
@@ -106,6 +107,7 @@ export function createPStudioPVCS(options = {}) {
   function beginFrame() {
     if (!monitoringEnabled) return null;
     frameContext = contextFromStats(performanceSnapshot());
+    frameContextCaptured = true;
     cachedContext = frameContext;
     cachedContextAt = clock();
     return frameContext;
@@ -133,7 +135,7 @@ export function createPStudioPVCS(options = {}) {
     graph.recordMeasurement(id, {
       sampledAt: clock(),
       gpuStageMs: value,
-      context: context || measurementContext()
+      context: generation !== null ? context : (context || measurementContext())
     });
     totalMeasurements += 1;
     return true;
@@ -146,7 +148,7 @@ export function createPStudioPVCS(options = {}) {
     graph.recordMeasurement('frame-loop', {
       sampledAt: clock(),
       gpuRenderMs: value,
-      context: context || measurementContext()
+      context: generation !== null ? context : (context || measurementContext())
     });
     totalMeasurements += 1;
     return true;
@@ -163,13 +165,13 @@ export function createPStudioPVCS(options = {}) {
     }
   }
 
-  function recordAsyncStage(id, asyncElapsedMs) {
+  function recordAsyncStage(id, asyncElapsedMs, context = undefined) {
     const value = Number(asyncElapsedMs);
     if (!Number.isFinite(value) || value < 0) return false;
     graph.recordMeasurement(id, {
       sampledAt: clock(),
       asyncElapsedMs: value,
-      context: measurementContext()
+      context: context === undefined ? measurementContext() : context
     });
     totalMeasurements += 1;
     return true;
@@ -179,15 +181,16 @@ export function createPStudioPVCS(options = {}) {
     if (typeof callback !== 'function') throw new TypeError('PVCS measureAsync requires a callback.');
     if (!monitoringEnabled) return callback();
     const startedAt = clock();
+    const contextAtStart = measurementContext();
     let result;
     try {
       result = callback();
     } catch (error) {
-      recordAsyncStage(id, Math.max(0, clock() - startedAt));
+      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart);
       throw error;
     }
     return Promise.resolve(result).finally(() => {
-      recordAsyncStage(id, Math.max(0, clock() - startedAt));
+      recordAsyncStage(id, Math.max(0, clock() - startedAt), contextAtStart);
     });
   }
 
@@ -225,6 +228,7 @@ export function createPStudioPVCS(options = {}) {
     const stats = performanceSnapshot();
     if (!stats) {
       frameContext = null;
+      frameContextCaptured = false;
       return false;
     }
     const frameValue = cpuFrameMs === null || cpuFrameMs === undefined ? null : Number(cpuFrameMs);
@@ -234,9 +238,10 @@ export function createPStudioPVCS(options = {}) {
       cpuSubmitMs: stats.cpuRenderSubmitMs,
       frameIntervalMs: stats.frameIntervalMs,
       memoryBytes: stats.estimatedGpuBytes,
-      context: frameContext || contextFromStats(stats)
+      context: frameContextCaptured ? frameContext : contextFromStats(stats)
     });
     frameContext = null;
+    frameContextCaptured = false;
     totalMeasurements += 1;
     return true;
   }
@@ -256,6 +261,7 @@ export function createPStudioPVCS(options = {}) {
     if (next !== monitoringEnabled) monitoringGeneration += 1;
     monitoringEnabled = next;
     frameContext = null;
+    frameContextCaptured = false;
     cachedContext = null;
     cachedContextAt = -Infinity;
     return monitoringEnabled;
