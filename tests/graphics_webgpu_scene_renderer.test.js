@@ -3,10 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function fakeDevice() {
-  const stats = { buffers: 0, textures: 0, submits: 0, indexedDraws: 0, drawCalls: 0, instanceCounts: [], bufferWrites: 0, writeSizes: [] };
+  const stats = { buffers: 0, textures: 0, submits: 0, indexedDraws: 0, drawCalls: 0, instanceCounts: [], bufferWrites: 0, textureWrites: 0, writeSizes: [] };
   const device = {
     queue: {
       writeBuffer(buffer, offset, data, dataOffset, size) { stats.bufferWrites++; stats.writeSizes.push(size ?? data.byteLength); },
+      writeTexture(destination, data, layout, size) { stats.textureWrites++; },
       submit() { stats.submits++; }
     },
     createShaderModule() { return {}; },
@@ -22,6 +23,7 @@ function fakeDevice() {
       stats.textures++;
       return { descriptor, createView() { return {}; }, destroy() {} };
     },
+    createSampler(descriptor) { return { descriptor }; },
     createCommandEncoder() {
       return {
         beginRenderPass() {
@@ -69,7 +71,7 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.equal(stats.submits, 1);
   assert.equal(stats.indexedDraws, 1);
   assert.equal(stats.buffers, 5);
-  assert.equal(stats.textures, 1);
+  assert.equal(stats.textures, 2);
   assert.ok(stats.writeSizes.every(size => size % 4 === 0), 'WebGPU queue writes must be four-byte aligned');
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
@@ -132,4 +134,29 @@ test('independent WebGPU scene renderer batches repeated geometry and materials 
   renderPStudioGraphicsSceneFrame(frame, api, state);
   assert.equal(stats.drawCalls, 2);
   assert.equal(stats.buffers, 5, 'steady-state instanced frames must reuse their GPU buffers');
+  assert.equal(stats.textures, 2, 'depth and white fallback textures must be reused');
+});
+
+test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures', async () => {
+  const [{ createPStudioGraphicsSceneAsset }, { renderPStudioGraphicsSceneFrame, PSTUDIO_WEBGPU_SCENE_WGSL }] = await Promise.all([
+    import('../static/pstudio_graphics_scene_asset.mjs'),
+    import('../static/pstudio_graphics_webgpu_scene_renderer.mjs')
+  ]);
+  const scene = createPStudioGraphicsSceneAsset({
+    id: 'scene.textured-pbr',
+    geometries: [{ id: 'geo', positions: [0,0,0,1,0,0,0,1,0], uvs: [0,0,1,0,0,1], indices: [0,1,2] }],
+    textures: [{ id: 'albedo', width: 1, height: 1, data: new Uint8Array([255, 128, 64, 255]), format: 'rgba8unorm-srgb' }],
+    materials: [{ id: 'mat', model: 'pbr', baseColor: [0.8,0.8,0.8,1], baseColorTextureId: 'albedo' }],
+    entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
+  });
+  const { device, stats } = fakeDevice();
+  const api = { device, canvas: { width: 640, height: 360 }, getCapabilities: () => ({ format: 'rgba8unorm' }), getCurrentSurfaceView: () => ({}) };
+  assert.equal(renderPStudioGraphicsSceneFrame({
+    scene,
+    view: { viewProjectionMatrix: new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]), cameraPosition: [0,0,3] }
+  }, api, {}), true);
+  assert.equal(stats.textureWrites, 1, 'the owned Base Color texture uploads once');
+  assert.equal(stats.textures, 2, 'only depth plus Base Color GPU textures are allocated');
+  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler, input\.uv\)/);
+  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /rgba8unorm/);
 });

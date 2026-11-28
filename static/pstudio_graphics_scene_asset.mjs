@@ -125,6 +125,40 @@ function materialDescriptor(input) {
   if (!id) throw new TypeError('Material id is required.');
   return createPStudioGraphicsMaterial({ ...input, id });
 }
+function textureDescriptor(input) {
+  const id = String(input.id || '').trim();
+  const width = Number(input.width), height = Number(input.height);
+  if (!id) throw new TypeError('Texture id is required.');
+  if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
+    throw new RangeError('Texture dimensions must be positive integers.');
+  }
+  const source = input.data;
+  if (!(source instanceof Uint8Array) && !(source instanceof Uint8ClampedArray) && !Array.isArray(source)) {
+    throw new TypeError('PStudio texture data must be RGBA8 bytes.');
+  }
+  const data = source instanceof Uint8Array ? new Uint8Array(source)
+    : source instanceof Uint8ClampedArray ? Uint8Array.from(source)
+    : Uint8Array.from(source, value => {
+      const number = Number(value);
+      if (!Number.isSafeInteger(number) || number < 0 || number > 255) throw new RangeError('Texture data values must be integer bytes.');
+      return number;
+    });
+  if (data.length !== width * height * 4) throw new RangeError('RGBA8 texture data length must equal width × height × 4.');
+  const addressModes = new Set(['clamp-to-edge', 'repeat', 'mirror-repeat']);
+  const filters = new Set(['nearest', 'linear']);
+  const addressModeU = String(input.addressModeU || 'repeat');
+  const addressModeV = String(input.addressModeV || 'repeat');
+  const magFilter = String(input.magFilter || 'linear');
+  const minFilter = String(input.minFilter || 'linear');
+  if (!addressModes.has(addressModeU) || !addressModes.has(addressModeV)) throw new TypeError('Unsupported PStudio texture address mode.');
+  if (!filters.has(magFilter) || !filters.has(minFilter)) throw new TypeError('Unsupported PStudio texture filter.');
+  const format = String(input.format || 'rgba8unorm-srgb');
+  if (format !== 'rgba8unorm-srgb' && format !== 'rgba8unorm') throw new TypeError('PStudio RGBA8 textures support rgba8unorm-srgb or rgba8unorm.');
+  return Object.freeze({
+    id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
+    width, height, data, format, addressModeU, addressModeV, magFilter, minFilter
+  });
+}
 function entityDescriptor(input) {
   const id = String(input.id || '').trim();
   const geometryId = String(input.geometryId || '').trim();
@@ -183,10 +217,11 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
   if (!id) throw new TypeError('PStudio graphics scene asset id is required.');
   const geometries = (input.geometries || []).map(geometryDescriptor);
   const materials = (input.materials || []).map(materialDescriptor);
+  const textures = (input.textures || []).map(textureDescriptor);
   const entities = (input.entities || []).map(entityDescriptor);
   const clearColor = sceneColor4(input.clearColor, 'Scene clear color');
   const lighting = sceneLightingDescriptor(input.lighting);
-  const geometryIds = new Set(), materialIds = new Set();
+  const geometryIds = new Set(), materialIds = new Set(), textureIds = new Set();
   for (const geometry of geometries) {
     if (geometryIds.has(geometry.id)) throw new Error('Duplicate geometry id: ' + geometry.id);
     geometryIds.add(geometry.id);
@@ -194,6 +229,15 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
   for (const material of materials) {
     if (materialIds.has(material.id)) throw new Error('Duplicate material id: ' + material.id);
     materialIds.add(material.id);
+  }
+  for (const texture of textures) {
+    if (textureIds.has(texture.id)) throw new Error('Duplicate texture id: ' + texture.id);
+    textureIds.add(texture.id);
+  }
+  for (const material of materials) {
+    if (material.baseColorTextureId && !textureIds.has(material.baseColorTextureId)) {
+      throw new Error('Material references an unknown base-color texture: ' + material.baseColorTextureId);
+    }
   }
   const entityIds = new Set();
   for (const entity of entities) {
@@ -208,6 +252,7 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
     geometries: Object.freeze(geometries),
     materials: Object.freeze(materials),
+    textures: Object.freeze(textures),
     entities: Object.freeze(entities),
     clearColor,
     lighting,
@@ -223,7 +268,7 @@ export function importPStudioThreeScene(scene, options = {}) {
   if (!scene || typeof scene !== 'object') throw new TypeError('A source scene object is required.');
   const strict = options.strict !== false;
   const unsupported = [];
-  const geometries = new Map(), materials = new Map(), entities = [];
+  const geometries = new Map(), materials = new Map(), textures = new Map(), entities = [];
   const objects = [];
   let clearColor = null;
   if (scene.background != null) {
@@ -298,11 +343,60 @@ export function importPStudioThreeScene(scene, options = {}) {
       if (!knownMaterial) unsupported.push({ objectId, feature: 'material-model-' + String(source.type || 'unknown') });
       const materialId = String(source.uuid || source.id || objectId + '.material.' + index);
       materialIds.push(materialId);
-      const textureFields = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap'];
-      const textures = textureFields.filter(key => source[key]).map(key => {
-        unsupported.push({ objectId, materialId, feature: 'texture-' + key });
-        return String(source[key].uuid || source[key].name || materialId + '.' + key);
-      });
+      const baseColorMap = source.map || null;
+      let baseColorTextureId = null;
+      if (baseColorMap) {
+        const textureId = String(baseColorMap.uuid || baseColorMap.name || materialId + '.base-color');
+        const image = baseColorMap.image || baseColorMap.source?.data || null;
+        let pixels = null;
+        try {
+          pixels = typeof options.readTexture === 'function'
+            ? options.readTexture(baseColorMap, Object.freeze({ objectId, materialId, textureId }))
+            : image?.data && ArrayBuffer.isView(image.data)
+              ? { width: image.width || image.videoWidth || image.naturalWidth, height: image.height || image.videoHeight || image.naturalHeight, data: image.data }
+              : null;
+        } catch (error) {
+          unsupported.push({ objectId, materialId, feature: 'texture-map-read-failed', message: String(error?.message || error) });
+        }
+        if (pixels && typeof pixels.then === 'function') {
+          unsupported.push({ objectId, materialId, feature: 'async-texture-reader-not-supported' });
+        } else if (!pixels || !ArrayBuffer.isView(pixels.data) || !Number.isFinite(Number(pixels.width)) || !Number.isFinite(Number(pixels.height))) {
+          unsupported.push({ objectId, materialId, feature: 'texture-map' });
+        } else {
+          const width = Number(pixels.width), height = Number(pixels.height);
+          const data = pixels.data instanceof Uint8Array || pixels.data instanceof Uint8ClampedArray ? pixels.data : null;
+          if (!data || data.length !== width * height * 4) {
+            unsupported.push({ objectId, materialId, feature: 'texture-map-not-rgba8' });
+          } else if (!uvAttribute) {
+            unsupported.push({ objectId, materialId, feature: 'texture-map-requires-uv0' });
+          } else {
+            const textureInput = {
+              id: textureId, width, height, data,
+              format: pixels.format || 'rgba8unorm-srgb',
+              addressModeU: baseColorMap.wrapS === 1001 ? 'clamp-to-edge' : baseColorMap.wrapS === 1002 ? 'mirror-repeat' : 'repeat',
+              addressModeV: baseColorMap.wrapT === 1001 ? 'clamp-to-edge' : baseColorMap.wrapT === 1002 ? 'mirror-repeat' : 'repeat',
+              magFilter: baseColorMap.magFilter === 1003 ? 'nearest' : 'linear',
+              minFilter: baseColorMap.minFilter === 1003 || baseColorMap.minFilter === 1004 ? 'nearest' : 'linear'
+            };
+            if (!textures.has(textureId)) textures.set(textureId, textureInput);
+            baseColorTextureId = textureId;
+            const offset = baseColorMap.offset || { x: 0, y: 0 };
+            const repeat = baseColorMap.repeat || { x: 1, y: 1 };
+            if (Math.abs(Number(offset.x || 0)) > 1e-8 || Math.abs(Number(offset.y || 0)) > 1e-8 ||
+                Math.abs(Number(repeat.x ?? 1) - 1) > 1e-8 || Math.abs(Number(repeat.y ?? 1) - 1) > 1e-8 ||
+                Math.abs(Number(baseColorMap.rotation || 0)) > 1e-8) {
+              unsupported.push({ objectId, materialId, feature: 'texture-map-transform' });
+            }
+            if (baseColorMap.colorSpace && !String(baseColorMap.colorSpace).toLowerCase().includes('srgb')) {
+              unsupported.push({ objectId, materialId, feature: 'texture-map-color-space-' + String(baseColorMap.colorSpace) });
+            }
+          }
+        }
+      }
+      for (const key of ['normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap']) {
+        if (source[key]) unsupported.push({ objectId, materialId, feature: 'texture-' + key });
+      }
+      const textures = [];
       if (!materials.has(materialId)) {
         const color = source.color || {};
         const emissive = source.emissive || {};
@@ -322,7 +416,7 @@ export function importPStudioThreeScene(scene, options = {}) {
           id: materialId, model, baseColor: colorValue, emissive: emissiveValue,
           metallic: source.metalness ?? 0, roughness: source.roughness ?? 0.7,
           opacity: source.opacity ?? 1, alphaMode: alpha,
-          doubleSided: source.side === 2, textures,
+          doubleSided: source.side === 2, textures, baseColorTextureId,
           metadata: { sourceMaterialType: source.type || 'unknown', sourceMaterialId: materialId }
         }));
       }
@@ -365,6 +459,7 @@ export function importPStudioThreeScene(scene, options = {}) {
     convertedMeshCount: entities.length,
     geometryCount: geometries.size,
     materialCount: materials.size,
+    textureCount: textures.size,
     unsupported: Object.freeze(unsupported.map(item => Object.freeze({ ...item })))
   });
   const asset = createPStudioGraphicsSceneAsset({
@@ -372,6 +467,7 @@ export function importPStudioThreeScene(scene, options = {}) {
     revision: options.revision || 1,
     geometries: [...geometries.values()],
     materials: [...materials.values()],
+    textures: [...textures.values()],
     entities,
     clearColor,
     lighting: options.lighting || null,

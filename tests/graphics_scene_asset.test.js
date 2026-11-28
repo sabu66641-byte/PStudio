@@ -150,3 +150,41 @@ test('duck-typed importer rejects malformed InstancedMesh matrix data without dr
     return true;
   });
 });
+
+test('PStudio scene assets own RGBA8 base-color texture bytes and validate references', async () => {
+  const { createPStudioGraphicsSceneAsset } = await load();
+  const data = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255]);
+  const asset = createPStudioGraphicsSceneAsset({
+    id: 'scene.texture',
+    geometries: [{ id: 'geo', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [0, 0, 1, 0, 0, 1] }],
+    textures: [{ id: 'tex.base', width: 2, height: 1, data }],
+    materials: [{ id: 'mat', model: 'pbr', baseColorTextureId: 'tex.base' }],
+    entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
+  });
+  data[0] = 0;
+  assert.equal(asset.textures[0].data[0], 255);
+  assert.equal(asset.materials[0].baseColorTextureId, 'tex.base');
+  assert.throws(() => createPStudioGraphicsSceneAsset({
+    id: 'scene.bad-texture', geometries: [{ id: 'geo', positions: [0,0,0,1,0,0,0,1,0] }],
+    textures: [{ id: 'tex', width: 2, height: 2, data: new Uint8Array(4) }],
+    materials: [{ id: 'mat' }], entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
+  }), /RGBA8 texture data length/);
+  assert.throws(() => createPStudioGraphicsSceneAsset({
+    id: 'scene.bad-reference', geometries: [{ id: 'geo', positions: [0,0,0,1,0,0,0,1,0] }],
+    materials: [{ id: 'mat', baseColorTextureId: 'missing' }],
+    entities: [{ id: 'entity', geometryId: 'geo', materialId: 'mat' }]
+  }), /unknown base-color texture/);
+});
+
+test('Three.js importer accepts Base Color maps through a CPU pixel reader without requiring Three.js', async () => {
+  const { importPStudioThreeScene } = await load();
+  const imageData = new Uint8Array([255, 220, 180, 255, 100, 120, 140, 255]);
+  const source = fakeScene({ material: { map: { uuid: 'texture.owned', image: { width: 2, height: 1 } } } });
+  const { asset, report } = importPStudioThreeScene(source, {
+    readTexture: texture => ({ width: 2, height: 1, data: imageData })
+  });
+  assert.equal(report.supported, true);
+  assert.equal(report.textureCount, 1);
+  assert.equal(asset.materials[0].baseColorTextureId, 'texture.owned');
+  assert.deepEqual(Array.from(asset.textures[0].data), Array.from(imageData));
+});

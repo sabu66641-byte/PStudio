@@ -1,7 +1,7 @@
 import { createPStudioWebGPUCoreAdapter } from './pstudio_graphics_webgpu_backend.mjs';
 
 const BUFFER_USAGE = Object.freeze({ COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64 });
-const TEXTURE_USAGE = Object.freeze({ RENDER_ATTACHMENT: 16 });
+const TEXTURE_USAGE = Object.freeze({ COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 });
 const WGSL = [
 'struct FrameData {',
 '  viewProjection: mat4x4<f32>,',
@@ -17,6 +17,8 @@ const WGSL = [
 '};',
 '@group(0) @binding(0) var<uniform> frame: FrameData;',
 '@group(1) @binding(0) var<uniform> material: MaterialData;',
+'@group(1) @binding(1) var baseColorTexture: texture_2d<f32>;',
+'@group(1) @binding(2) var baseColorSampler: sampler;',
 'struct VertexInput {',
 '  @location(0) position: vec3<f32>,',
 '  @location(1) normal: vec3<f32>,',
@@ -61,7 +63,9 @@ const WGSL = [
 '  return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cosine, 0.0, 1.0), 5.0);',
 '}',
 '@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {',
-'  let albedo = max(material.baseColor.rgb, vec3<f32>(0.0));',
+'  var texel = vec4<f32>(1.0);',
+'  if (material.surface.z > 0.5) { texel = textureSample(baseColorTexture, baseColorSampler, input.uv); }',
+'  let albedo = max(material.baseColor.rgb * texel.rgb, vec3<f32>(0.0));',
 '  let metallic = clamp(material.surface.x, 0.0, 1.0);',
 '  let roughness = clamp(material.surface.y, 0.045, 1.0);',
 '  let n = normalize(input.worldNormal);',
@@ -83,7 +87,7 @@ const WGSL = [
 '  let linearColor = max(direct + ambient + material.emissiveColor.rgb, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
 '  let srgb = select(1.055 * pow(mapped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), mapped * 12.92, mapped <= vec3<f32>(0.0031308));',
-'  return vec4<f32>(srgb, material.baseColor.a);',
+'  return vec4<f32>(srgb, material.baseColor.a * texel.a);',
 '}'
 ].join('\n');
 
@@ -172,6 +176,14 @@ function validateScene(scene) {
   }
   const geometries = new Map(scene.geometries.map(item => [item.id, item]));
   const materials = new Map(scene.materials.map(item => [item.id, item]));
+  const textures = new Map((scene.textures || []).map(item => [item.id, item]));
+  for (const texture of textures.values()) {
+    if (!Number.isSafeInteger(Number(texture.width)) || Number(texture.width) < 1 ||
+        !Number.isSafeInteger(Number(texture.height)) || Number(texture.height) < 1 ||
+        !(texture.data instanceof Uint8Array) || texture.data.length !== texture.width * texture.height * 4) {
+      throw new TypeError('PStudio scene contains an invalid RGBA8 texture: ' + texture.id);
+    }
+  }
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
     if (!geometries.has(entity.geometryId)) throw new Error('Missing PStudio geometry: ' + entity.geometryId);
@@ -179,7 +191,10 @@ function validateScene(scene) {
     if (!materials.has(entity.materialIds[0])) throw new Error('Missing PStudio material: ' + entity.materialIds[0]);
     const material = materials.get(entity.materialIds[0]);
     if (material.model !== 'pbr' || material.alphaMode !== 'opaque' || Number(material.opacity ?? 1) < 1 || material.doubleSided || material.textures?.length) {
-      throw new Error('Independent WebGPU renderer currently requires opaque, single-sided, untextured PBR materials: ' + material.id);
+      throw new Error('Independent WebGPU renderer currently requires opaque, single-sided PBR materials with only an optional base-color texture: ' + material.id);
+    }
+    if (material.baseColorTextureId && !textures.has(material.baseColorTextureId)) {
+      throw new Error('PStudio material references a missing base-color texture: ' + material.baseColorTextureId);
     }
     if (entity.castShadow || entity.receiveShadow) throw new Error('Independent WebGPU renderer does not yet implement shadow casting/receiving: ' + entity.id);
     const geometry = geometries.get(entity.geometryId);
@@ -188,7 +203,7 @@ function validateScene(scene) {
     if (geometry.groups?.length === 1 && (geometry.groups[0].start !== 0 || geometry.groups[0].count !== drawCount)) throw new Error('Independent WebGPU scene renderer does not yet support partial geometry groups: ' + entity.id);
     if (geometry.indices && !(geometry.indices instanceof Uint16Array) && !(geometry.indices instanceof Uint32Array)) throw new TypeError('Geometry indices must be Uint16Array or Uint32Array.');
   }
-  return { geometries, materials };
+  return { geometries, materials, textures };
 }
 function ensurePipeline(state, api) {
   if (state.pipeline) return;
@@ -253,7 +268,48 @@ function ensureGeometry(state, device, geometry) {
   state.geometries.set(geometry.id, record);
   return record;
 }
-function ensureMaterial(state, device, material, pipeline) {
+function ensureTexture(state, device, texture) {
+  const cached = state.textures.get(texture.id);
+  if (cached && cached.revision === texture.revision) return cached;
+  if (cached) {
+    try { cached.texture.destroy(); } catch (_) {}
+    state.textures.delete(texture.id);
+  }
+  const gpuTexture = device.createTexture({
+    label: 'PStudio Texture ' + texture.id,
+    size: [texture.width, texture.height, 1],
+    format: texture.format || 'rgba8unorm-srgb',
+    usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.COPY_DST
+  });
+  device.queue.writeTexture(
+    { texture: gpuTexture },
+    texture.data,
+    { bytesPerRow: texture.width * 4, rowsPerImage: texture.height },
+    { width: texture.width, height: texture.height, depthOrArrayLayers: 1 }
+  );
+  const record = Object.freeze({ revision: texture.revision, texture: gpuTexture, view: gpuTexture.createView() });
+  state.textures.set(texture.id, record);
+  return record;
+}
+
+function ensureWhiteTexture(state, device) {
+  const id = '__pstudio-white-base-color';
+  const cached = state.textures.get(id);
+  if (cached) return cached;
+  const texture = device.createTexture({
+    label: 'PStudio White Base Color',
+    size: [1, 1, 1],
+    format: 'rgba8unorm-srgb',
+    usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.COPY_DST
+  });
+  device.queue.writeTexture({ texture }, new Uint8Array([255, 255, 255, 255]),
+    { bytesPerRow: 4, rowsPerImage: 1 }, { width: 1, height: 1, depthOrArrayLayers: 1 });
+  const record = Object.freeze({ revision: 1, texture, view: texture.createView() });
+  state.textures.set(id, record);
+  return record;
+}
+
+function ensureMaterial(state, device, material, pipeline, textures) {
   let record = state.materials.get(material.id);
   if (!record) {
     const buffer = device.createBuffer({
@@ -261,16 +317,32 @@ function ensureMaterial(state, device, material, pipeline) {
       size: 48,
       usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
     });
+    const textureAsset = material.baseColorTextureId ? textures.get(material.baseColorTextureId) : null;
+    const gpuTexture = textureAsset ? ensureTexture(state, device, textureAsset) : ensureWhiteTexture(state, device);
+    const sampler = device.createSampler({
+      addressModeU: textureAsset?.addressModeU || 'repeat',
+      addressModeV: textureAsset?.addressModeV || 'repeat',
+      magFilter: textureAsset?.magFilter || 'linear',
+      minFilter: textureAsset?.minFilter || 'linear',
+      mipmapFilter: 'nearest',
+      lodMinClamp: 0,
+      lodMaxClamp: 0,
+      maxAnisotropy: 1
+    });
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(1),
-      entries: [{ binding: 0, resource: { buffer, offset: 0, size: 48 } }]
+      entries: [
+        { binding: 0, resource: { buffer, offset: 0, size: 48 } },
+        { binding: 1, resource: gpuTexture.view },
+        { binding: 2, resource: sampler }
+      ]
     });
-    record = { buffer, bindGroup };
+    record = { buffer, bindGroup, sampler };
     state.materials.set(material.id, record);
   }
   const data = new Float32Array(12);
   data.set(material.baseColor || [1, 1, 1, 1], 0);
-  data.set([material.metallic || 0, material.roughness ?? 0.7, 0, material.opacity ?? 1], 4);
+  data.set([material.metallic || 0, material.roughness ?? 0.7, material.baseColorTextureId ? 1 : 0, material.opacity ?? 1], 4);
   data.set([...(material.emissive || [0, 0, 0]).slice(0, 3).map(Number), 0], 8);
   device.queue.writeBuffer(record.buffer, 0, data);
   return record;
@@ -308,7 +380,7 @@ function ensureInstanceBatch(state, device, key, entities) {
   return Object.freeze({ buffer: record.buffer, instanceCount });
 }
 
-function pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys) {
+function pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys, activeTextureIds) {
   for (const [id, record] of state.geometries) {
     if (activeGeometryIds.has(id)) continue;
     try { record.vertexBuffer.destroy(); record.indexBuffer?.destroy(); } catch (_) {}
@@ -323,6 +395,11 @@ function pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBat
     if (activeBatchKeys.has(key)) continue;
     try { record.buffer.destroy(); } catch (_) {}
     state.instances.delete(key);
+  }
+  for (const [id, record] of state.textures) {
+    if (activeTextureIds.has(id)) continue;
+    try { record.texture.destroy(); } catch (_) {}
+    state.textures.delete(id);
   }
 }
 
@@ -357,10 +434,12 @@ function disposeSceneRuntime(state) {
   }
   for (const record of state.materials.values()) try { record.buffer.destroy(); } catch (_) {}
   for (const record of state.instances.values()) try { record.buffer.destroy(); } catch (_) {}
+  for (const record of state.textures.values()) try { record.texture.destroy(); } catch (_) {}
   try { state.frameBuffer?.destroy?.(); state.depthTexture?.destroy?.(); } catch (_) {}
   state.geometries.clear();
   state.materials.clear();
   state.instances.clear();
+  state.textures.clear();
   state.pipeline = null;
   state.frameBuffer = null;
   state.frameBindGroup = null;
@@ -377,7 +456,8 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   state.geometries ||= new Map();
   state.materials ||= new Map();
   state.instances ||= new Map();
-  const { geometries, materials } = validateScene(scene);
+  state.textures ||= new Map();
+  const { geometries, materials, textures } = validateScene(scene);
   const device = api?.device;
   if (!device?.createCommandEncoder || !api.getCurrentSurfaceView) throw new Error('PStudio WebGPU scene rendering requires a configured WebGPU surface.');
   ensurePipeline(state, api);
@@ -408,6 +488,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   const activeGeometryIds = new Set();
   const activeMaterialIds = new Set();
   const activeBatchKeys = new Set();
+  const activeTextureIds = new Set();
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
     const materialId = entity.materialIds[0];
@@ -420,14 +501,17 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
     batch.entities.push(entity);
     activeGeometryIds.add(entity.geometryId);
     activeMaterialIds.add(materialId);
+    const material = materials.get(materialId);
+    if (material.baseColorTextureId) activeTextureIds.add(material.baseColorTextureId);
+    else activeTextureIds.add('__pstudio-white-base-color');
     activeBatchKeys.add(key);
   }
-  pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys);
+  pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys, activeTextureIds);
   for (const batch of batches.values()) {
     const geometry = geometries.get(batch.geometryId);
     const material = materials.get(batch.materialId);
     const gpuGeometry = ensureGeometry(state, device, geometry);
-    const gpuMaterial = ensureMaterial(state, device, material, state.pipeline);
+    const gpuMaterial = ensureMaterial(state, device, material, state.pipeline, textures);
     const gpuInstances = ensureInstanceBatch(state, device, batch.key, batch.entities);
     pass.setBindGroup(1, gpuMaterial.bindGroup);
     pass.setVertexBuffer(0, gpuGeometry.vertexBuffer);
@@ -447,7 +531,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
  * but no Three.js object or runtime is retained by this renderer.
  */
 export function createPStudioWebGPUSceneAdapter(options = {}) {
-  const state = { pipeline: null, frameBuffer: null, frameBindGroup: null, depthTexture: null, depthWidth: 0, depthHeight: 0, geometries: new Map(), materials: new Map(), instances: new Map() };
+  const state = { pipeline: null, frameBuffer: null, frameBindGroup: null, depthTexture: null, depthWidth: 0, depthHeight: 0, geometries: new Map(), materials: new Map(), textures: new Map(), instances: new Map() };
   const core = createPStudioWebGPUCoreAdapter({
     ...options,
     renderFrame: (frame, backend) => renderPStudioGraphicsSceneFrame(frame, backend, state)
