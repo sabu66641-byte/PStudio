@@ -174,40 +174,129 @@ export async function loadPStudioGLB(input, options = {}) {
   }
   const reader=makeReader(document,binary), geometries=new Map(),materials=[],textures=[],entities=[],sceneNodes=[];
   const decodedImages=new Map();
-  async function textureFor(index) {
-    const sourceTexture=document.textures?.[index];
-    if(!sourceTexture)throw new RangeError("glTF baseColorTexture index is invalid.");
-    const image=extractImage(document,sourceTexture.source,reader.buffers);
-    if(typeof options.decodeImage!=="function")throw new Error("An injected decodeImage(bytes, mimeType) function is required to decode GLB images into PStudio RGBA8 textures.");
-    let decoded=decodedImages.get(sourceTexture.source);
-    if(!decoded){decoded=await options.decodeImage(image.bytes,image.mimeType);decodedImages.set(sourceTexture.source,decoded);}
-    if(!decoded||!Number.isSafeInteger(decoded.width)||!Number.isSafeInteger(decoded.height)||!(decoded.data instanceof Uint8Array)||decoded.data.length!==decoded.width*decoded.height*4)throw new TypeError("decodeImage must return width, height and owned RGBA8 Uint8Array pixels.");
-    const id="glb.texture."+sourceTexture.source;
-    if(!textures.some(item=>item.id===id))textures.push({id,width:decoded.width,height:decoded.height,data:new Uint8Array(decoded.data),format:"rgba8unorm-srgb",...samplerOptions(document,sourceTexture)});
+  async function textureFor(info, slot) {
+    if (!info) return null;
+    const index = Number(info.index);
+    const sourceTexture = document.textures?.[index];
+    if (!sourceTexture) throw new RangeError("glTF " + slot + " texture index is invalid: " + index);
+    const image = extractImage(document, sourceTexture.source, reader.buffers);
+    if (typeof options.decodeImage !== "function") {
+      throw new Error("An injected decodeImage(bytes, mimeType) function is required to decode GLB images into PStudio RGBA8 textures.");
+    }
+    let decoded = decodedImages.get(sourceTexture.source);
+    if (!decoded) {
+      decoded = await options.decodeImage(image.bytes, image.mimeType);
+      decodedImages.set(sourceTexture.source, decoded);
+    }
+    if (!decoded || !Number.isSafeInteger(decoded.width) || !Number.isSafeInteger(decoded.height) ||
+        !(decoded.data instanceof Uint8Array) || decoded.data.length !== decoded.width * decoded.height * 4) {
+      throw new TypeError("decodeImage must return width, height and owned RGBA8 Uint8Array pixels.");
+    }
+    const srgb = slot === "baseColor" || slot === "emissive";
+    const transformExtension = info.extensions?.KHR_texture_transform || {};
+    const transform = {
+      offset: transformExtension.offset || [0, 0],
+      scale: transformExtension.scale || [1, 1],
+      rotation: Number(transformExtension.rotation || 0),
+      texCoord: Number(transformExtension.texCoord ?? info.texCoord ?? 0)
+    };
+    if (!Number.isSafeInteger(transform.texCoord) || transform.texCoord < 0 || transform.texCoord > 1 ||
+        !Array.isArray(transform.offset) || transform.offset.length !== 2 ||
+        !Array.isArray(transform.scale) || transform.scale.length !== 2 ||
+        ![...transform.offset, ...transform.scale, transform.rotation].every(Number.isFinite)) {
+      unsupported.push({ feature: "texture-transform-" + slot, textureIndex: index });
+      return null;
+    }
+    const id = "glb.texture." + index + "." + (srgb ? "srgb" : "linear");
+    if (!textures.some(item => item.id === id)) {
+      textures.push({
+        id, width: decoded.width, height: decoded.height, data: new Uint8Array(decoded.data),
+        format: srgb ? "rgba8unorm-srgb" : "rgba8unorm",
+        ...samplerOptions(document, sourceTexture)
+      });
+    }
+    return Object.freeze({ id, transform: Object.freeze({
+      offset: Object.freeze(transform.offset.map(Number)),
+      scale: Object.freeze(transform.scale.map(Number)),
+      rotation: transform.rotation,
+      texCoord: transform.texCoord
+    }) });
+  }
+  const materialIndexMap = new Map();
+  async function materialFor(index) {
+    if (index == null) return materialForDefault();
+    if (materialIndexMap.has(index)) return materialIndexMap.get(index);
+    const source = document.materials?.[index];
+    if (!source) throw new RangeError("glTF primitive references missing material: " + index);
+    const pbr = source.pbrMetallicRoughness || {};
+    const extensions = source.extensions || {};
+    const extensionNames = Object.keys(extensions);
+    const supportedExtensions = new Set([
+      "KHR_materials_unlit", "KHR_materials_emissive_strength", "KHR_materials_ior",
+      "KHR_materials_transmission", "KHR_materials_volume", "KHR_materials_clearcoat",
+      "KHR_materials_sheen", "KHR_materials_specular", "KHR_texture_transform"
+    ]);
+    for (const extension of extensionNames) {
+      if (!supportedExtensions.has(extension)) unsupported.push({ feature: "material-extension-" + extension, materialIndex: index });
+    }
+    const id = "glb.material." + index;
+    const slotRecords = {
+      baseColor: await textureFor(pbr.baseColorTexture, "baseColor"),
+      metallicRoughness: await textureFor(pbr.metallicRoughnessTexture, "metallicRoughness"),
+      normal: await textureFor(source.normalTexture, "normal"),
+      occlusion: await textureFor(source.occlusionTexture, "occlusion"),
+      emissive: await textureFor(source.emissiveTexture, "emissive"),
+      transmission: await textureFor(extensions.KHR_materials_transmission?.transmissionTexture, "transmission"),
+      thickness: await textureFor(extensions.KHR_materials_volume?.thicknessTexture, "thickness"),
+      clearcoat: await textureFor(extensions.KHR_materials_clearcoat?.clearcoatTexture, "clearcoat"),
+      clearcoatRoughness: await textureFor(extensions.KHR_materials_clearcoat?.clearcoatRoughnessTexture, "clearcoatRoughness"),
+      clearcoatNormal: await textureFor(extensions.KHR_materials_clearcoat?.clearcoatNormalTexture, "clearcoatNormal"),
+      sheenColor: await textureFor(extensions.KHR_materials_sheen?.sheenColorTexture, "sheenColor"),
+      sheenRoughness: await textureFor(extensions.KHR_materials_sheen?.sheenRoughnessTexture, "sheenRoughness"),
+      specular: await textureFor(extensions.KHR_materials_specular?.specularTexture, "specular"),
+      specularColor: await textureFor(extensions.KHR_materials_specular?.specularColorTexture, "specularColor")
+    };
+    const textureIds = Object.fromEntries(Object.entries(slotRecords).map(([slot, record]) => [slot, record?.id || null]));
+    const textureTransforms = Object.fromEntries(Object.entries(slotRecords).filter(([, record]) => record).map(([slot, record]) => [slot, record.transform]));
+    const alphaMode = String(source.alphaMode || "OPAQUE").toLowerCase();
+    const transmissionExtension = extensions.KHR_materials_transmission || {};
+    const volumeExtension = extensions.KHR_materials_volume || {};
+    const clearcoatExtension = extensions.KHR_materials_clearcoat || {};
+    const sheenExtension = extensions.KHR_materials_sheen || {};
+    const specularExtension = extensions.KHR_materials_specular || {};
+    const emissiveStrengthExtension = extensions.KHR_materials_emissive_strength || {};
+    materials.push({
+      id, model: extensions.KHR_materials_unlit ? "unlit" : "pbr",
+      baseColor: pbr.baseColorFactor || [1, 1, 1, 1],
+      metallic: pbr.metallicFactor ?? 1, roughness: pbr.roughnessFactor ?? 1,
+      emissive: source.emissiveFactor || [0, 0, 0],
+      emissiveStrength: emissiveStrengthExtension.emissiveStrength ?? 1,
+      alphaMode: alphaMode === "mask" ? "mask" : alphaMode === "blend" ? "blend" : "opaque",
+      alphaCutoff: source.alphaCutoff ?? 0.5,
+      doubleSided: source.doubleSided === true,
+      textureIds, textureTransforms,
+      normalScale: source.normalTexture?.scale ?? 1,
+      occlusionStrength: source.occlusionTexture?.strength ?? 1,
+      ior: extensions.KHR_materials_ior?.ior ?? 1.5,
+      transmission: transmissionExtension.transmissionFactor ?? 0,
+      thickness: volumeExtension.thicknessFactor ?? 0,
+      clearcoat: clearcoatExtension.clearcoatFactor ?? 0,
+      clearcoatRoughness: clearcoatExtension.clearcoatRoughnessFactor ?? 0,
+      sheen: sheenExtension.sheenRoughnessFactor ?? 0,
+      specularIntensity: specularExtension.specularFactor ?? 1,
+      metadata: {
+        source: "gltf-2.0", sourceMaterialIndex: index,
+        extensionNames: extensionNames.filter(name => supportedExtensions.has(name))
+      }
+    });
+    materialIndexMap.set(index, id);
     return id;
   }
-  const materialIndexMap=new Map();
-  async function materialFor(index) {
-    if(index==null)return materialForDefault();
-    if(materialIndexMap.has(index))return materialIndexMap.get(index);
-    const source=document.materials?.[index];if(!source)throw new RangeError("glTF primitive references missing material: "+index);
-    const pbr=source.pbrMetallicRoughness||{};
-    const baseTextureId=pbr.baseColorTexture?await textureFor(pbr.baseColorTexture.index):null;
-    const id="glb.material."+index;
-    const alphaMode=String(source.alphaMode||"OPAQUE").toLowerCase();
-    if(alphaMode!=="opaque")unsupported.push({feature:"alpha-mode-"+alphaMode,materialId:id});
-    if(source.doubleSided===true)unsupported.push({feature:"double-sided-material",materialId:id});
-    materials.push({
-      id,model:"pbr",baseColor:pbr.baseColorFactor||[1,1,1,1],metallic:pbr.metallicFactor??1,
-      roughness:pbr.roughnessFactor??1,emissive:source.emissiveFactor||[0,0,0],
-      alphaMode:alphaMode==="mask"?"mask":alphaMode==="blend"?"blend":"opaque",
-      doubleSided:source.doubleSided===true,baseColorTextureId:baseTextureId,
-      metadata:{alphaCutoff:source.alphaCutoff??0.5,source:"gltf-2.0"}
-    });
-    for(const feature of ["normalTexture","occlusionTexture","emissiveTexture"])if(source[feature])unsupported.push({feature:"material-"+feature,materialId:id});
-    materialIndexMap.set(index,id);return id;
+  async function materialForDefault() {
+    const id = "glb.material.default";
+    if (!materials.some(item => item.id === id)) materials.push({ id, model: "pbr", baseColor: [1,1,1,1], metallic: 1, roughness: 1 });
+    return id;
   }
-  async function materialForDefault(){const id="glb.material.default";if(!materials.some(item=>item.id===id))materials.push({id,model:"pbr",baseColor:[1,1,1,1],metallic:1,roughness:1});return id;}
   const meshPrimitives=[];
   for(let meshIndex=0;meshIndex<(document.meshes||[]).length;meshIndex++){
     const mesh=document.meshes[meshIndex];
@@ -220,6 +309,8 @@ export async function loadPStudioGLB(input, options = {}) {
       if(position.components!==3)throw new TypeError("glTF POSITION accessor must be VEC3.");
       const normals=primitive.attributes.NORMAL==null?null:reader.accessor(primitive.attributes.NORMAL).data;
       const uvs=primitive.attributes.TEXCOORD_0==null?null:reader.accessor(primitive.attributes.TEXCOORD_0).data;
+      const uv2s=primitive.attributes.TEXCOORD_1==null?null:reader.accessor(primitive.attributes.TEXCOORD_1).data;
+      if(primitive.attributes.TEXCOORD_2!=null)unsupported.push({feature:"more-than-two-uv-sets",meshIndex,primitiveIndex});
       const tangentAccessor=primitive.attributes.TANGENT==null?null:reader.accessor(primitive.attributes.TANGENT);
       if(tangentAccessor&&tangentAccessor.components!==4)throw new TypeError("glTF TANGENT accessor must be VEC4.");
       const jointAccessor=primitive.attributes.JOINTS_0==null?null:reader.accessor(primitive.attributes.JOINTS_0);
@@ -241,7 +332,7 @@ export async function loadPStudioGLB(input, options = {}) {
       });
       const indices=primitive.indices==null?null:reader.accessor(primitive.indices).data;
       const geometryId="glb.geometry."+meshIndex+"."+primitiveIndex;
-      geometries.set(geometryId,{id:geometryId,positions:position.data,normals,uvs,tangents:tangentAccessor?.data||null,indices,jointIndices,jointWeights,morphTargets,revision:1});
+      geometries.set(geometryId,{id:geometryId,positions:position.data,normals,uvs,uv2s,tangents:tangentAccessor?.data||null,indices,jointIndices,jointWeights,morphTargets,revision:1});
       const materialId=await materialFor(primitive.material);
       meshPrimitives.push({meshIndex,primitiveIndex,geometryId,materialId});
     }
