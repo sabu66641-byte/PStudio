@@ -11,6 +11,8 @@ function fakeDevice() {
       submit() { stats.submits++; }
     },
     createShaderModule() { return {}; },
+    createBindGroupLayout(descriptor) { return { descriptor }; },
+    createPipelineLayout(descriptor) { return { descriptor }; },
     createRenderPipeline() {
       return { getBindGroupLayout(index) { return { index }; } };
     },
@@ -76,7 +78,7 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
   assert.equal(stats.buffers, 5, 'geometry, frame, material and instance GPU buffers should be reused');
-  assert.equal(stats.textures, 2, 'depth and white fallback textures should be reused at the same size');
+  assert.equal(stats.textures, 9, 'depth plus the eight cached PBR texture slots should be reused');
   assert.equal(handle.dispose(), true);
 });
 
@@ -134,7 +136,7 @@ test('independent WebGPU scene renderer batches repeated geometry and materials 
   renderPStudioGraphicsSceneFrame(frame, api, state);
   assert.equal(stats.drawCalls, 2);
   assert.equal(stats.buffers, 5, 'steady-state instanced frames must reuse their GPU buffers');
-  assert.equal(stats.textures, 2, 'depth and white fallback textures must be reused');
+  assert.equal(stats.textures, 9, 'depth plus the eight cached PBR texture slots must be reused');
 });
 
 test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures', async () => {
@@ -155,9 +157,9 @@ test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures
     scene,
     view: { viewProjectionMatrix: new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]), cameraPosition: [0,0,3] }
   }, api, {}), true);
-  assert.equal(stats.textureWrites, 1, 'the owned Base Color texture uploads once');
-  assert.equal(stats.textures, 2, 'only depth plus Base Color GPU textures are allocated');
-  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler, input\.uv\)/);
+  assert.equal(stats.textureWrites, 8, 'the owned Base Color plus seven typed fallback textures upload once');
+  assert.equal(stats.textures, 9, 'depth plus Base Color and seven typed fallback textures are allocated');
+  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler/);
   assert.equal(scene.textures[0].format, 'rgba8unorm-srgb', 'the owned Base Color texture retains its sRGB encoding');
 });
 
