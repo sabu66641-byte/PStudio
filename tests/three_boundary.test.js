@@ -25,7 +25,9 @@ test('PStudio-owned Graphics Core and Render Graph remain free of direct Three.j
     'pstudio_pvcs.mjs',
     'pstudio_pvcs_governor.mjs',
     'pstudio_visual_compensation_graph.mjs',
-    'pstudio_visual_difference.mjs'
+    'pstudio_visual_difference.mjs',
+    'pstudio_graphics_scene_asset.mjs',
+    'pstudio_graphics_webgpu_scene_renderer.mjs'
   ];
   const patterns = [
     /from\s*['"]three(?:\/[^'"]*)?['"]/,
@@ -66,9 +68,11 @@ test('importing PStudio-owned Graphics Core modules does not require a Three.js 
       import('../static/pstudio_graphics_webgpu_backend.mjs'),
       import('../static/pstudio_graphics_world_core.mjs'),
       import('../static/pstudio_graphics_advanced_core.mjs'),
+      import('../static/pstudio_graphics_scene_asset.mjs'),
+      import('../static/pstudio_graphics_webgpu_scene_renderer.mjs'),
       import('../static/pstudio_render_graph.mjs')
     ]);
-    assert.equal(modules.length, 12);
+    assert.equal(modules.length, 14);
     assert.equal(globalThis.THREE, undefined);
   } finally {
     if (previous !== undefined) globalThis.THREE = previous;
