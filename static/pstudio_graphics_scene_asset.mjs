@@ -664,6 +664,12 @@ export function importPStudioThreeScene(scene, options = {}) {
     textureCount: textures.size,
     unsupported: Object.freeze(unsupported.map(item => Object.freeze({ ...item })))
   });
+  if (strict && !report.supported) {
+    const error = new Error('Three.js scene contains features that are not yet losslessly supported by the PStudio scene importer.');
+    error.code = 'PSTUDIO_SCENE_IMPORT_UNSUPPORTED_FEATURES';
+    error.report = report;
+    throw error;
+  }
   const asset = createPStudioGraphicsSceneAsset({
     id: options.id || scene.uuid || scene.name || 'imported-three-scene',
     revision: options.revision || 1,
@@ -675,11 +681,5 @@ export function importPStudioThreeScene(scene, options = {}) {
     lighting: { ...(options.lighting || {}), lights: [...(options.lighting?.lights || []), ...importedLights] },
     metadata: { source: 'duck-typed-three-scene-import', sourceSceneId: scene.uuid || null }
   });
-  if (strict && !report.supported) {
-    const error = new Error('Three.js scene contains features that are not yet losslessly supported by the PStudio scene importer.');
-    error.code = 'PSTUDIO_SCENE_IMPORT_UNSUPPORTED_FEATURES';
-    error.report = report;
-    throw error;
-  }
   return Object.freeze({ asset, report });
 }
