@@ -385,6 +385,14 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     if (skin.skeletonRoot && !nodeIds.has(skin.skeletonRoot)) throw new Error('Scene skin references an unknown skeleton root: ' + skin.id);
     for (const joint of skin.joints) if (!nodeIds.has(joint)) throw new Error('Scene skin references an unknown joint node: ' + joint);
   }
+  const animationIds = new Set();
+  for (const animation of animations) {
+    if (animationIds.has(animation.id)) throw new Error('Scene animation ids must be unique: ' + animation.id);
+    animationIds.add(animation.id);
+    for (const track of animation.tracks) if (!nodeIds.has(track.targetId)) {
+      throw new Error('Scene animation references an unknown node: ' + track.targetId);
+    }
+  }
   const entityIds = new Set();
   for (const entity of entities) {
     if (entityIds.has(entity.id)) throw new Error('Duplicate entity id: ' + entity.id);
