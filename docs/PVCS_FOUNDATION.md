@@ -36,6 +36,12 @@ The optional stage profiler uses performance.now() around existing synchronous c
 
 The WebGL2 and WebGPU paths are alternatives, not a single additive render path. The graph represents shared frame dependencies and path-specific stages.
 
+## Using the foundation
+
+The PVCS toolbar control enables opt-in Analysis Mode. The public runtime object is available as window.PStudioPVCS; PStudioPVCS.snapshot() returns current metrics and graph state, while PStudioPVCS.analyze() ranks stages by measured CPU p95. PStudioPVCS.setMonitoringEnabled(false) stops collection. No quality controls are changed.
+
+Synchronous render-stage instrumentation records CPU elapsed/submit time. Dynamic GI uses a separate asyncElapsedMs field because its promise duration can include waiting and is not equivalent to CPU execution or GPU time.
+
 ## Visual Difference Evaluation
 
 compareRgbaFrames accepts two caller-supplied, equal-sized 8-bit RGB/RGBA buffers. It reports normalized mean absolute error, RMSE, luminance error, changed-pixel ratio and maximum channel difference. compareTemporalSequences reports a basic aligned frame-to-frame pixel-delta mismatch.
