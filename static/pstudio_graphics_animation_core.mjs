@@ -197,8 +197,9 @@ export function deformPStudioSkinnedGeometry(input = {}) {
     let outP = [0, 0, 0], outN = [0, 0, 0], total = 0;
     for (let influence = 0; influence < 4; influence += 1) {
       const at = vertex * 4 + influence;
-      const joint = Number(joints[at]), weight = Math.max(0, finite(weights[at], "joint weight"));
+      const joint = Number(joints[at]), weight = finite(weights[at], "joint weight");
       if (!Number.isSafeInteger(joint) || joint < 0 || joint >= palette.length) throw new RangeError("Vertex references an unknown skin joint.");
+      if (weight < 0) throw new RangeError("Skin joint weights cannot be negative.");
       if (weight === 0) continue;
       const matrix = palette[joint];
       const wp = multiplyPoint(matrix, p, 1);
@@ -214,6 +215,209 @@ export function deformPStudioSkinnedGeometry(input = {}) {
     }
   }
   return Object.freeze({ positions: outputPositions, normals: outputNormals, vertexCount, revision: Math.max(1, Math.floor(Number(input.revision) || 1) + 1) });
+}
+
+
+function identity4() { return [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]; }
+function multiply4(left, right) {
+  const out = new Array(16).fill(0);
+  for (let column = 0; column < 4; column += 1) {
+    for (let row = 0; row < 4; row += 1) {
+      for (let k = 0; k < 4; k += 1) out[column * 4 + row] += left[k * 4 + row] * right[column * 4 + k];
+    }
+  }
+  return out;
+}
+function inverse4(value) {
+  const m = vec(value, 16, "matrix");
+  const a = Array.from({length:4}, (_, row) => [
+    m[row], m[4+row], m[8+row], m[12+row],
+    ...(row === 0 ? [1,0,0,0] : row === 1 ? [0,1,0,0] : row === 2 ? [0,0,1,0] : [0,0,0,1])
+  ]);
+  for (let col = 0; col < 4; col += 1) {
+    let pivot = col;
+    for (let row = col + 1; row < 4; row += 1) if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
+    if (Math.abs(a[pivot][col]) < 1e-12) throw new RangeError("Scene transform matrix is singular.");
+    [a[col], a[pivot]] = [a[pivot], a[col]];
+    const divisor = a[col][col];
+    for (let k = 0; k < 8; k += 1) a[col][k] /= divisor;
+    for (let row = 0; row < 4; row += 1) {
+      if (row === col) continue;
+      const factor = a[row][col];
+      for (let k = 0; k < 8; k += 1) a[row][k] -= factor * a[col][k];
+    }
+  }
+  const out = new Array(16);
+  for (let row = 0; row < 4; row += 1) for (let col = 0; col < 4; col += 1) out[col * 4 + row] = a[row][col + 4];
+  return out;
+}
+function composeNodeMatrix(node) {
+  if (node.matrix && node.matrix.length === 16 && node.metadata?.matrixAuthored === true) return vec(node.matrix, 16, "node matrix");
+  const [x,y,z,w] = vec(node.rotation || [0,0,0,1],4,"node rotation");
+  const [sx,sy,sz] = vec(node.scale || [1,1,1],3,"node scale");
+  const [tx,ty,tz] = vec(node.translation || [0,0,0],3,"node translation");
+  return [
+    (1-2*(y*y+z*z))*sx, 2*(x*y+z*w)*sx, 2*(x*z-y*w)*sx, 0,
+    2*(x*y-z*w)*sy, (1-2*(x*x+z*z))*sy, 2*(y*z+x*w)*sy, 0,
+    2*(x*z+y*w)*sz, 2*(y*z-x*w)*sz, (1-2*(x*x+y*y))*sz, 0,
+    tx,ty,tz,1
+  ];
+}
+function morphPStudioGeometry(geometry, weights) {
+  const positions = vec(geometry.positions, geometry.positions.length, "morph base positions");
+  const normals = vec(geometry.normals, geometry.normals.length, "morph base normals");
+  const outputPositions = positions.slice(), outputNormals = normals.slice();
+  const targets = geometry.morphTargets || [];
+  if (weights.length && weights.length !== targets.length) throw new RangeError("Morph weight count must match the number of morph targets.");
+  for (let index = 0; index < targets.length; index += 1) {
+    const weight = finite(weights[index] ?? 0, "morph weight");
+    const target = targets[index];
+    if (target.positions) {
+      const delta = vec(target.positions, positions.length, "morph position delta");
+      for (let i = 0; i < delta.length; i += 1) outputPositions[i] += delta[i] * weight;
+    }
+    if (target.normals) {
+      const delta = vec(target.normals, normals.length, "morph normal delta");
+      for (let i = 0; i < delta.length; i += 1) outputNormals[i] += delta[i] * weight;
+    }
+  }
+  return Object.freeze({
+    positions: Float32Array.from(outputPositions),
+    normals: Float32Array.from(Array.from({length: outputNormals.length / 3}, (_, i) => normalize3(outputNormals.slice(i * 3, i * 3 + 3))).flat()),
+    vertexCount: positions.length / 3,
+    revision: Math.max(1, Math.floor(Number(geometry.revision) || 1) + 1)
+  });
+}
+
+/**
+ * Evaluates a PStudio-owned animation clip against a complete immutable scene asset.
+ * It updates node world transforms and performs morph-then-skin CPU deformation for
+ * renderable entities, returning a new asset without mutating source geometry.
+ */
+export function evaluatePStudioSceneAnimation(sceneAsset, clipId, timeSeconds, options = {}) {
+  if (sceneAsset?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required.");
+  const clip = (sceneAsset.animations || []).find(item => item.id === String(clipId));
+  if (!clip) throw new RangeError("PStudio animation clip was not found: " + clipId);
+  const frame = samplePStudioAnimationClip(clip, timeSeconds, { loop: options.loop === true });
+  const nodeMap = new Map((sceneAsset.nodes || []).map(node => [node.id, {
+    ...node,
+    translation: Array.from(node.translation || [0,0,0]),
+    rotation: Array.from(node.rotation || [0,0,0,1]),
+    scale: Array.from(node.scale || [1,1,1]),
+    weights: Array.from(node.weights || [])
+  }]));
+  for (const track of frame.tracks) {
+    const node = nodeMap.get(track.targetId);
+    if (!node) throw new Error("Animation track target node is not in the scene: " + track.targetId);
+    if (track.path === "translation") node.translation = track.value.slice();
+    else if (track.path === "rotation") node.rotation = track.value.slice();
+    else if (track.path === "scale") node.scale = track.value.slice();
+    else if (track.path === "weights") node.weights = track.value.slice();
+  }
+  const worldMatrices = new Map(), visiting = new Set();
+  function worldFor(id) {
+    if (worldMatrices.has(id)) return worldMatrices.get(id);
+    const node = nodeMap.get(id);
+    if (!node) throw new Error("Scene node reference is missing: " + id);
+    if (visiting.has(id)) throw new Error("Scene node hierarchy contains a cycle at " + id);
+    visiting.add(id);
+    const local = composeNodeMatrix(node);
+    const world = node.parentId ? multiply4(worldFor(node.parentId), local) : local;
+    visiting.delete(id);
+    worldMatrices.set(id, world);
+    return world;
+  }
+  for (const id of nodeMap.keys()) worldFor(id);
+  const animatedNodes = [...nodeMap.values()].map(node => Object.freeze({
+    ...node,
+    matrix: Object.freeze(composeNodeMatrix(node)),
+    worldMatrix: Object.freeze(worldMatrices.get(node.id))
+  }));
+  const geometryMap = new Map((sceneAsset.geometries || []).map(geometry => [geometry.id, geometry]));
+  const skinMap = new Map((sceneAsset.skins || []).map(skin => [skin.id, skin]));
+  const geometries = [...sceneAsset.geometries];
+  const entities = sceneAsset.entities.map(entity => {
+    const nodeId = entity.nodeId || null;
+    const node = nodeId ? nodeMap.get(nodeId) : null;
+    const world = nodeId ? worldMatrices.get(nodeId) : entity.matrixWorld;
+    if (!world) throw new Error("Renderable entity node has no world transform: " + entity.id);
+    const source = geometryMap.get(entity.geometryId);
+    if (!source) throw new Error("Renderable entity geometry is missing: " + entity.geometryId);
+    const nodeWeights = node?.weights || [];
+    const morphWeights = entity.morphWeights?.length ? Array.from(entity.morphWeights) : nodeWeights;
+    let geometryId = entity.geometryId, skinId = entity.skinId, finalMorphWeights = morphWeights;
+    if (skinId) {
+      const skin = skinMap.get(skinId);
+      if (!skin) throw new Error("Renderable entity skin is missing: " + skinId);
+      const meshInverse = inverse4(world);
+      const palette = skin.joints.map((jointId, index) =>
+        multiply4(multiply4(meshInverse, worldMatrices.get(jointId) || (() => { throw new Error("Skin joint node is missing: " + jointId); })()), skin.inverseBindMatrices[index])
+      );
+      const deformed = deformPStudioSkinnedGeometry({
+        positions: source.positions, normals: source.normals,
+        jointIndices: source.jointIndices, jointWeights: source.jointWeights,
+        jointMatrices: palette,
+        morphTargets: source.morphTargets || [], morphWeights,
+        revision: source.revision
+      });
+      geometryId = source.id + "@deformed@" + entity.id + "@" + frame.time;
+      geometries.push({
+        id: geometryId, positions: deformed.positions, normals: deformed.normals,
+        uvs: source.uvs, uv2s: source.uv2s, tangents: source.tangents,
+        indices: source.indices, groups: source.groups, revision: deformed.revision
+      });
+      skinId = null;
+      finalMorphWeights = [];
+    } else if (source.morphTargets?.length) {
+      const deformed = morphPStudioGeometry(source, morphWeights);
+      geometryId = source.id + "@morphed@" + entity.id + "@" + frame.time;
+      geometries.push({
+        id: geometryId, positions: deformed.positions, normals: deformed.normals,
+        uvs: source.uvs, uv2s: source.uv2s, tangents: source.tangents,
+        indices: source.indices, groups: source.groups, revision: deformed.revision
+      });
+      finalMorphWeights = [];
+    }
+    return Object.freeze({
+      ...entity, geometryId, skinId, morphWeights: Object.freeze(finalMorphWeights),
+      matrixWorld: Object.freeze(Array.from(world))
+    });
+  });
+  const { createPStudioGraphicsSceneAsset } = await import("./pstudio_graphics_scene_asset.mjs");
+  return createPStudioGraphicsSceneAsset({
+    id: sceneAsset.id, revision: sceneAsset.revision + 1,
+    geometries, materials: sceneAsset.materials, textures: sceneAsset.textures, entities,
+    nodes: animatedNodes, skins: sceneAsset.skins, animations: sceneAsset.animations,
+    clearColor: sceneAsset.clearColor, lighting: sceneAsset.lighting,
+    metadata: { ...sceneAsset.metadata, animationClipId: clip.id, animationTime: frame.time }
+  });
+}
+
+export function createPStudioSceneAnimationPlayer(sceneAsset, options = {}) {
+  if (sceneAsset?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required.");
+  const clipId = String(options.clipId || sceneAsset.animations?.[0]?.id || "");
+  if (!clipId || !sceneAsset.animations?.some(clip => clip.id === clipId)) throw new RangeError("A valid PStudio animation clip id is required.");
+  let time = Math.max(0, finite(options.startTime ?? 0, "animation start time"));
+  let playing = options.autoPlay === true;
+  let disposed = false;
+  const loop = options.loop !== false;
+  function assertLive() { if (disposed) throw new Error("PStudio Scene Animation Player is disposed."); }
+  function current() { return evaluatePStudioSceneAnimation(sceneAsset, clipId, time, { loop }); }
+  return Object.freeze({
+    play() { assertLive(); playing = true; return true; },
+    pause() { assertLive(); playing = false; return true; },
+    stop() { assertLive(); playing = false; time = 0; return current(); },
+    seek(seconds) { assertLive(); time = Math.max(0, finite(seconds, "animation seek time")); return current(); },
+    update(deltaSeconds) {
+      assertLive();
+      const delta = Math.max(0, finite(deltaSeconds, "animation delta"));
+      if (playing) time += delta;
+      const scene = current();
+      return Object.freeze({ scene, time: loop && scene.metadata.animationTime != null ? scene.metadata.animationTime : time, playing });
+    },
+    dispose() { if (disposed) return false; disposed = true; playing = false; return true; },
+    getState() { return Object.freeze({ disposed, clipId, time, playing, loop }); }
+  });
 }
 
 export function selectPStudioLOD(levels, distance, currentIndex = null, hysteresis = 0.1) {
