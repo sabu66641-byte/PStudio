@@ -197,6 +197,7 @@ public:
     bool markDeviceLost() noexcept {
         if (state_ != NativeGpuRuntimeState::Ready) return false;
         state_ = NativeGpuRuntimeState::Lost;
+        backend_->notifyDeviceLost("Device loss reported by the host application");
         return true;
     }
 
