@@ -104,6 +104,13 @@ export function createPStudioPVCS(options = {}) {
     return cachedContext;
   }
 
+  function captureContext() {
+    const context = contextFromStats(performanceSnapshot());
+    cachedContext = context;
+    cachedContextAt = clock();
+    return context;
+  }
+
   function beginFrame() {
     if (!monitoringEnabled) return null;
     frameContext = contextFromStats(performanceSnapshot());
@@ -122,7 +129,7 @@ export function createPStudioPVCS(options = {}) {
       gpuStageMs: extra.gpuStageMs,
       frameIntervalMs: extra.frameIntervalMs,
       memoryBytes: extra.memoryBytes,
-      context: extra.context || measurementContext()
+      context: Object.prototype.hasOwnProperty.call(extra, 'context') ? extra.context : measurementContext()
     });
     totalMeasurements += 1;
     return true;
@@ -154,14 +161,15 @@ export function createPStudioPVCS(options = {}) {
     return true;
   }
 
-  function measure(id, callback) {
+  function measure(id, callback, context = undefined) {
     if (typeof callback !== 'function') throw new TypeError('PVCS measure requires a callback.');
     if (!monitoringEnabled) return callback();
     const startedAt = clock();
     try {
       return callback();
     } finally {
-      recordStage(id, Math.max(0, clock() - startedAt));
+      const extra = context === undefined ? {} : { context };
+      recordStage(id, Math.max(0, clock() - startedAt), extra);
     }
   }
 
@@ -273,6 +281,7 @@ export function createPStudioPVCS(options = {}) {
     graph,
     measure,
     measureAsync,
+    captureContext,
     recordStage,
     recordAsyncStage,
     recordGpuStageMetrics,
