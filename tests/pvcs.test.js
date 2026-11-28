@@ -86,6 +86,22 @@ test('async timing is kept separate from CPU submit timing', async () => {
   assert.equal(graphNode.metrics.asyncElapsedP95Ms, 12);
 });
 
+test('PVCS discards async completion after the monitoring session ends', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({ now: () => 700 });
+  pvcs.setMonitoringEnabled(true);
+  let complete;
+  const pending = pvcs.measureAsync('dynamic-gi-capture', () => new Promise((resolve) => {
+    complete = resolve;
+  }));
+  pvcs.setMonitoringEnabled(false);
+  complete(true);
+  await pending;
+  const node = pvcs.graph.snapshot().nodes.find((item) => item.id === 'dynamic-gi-capture');
+  assert.equal(node.metrics.asyncElapsedP95Ms, null);
+  assert.equal(node.metrics.sampleCount, 0);
+});
+
 test('PVCS renderer-stage integration remains opt-in and sky assets remain pinned', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
