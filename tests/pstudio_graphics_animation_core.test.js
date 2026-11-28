@@ -109,7 +109,7 @@ test('PStudio scene animation evaluates node hierarchy and morphs before skeleta
  assert.equal(frame.entities[0].skinId,null);
  assert.deepEqual(frame.entities[0].morphWeights,[]);
  assert.deepEqual(Array.from(output.positions.slice(0,3)),[1,.5,0]);
- assert.deepEqual(source.geometries[0].positions.slice(0,3),[0,0,0]);
+ assert.deepEqual(Array.from(source.geometries[0].positions.slice(0,3)),[0,0,0]);
  assert.deepEqual(frame.nodes.find(node=>node.id==='node.joint').worldMatrix.slice(12,15),[1,0,0]);
  const player=createPStudioSceneAnimationPlayer(source,{clipId:'hero.walk',autoPlay:true,loop:false});
  const played=player.update(.5);
