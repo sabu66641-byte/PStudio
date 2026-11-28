@@ -153,7 +153,7 @@ export function createVisualCompensationGraph(options = {}) {
         label: node.label,
         backend: node.backend,
         metrics,
-        evidence: metrics.sampleCount ? 'measured-cpu-submit' : 'unmeasured',
+        evidence: metrics.cpuSubmitP95Ms !== null ? 'measured-cpu-submit' : metrics.asyncElapsedP95Ms !== null ? 'measured-async-elapsed' : 'unmeasured',
         gpuEvidence: metrics.gpuRenderP95Ms === null ? 'not-available-per-stage' : 'measured'
       };
     }).sort((a, b) => {
