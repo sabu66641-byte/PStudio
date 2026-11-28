@@ -78,6 +78,7 @@ export function createPStudioPVCS(options = {}) {
   let cachedContext = null;
   let cachedContextAt = -Infinity;
   let frameContext = null;
+  let monitoringGeneration = 0;
 
   function contextFromStats(stats) {
     if (!stats || typeof stats !== 'object') return null;
@@ -103,11 +104,11 @@ export function createPStudioPVCS(options = {}) {
   }
 
   function beginFrame() {
-    if (!monitoringEnabled) return false;
+    if (!monitoringEnabled) return null;
     frameContext = contextFromStats(performanceSnapshot());
     cachedContext = frameContext;
     cachedContextAt = clock();
-    return true;
+    return frameContext;
   }
 
   function recordStage(id, cpuSubmitMs, extra = {}) {
@@ -125,12 +126,26 @@ export function createPStudioPVCS(options = {}) {
     return true;
   }
 
-  function recordGpuStageMetrics(id, gpuStageMs, context = null) {
+  function recordGpuStageMetrics(id, gpuStageMs, context = null, generation = null) {
     const value = Number(gpuStageMs);
-    if (!monitoringEnabled || !Number.isFinite(value) || value < 0) return false;
+    if (!monitoringEnabled || (generation !== null && generation !== monitoringGeneration)
+      || !Number.isFinite(value) || value < 0) return false;
     graph.recordMeasurement(id, {
       sampledAt: clock(),
       gpuStageMs: value,
+      context: context || measurementContext()
+    });
+    totalMeasurements += 1;
+    return true;
+  }
+
+  function recordGpuFrameMetrics(gpuRenderMs, context = null, generation = null) {
+    const value = Number(gpuRenderMs);
+    if (!monitoringEnabled || (generation !== null && generation !== monitoringGeneration)
+      || !Number.isFinite(value) || value < 0) return false;
+    graph.recordMeasurement('frame-loop', {
+      sampledAt: clock(),
+      gpuRenderMs: value,
       context: context || measurementContext()
     });
     totalMeasurements += 1;
@@ -197,8 +212,8 @@ export function createPStudioPVCS(options = {}) {
       rendererPerformance: performanceSnapshot(),
       graph: graph.snapshot(),
       limitations: [
-        'GPU frame time is the aggregate WebGL2 render-section timer; selected WebGL2 pass timers are sampled separately and never nested with the aggregate timer.',
-        'WebGPU GPU-stage timing is unavailable unless timestamp queries are supported and enabled; CPU submission is never substituted for GPU time.',
+        'GPU frame time is recorded once when its asynchronous WebGL2 aggregate timer resolves, using the context captured when the query started.',
+        'WebGL2 GPU-stage samples time the active composer or direct-render path, not individual composer sub-passes. WebGPU GPU timing is unavailable; CPU submission is never substituted for GPU time.',
         'CPU frame callback, CPU render submission, GPU frame, GPU stage and asynchronous elapsed values are independent measurement domains.',
         'GPU memory values remain PStudio resource estimates rather than driver-reported VRAM.'
       ]
@@ -213,12 +228,10 @@ export function createPStudioPVCS(options = {}) {
       return false;
     }
     const frameValue = cpuFrameMs === null || cpuFrameMs === undefined ? null : Number(cpuFrameMs);
-    const aggregateGpuAllowed = options.includeAggregateGpu !== false && stats.backend === 'webgl2';
     graph.recordMeasurement('frame-loop', {
       sampledAt: clock(),
       cpuFrameMs: Number.isFinite(frameValue) && frameValue >= 0 ? frameValue : null,
       cpuSubmitMs: stats.cpuRenderSubmitMs,
-      gpuRenderMs: aggregateGpuAllowed && stats.gpuTimingFresh === true ? stats.gpuRenderMs : null,
       frameIntervalMs: stats.frameIntervalMs,
       memoryBytes: stats.estimatedGpuBytes,
       context: frameContext || contextFromStats(stats)
@@ -239,7 +252,9 @@ export function createPStudioPVCS(options = {}) {
   }
 
   function setMonitoringEnabled(enabled) {
-    monitoringEnabled = enabled === true;
+    const next = enabled === true;
+    if (next !== monitoringEnabled) monitoringGeneration += 1;
+    monitoringEnabled = next;
     frameContext = null;
     cachedContext = null;
     cachedContextAt = -Infinity;
@@ -253,8 +268,10 @@ export function createPStudioPVCS(options = {}) {
     recordStage,
     recordAsyncStage,
     recordGpuStageMetrics,
+    recordGpuFrameMetrics,
     recordFrameMetrics,
     beginFrame,
+    getMonitoringGeneration: () => monitoringGeneration,
     compareRgbaFrames,
     compareTemporalSequences,
     snapshot,
