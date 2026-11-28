@@ -1,4 +1,5 @@
 import { renderPStudioGraphicsSceneFrame } from "./pstudio_graphics_webgpu_scene_renderer.mjs";
+import { evaluatePStudioSceneAnimation, evaluatePStudioSceneBindPose } from "./pstudio_graphics_animation_core.mjs";
 import { createPStudioGraphicsRenderingSuite } from "./pstudio_graphics_rendering_suite.mjs";
 import { PSTUDIO_GRAPHICS_ATMOSPHERE_WGSL, normalizePStudioAtmosphereState } from "./pstudio_graphics_atmosphere.mjs";
 
@@ -222,9 +223,25 @@ export function createPStudioWebGPURenderGraphExecutor(options = {}) {
     throw new TypeError("PStudio WebGPU Render Graph executor requires a live WebGPU device.");
   }
   const api = options.api || {};
-  const frame = options.frame || {};
-  const scene = options.sceneAsset || frame.scene;
-  if (scene?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required for the geometry passes.");
+  const inputFrame = options.frame || {};
+  const sourceScene = options.sceneAsset || inputFrame.scene;
+  if (sourceScene?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required for the geometry passes.");
+  const animation = inputFrame.animation || (inputFrame.animationClipId ? {
+    clipId: inputFrame.animationClipId, timeSeconds: inputFrame.timeSeconds ?? 0,
+    loop: inputFrame.animationLoop === true
+  } : null);
+  let scene = sourceScene;
+  if (animation?.clipId) {
+    scene = evaluatePStudioSceneAnimation(sourceScene, animation.clipId, animation.timeSeconds ?? inputFrame.timeSeconds ?? 0, { loop: animation.loop === true });
+  } else {
+    const geometryById = new Map(sourceScene.geometries.map(geometry => [geometry.id, geometry]));
+    const needsDeformation = sourceScene.entities.some(entity => {
+      const geometry = geometryById.get(entity.geometryId);
+      return entity.visible && (!!entity.skinId || !!geometry?.morphTargets?.length);
+    });
+    if (needsDeformation) scene = evaluatePStudioSceneBindPose(sourceScene);
+  }
+  const frame = { ...inputFrame, scene, animation: null, animationClipId: null };
   const sceneRendererState = options.sceneRendererState || {};
   const fullscreenCache = new Map();
   const depthCache = { geometry: new Map(), transforms: new Map(), pipelines: new Map() };
