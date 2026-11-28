@@ -101,3 +101,88 @@ test('PVCS renderer-stage integration remains opt-in and sky assets remain pinne
   assert.match(html, /pstudio_genesis_environment\.js\?v=20261127-genesis-snap-v2/);
   assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-foundation-v1/);
 });
+
+
+test('VCG keeps CPU frame, render submission, GPU frame, GPU stage and async domains independent', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph();
+  graph.registerNode({ id: 'frame' });
+  graph.registerNode({ id: 'mirror-reflection' });
+  graph.recordMeasurement('frame', {
+    cpuFrameMs: 18, cpuSubmitMs: 7, gpuRenderMs: 9, frameIntervalMs: 20, memoryBytes: 1024,
+    context: { backend: 'webgl2', scene: 'genesis-shrine', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1.5, effects: { volumetricClouds: true } }
+  });
+  graph.recordMeasurement('mirror-reflection', { gpuStageMs: 3.5 });
+  graph.recordMeasurement('mirror-reflection', { asyncElapsedMs: 11 });
+  const frame = graph.snapshot().nodes.find((node) => node.id === 'frame').metrics;
+  const mirror = graph.snapshot().nodes.find((node) => node.id === 'mirror-reflection').metrics;
+  assert.equal(frame.cpuFrameP95Ms, 18);
+  assert.equal(frame.cpuSubmitP95Ms, 7);
+  assert.equal(frame.gpuRenderP95Ms, 9);
+  assert.equal(frame.gpuStageP95Ms, null);
+  assert.equal(frame.context.backend, 'webgl2');
+  assert.equal(frame.context.renderWidth, 1280);
+  assert.equal(frame.context.effects.volumetricClouds, true);
+  assert.equal(mirror.gpuStageP95Ms, 3.5);
+  assert.equal(mirror.asyncElapsedP95Ms, 11);
+  const rankings = graph.analyzeResourceDomains();
+  assert.equal(rankings.cpuFrame[0].id, 'frame');
+  assert.equal(rankings.gpuStages[0].id, 'mirror-reflection');
+  assert.equal(rankings.asynchronous[0].id, 'mirror-reflection');
+});
+
+test('VCG treats explicit null metrics as unavailable instead of zero', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph();
+  graph.registerNode({ id: 'frame' });
+  graph.recordMeasurement('frame', { cpuFrameMs: 10, gpuRenderMs: null, gpuStageMs: null });
+  const metrics = graph.snapshot().nodes[0].metrics;
+  assert.equal(metrics.cpuFrameP95Ms, 10);
+  assert.equal(metrics.gpuRenderP95Ms, null);
+  assert.equal(metrics.gpuStageP95Ms, null);
+});
+
+test('PVCS records the full drawFrame CPU duration separately from render submission', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const renderer = {
+    getPerformanceStats: () => ({
+      cpuRenderSubmitMs: 6, gpuTimingFresh: true, gpuRenderMs: 8, frameIntervalMs: 16.7, estimatedGpuBytes: 2048,
+      backend: 'webgl2', scene: 'genesis-shrine', quality: 'high', renderWidth: 1440, renderHeight: 900, renderPixelRatio: 1.5,
+      renderEffects: { ao: true, ssr: false, volumetricClouds: true, volumetricFog: true, contactShadows: false }
+    })
+  };
+  const pvcs = createPStudioPVCS({ getRenderer: () => renderer, now: () => 100 });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.recordFrameMetrics(22.5), true);
+  const frame = pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').metrics;
+  assert.equal(frame.cpuFrameP95Ms, 22.5);
+  assert.equal(frame.cpuSubmitP95Ms, 6);
+  assert.equal(frame.gpuRenderP95Ms, 8);
+  assert.equal(frame.context.scene, 'genesis-shrine');
+  assert.equal(frame.context.renderHeight, 900);
+  assert.equal(pvcs.analyze().rankings.cpuFrame[0].id, 'frame-loop');
+});
+
+test('PVCS does not attribute a stale WebGL timer to a WebGPU frame', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({
+    getRenderer: () => ({ getPerformanceStats: () => ({
+      cpuRenderSubmitMs: 6, gpuTimingFresh: true, gpuRenderMs: 8, backend: 'webgpu'
+    }) }),
+    now: () => 100
+  });
+  pvcs.setMonitoringEnabled(true);
+  pvcs.recordFrameMetrics(20);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').metrics;
+  assert.equal(metrics.gpuRenderP95Ms, null);
+});
+
+test('PVCS can record a WebGL2 GPU stage result without relabelling it as frame GPU time', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({ now: () => 200 });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.recordGpuStageMetrics('mirror-reflection', 4.25), true);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'mirror-reflection').metrics;
+  assert.equal(metrics.gpuStageP95Ms, 4.25);
+  assert.equal(metrics.gpuRenderP95Ms, null);
+});
