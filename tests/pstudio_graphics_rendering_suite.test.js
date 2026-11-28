@@ -5,12 +5,12 @@ const {createPStudioGraphicsRenderingSuite,getPStudioGraphicsRenderingPassOrder}
 
 test('PStudio rendering suite defines canonical atmosphere-to-present graph order',()=>{
  const suite=createPStudioGraphicsRenderingSuite({width:1920,height:1080});
- assert.equal(suite.plan.passes.length,11);
+ assert.equal(suite.plan.passes.length,12);
  assert.equal(suite.passes[0],'pstudio.rendering.shadow-map');
  assert.equal(suite.passes.at(-1),'pstudio.rendering.tone-map-present');
  assert.ok(suite.shaderLibraries.atmosphere.includes('pstudioRayleighPhase'));
  assert.ok(suite.shaderLibraries.water.includes('pstudioWaterBeerLambert'));
- assert.deepEqual(getPStudioGraphicsRenderingPassOrder().map(x=>x.id).slice(0,3),['shadow-map','sky-atmosphere-ibl','depth-prepass']);
+ assert.deepEqual(getPStudioGraphicsRenderingPassOrder().map(x=>x.id).slice(0,3),['shadow-map','sky-atmosphere','ibl-prefilter']);
  suite.dispose();
 });
 test('PStudio rendering suite refuses to execute unbound passes instead of silently dropping effects',async()=>{
@@ -31,6 +31,6 @@ test('PStudio rendering suite uses explicit executor for each active stage',asyn
  const suite=createPStudioGraphicsRenderingSuite({handlers});
  const result=await suite.execute({outputSurface:{id:'canvas'}});
  assert.equal(result.success,true);
- assert.equal(calls.length,11);
+ assert.equal(calls.length,12);
  suite.dispose();
 });
