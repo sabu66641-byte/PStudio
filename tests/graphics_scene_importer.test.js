@@ -244,3 +244,34 @@ test('Three.js importer preserves material group slots and fails closed on misma
     error.code === 'PSTUDIO_SCENE_IMPORT_UNSUPPORTED_FEATURES' &&
     error.report.unsupported.some(item => item.feature === 'geometry-group-material-slot-out-of-range'));
 });
+
+test('Three.js PBR importer retains all supported texture maps, sampler state and UV transforms',async()=>{
+ const {importPStudioThreeScene}=await load();
+ const source=fakeScene();
+ let mesh;source.traverse(object=>{if(object.isMesh)mesh=object;});
+ mesh.geometry.attributes.uv1={array:new Float32Array([0,0,1,0,0,1]),itemSize:2,count:3};
+ const texture=(uuid,extra={})=>({uuid,wrapS:1001,wrapT:1000,magFilter:1003,minFilter:1006,offset:{x:.25,y:.5},repeat:{x:2,y:3},rotation:.2,...extra});
+ mesh.material={
+  uuid:'material.all-pbr',type:'MeshStandardMaterial',isMeshStandardMaterial:true,
+  color:{r:.8,g:.7,b:.6},emissive:{r:.1,g:.2,b:.3},metalness:.7,roughness:.35,
+  map:texture('tex.base',{colorSpace:'srgb'}),
+  normalMap:texture('tex.normal'),normalScale:{x:.65,y:.65},
+  metalnessMap:texture('tex.metal'),roughnessMap:texture('tex.rough'),
+  aoMap:texture('tex.ao',{channel:1}),aoMapIntensity:.7,
+  emissiveMap:texture('tex.emissive',{colorSpace:'srgb'}),
+  alphaMap:texture('tex.alpha')
+ };
+ const {asset,report}=importPStudioThreeScene(source,{readTexture:(image)=>({width:1,height:1,data:new Uint8Array([128,128,255,255])})});
+ assert.equal(report.supported,true);
+ const material=asset.materials[0];
+ assert.equal(Object.values(material.textureIds).filter(Boolean).length,7);
+ assert.equal(asset.textures.length,7);
+ assert.equal(material.textureIds.normal,'tex.normal');
+ assert.equal(material.textureIds.occlusion,'tex.ao');
+ assert.equal(material.normalScale,.65);
+ assert.equal(material.occlusionStrength,.7);
+ assert.deepEqual(material.textureTransforms.baseColor.offset,[.25,.5]);
+ assert.deepEqual(material.textureTransforms.baseColor.scale,[2,3]);
+ assert.ok(Math.abs(material.textureTransforms.baseColor.rotation-.2)<1e-9);
+ assert.equal(asset.geometries[0].uv2s.length,6);
+});
