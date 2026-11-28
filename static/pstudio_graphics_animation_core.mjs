@@ -117,7 +117,12 @@ export function createPStudioSkinDescriptor(input = {}) {
   if (!joints.length || joints.length > 256 || new Set(joints).size !== joints.length || joints.some(value => !value.trim())) throw new RangeError("A PStudio skin requires 1–256 unique joint ids.");
   const inverseBindMatrices = Array.from(input.inverseBindMatrices || [], (matrix, index) => vec(matrix, 16, "inverse bind matrix " + index));
   if (inverseBindMatrices.length !== joints.length) throw new RangeError("Skin inverse bind matrix count must match the joint count.");
-  return Object.freeze({ kind: "pstudio-skin", id, joints: Object.freeze(joints), inverseBindMatrices: Object.freeze(inverseBindMatrices.map(Object.freeze)) });
+  const skeletonRoot = input.skeletonRoot == null ? null : String(input.skeletonRoot).trim();
+  if (input.skeletonRoot != null && !skeletonRoot) throw new TypeError("Skin skeletonRoot must be a non-empty node id.");
+  return Object.freeze({
+    kind: "pstudio-skin", id, joints: Object.freeze(joints),
+    inverseBindMatrices: Object.freeze(inverseBindMatrices.map(Object.freeze)), skeletonRoot
+  });
 }
 function multiplyPoint(matrix, point, w) {
   return [
