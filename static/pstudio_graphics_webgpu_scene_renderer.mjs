@@ -18,6 +18,7 @@ const WGSL = [
 '  ambientColor: vec4<f32>,',
 '  lightCount: vec4<f32>,',
 '  lights: array<LightData, 8>,',
+'  shadowViewProjection: mat4x4<f32>,',
 '};',
 'struct MaterialData {',
 '  baseColor: vec4<f32>,',
@@ -32,6 +33,10 @@ const WGSL = [
 '  textureTransforms: array<vec4<f32>, 16>,',
 '};',
 '@group(0) @binding(0) var<uniform> frame: FrameData;',
+'@group(0) @binding(1) var iblTexture: texture_2d<f32>;',
+'@group(0) @binding(2) var iblSampler: sampler;',
+'@group(0) @binding(3) var shadowTexture: texture_depth_2d;',
+'@group(0) @binding(4) var shadowSampler: sampler_comparison;',
 '@group(1) @binding(0) var<uniform> material: MaterialData;',
 '@group(1) @binding(1) var baseColorTexture: texture_2d<f32>;',
 '@group(1) @binding(2) var baseColorSampler: sampler;',
@@ -49,6 +54,18 @@ const WGSL = [
 '@group(1) @binding(14) var emissiveSampler: sampler;',
 '@group(1) @binding(15) var alphaTexture: texture_2d<f32>;',
 '@group(1) @binding(16) var alphaSampler: sampler;',
+'fn directionToLatLong(direction: vec3<f32>) -> vec2<f32> {',
+'  let d = normalize(direction);',
+'  return vec2<f32>(atan2(d.z, d.x) / 6.28318530718 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.14159265359 + 0.5);',
+'}',
+'fn shadowVisibility(worldPosition: vec3<f32>) -> f32 {',
+'  if (frame.lightCount.y < 0.5) { return 1.0; }',
+'  let clip = frame.shadowViewProjection * vec4<f32>(worldPosition, 1.0);',
+'  let projected = clip.xyz / max(clip.w, 0.0001);',
+'  let uv = vec2<f32>(projected.x * 0.5 + 0.5, 0.5 - projected.y * 0.5);',
+'  if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || projected.z < 0.0 || projected.z > 1.0) { return 1.0; }',
+'  return textureSampleCompare(shadowTexture, shadowSampler, uv, projected.z - 0.0015);',
+'}',
 'fn materialUv(uv: vec2<f32>, transformIndex: u32) -> vec2<f32> {',
 '  let transform = material.textureTransforms[transformIndex];',
 '  let rotation = material.textureTransforms[transformIndex + 1u];',
@@ -150,7 +167,7 @@ const WGSL = [
 '    if (material.materialFlags.y > 0.5) { n = -n; } else { discard; }',
 '  }',
 '  let v = normalize(frame.cameraPosition.xyz - input.worldPosition);',
-'  var direct = evaluateDirectBRDF(albedo, metallic, roughness, n, v, -frame.sunDirection.xyz, frame.sunColor.rgb * frame.sunColor.w);',
+'  var direct = evaluateDirectBRDF(albedo, metallic, roughness, n, v, -frame.sunDirection.xyz, frame.sunColor.rgb * frame.sunColor.w) * shadowVisibility(input.worldPosition);',
 '  for (var index: u32 = 0u; index < 8u; index += 1u) {',
 '    if (f32(index) < frame.lightCount.x) {',
 '      let light = frame.lights[index];',
@@ -175,7 +192,12 @@ const WGSL = [
 '    let ao = textureSample(occlusionTexture, occlusionSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[11].z > 0.5), 10u)).r;',
 '    ambientOcclusion = mix(1.0, ao, material.materialFlags.z);',
 '  }',
-'  var ambient = albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic) * ambientOcclusion;',
+'  let diffuseIbl = textureSample(iblTexture, iblSampler, directionToLatLong(n)).rgb;',
+'  let reflectionDirection = reflect(-v, n);',
+'  let specularIbl = textureSample(iblTexture, iblSampler, directionToLatLong(reflectionDirection)).rgb;',
+'  let iblFresnel = fresnelSchlick(max(dot(n, v), 0.0), mix(vec3<f32>(0.04), albedo, metallic));',
+'  var ambient = (albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic) +',
+'    albedo * diffuseIbl * (1.0 - metallic) / 3.14159265 + specularIbl * iblFresnel) * ambientOcclusion;',
 '  var emissive = material.emissiveColor.rgb;',
 '  if (material.textureFlags2.x > 0.5) { emissive *= textureSample(emissiveTexture, emissiveSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[13].z > 0.5), 12u)).rgb; }',
 '  let clearcoat = clamp(material.physical.x, 0.0, 1.0);',
@@ -280,7 +302,7 @@ function geometryVertexData(geometry) {
   }
   return vertices;
 }
-function validateScene(scene) {
+function validateScene(scene, renderTarget = {}) {
   if (!scene || scene.kind !== 'pstudio-graphics-scene-asset' || !Array.isArray(scene.geometries) ||
       !Array.isArray(scene.materials) || !Array.isArray(scene.entities)) {
     throw new TypeError('A PStudio-owned scene asset is required; Three.js objects are not accepted by this renderer.');
@@ -322,7 +344,9 @@ function validateScene(scene) {
     if (geometry.morphTargets?.length || entity.morphWeights?.length) {
       throw new Error('Independent WebGPU scene renderer does not yet execute morph-target deformation: ' + entity.id);
     }
-    if (entity.castShadow || entity.receiveShadow) throw new Error('Independent WebGPU renderer does not yet implement shadow casting/receiving: ' + entity.id);
+    if ((entity.castShadow || entity.receiveShadow) && !renderTarget.shadowView) {
+      throw new Error('PStudio WebGPU renderer requires a Render Graph shadow map for shadow-casting/receiving entities: ' + entity.id);
+    }
     if (geometry.indices && !(geometry.indices instanceof Uint16Array) && !(geometry.indices instanceof Uint32Array)) throw new TypeError('Geometry indices must be Uint16Array or Uint32Array.');
   }
   if ((scene.lighting?.lights || []).length > 8) throw new RangeError('Independent WebGPU renderer supports up to eight additional scene lights.');
@@ -349,7 +373,13 @@ function ensurePipeline(state, api, target = {}) {
   const visibility = shaderStage.VERTEX | shaderStage.FRAGMENT;
   state.frameLayout = device.createBindGroupLayout({
     label: 'PStudio Frame Bind Group Layout',
-    entries: [{ binding: 0, visibility, buffer: { type: 'uniform', minBindingSize: 656 } }]
+    entries: [
+      { binding: 0, visibility, buffer: { type: 'uniform', minBindingSize: 720 } },
+      { binding: 1, visibility: shaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+      { binding: 2, visibility: shaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 3, visibility: shaderStage.FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d', multisampled: false } },
+      { binding: 4, visibility: shaderStage.FRAGMENT, sampler: { type: 'comparison' } }
+    ]
   });
   const materialEntries = [
     { binding: 0, visibility: shaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 400 } }
@@ -408,13 +438,12 @@ function ensurePipeline(state, api, target = {}) {
     depthStencil: { ...depthStencil, depthWriteEnabled: false }
   });
   state.frameBuffer = device.createBuffer({
-    label: 'PStudio Frame Uniforms', size: 656,
+    label: 'PStudio Frame Uniforms', size: 720,
     usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
   });
-  state.frameBindGroup = device.createBindGroup({
-    layout: state.frameLayout,
-    entries: [{ binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 656 } }]
-  });
+  state.frameBindGroup = null;
+  state.frameIblView = null;
+  state.frameShadowView = null;
   state.pipelineKey = pipelineKey;
 }
 function ensureGeometry(state, device, geometry) {
@@ -667,13 +696,16 @@ function updateFrameUniforms(state, device, frame, scene) {
   const ambient = vector3(lighting.ambientColor, [0.12, 0.15, 0.2]);
   const lights = lighting.lights || [];
   if (lights.length > 8) throw new RangeError('PStudio direct renderer supports up to eight additional scene lights.');
-  const data = new Float32Array(164);
+  const data = new Float32Array(180);
   data.set(vp, 0);
   data.set([camera[0], camera[1], camera[2], 1], 16);
   data.set([sun[0], sun[1], sun[2], Number(lighting.sunIntensity ?? 3)], 20);
   data.set([sunColor[0], sunColor[1], sunColor[2], Number(lighting.sunIntensity ?? 3)], 24);
   data.set([ambient[0], ambient[1], ambient[2], Number(lighting.ambientIntensity ?? 1)], 28);
-  data.set([lights.length, 0, 0, frame.renderTarget?.linearOutput === true ? 1 : 0], 32);
+  data.set([lights.length, frame.renderTarget?.shadowView ? 1 : 0, 0, frame.renderTarget?.linearOutput === true ? 1 : 0], 32);
+  const shadowViewProjection = frame.renderTarget?.shadowViewProjection || frame.shadowViewProjection ||
+    [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+  data.set(matrix4(shadowViewProjection, 'shadowViewProjection'), 164);
   lights.forEach((light, index) => {
     const offset = 36 + index * 16;
     const type = light.type === 'point' ? 1 : light.type === 'spot' ? 2 : 0;
@@ -684,6 +716,44 @@ function updateFrameUniforms(state, device, frame, scene) {
   });
   device.queue.writeBuffer(state.frameBuffer, 0, data);
 }
+function ensureFrameBindGroup(state, device, target = {}) {
+  if (!state.defaultIblTexture) {
+    state.defaultIblTexture = device.createTexture({
+      label: 'PStudio Neutral IBL Fallback',
+      size: [1, 1, 1], format: 'rgba8unorm',
+      usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.COPY_DST
+    });
+    device.queue.writeTexture({ texture: state.defaultIblTexture }, new Uint8Array([128,128,128,255]),
+      { bytesPerRow: 4, rowsPerImage: 1 }, { width: 1, height: 1, depthOrArrayLayers: 1 });
+    state.defaultIblView = state.defaultIblTexture.createView();
+  }
+  if (!state.defaultShadowTexture) {
+    state.defaultShadowTexture = device.createTexture({
+      label: 'PStudio Neutral Shadow Fallback',
+      size: [1, 1, 1], format: 'depth32float',
+      usage: TEXTURE_USAGE.RENDER_ATTACHMENT | TEXTURE_USAGE.TEXTURE_BINDING
+    });
+    state.defaultShadowView = state.defaultShadowTexture.createView();
+  }
+  const iblView = target.iblView || state.defaultIblView;
+  const shadowView = target.shadowView || state.defaultShadowView;
+  if (state.frameBindGroup && state.frameIblView === iblView && state.frameShadowView === shadowView) return;
+  state.iblSampler ||= device.createSampler({ addressModeU: 'repeat', addressModeV: 'clamp-to-edge', magFilter: 'linear', minFilter: 'linear' });
+  state.shadowSampler ||= device.createSampler({ compare: 'less-equal', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+  state.frameBindGroup = device.createBindGroup({
+    layout: state.frameLayout,
+    entries: [
+      { binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 720 } },
+      { binding: 1, resource: iblView },
+      { binding: 2, resource: state.iblSampler },
+      { binding: 3, resource: shadowView },
+      { binding: 4, resource: state.shadowSampler }
+    ]
+  });
+  state.frameIblView = iblView;
+  state.frameShadowView = shadowView;
+}
+
 function ensureDepthTarget(state, api, target = {}) {
   const device = api.device, canvas = api.canvas;
   const width = Math.max(1, Number(target.width || canvas?.width) || 1);
@@ -704,7 +774,10 @@ function disposeSceneRuntime(state) {
   for (const record of state.materials.values()) try { record.buffer.destroy(); } catch (_) {}
   for (const record of state.instances.values()) try { record.buffer.destroy(); } catch (_) {}
   for (const record of state.textures.values()) try { record.texture.destroy(); } catch (_) {}
-  try { state.frameBuffer?.destroy?.(); state.depthTexture?.destroy?.(); } catch (_) {}
+  try {
+    state.frameBuffer?.destroy?.(); state.depthTexture?.destroy?.();
+    state.defaultIblTexture?.destroy?.(); state.defaultShadowTexture?.destroy?.();
+  } catch (_) {}
   state.geometries.clear();
   state.materials.clear();
   state.instances.clear();
@@ -717,6 +790,14 @@ function disposeSceneRuntime(state) {
   state.pipelineLayout = null;
   state.frameBuffer = null;
   state.frameBindGroup = null;
+  state.frameIblView = null;
+  state.frameShadowView = null;
+  state.defaultIblTexture = null;
+  state.defaultShadowTexture = null;
+  state.defaultIblView = null;
+  state.defaultShadowView = null;
+  state.iblSampler = null;
+  state.shadowSampler = null;
   state.depthTexture = null;
   state.depthWidth = 0;
   state.depthHeight = 0;
@@ -743,7 +824,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   state.instances ||= new Map();
   state.textures ||= new Map();
   state.pipelineTransparent ||= null;
-  const { geometries, materials, textures } = validateScene(scene);
+  const { geometries, materials, textures } = validateScene(scene, frame.renderTarget);
   const device = api?.device;
   const target = frame.renderTarget || {};
   const surfaceView = target.colorView || api?.getCurrentSurfaceView?.();
@@ -751,6 +832,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   ensurePipeline(state, api, target);
   if (!target.depthView) ensureDepthTarget(state, api, target);
   updateFrameUniforms(state, device, frame, scene);
+  ensureFrameBindGroup(state, device, target);
   const encoder = device.createCommandEncoder({ label: 'PStudio Independent Scene Frame' });
   const pass = encoder.beginRenderPass({
     label: 'PStudio Independent Scene PBR Pass',
