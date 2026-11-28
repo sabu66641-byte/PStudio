@@ -1784,7 +1784,7 @@ test('dynamic GI probe captures are excluded from main render timings and per-fr
   const end=renderer.indexOf('  function createGpuParticleSystem(',start);
   assert.ok(start>=0&&end>start,'drawFrame boundaries');
   const frame=renderer.slice(start,end);
-  const renderTimingEnd=frame.indexOf('endGpuTimerQuery(gpuQuery,null,pvcsActiveFrameContext');
+  const renderTimingEnd=frame.indexOf('endGpuTimerQuery(gpuQuery,null,gpuFrameMeasurementContext');
   const renderStatsCapture=frame.indexOf('captureFrameRenderStats()');
   const submitTimeCapture=frame.indexOf('lastRenderDurationMs=Math.max');
   const performanceUpdate=frame.indexOf('updatePerformanceMonitor(now)');
