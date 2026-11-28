@@ -2,6 +2,7 @@ const DEFAULT_HISTORY_LIMIT = 120;
 const ID_PATTERN = /^[a-z][a-z0-9._-]{0,63}$/;
 
 function finiteNonNegative(value) {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
@@ -13,20 +14,52 @@ function percentile(values, p) {
   return sorted[index];
 }
 
+function sanitizeContext(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const context = {};
+  for (const key of ['backend', 'scene', 'quality']) {
+    if (value[key] !== undefined && value[key] !== null) context[key] = String(value[key]).slice(0, 48);
+  }
+  for (const key of ['renderWidth', 'renderHeight', 'renderPixelRatio']) {
+    const number = finiteNonNegative(value[key]);
+    if (number !== null) context[key] = number;
+  }
+  if (value.effects && typeof value.effects === 'object' && !Array.isArray(value.effects)) {
+    const effects = {};
+    for (const key of ['ao', 'ssr', 'volumetricClouds', 'volumetricFog', 'contactShadows']) {
+      if (typeof value.effects[key] === 'boolean') effects[key] = value.effects[key];
+    }
+    if (Object.keys(effects).length) context.effects = effects;
+  }
+  return Object.keys(context).length ? context : null;
+}
+
 function summarizeHistory(history) {
-  const cpu = history.map((item) => item.cpuSubmitMs).filter(Number.isFinite);
-  const gpu = history.map((item) => item.gpuRenderMs).filter(Number.isFinite);
+  const cpuFrame = history.map((item) => item.cpuFrameMs).filter(Number.isFinite);
+  const cpuSubmit = history.map((item) => item.cpuSubmitMs).filter(Number.isFinite);
+  const gpuFrame = history.map((item) => item.gpuRenderMs).filter(Number.isFinite);
+  const gpuStage = history.map((item) => item.gpuStageMs).filter(Number.isFinite);
+  const frameInterval = history.map((item) => item.frameIntervalMs).filter(Number.isFinite);
   const memory = history.map((item) => item.memoryBytes).filter(Number.isFinite);
   const asyncElapsed = history.map((item) => item.asyncElapsedMs).filter(Number.isFinite);
+  const context = history.slice().reverse().find((item) => item.context)?.context || null;
   return {
     sampleCount: history.length,
-    cpuSubmitP50Ms: percentile(cpu, 50),
-    cpuSubmitP95Ms: percentile(cpu, 95),
-    gpuRenderP50Ms: percentile(gpu, 50),
-    gpuRenderP95Ms: percentile(gpu, 95),
+    cpuFrameP50Ms: percentile(cpuFrame, 50),
+    cpuFrameP95Ms: percentile(cpuFrame, 95),
+    cpuFrameP99Ms: percentile(cpuFrame, 99),
+    cpuSubmitP50Ms: percentile(cpuSubmit, 50),
+    cpuSubmitP95Ms: percentile(cpuSubmit, 95),
+    cpuSubmitP99Ms: percentile(cpuSubmit, 99),
+    gpuRenderP50Ms: percentile(gpuFrame, 50),
+    gpuRenderP95Ms: percentile(gpuFrame, 95),
+    gpuStageP50Ms: percentile(gpuStage, 50),
+    gpuStageP95Ms: percentile(gpuStage, 95),
+    frameIntervalP95Ms: percentile(frameInterval, 95),
     memoryP95Bytes: percentile(memory, 95),
     asyncElapsedP50Ms: percentile(asyncElapsed, 50),
-    asyncElapsedP95Ms: percentile(asyncElapsed, 95)
+    asyncElapsedP95Ms: percentile(asyncElapsed, 95),
+    context
   };
 }
 
@@ -98,13 +131,16 @@ export function createVisualCompensationGraph(options = {}) {
     if (!node) throw new Error('Unknown graph node: ' + id);
     const sample = {
       sampledAt: finiteNonNegative(measurement.sampledAt),
+      cpuFrameMs: finiteNonNegative(measurement.cpuFrameMs),
       cpuSubmitMs: finiteNonNegative(measurement.cpuSubmitMs),
       gpuRenderMs: finiteNonNegative(measurement.gpuRenderMs),
+      gpuStageMs: finiteNonNegative(measurement.gpuStageMs),
       frameIntervalMs: finiteNonNegative(measurement.frameIntervalMs),
       memoryBytes: finiteNonNegative(measurement.memoryBytes),
-      asyncElapsedMs: finiteNonNegative(measurement.asyncElapsedMs)
+      asyncElapsedMs: finiteNonNegative(measurement.asyncElapsedMs),
+      context: sanitizeContext(measurement.context)
     };
-    if (!Object.values(sample).some((value) => value !== null)) {
+    if (!Object.entries(sample).some(([key, value]) => key !== 'context' && value !== null)) {
       throw new TypeError('Measurement must contain at least one finite, non-negative metric.');
     }
     node.history.push(sample);
@@ -153,17 +189,33 @@ export function createVisualCompensationGraph(options = {}) {
         label: node.label,
         backend: node.backend,
         metrics,
-        evidence: metrics.cpuSubmitP95Ms !== null ? 'measured-cpu-submit' : metrics.asyncElapsedP95Ms !== null ? 'measured-async-elapsed' : 'unmeasured',
-        gpuEvidence: metrics.gpuRenderP95Ms === null ? 'not-available-per-stage' : 'measured'
+        evidenceByDomain: {
+          cpuFrame: metrics.cpuFrameP95Ms === null ? 'unmeasured' : 'measured',
+          cpuStages: metrics.cpuSubmitP95Ms === null ? 'unmeasured' : 'measured',
+          gpuFrame: metrics.gpuRenderP95Ms === null ? 'unmeasured' : 'measured',
+          gpuStages: metrics.gpuStageP95Ms === null ? 'unmeasured' : 'measured',
+          asynchronous: metrics.asyncElapsedP95Ms === null ? 'unmeasured' : 'measured',
+          memory: metrics.memoryP95Bytes === null ? 'unmeasured' : 'estimated'
+        }
       };
-    }).sort((a, b) => {
-      const av = a.metrics.cpuSubmitP95Ms;
-      const bv = b.metrics.cpuSubmitP95Ms;
-      if (av === null && bv === null) return a.id.localeCompare(b.id);
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return bv - av;
     });
+  }
+
+  function analyzeResourceDomains() {
+    const rows = [...nodes.values()].map((node) => ({
+      id: node.id, label: node.label, metrics: summarizeHistory(node.history)
+    }));
+    const rank = (key) => rows.filter((row) => Number.isFinite(row.metrics[key]))
+      .map((row) => ({ id: row.id, label: row.label, value: row.metrics[key], metric: key }))
+      .sort((a, b) => b.value - a.value || a.id.localeCompare(b.id));
+    return {
+      cpuFrame: rank('cpuFrameP95Ms'),
+      cpuStages: rank('cpuSubmitP95Ms'),
+      gpuFrame: rank('gpuRenderP95Ms'),
+      gpuStages: rank('gpuStageP95Ms'),
+      asynchronous: rank('asyncElapsedP95Ms'),
+      memory: rank('memoryP95Bytes')
+    };
   }
 
   return Object.freeze({
@@ -173,6 +225,7 @@ export function createVisualCompensationGraph(options = {}) {
     updateNode,
     snapshot,
     analyzeBottlenecks,
+    analyzeResourceDomains,
     getNodeCount: () => nodes.size,
     getEdgeCount: () => edges.size
   });
