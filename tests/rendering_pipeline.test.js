@@ -1542,7 +1542,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('skyLanternCount=constrainedMobile?160:320'));
   assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
   assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
-  assert.ok(html.includes('20261128-pvcs-foundation-v1'));
+  assert.ok(html.includes('20261128-pvcs-governor-v1'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1555,7 +1555,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261128-pvcs-foundation-v1'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261128-pvcs-governor-v1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
