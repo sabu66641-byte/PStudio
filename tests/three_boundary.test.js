@@ -11,6 +11,9 @@ const staticRoot = path.join(root, 'static');
 test('PStudio-owned Graphics Core and Render Graph remain free of direct Three.js imports', () => {
   const protectedFiles = [
     'pstudio_graphics_contract.mjs',
+    'pstudio_graphics_scene_core.mjs',
+    'pstudio_graphics_asset_core.mjs',
+    'pstudio_pvcs_calibration.mjs',
     'pstudio_graphics_renderer_core.mjs',
     'pstudio_graphics_resource_core.mjs',
     'pstudio_graphics_shader_core.mjs',
@@ -56,6 +59,9 @@ test('importing PStudio-owned Graphics Core modules does not require a Three.js 
     delete globalThis.THREE;
     const modules = await Promise.all([
       import('../static/pstudio_graphics_contract.mjs'),
+      import('../static/pstudio_graphics_scene_core.mjs'),
+      import('../static/pstudio_graphics_asset_core.mjs'),
+      import('../static/pstudio_pvcs_calibration.mjs'),
       import('../static/pstudio_graphics_renderer_core.mjs'),
       import('../static/pstudio_graphics_resource_core.mjs'),
       import('../static/pstudio_graphics_shader_core.mjs'),
@@ -68,7 +74,7 @@ test('importing PStudio-owned Graphics Core modules does not require a Three.js 
       import('../static/pstudio_graphics_advanced_core.mjs'),
       import('../static/pstudio_render_graph.mjs')
     ]);
-    assert.equal(modules.length, 12);
+    assert.equal(modules.length, 15);
     assert.equal(globalThis.THREE, undefined);
   } finally {
     if (previous !== undefined) globalThis.THREE = previous;
