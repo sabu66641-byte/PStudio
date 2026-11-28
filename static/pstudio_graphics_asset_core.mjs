@@ -179,7 +179,7 @@ export function createPStudioGraphicsAssetCore(options = {}) {
     if (pending.has(descriptor.id)) {
       const pendingRecord = pending.get(descriptor.id);
       if (pendingRecord.key !== descriptorKey(descriptor)) throw new Error("Asset id is already loading with a different descriptor: " + descriptor.id);
-      return pendingRecord.promise;
+      return (await pendingRecord.promise).value;
     }
     for (const dependencyId of descriptor.dependencies) if (!records.has(dependencyId)) throw new Error("Asset dependency is not registered: " + dependencyId);
     let loadedPayload = null;
