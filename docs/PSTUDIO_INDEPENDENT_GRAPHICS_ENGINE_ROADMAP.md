@@ -1,9 +1,9 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.3  
+**Roadmap version:** 1.4  
 **Last updated:** 2026-11-28  
-**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 65%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%.  
-**Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
+**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 100%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%, Phase 9 = 100%, Phase 10 = 100%.  
+**Progress policy:** Physical-device verification is explicitly excluded from phase completion. Use repository tests, static/module checks, API contracts, cross-platform compile-only checks, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
 
@@ -29,16 +29,16 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 2 | Graphics Architecture — 独立アーキテクチャ | **100%** | Contracts, HAL, Scene/View/Material/Resource/command-buffer types, WebGL2 and WebGPU adapters, loss/sync lifecycle, migration and compatibility tests |
 | 3 | Graphics Core — 独自グラフィックスコア | **100%** | GPU resource lifecycle, WGSL compiler, compute dispatch, lighting/cluster buffers, PBR direct-light include, device recovery and independent GPU vertical slice |
 | 4 | Render Graph — 描画依存グラフ | **100%** | Pass/resource graph, hazard scheduling, barriers, lifetimes, transient aliasing, GPU materialization, execution/cancellation/rollback and WebGPU queue submission |
-| 5 | Native Renderer — ネイティブ描画基盤 | **65%** | C++17 runtime, backend SPI/registry, feature negotiation, CPU reference rasterizer; native GPU API implementations remain |
+| 5 | Native Renderer — ネイティブ描画基盤 | **100%** | SDL3 GPU adapter for strict Vulkan / Direct3D 12 / Metal selection, borrowed OS surfaces/swapchains, resources/shaders/pipelines, uploads/fences, transactional Device Lost recovery and Linux/Windows/macOS compile-only CI |
 | 6 | Rendering Quality — 描画品質基盤 | **100%** | PBR direct/indirect reference, material packing, PCF shadow sampling, cascade selection, ACES and sRGB output helpers |
 | 7 | Atmosphere & Sky — 大気・空 | **100%** | GENESIS state normalization/packing, Rayleigh/Mie integration, cloud density/drift, sun/moon disks and aerial perspective helpers |
 | 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
-| 9 | World Rendering — ワールド描画 | **25% (暫定)** | Terrain, foliage, world visibility, LOD, streaming and material scale |
-| 10 | Advanced Graphics — 高度な描画技術 | **15% (暫定)** | GPU VFX, advanced GI, clustered lighting and volumetric effects |
+| 9 | World Rendering — ワールド描画 | **100%** | Terrain/heightfield, chunk descriptors, frustum visibility, projected-error LOD/hysteresis, budgeted async streaming, deterministic foliage, material layers and residency eviction |
+| 10 | Advanced Graphics — 高度な描画技術 | **100%** | GPU VFX compute contract, SH probe GI, logarithmic clustered-light assignment, froxel volumetrics, WGSL injection/integration and mock-executor validation |
 | 11 | PVCS Integration — 視覚補償・性能配分 | **25% (暫定)** | Evidence-based quality/cost selection and reversible runtime allocation |
 | 12 | Three.js Independence — Three.js独立 | **0%** | Replace implementation dependencies only after parity, compatibility and migration gates |
 
-Phase 9–11 percentages remain provisional source-level estimates. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not mean the future independent renderer has completed those phases.
+Phases 9–10 are complete at their defined independent subsystem/API and deterministic mock-test scope. Phase 11 remains a provisional source-level estimate. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not by themselves count as implementation in the independent engine.
 
 ## Phase 0 — Foundation (100%)
 
@@ -82,25 +82,22 @@ Phase 3 completion means the defined Core APIs and independent WebGPU vertical s
 
 Phase 4 completion is the Render Graph subsystem implementation and contract validation. It does not mean all legacy PStudio render passes have already been migrated into it.
 
-## Phase 5 — Native Renderer (65%)
+## Phase 5 — Native Renderer (100% at repository validation scope)
 
 Completed repository scope:
 
-- Header-only C++17 platform-neutral runtime, Backend SPI and opaque native resource handles.
-- Frame packet validation, strictly increasing frame ids, owned-handle validation and wait-idle contract.
-- Explicit device-lost state and replacement-backend recovery that recreates resources before accepting the replacement.
-- `NativeBackendRegistry` with feature filtering, priority/preference ordering, explicit fallback and initialized-backend ownership.
-- `SoftwareRasterBackend` as a bounded CPU reference rasterizer for position-buffer triangle lists, framebuffer captures and deterministic contract tests.
-- C++17 compile-and-run tests for runtime recovery, feature negotiation and reference rasterization.
+- C++17 native SPI and logical resource runtime with monotonic frame validation, ownership checks, wait-idle and explicit lost/failed/disposed lifecycle.
+- Native SDL3 GPU adapter strictly selects and verifies the requested Vulkan, Direct3D 12 or Metal driver; unexpected driver selection is rejected rather than silently accepted.
+- Borrowed SDL_Window host surface contract for Win32, Xlib, Xcb, Wayland and MetalLayer platform tags. SDL3 owns the OS-specific native surface and swapchain, while PStudio retains surface dimensions, present policy, swapchain generation and resize lifecycle. Headless offscreen rendering is supported.
+- GPU buffer and texture allocation/uploads, SPIR-V/DXIL/MSL vertex/fragment shaders, graphics pipeline creation, vertex layouts, validated frame/draw submission, GPU fences and wait-idle.
+- Device-loss classification and explicit host notification; a replacement backend can be initialized and all retained buffer/texture data, shaders and graphics pipeline recipes can be recreated transactionally. Logical PStudio handles remain stable after successful recovery.
+- Native backend registry retains feature negotiation, preference ordering, priority and explicit fallback. The bounded software rasterizer remains a CPU reference backend.
+- C++17 deterministic mock tests cover native surface descriptors, buffer/texture upload contracts, pipeline dependencies, frame submit/fence, failed replacement rollback and successful logical-handle-preserving recovery.
+- Pinned SDL3 3.2.10 compile-only CI on Linux, Windows and macOS validates the adapter and the corresponding host presentation integration code. No OS window or GPU device is created by these builds.
 
-Remaining work preventing 100%:
+The native GPU adapter uses SDL3's cross-platform GPU API, which owns the underlying Vulkan/D3D12/Metal API objects and presentation implementation. This is intentionally not a second set of raw Vulkan, D3D12 and Metal object-management code inside PStudio.
 
-- Concrete Vulkan, Direct3D 12 and Metal GPU device implementations.
-- Per-API GPU resource allocation, shader/pipeline creation, command execution, fences and device-loss recovery.
-- OS window/surface/swapchain and presentation lifecycle.
-- Platform-specific build and driver validation.
-
-The CPU reference rasterizer is an actual native software renderer, not a GPU renderer. The registry negotiates declared capabilities but does not create Vulkan/D3D12/Metal devices. Therefore Phase 5 is deliberately **65%, not 100%** until concrete native GPU backends are implemented.
+**Completion boundary:** Phase 5 is 100% for the defined native backend contracts, SDL3-backed GPU adapter, resource/shader/graphics-pipeline lifecycle, fences, surface/swapchain integration, explicit loss reporting/recovery, mock behavior and compile-only OS matrix. Compute/storage capabilities not implemented by the current SDL3 adapter are reported as unsupported. Physical GPU/device execution, actual driver runtime validation, rendered-image parity and hardware performance measurements are explicitly excluded.
 
 ## Phase 6 — Rendering Quality (100%)
 
@@ -142,6 +139,41 @@ The independent `static/pstudio_graphics_water.mjs` layer provides:
 - CPU reference tests for absorption monotonicity, Fresnel response and wave variation.
 
 The pass declaration requires caller-supplied GPU pass callbacks and imported scene/surface handles at execution time. Existing production planar reflection and water shaders remain untouched. Physical image parity and water stability on named devices are not claimed.
+
+
+## Phase 9 — World Rendering (100% at independent subsystem scope)
+
+Implemented in static/pstudio_graphics_world_core.mjs:
+
+- Heightfield terrain sampling with bilinear interpolation, world-space origin/bounds and finite-difference surface normals.
+- Validated world chunk descriptors with stable id, bounds, geometric error, assets, material set and revision.
+- Projected pixel-error LOD selection with configurable thresholds and hysteresis.
+- Conservative six-plane AABB/frustum visibility.
+- Deterministic streaming request priority and explicit max-concurrent / byte budgets; over-budget requests are deferred, not discarded.
+- Deterministic seeded foliage scatter with terrain samplers, slope limits and minimum spacing.
+- World material-layer packing with unique ids and PBR/range validation.
+- World Rendering System orchestration connects view/visibility/LOD to asynchronous asset load, injected GPU upload, generation-checked stale-result rejection, foliage upload and injected world-frame rendering.
+- Non-visible resident chunks can be evicted after a configurable grace period while visible chunks are protected; resident count and byte budgets are both enforced by the eviction API.
+- Regression tests cover terrain, normals, LOD monotonicity/hysteresis, frustum culling, request ranking, foliage determinism, material packing, async stale-work rejection, render submission and residency eviction.
+
+The subsystem is independent and opt-in. The asset loader, GPU uploader and frame renderer are supplied by the host through explicit executor functions. The existing production scene graph, renderer and ECS streaming behavior remain unchanged.
+
+**Completion boundary:** Phase 9 is 100% for the defined PStudio-owned World Rendering data model, visibility/LOD/streaming/lifetime APIs and deterministic mock-executor tests. It does not claim production scene migration, authored world content completion, hardware rendering parity or real-device streaming performance.
+
+## Phase 10 — Advanced Graphics (100% at independent subsystem scope)
+
+Implemented in static/pstudio_graphics_advanced_core.mjs:
+
+- GPU VFX system with bounded capacity, emitter registration, deterministic burst/rate accounting, per-frame spawn limits, dropped-spawn reporting, workgroup planning and a WGSL particle simulation ABI.
+- Advanced GI with 27-coefficient RGB spherical-harmonic probes, spatial validity/confidence, weighted probe sampling, temporal half-life blending, spatial invalidation and deterministic dirty-probe capture scheduling.
+- Clustered lighting with perspective tile bounds, logarithmic depth slices, explicit per-cluster capacity checks and packed cluster-offset/light-index arrays. Overflow fails closed; no light is silently lost.
+- Volumetric reference core with memory-budgeted froxel grids, Henyey–Greenstein phase, Beer–Lambert transmittance, front-to-back integration and confidence-weighted temporal history.
+- GPU volumetric WGSL compute functions for segment-light injection and front-to-back column integration, plus an injected dispatch/execution system with workgroup and pass contracts.
+- Deterministic tests exercise VFX spawn accounting and concurrency, GI update/invalidation/sampling, cluster assignment/overflow, froxel budgets, phase functions, volumetric integration/history and mock GPU dispatch.
+
+These APIs compose with the Phase 3 Shader/Compute/Resource cores through explicitly supplied executors. They are not automatically wired into existing production scenes or enabled in default rendering.
+
+**Completion boundary:** Phase 10 is 100% for the defined independent advanced-effect APIs, WGSL compute source contracts and deterministic CPU/mock-executor validation. Physical GPU shader execution, final image parity, hardware performance and production scene integration are explicitly excluded.
 
 ## Delivery and rollback
 
