@@ -41,6 +41,13 @@ public:
         }
         return add(Kind::Pipeline, d.id);
     }
+    bool submit(const FramePacket& frame, std::string& error) override {
+        if (disposed_ || !initialized_ || deviceLost_ || !frame.width || !frame.height) {
+            error = "mock generic backend unavailable";
+            return false;
+        }
+        return true;
+    }
     bool submitGpuFrame(const GpuFramePacket& frame, std::string& error) override {
         if (disposed_ || !initialized_ || deviceLost_) { error = "mock device unavailable"; return false; }
         for (const auto& draw : frame.draws) {
