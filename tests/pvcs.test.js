@@ -305,7 +305,8 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
   assert.match(renderer, /else discardGpuTimerQuery\(query\)/);
   assert.match(renderer, /if\(window\.PStudioPVCS\?\.isMonitoringEnabled\?\.\(\)!==true\)return originalRender\.apply\(this,args\)/);
-  assert.match(renderer, /if\(pvcsMonitoringEnabled\)pvcsProfiler\.beginFrame\?\.\(\)/);
+  assert.match(renderer, /pvcsActiveFrameContext=pvcsMonitoringEnabled\?\(pvcsProfiler\.beginFrame\?\.\(\)\|\|null\):null/);
+  assert.match(renderer, /pvcsActiveFrameGeneration=pvcsMonitoringEnabled\?\(pvcsProfiler\.getMonitoringGeneration\?\.\(\)\?\?null\):null/);
   assert.doesNotMatch(renderer, /const stageGpuSampleSlots=\[/);
   for (const id of ['post-aa-taar','post-volumetric-fog','post-gtao','post-ssr','post-bloom','post-volumetric-clouds','post-god-rays','post-output']) {
     assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
