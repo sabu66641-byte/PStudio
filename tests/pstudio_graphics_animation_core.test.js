@@ -61,3 +61,16 @@ test('PStudio instance pool enforces limits and deterministic release',()=>{
  assert.equal(pool.release('a'),true);assert.equal(pool.release('a'),false);
  assert.equal(pool.stats().count,1);assert.equal(pool.clear(),1);
 });
+
+test('PStudio CUBICSPLINE tracks use glTF Hermite tangents scaled by keyframe duration',()=>{
+ const clip=createPStudioAnimationClip({id:'clip.cubic',tracks:[{
+  targetId:'root',path:'translation',interpolation:'CUBICSPLINE',times:[0,1],
+  values:[0,0,0, 1,0,0],
+  inTangents:[0,0,0,0,0,0],outTangents:[2,0,0,0,0,0]
+ }]});
+ assert.deepEqual(samplePStudioAnimationClip(clip,.5).tracks[0].value,[0.75,0,0]);
+ assert.throws(()=>createPStudioAnimationClip({id:'bad.cubic',tracks:[{
+  targetId:'root',path:'translation',interpolation:'CUBICSPLINE',times:[0,1],values:[0,0,0,1,0,0],
+  inTangents:[0,0,0],outTangents:[0,0,0,0,0,0]
+ }]}),/one in- and out-tangent/);
+});
