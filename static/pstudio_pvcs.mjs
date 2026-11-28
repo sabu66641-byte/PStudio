@@ -2,9 +2,15 @@ import { createVisualCompensationGraph } from './pstudio_visual_compensation_gra
 import { compareRgbaFrames, compareTemporalSequences } from './pstudio_visual_difference.mjs?v=20261128-pvcs-diff-v1';
 
 const STAGES = [
-  ['frame-loop', 'Frame loop', 'root', 'shared', 'One PStudio3D drawFrame invocation.'],
+  ['frame-loop', 'Frame loop', 'root', 'shared', 'One drawFrame callback; full CPU time and renderer submission are separate metrics.'],
+  ['camera-state-update', 'Camera and environment presentation update', 'cpu-stage', 'shared', 'Camera, celestial placement and editor presentation updates.'],
   ['environment-state-update', 'Environment state update', 'cpu-stage', 'shared', 'GENESIS state propagation; sky visuals are not modified by PVCS.'],
   ['clustered-lighting', 'Clustered lighting update', 'cpu-stage', 'shared', 'CPU-side light/cluster preparation.'],
+  ['world-visibility', 'World visibility and streaming', 'cpu-stage', 'shared', 'Frustum/distance visibility, streaming requests and LOD updates.'],
+  ['occlusion-visibility', 'Occlusion visibility', 'cpu-stage', 'shared', 'Throttled candidate selection and raycast visibility updates.'],
+  ['instance-batch-rebuild', 'Instance batch rebuild', 'cpu-stage', 'shared', 'Rebuild of compatible static instance batches.'],
+  ['mirror-reflection-scene-render', 'Mirror scene render', 'cpu-stage', 'webgl2', 'CPU submission around each reflected-camera scene render.'],
+  ['mirror-cloud-composite', 'Mirror cloud composite', 'cpu-stage', 'webgl2', 'CPU submission around reflected volumetric cloud composition.'],
   ['water-depth-prepass', 'Water depth prepass', 'render-pass', 'webgl2', 'Additional scene render used to provide depth to water and screen-space effects.'],
   ['mirror-reflection', 'Planar mirror reflection', 'render-pass', 'webgl2', 'Reflected camera render(s), potentially including a cloud pass.'],
   ['post-processing', 'Post-processing composition', 'render-pass', 'webgl2', 'Enabled composer passes such as AO, SSR, volumetric effects, bloom and AA.'],
@@ -38,6 +44,30 @@ export function createPStudioPVCS(options = {}) {
   let monitoringEnabled = options.enabled === true;
   let totalMeasurements = 0;
   let lastError = null;
+  let cachedContext = null;
+  let cachedContextAt = -Infinity;
+
+  function contextFromStats(stats) {
+    if (!stats || typeof stats !== 'object') return null;
+    return {
+      backend: stats.backend,
+      scene: stats.scene,
+      quality: stats.quality,
+      renderWidth: stats.renderWidth,
+      renderHeight: stats.renderHeight,
+      renderPixelRatio: stats.renderPixelRatio,
+      effects: stats.renderEffects
+    };
+  }
+
+  function measurementContext() {
+    const now = clock();
+    if (!cachedContext || now - cachedContextAt >= 250) {
+      cachedContext = contextFromStats(performanceSnapshot());
+      cachedContextAt = now;
+    }
+    return cachedContext;
+  }
 
   function recordStage(id, cpuSubmitMs, extra = {}) {
     const value = Number(cpuSubmitMs);
@@ -45,9 +75,22 @@ export function createPStudioPVCS(options = {}) {
     graph.recordMeasurement(id, {
       sampledAt: clock(),
       cpuSubmitMs: value,
-      gpuRenderMs: extra.gpuRenderMs,
+      gpuStageMs: extra.gpuStageMs,
       frameIntervalMs: extra.frameIntervalMs,
-      memoryBytes: extra.memoryBytes
+      memoryBytes: extra.memoryBytes,
+      context: extra.context || measurementContext()
+    });
+    totalMeasurements += 1;
+    return true;
+  }
+
+  function recordGpuStageMetrics(id, gpuStageMs, context = null) {
+    const value = Number(gpuStageMs);
+    if (!monitoringEnabled || !Number.isFinite(value) || value < 0) return false;
+    graph.recordMeasurement(id, {
+      sampledAt: clock(),
+      gpuStageMs: value,
+      context: context || measurementContext()
     });
     totalMeasurements += 1;
     return true;
@@ -109,22 +152,31 @@ export function createPStudioPVCS(options = {}) {
       rendererPerformance: performanceSnapshot(),
       graph: graph.snapshot(),
       limitations: [
-        'GPU render time currently describes the main WebGL2 scene timer when a fresh disjoint-safe timer-query sample exists; it is not a per-pass GPU breakdown.',
-        'Stage timings are CPU submit/elapsed wall-clock measurements around calls, not isolated GPU execution times.',
+        'GPU frame time is the aggregate WebGL2 render-section timer; selected WebGL2 pass timers are sampled separately and never nested with the aggregate timer.',
+        'WebGPU GPU-stage timing is unavailable unless timestamp queries are supported and enabled; CPU submission is never substituted for GPU time.',
+        'CPU frame callback, CPU render submission, GPU frame, GPU stage and asynchronous elapsed values are independent measurement domains.',
         'GPU memory values remain PStudio resource estimates rather than driver-reported VRAM.'
       ]
     };
   }
 
-  function recordFrameMetrics() {
+  function recordFrameMetrics(cpuFrameMs = null, options = {}) {
     if (!monitoringEnabled) return false;
     const stats = performanceSnapshot();
     if (!stats) return false;
-    return recordStage('frame-loop', stats.cpuRenderSubmitMs, {
-      gpuRenderMs: stats.gpuTimingFresh === true ? stats.gpuRenderMs : null,
+    const frameValue = cpuFrameMs === null || cpuFrameMs === undefined ? null : Number(cpuFrameMs);
+    const aggregateGpuAllowed = options.includeAggregateGpu !== false && stats.backend === 'webgl2';
+    graph.recordMeasurement('frame-loop', {
+      sampledAt: clock(),
+      cpuFrameMs: Number.isFinite(frameValue) && frameValue >= 0 ? frameValue : null,
+      cpuSubmitMs: stats.cpuRenderSubmitMs,
+      gpuRenderMs: aggregateGpuAllowed && stats.gpuTimingFresh === true ? stats.gpuRenderMs : null,
       frameIntervalMs: stats.frameIntervalMs,
-      memoryBytes: stats.estimatedGpuBytes
+      memoryBytes: stats.estimatedGpuBytes,
+      context: contextFromStats(stats)
     });
+    totalMeasurements += 1;
+    return true;
   }
 
   function analyze() {
@@ -132,6 +184,7 @@ export function createPStudioPVCS(options = {}) {
       mode: monitoringEnabled ? 'analysis' : 'disabled',
       automaticQualityChanges: false,
       bottlenecks: graph.analyzeBottlenecks(),
+      rankings: graph.analyzeResourceDomains(),
       rendererPerformance: performanceSnapshot()
     };
   }
@@ -147,6 +200,7 @@ export function createPStudioPVCS(options = {}) {
     measureAsync,
     recordStage,
     recordAsyncStage,
+    recordGpuStageMetrics,
     recordFrameMetrics,
     compareRgbaFrames,
     compareTemporalSequences,
