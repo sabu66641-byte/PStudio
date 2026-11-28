@@ -148,6 +148,7 @@ public:
 
     virtual ResourceHandle createShader(const GpuShaderDescriptor& descriptor, std::string& error) = 0;
     virtual ResourceHandle createTexture(const GpuTextureDescriptor& descriptor, std::string& error) = 0;
+    virtual bool uploadTexture(ResourceHandle texture, const void* data, std::size_t size, std::string& error) = 0;
     virtual bool uploadBuffer(ResourceHandle buffer, const void* data, std::size_t size, std::size_t offset, std::string& error) = 0;
     virtual ResourceHandle createGraphicsPipeline(const GpuPipelineDescriptor& descriptor, std::string& error) = 0;
     virtual bool submitGpuFrame(const GpuFramePacket& frame, std::string& error) = 0;
