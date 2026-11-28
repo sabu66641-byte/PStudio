@@ -24,6 +24,65 @@ function enabledFeatures(input) {
   }
   return Object.freeze(result);
 }
+function readsForPass(definition, features) {
+  const base = features.water ? "waterHdr" : features.opaque ? "opaqueHdr" : features.atmosphere ? "skyRadiance" : null;
+  const sourceList = (...names) => [...new Set(names.filter(Boolean))].map(name => [name, "sampled"]);
+  switch (definition.id) {
+    case "opaque-forward":
+      return sourceList(
+        features.depth ? "sceneDepth" : null,
+        features.shadows ? "shadowDepth" : null,
+        features.atmosphere ? "skyRadiance" : null,
+        features.atmosphere ? "iblSpecular" : null
+      );
+    case "water-depth":
+      return sourceList(features.depth ? "sceneDepth" : null);
+    case "mirror-reflection":
+      return sourceList(
+        features.depth ? "sceneDepth" : null,
+        features.atmosphere ? "skyRadiance" : null
+      );
+    case "water-surface":
+      return sourceList(
+        features.opaque ? "opaqueHdr" : features.atmosphere ? "skyRadiance" : null,
+        features.depth ? "sceneDepth" : null,
+        "waterLinearDepth",
+        "mirrorReflection",
+        features.atmosphere ? "skyRadiance" : null
+      );
+    case "gi-probes":
+      return sourceList(
+        base,
+        features.depth ? "sceneDepth" : null,
+        features.atmosphere ? "skyRadiance" : null
+      );
+    case "volumetric-lighting":
+      return sourceList(
+        base,
+        features.depth ? "sceneDepth" : null,
+        features.shadows ? "shadowDepth" : null,
+        features.atmosphere ? "skyRadiance" : null
+      );
+    case "post-processing":
+      return sourceList(
+        base,
+        features.gi ? "giIrradiance" : null,
+        features.volumetrics ? "volumeHdr" : null
+      );
+    case "tone-map-present":
+      return sourceList(
+        features.post ? "postHdr"
+          : features.volumetrics ? "volumeHdr"
+          : features.water ? "waterHdr"
+          : features.opaque ? "opaqueHdr"
+          : features.atmosphere ? "skyRadiance"
+          : null
+      );
+    default:
+      return definition.reads.map(([name, access]) => [name, access]);
+  }
+}
+
 function resourceDescriptor(id, width, height, format, extra = {}) {
   return { id, type: id === "outputSurface" ? "surface" : "texture", width, height, format, usage: ["sampled","color-attachment","depth-attachment","storage-write"], lifetime: id === "outputSurface" ? "external" : "transient", imported: id === "outputSurface", aliasable: id !== "outputSurface", ...extra };
 }
@@ -80,7 +139,7 @@ export function createPStudioGraphicsRenderingSuite(options = {}) {
     }
     for (const definition of PASS_DEFINITIONS) {
       if (!features[definition.feature]) continue;
-      const reads=definition.reads.map(([resource,access])=>({resource:resourceNameMap[resource],access}));
+      const reads=readsForPass(definition,features).map(([resource,access])=>({resource:resourceNameMap[resource],access}));
       const writes=definition.writes.map(([resource,access])=>({resource:resourceNameMap[resource],access}));
       const passId=prefix+"."+definition.id;
       graph.addPass({
