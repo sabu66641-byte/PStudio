@@ -305,3 +305,284 @@ export function createPStudioWorldRenderingCore(options = {}) {
   function dispose() { if (disposed) return false; chunks.clear(); disposed = true; return true; }
   return Object.freeze({ kind: 'pstudio-world-rendering-core', registerChunk, updateChunk, removeChunk, getChunk, listChunks, stats, dispose });
 }
+
+
+/**
+ * World runtime that connects chunk visibility/LOD/stream budgeting to an
+ * injected asset loader, GPU uploader and renderer. The core owns only logical
+ * descriptors; uploaded handles remain owned by the injected graphics backend.
+ */
+export function createPStudioWorldRenderingSystem(options = {}) {
+  const core = options.core || createPStudioWorldRenderingCore();
+  const ownsCore = !options.core;
+  const executor = options.executor || {};
+  const chunks = new Map();
+  let disposed = false, viewRevision = 0, streaming = false, frameId = 0;
+  let visible = [], lastView = null, lastStreamResult = null;
+
+  function assertLive() {
+    if (disposed) throw new PStudioGraphicsError('World Rendering System is disposed.', { code: 'PSTUDIO_WORLD_SYSTEM_DISPOSED' });
+  }
+  function normalizeBytes(value) {
+    const bytes = Number(value ?? 0);
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError('World chunk estimatedBytes must be a non-negative safe integer.');
+    return bytes;
+  }
+  function registerChunk(input = {}) {
+    assertLive();
+    const descriptor = core.registerChunk(input);
+    chunks.set(descriptor.id, {
+      descriptor,
+      estimatedBytes: normalizeBytes(input.estimatedBytes),
+      generation: 1,
+      lod: null,
+      residentHandle: null,
+      foliageHandle: null,
+      loading: false,
+      loadError: null,
+      lastVisibleRevision: 0
+    });
+    return descriptor;
+  }
+  async function releaseRecordHandles(record) {
+    if (record.residentHandle != null) {
+      try { await executor.releaseChunk?.(record.residentHandle, record.descriptor); } catch (_) {}
+      record.residentHandle = null;
+    }
+    if (record.foliageHandle != null) {
+      try { await executor.releaseFoliage?.(record.foliageHandle, record.descriptor); } catch (_) {}
+      record.foliageHandle = null;
+    }
+  }
+  async function updateChunk(input = {}) {
+    assertLive();
+    const descriptor = core.updateChunk(input);
+    const record = chunks.get(descriptor.id);
+    if (!record) throw new PStudioGraphicsError('World chunk runtime record is missing: ' + descriptor.id, { code: 'PSTUDIO_WORLD_CHUNK_RUNTIME_MISSING' });
+    record.generation++;
+    record.descriptor = descriptor;
+    record.estimatedBytes = normalizeBytes(input.estimatedBytes ?? record.estimatedBytes);
+    record.lod = null;
+    record.loadError = null;
+    await releaseRecordHandles(record);
+    visible = visible.filter(item => item.id !== descriptor.id);
+    return descriptor;
+  }
+  async function removeChunk(id) {
+    assertLive();
+    const key = String(id);
+    const record = chunks.get(key);
+    if (!record) return false;
+    record.generation++;
+    await releaseRecordHandles(record);
+    chunks.delete(key);
+    core.removeChunk(key);
+    visible = visible.filter(item => item.id !== key);
+    return true;
+  }
+
+  function updateView(input = {}) {
+    assertLive();
+    const cameraPosition = vector3(input.cameraPosition, 'cameraPosition');
+    const planes = input.frustumPlanes;
+    const viewportHeight = positiveInteger(input.viewportHeight, 'viewportHeight', 32768);
+    const fovYRadians = finite(input.fovYRadians ?? Math.PI / 3, Math.PI / 3, 'fovYRadians');
+    if (fovYRadians <= 0 || fovYRadians >= Math.PI) throw new RangeError('World view FOV must be between 0 and PI radians.');
+    const candidates = [];
+    for (const record of chunks.values()) {
+      const descriptor = record.descriptor;
+      const bounds = { min: descriptor.boundsMin, max: descriptor.boundsMax };
+      if (!isPStudioAABBVisible(bounds, planes)) continue;
+      const center = [
+        (descriptor.boundsMin[0] + descriptor.boundsMax[0]) * 0.5,
+        (descriptor.boundsMin[1] + descriptor.boundsMax[1]) * 0.5,
+        (descriptor.boundsMin[2] + descriptor.boundsMax[2]) * 0.5
+      ];
+      const distance = Math.max(EPSILON, Math.hypot(
+        center[0] - cameraPosition[0], center[1] - cameraPosition[1], center[2] - cameraPosition[2]
+      ));
+      const selection = selectPStudioWorldLOD({
+        geometricError: descriptor.geometricError,
+        distance,
+        viewportHeight,
+        fovYRadians,
+        thresholds: input.lodThresholds || options.lodThresholds || [4, 2, 1],
+        previousLod: record.lod,
+        hysteresis: input.lodHysteresis ?? options.lodHysteresis ?? 0.12
+      });
+      record.lod = selection.lod;
+      record.lastVisibleRevision = viewRevision + 1;
+      candidates.push(Object.freeze({
+        id: descriptor.id, descriptor, center: Object.freeze(center), distance,
+        lod: selection.lod, projectedError: selection.projectedError,
+        resident: record.residentHandle != null, loading: record.loading
+      }));
+    }
+    candidates.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
+    viewRevision++;
+    visible = candidates;
+    lastView = Object.freeze({
+      viewRevision, cameraPosition: Object.freeze(cameraPosition),
+      viewportHeight, fovYRadians,
+      visibleChunks: Object.freeze(candidates)
+    });
+    return lastView;
+  }
+
+  async function streamTick(limits = {}) {
+    assertLive();
+    if (streaming) throw new PStudioGraphicsError('World streaming tick is already in progress.', { code: 'PSTUDIO_WORLD_STREAM_BUSY' });
+    if (typeof executor.loadChunkData !== 'function' || typeof executor.uploadChunk !== 'function') {
+      throw new PStudioGraphicsError('World streaming requires loadChunkData and uploadChunk executor functions.', { code: 'PSTUDIO_WORLD_STREAM_EXECUTOR_UNAVAILABLE' });
+    }
+    const requests = visible.map(item => {
+      const record = chunks.get(item.id);
+      if (!record || record.residentHandle != null || record.loading) return null;
+      return {
+        id: record.descriptor.id,
+        priority: finite(record.descriptor.geometricError, 0, 'chunk geometricError') + 1 / Math.max(EPSILON, item.distance),
+        distance: item.distance,
+        estimatedBytes: record.estimatedBytes,
+        descriptor: record.descriptor,
+        generation: record.generation
+      };
+    }).filter(Boolean);
+    const ranked = rankPStudioWorldStreamingRequests(requests, limits);
+    streaming = true;
+    const outcomes = await Promise.all(ranked.selected.map(async request => {
+      const record = chunks.get(request.id);
+      if (!record || record.generation !== request.generation) return { id: request.id, status: 'stale-before-load' };
+      record.loading = true;
+      record.loadError = null;
+      let uploadedHandle = null;
+      try {
+        const data = await executor.loadChunkData(request.descriptor);
+        const current = chunks.get(request.id);
+        if (!current || current.generation !== request.generation) return { id: request.id, status: 'stale-after-load' };
+        uploadedHandle = await executor.uploadChunk({
+          descriptor: request.descriptor,
+          data,
+          generation: request.generation
+        });
+        if (uploadedHandle == null) throw new Error('World chunk uploader returned no GPU handle.');
+        const latest = chunks.get(request.id);
+        if (!latest || latest.generation !== request.generation) {
+          try { await executor.releaseChunk?.(uploadedHandle, request.descriptor); } catch (_) {}
+          uploadedHandle = null;
+          return { id: request.id, status: 'stale-after-upload' };
+        }
+        latest.residentHandle = uploadedHandle;
+        uploadedHandle = null;
+        return { id: request.id, status: 'resident', handle: latest.residentHandle };
+      } catch (error) {
+        const latest = chunks.get(request.id);
+        if (uploadedHandle != null) {
+          try { await executor.releaseChunk?.(uploadedHandle, request.descriptor); } catch (_) {}
+        }
+        if (latest && latest.generation === request.generation) latest.loadError = String(error?.message || error);
+        return { id: request.id, status: 'failed', error: String(error?.message || error) };
+      } finally {
+        const latest = chunks.get(request.id);
+        if (latest && latest.generation === request.generation) latest.loading = false;
+      }
+    }));
+    streaming = false;
+    lastStreamResult = Object.freeze({
+      selected: Object.freeze(ranked.selected.map(item => item.id)),
+      deferred: Object.freeze(ranked.deferred.map(item => item.id)),
+      estimatedBytes: ranked.estimatedBytes,
+      outcomes: Object.freeze(outcomes.map(item => Object.freeze(item)))
+    });
+    return lastStreamResult;
+  }
+
+  async function prepareFoliage(id, terrain, input = {}) {
+    assertLive();
+    if (typeof executor.uploadFoliage !== 'function') {
+      throw new PStudioGraphicsError('Foliage preparation requires an uploadFoliage executor function.', { code: 'PSTUDIO_WORLD_FOLIAGE_EXECUTOR_UNAVAILABLE' });
+    }
+    const record = chunks.get(String(id));
+    if (!record) throw new PStudioGraphicsError('Unknown world chunk: ' + id, { code: 'PSTUDIO_WORLD_CHUNK_UNKNOWN' });
+    const generation = record.generation;
+    const scatter = scatterPStudioFoliage({
+      ...input,
+      boundsMin: input.boundsMin || record.descriptor.boundsMin,
+      boundsMax: input.boundsMax || record.descriptor.boundsMax,
+      sampleHeight: terrain?.sampleHeight,
+      sampleNormal: terrain?.sampleNormal
+    });
+    const handle = await executor.uploadFoliage({
+      chunk: record.descriptor,
+      positions: scatter.positions,
+      normals: scatter.normals,
+      count: scatter.count,
+      generation
+    });
+    const current = chunks.get(record.descriptor.id);
+    if (!current || current.generation !== generation) {
+      try { await executor.releaseFoliage?.(handle, record.descriptor); } catch (_) {}
+      throw new PStudioGraphicsError('Foliage upload completed for a stale world chunk.', { code: 'PSTUDIO_WORLD_FOLIAGE_STALE' });
+    }
+    if (current.foliageHandle != null) {
+      try { await executor.releaseFoliage?.(current.foliageHandle, current.descriptor); } catch (_) {}
+    }
+    current.foliageHandle = handle;
+    return Object.freeze({ count: scatter.count, attempts: scatter.attempts, handle });
+  }
+
+  async function renderFrame(input = {}) {
+    assertLive();
+    if (typeof executor.renderWorldFrame !== 'function') {
+      throw new PStudioGraphicsError('World rendering requires a renderWorldFrame executor function.', { code: 'PSTUDIO_WORLD_RENDER_EXECUTOR_UNAVAILABLE' });
+    }
+    const renderChunks = visible.map(item => {
+      const record = chunks.get(item.id);
+      if (!record || record.residentHandle == null) return null;
+      return Object.freeze({
+        id: item.id, descriptor: record.descriptor, gpuHandle: record.residentHandle,
+        foliageHandle: record.foliageHandle, lod: item.lod, distance: item.distance
+      });
+    }).filter(Boolean);
+    const packet = Object.freeze({
+      frameId: input.frameId == null ? ++frameId : positiveInteger(input.frameId, 'world frameId'),
+      viewRevision, chunks: Object.freeze(renderChunks),
+      environment: input.environment ?? null,
+      materials: input.materials ?? null,
+      camera: lastView?.cameraPosition ?? null,
+      viewport: lastView ? Object.freeze({ height: lastView.viewportHeight, fovYRadians: lastView.fovYRadians }) : null
+    });
+    const result = await executor.renderWorldFrame(packet);
+    return Object.freeze({ packet, result: result ?? null });
+  }
+
+  async function dispose() {
+    if (disposed) return false;
+    disposed = true;
+    for (const record of chunks.values()) await releaseRecordHandles(record);
+    chunks.clear();
+    visible = [];
+    if (ownsCore) core.dispose();
+    return true;
+  }
+
+  function stats() {
+    return Object.freeze({
+      chunkCount: chunks.size,
+      visibleCount: visible.length,
+      residentCount: [...chunks.values()].filter(record => record.residentHandle != null).length,
+      loadingCount: [...chunks.values()].filter(record => record.loading).length,
+      streaming,
+      viewRevision,
+      frameId,
+      lastStreamResult,
+      disposed
+    });
+  }
+  return Object.freeze({
+    kind: 'pstudio-world-rendering-system',
+    core,
+    registerChunk, updateChunk, removeChunk,
+    updateView, streamTick, prepareFoliage, renderFrame,
+    stats, dispose
+  });
+}
