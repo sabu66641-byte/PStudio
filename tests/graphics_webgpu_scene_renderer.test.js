@@ -214,3 +214,31 @@ test('independent WebGPU PBR frame uniforms include additional directional, poin
     lighting:{lights:Array.from({length:9},()=>({type:'point'}))}
   }),/up to eight/);
 });
+
+test('independent WebGPU renderer evaluates PStudio animation before scene submission',async()=>{
+ const [{createPStudioGraphicsSceneAsset},{createPStudioAnimationClip},{renderPStudioGraphicsSceneFrame}]=await Promise.all([
+  import('../static/pstudio_graphics_scene_asset.mjs'),
+  import('../static/pstudio_graphics_animation_core.mjs'),
+  import('../static/pstudio_graphics_webgpu_scene_renderer.mjs')
+ ]);
+ const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+ const animation=createPStudioAnimationClip({id:'clip.move',tracks:[
+  {targetId:'node.mesh',path:'translation',times:[0,1],values:[0,0,0,2,0,0]}
+ ]});
+ const scene=createPStudioGraphicsSceneAsset({
+  id:'scene.animated',
+  geometries:[{id:'geo',positions:[0,0,0,1,0,0,0,1,0]}],
+  materials:[{id:'mat',model:'pbr'}],
+  nodes:[{id:'node.mesh',translation:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1],matrix:identity,worldMatrix:identity}],
+  animations:[animation],
+  entities:[{id:'entity',nodeId:'node.mesh',geometryId:'geo',materialId:'mat'}]
+ });
+ const {device,stats}=fakeDevice();
+ const api={device,canvas:{width:320,height:180},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
+ assert.equal(renderPStudioGraphicsSceneFrame({
+  scene,animation:{clipId:'clip.move',timeSeconds:.5,loop:false},
+  view:{viewProjectionMatrix:new Float32Array(identity),cameraPosition:[0,0,3]}
+ },api,{}),true);
+ assert.equal(stats.drawCalls,1);
+ assert.equal(stats.submits,1);
+});
