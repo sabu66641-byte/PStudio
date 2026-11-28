@@ -3,7 +3,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const CONTEXT=Object.freeze({backend:'webgl2',scene:'pvcs-browser-runner',quality:'high',renderWidth:640,renderHeight:360,renderPixelRatio:1,effects:{ao:true,ssr:false,volumetricClouds:true}});
 function frame(){return{width:4,height:4,channels:4,data:new Uint8Array(64)};}
-function stats(sequence=10){return{renderFrameSequence:sequence,cpuFrameMs:12.5,cpuRenderSubmitMs:5.5,estimatedGpuBytes:4096,memoryBytes:4096,gpuTimingFresh:false,gpuRenderMs:null,gpuRenderSampleSequence:0,gpuRenderSourceFrameSequence:0,gpuRenderSampleContext:null,gpuStageMetrics:{}};}
+function stats(sequence=10){return{renderFrameSequence:sequence,cpuFrameMs:12.5,cpuRenderSubmitMs:5.5,estimatedGpuBytes:4096,memoryBytes:4096,gpuTimingFresh:false,gpuRenderMs:null,gpuRenderSampleSequence:0,gpuRenderSourceFrameSequence:0,gpuRenderSampleContext:null,gpuStageMetrics:{},cpuStageMetrics:{}};}
 function fakeEngine(options={}){
  const state={profile:null,applied:0,rolledBack:0,sequence:10};
  return{state,getPerformanceStats(){return stats(state.sequence);},async capturePVCSFrame(){state.sequence++;const current=stats(state.sequence);Object.assign(current,options.metrics?.(state,current)||{});return{frame:frame(),context:CONTEXT,metrics:current};},
@@ -44,4 +44,20 @@ test('browser runner rolls back alternative profile even when capture fails',asy
  const runner=createPStudioPVCSBrowserRunner({getEngine:()=>engine,settleFrames:0});
  await assert.rejects(runner.runVariant({variant:'alternative',domain:'cpu-frame',profile:{scale:.95},context:CONTEXT}),/capture failed/);
  assert.equal(engine.state.rolledBack,1);assert.equal(engine.state.profile,null);
+});
+
+test('browser runner measures a fresh CPU stage and restores PVCS monitoring state',async()=>{
+ const {createPStudioPVCSBrowserRunner}=await import('../static/pstudio_pvcs_browser_runner.mjs');
+ const engine=fakeEngine({metrics:(state,current)=>({cpuStageMetrics:{'scene-render':{cpuStageMs:2.75,sourceFrameSequence:current.renderFrameSequence,context:CONTEXT}}})});
+ const pvcsState={enabled:false,isMonitoringEnabled(){return this.enabled;},setMonitoringEnabled(value){this.enabled=value;return value;}};
+ const runner=createPStudioPVCSBrowserRunner({getEngine:()=>engine,getPVCS:()=>pvcsState,stageId:'scene-render',settleFrames:0});
+ const result=await runner.runVariant({variant:'baseline',domain:'cpu-stage',context:CONTEXT});
+ assert.equal(result.metrics.cpuStageMs,2.75);assert.equal(result.metrics.cpuStageSourceFrameSequence,11);assert.equal(pvcsState.enabled,false);
+});
+test('browser runner rejects CPU-stage samples from another render context',async()=>{
+ const {createPStudioPVCSBrowserRunner}=await import('../static/pstudio_pvcs_browser_runner.mjs');
+ const engine=fakeEngine({metrics:(state,current)=>({cpuStageMetrics:{'scene-render':{cpuStageMs:2.75,sourceFrameSequence:current.renderFrameSequence,context:{...CONTEXT,quality:'low'}}}})});
+ const pvcsState={isMonitoringEnabled:()=>true,setMonitoringEnabled:()=>true};
+ const runner=createPStudioPVCSBrowserRunner({getEngine:()=>engine,getPVCS:()=>pvcsState,stageId:'scene-render',settleFrames:0});
+ await assert.rejects(runner.runVariant({variant:'baseline',domain:'cpu-stage',context:CONTEXT}),/requested PVCS metric cpuStageMs is unavailable/);
 });

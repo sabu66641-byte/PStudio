@@ -35,7 +35,7 @@
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastFrameIntervalSampleAt=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
   let lastGpuRenderContext=null,lastGpuRenderSampleSequence=0,lastGpuRenderSourceFrameSequence=0;
-  const lastGpuStageMetrics=new Map();
+  const lastGpuStageMetrics=new Map(),lastCpuStageMetrics=new Map();
   let pvcsGpuStageSampleTarget=null,pvcsGpuStageSampleCursor=0,pvcsGpuStageSampleConsumed=false;
   let pvcsActiveFrameContext=null,pvcsActiveFrameGeneration=null,pvcsFrameContextActive=false;
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
@@ -1563,6 +1563,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       gpuRenderSampleSequence:lastGpuRenderSampleSequence,gpuRenderSampleAt:lastGpuTimerTimestamp||null,
       gpuRenderSourceFrameSequence:lastGpuRenderSourceFrameSequence,gpuRenderSampleContext:lastGpuRenderContext,
       gpuStageMetrics:Object.fromEntries(lastGpuStageMetrics.entries()),
+      cpuStageMetrics:Object.fromEntries(lastCpuStageMetrics.entries()),
       gpuFrameBudgetPercent:gpuFresh?Number((lastGpuRenderDurationMs/16.67*100).toFixed(1)):null,
       timingSource:gpuFresh?'gpu-timer-query':'cpu-render-submission',
       postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null},
@@ -1803,9 +1804,21 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const query=shouldSampleGpu?beginGpuTimerQuery():null;
     if(query)pvcsGpuStageSampleConsumed=true;
     const sampleContext=pvcsFrameContextActive?pvcsActiveFrameContext:profiler.captureContext?.();
+    const sourceFrameSequence=renderFrameSequence+1;
     let completed=false;
     try{
-      const result=profiler.measure(stageId,callback,sampleContext);
+      const result=profiler.measure(stageId,()=>{
+        const startedAt=window.performance?.now?.()??Date.now();
+        try{return callback();}
+        finally{
+          const endedAt=window.performance?.now?.()??Date.now();
+          lastCpuStageMetrics.set(stageId,Object.freeze({
+            cpuStageMs:Math.max(0,endedAt-startedAt),sampledAt:endedAt,
+            context:sampleContext||null,sourceFrameSequence
+          }));
+          if(lastCpuStageMetrics.size>32)lastCpuStageMetrics.delete(lastCpuStageMetrics.keys().next().value);
+        }
+      },sampleContext);
       completed=true;
       return result;
     }finally{
@@ -1974,7 +1987,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     pvcsGpuStageSampleTarget=stageGpuSampleTurn?(pvcsPostProcessingPathActive?'post-processing':'scene-render'):null;
     if(pvcsMonitoringEnabled&&gpuTimerGl&&gpuTimerExtension)pvcsGpuStageSampleCursor++;
     pvcsGpuStageSampleConsumed=false;
-    const started=window.performance?.now?.()??Date.now(),gpuQuery=pvcsGpuStageSampleTarget?null:beginGpuTimerQuery();
+    const started=window.performance?.now?.()??Date.now();
+    const gpuFrameMeasurementContext=pvcsActiveFrameContext||pvcsProfiler?.captureContext?.()||null;
+    const gpuQuery=pvcsGpuStageSampleTarget?null:beginGpuTimerQuery();
     const hiddenStaticSky=[];
     try{
       if(pvcsMonitoringEnabled){
@@ -2075,7 +2090,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
       captureFrameRenderStats();
       // Close the main-scene timer before the off-screen CubeCamera GI capture.
-      endGpuTimerQuery(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration,renderFrameSequence+1);
+      endGpuTimerQuery(gpuQuery,null,gpuFrameMeasurementContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration,renderFrameSequence+1);
       pvcsGpuStageSampleTarget=null;
       pvcsGpuStageSampleConsumed=false;
       const now=window.performance?.now?.()??Date.now();

@@ -3227,7 +3227,8 @@ try {
   window.PStudioPVCS = createPStudioPVCS({ getRenderer: () => window.PStudio3D });
   window.createPStudioPVCSBrowserRunner = options => createPStudioPVCSBrowserRunner({
     ...options,
-    getEngine: options?.getEngine || (() => window.PStudio3D)
+    getEngine: options?.getEngine || (() => window.PStudio3D),
+    getPVCS: options?.getPVCS || (() => window.PStudioPVCS)
   });
   window.PStudioPVCSGovernor = window.PStudioPVCS.createGovernor({
     executor: createPStudioPVCSFrameBudgetExecutor({ getRenderer: () => window.PStudio3D }),

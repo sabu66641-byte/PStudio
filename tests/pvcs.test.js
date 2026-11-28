@@ -387,6 +387,6 @@ test('production PVCS frame capture and browser calibration runner are exposed a
  const fs=require('node:fs'),path=require('node:path'),root=path.resolve(__dirname,'..');
  const renderer=fs.readFileSync(path.join(root,'static/pstudio_3d_engine.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'templates/index.html'),'utf8');
- assert.match(renderer,/capturePVCSFrame/);assert.match(renderer,/gpuRenderSampleSequence/);assert.match(renderer,/gpuStageMetrics/);
+ assert.match(renderer,/capturePVCSFrame/);assert.match(renderer,/gpuRenderSampleSequence/);assert.match(renderer,/gpuStageMetrics/);assert.match(renderer,/cpuStageMetrics/);
  assert.match(html,/pstudio_pvcs_browser_runner\.mjs/);assert.match(html,/createPStudioPVCSBrowserRunner/);
 });
