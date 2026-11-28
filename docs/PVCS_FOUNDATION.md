@@ -1,84 +1,78 @@
 # PStudio Visual Compensation System — Foundation
 
-**Status:** Draft foundation / Analysis Mode only  
-**Baseline:** main at cb0986d611b10c51efb1a59e136a996ec29096e3  
-**Sky lock:** 6b973a50c781f7fb2ea24fdffeb24d0d482556a9 — the Nov 24 authored day/dusk/night panorama is restored as the single visible sky and PMREM/IBL source.
+**Status:** Original analysis foundation merged into `main` through PR #126. Phase 0 instrumentation expansion is implemented on the Draft PR #127 branch; it is not yet merged into `main`.  
+**Main baseline:** `48599f90db4c5ea3cf6996317e0966d6b7c91ddf`  
+**Sky lock:** `6b973a50c781f7fb2ea24fdffeb24d0d482556a9` — preserve the Nov 24 authored day/dusk/night panorama as the single visible sky and PMREM/IBL source.
 
-## Scope
+## Scope and safety
 
-This change establishes four foundations:
+PVCS remains **Analysis Mode only**. Monitoring is disabled by default. It does not automatically change quality presets, render resolution, reflection cadence, GI cadence, cloud/fog steps, shader settings, sky assets or the production render backend.
 
-1. Reuse existing renderer telemetry for frame intervals, CPU render submission, fresh GPU timer-query samples, draw calls, triangles, renderer resource counts, and estimated resource memory.
-2. Add opt-in CPU stage timing around existing render calls.
-3. Represent render-stage dependencies and bounded measurements in Visual Compensation Graph (VCG).
-4. Provide caller-driven image and aligned temporal-sequence comparisons.
+The Phase 0 expansion changes instrumentation and analysis metadata only. It does not change scene appearance, quality defaults, sky assets, water shaders, rendering backend or automatic quality controls.
 
-PVCS remains **Analysis Mode**. It does not change quality presets, render resolution, reflection cadence, GI cadence, cloud/fog steps, shader settings, sky assets, or the production render backend.
+## Measurement domains
 
-## Existing telemetry and measurement boundaries
+The graph keeps the following values independent:
 
-The current renderer already retains 120 samples for frame intervals, CPU render submission and GPU render timing. GPU timing is backed by EXT_disjoint_timer_query_webgl2 when the extension is available. Disjoint or stale samples are discarded / marked unavailable. The GPU metric is a whole-main-scene timer, not a per-pass breakdown. The CPU render metric is the elapsed CPU-side render submission path, not total application CPU time.
+- **CPU frame callback:** elapsed CPU wall time from entry to exit of the `drawFrame` callback, including synchronous setup, render submission and finalization. The timer is started only when PVCS monitoring is enabled; work performed before entering `drawFrame` is outside this boundary.
+- **CPU render submission:** elapsed CPU-side render section. It is not the full application CPU cost and is not GPU execution time.
+- **Frame interval:** start-to-start renderer callback interval. It includes browser scheduling and is not pure CPU execution time.
+- **GPU frame:** aggregate WebGL2 `EXT_disjoint_timer_query_webgl2` time for the main depth/reflection/scene-or-composer render section. The result is recorded once when its asynchronous query resolves, using the query-start context.
+- **GPU stage:** a selected WebGL2 render-path timer measured on one analysis frame in four. It times either the complete EffectComposer render path or the direct scene-render path, never an individual composer sub-pass. It is not nested with the aggregate timer. The query carries the originating frame context and monitoring-session generation; late results from an old session are discarded.
+- **Asynchronous elapsed:** wall-clock duration of the asynchronous dynamic GI capture path; it may include waits and must not be interpreted as CPU execution or GPU time.
+- **Memory:** PStudio resource-registry estimates, not driver-reported physical VRAM.
 
-renderer.info provides draw-call, triangle, geometry and texture counters. PStudio resource accounting estimates GPU/CPU resource memory; it is not driver-reported physical VRAM. PVCS preserves those labels.
+CPU, GPU, asynchronous and memory rankings are produced separately. Values from different domains are never compared as though they shared units.
 
-The optional stage profiler uses performance.now() around existing synchronous calls. Its measurements are CPU elapsed/submit time, not GPU execution time. It is disabled by default and stores a bounded history only when enabled. It adds no framebuffer readback and does not capture images automatically.
+## Instrumented CPU stages
 
-## Initial VCG stages
-
+- camera-state-update
 - environment-state-update
 - clustered-lighting
+- world-visibility
+- occlusion-visibility
+- instance-batch-rebuild
 - water-depth-prepass
 - mirror-reflection
+- mirror-reflection-scene-render
+- mirror-cloud-composite
 - post-processing
+- individual composer passes (source, TAA/SMAA, GTAO/SSAO, SSR, contact shadows, bloom, volumetric fog/clouds, God Rays and output)
 - scene-render
 - webgpu-render-submit
-- dynamic-gi-capture (registered as a stage; detailed asynchronous timing is not yet wired)
+- dynamic-gi-capture (asynchronous elapsed)
 
-The WebGL2 and WebGPU paths are alternatives, not a single additive render path. The graph represents shared frame dependencies and path-specific stages.
+Some parent and child stages are inclusive and overlap by design. Their durations are useful for identifying expensive areas, but **must not be added together** as a total frame cost.
 
-## Using the foundation
+## GPU timing boundaries
 
-The PVCS toolbar control enables opt-in Analysis Mode. The public runtime object is available as window.PStudioPVCS; PStudioPVCS.snapshot() returns current metrics and graph state, while PStudioPVCS.analyze() ranks stages by measured CPU p95. PStudioPVCS.setMonitoringEnabled(false) stops collection. No quality controls are changed.
+On WebGL2, the aggregate timer covers the main render section and excludes the later Dynamic GI CubeCamera capture. A separate GPU-stage query is sampled on one analysis frame in four. The target is selected from the render path that the current frame will actually execute: either the full EffectComposer call or the direct scene render. This avoids scheduling a query for an inactive/skipped pass. The aggregate query is omitted on those sampled frames, so `TIME_ELAPSED_EXT` queries are not nested. Each query stores its originating context and monitoring-session generation; the GPU duration is recorded once when the asynchronous result becomes available, and old-session results are ignored. Disjoint results and results older than the query timeout are discarded.
 
-Synchronous render-stage instrumentation records CPU elapsed/submit time. Dynamic GI uses a separate asyncElapsedMs field because its promise duration can include waiting and is not equivalent to CPU execution or GPU time.
+Individual composer sub-passes remain CPU-instrumented only. Their wrappers call the original render method directly while monitoring is disabled, without allocating a per-pass timing closure. Reflection, occlusion, world-visibility and instance-batch call sites also bypass measurement closures while monitoring is off. A failed/incomplete render query is discarded rather than reported as a valid GPU sample. A missing GPU sample means **unmeasured**, not zero. Per-effect GPU attribution requires a future query design with explicit pass activation and non-overlapping timing boundaries.
+
+The current WebGPU path reports CPU submission time. It does not claim GPU frame or pass timings until a timestamp-query implementation is supported by the actual device and enabled. CPU submission must never be substituted for GPU time.
+
+## Context and graph
+
+Samples capture the available backend, scene label, quality preset, render dimensions, pixel ratio and selected effect flags. A frame-start context is shared by synchronous in-frame samples and is attached to GPU queries until their asynchronous results resolve. CPU stages that run outside `drawFrame` capture their own current context. Async-stage measurements retain both their start context and monitoring-session generation; completions from a session that has since ended are ignored. Each graph node retains up to eight recent context buckets (least-recently-used eviction); percentile summaries and rankings never combine different backend/scene/quality/resolution/effect contexts. Rankings also identify the context and expose the sample count for the specific metric, so sparse samples are not mistaken for strong evidence.
+
+The measurements are intended for comparisons under a fixed scene, camera, output size, color space, exposure and effect configuration. Source-code hypotheses are not proof of a real-device bottleneck.
 
 ## Visual Difference Evaluation
 
-compareRgbaFrames accepts two caller-supplied, equal-sized 8-bit RGB/RGBA buffers. It reports normalized mean absolute error, RMSE, luminance error, changed-pixel ratio and maximum channel difference. compareTemporalSequences reports a basic aligned frame-to-frame pixel-delta mismatch.
+`compareRgbaFrames` accepts two caller-supplied, equal-sized 8-bit RGB/RGBA buffers. It reports normalized mean absolute error, RMSE, luminance error, changed-pixel ratio and maximum channel difference. `compareTemporalSequences` reports basic aligned frame-to-frame pixel-delta mismatch.
 
-These are reproducible baseline metrics, not a validated perceptual metric, optical-flow analysis, or universal flicker detector. Screenshots / pixel buffers are compared only when explicitly supplied by the caller. They are never read back automatically in the live frame loop.
+These are reproducible baseline metrics, not a validated perceptual metric, optical-flow analysis or universal flicker detector. Frames are compared only when explicitly supplied by the caller; there are no automatic framebuffer readbacks in the live render loop.
 
-## Current source-audit bottleneck hypotheses
+## Validation and rollback
 
-These are **code-path hypotheses**, not measured rankings on a physical device. The stage profiler is required to establish real costs on each target browser/GPU.
+- Monitoring remains off by default; automatic quality actuation remains absent.
+- The Phase 0 code changes are isolated on PR #127's feature branch and must pass CI before merge.
+- The pre-PVCS backup branch `backup/pre-pvcs-sky-20261124-20261128` retains the known-good pre-PVCS main snapshot.
+- Browser visual checks and named-device profiling are still required before any visual/performance optimization or backend promotion.
+- Keep the Nov 24 sky baseline unchanged during PVCS instrumentation and early optimization work.
 
-| Suspect | Why it can be expensive | Safe investigation / possible treatment |
-|---|---|---|
-| Planar mirror reflection | Each refreshed mirror renders the scene from a reflected camera; resolution follows the drawing buffer and may include a cloud pass. | Record mirror count, target dimensions, refresh cadence and CPU submission time. Later evaluate per-mirror target scale/cadence, visibility bounds, and reuse of last valid reflection. |
-| Water depth prepass | Can submit an additional scene render to provide depth for water and screen-space effects. | Record whether it ran, target size and time. Evaluate sharing depth only where the pipeline can guarantee compatible depth semantics. |
-| Post-processing | Composer may run AO/GTAO, SSR, volumetric cloud/fog, contact shadows, god rays, TAA/SMAA and bloom. | Record active pass set and pass resolution. Test each pass in an isolated benchmark before changing defaults. |
-| Clustered-lighting preparation | CPU traversals / cluster assignment can add CPU work as light count and scene complexity rise. | Measure the update call and cluster/light counts; cache stable cluster assignments and update only dirty data where correct. |
-| Dynamic GI capture | Asynchronous probe work can contend for GPU time and frame pacing after the main render timer closes. | Measure capture duration and frequency separately; throttle / stagger captures only after observing impact. |
-| GENESIS scene geometry and effects | The scene contains large instanced populations, detailed architecture, lighting and particles. Geometry cost, overdraw, shadow casters and material diversity can matter. | Correlate triangles, calls, instances, shadow casters and GPU time. Prefer batching, frustum/LOD culling, bounded particle work and texture reuse based on evidence. |
-| Shader compilation / resource uploads | First-use compilation and texture uploads can cause spikes even when steady-state rendering is acceptable. | Separate cold-start from warmed runs; inspect compile and upload counters. Keep compilation and large transfers out of steady-state frame work. |
+## Related specifications
 
-## Reference causes already addressed before PVCS
-
-Commit 6b973a50 removed a duplicate GENESIS CanvasTexture sky overlay and its 80–125 ms periodic upload loop, restoring the Nov 24 authored panorama as the single visible sky / PMREM source. PVCS must not reintroduce that overlay or modify the authored sky files.
-
-## Validation protocol
-
-1. Use a fixed scene, camera, output size, DPR, render scale, quality preset, exposure, environment state and browser foreground state.
-2. Warm up before sampling.
-3. Record repeated foreground runs and compare p50/p95/p99 with sample counts.
-4. Keep GPU timer results unavailable when unsupported, stale or disjoint. Never substitute CPU time for GPU time.
-5. Compare image captures using matching dimensions, color space and camera path. Keep temporal captures aligned.
-6. Repeat on named target devices / browsers. Source tests cannot establish physical-device GPU performance.
-
-## Safety and rollback
-
-- This work is isolated on feat/pvcs-foundation-20261128.
-- A full pre-change snapshot is retained on backup/pre-pvcs-sky-20261124-20261128.
-- All changes are additive or instrumentation-only; PVCS monitoring is off by default.
-- No automatic quality changes are implemented in this foundation.
-- Do not merge to main until the draft review, regression suite, browser image checks and real-device measurements pass.
+- [PVCS Cause Analysis and Implementation Roadmap](PVCS_CAUSE_ANALYSIS_AND_ROADMAP.md)
+- [PStudio Visual Identity Specification — Reality 55 : Anime 45](PSTUDIO_VISUAL_IDENTITY.md)

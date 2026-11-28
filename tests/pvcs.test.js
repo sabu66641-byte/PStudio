@@ -86,6 +86,22 @@ test('async timing is kept separate from CPU submit timing', async () => {
   assert.equal(graphNode.metrics.asyncElapsedP95Ms, 12);
 });
 
+test('PVCS discards async completion after the monitoring session ends', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({ now: () => 700 });
+  pvcs.setMonitoringEnabled(true);
+  let complete;
+  const pending = pvcs.measureAsync('dynamic-gi-capture', () => new Promise((resolve) => {
+    complete = resolve;
+  }));
+  pvcs.setMonitoringEnabled(false);
+  complete(true);
+  await pending;
+  const node = pvcs.graph.snapshot().nodes.find((item) => item.id === 'dynamic-gi-capture');
+  assert.equal(node.metrics.asyncElapsedP95Ms, null);
+  assert.equal(node.metrics.sampleCount, 0);
+});
+
 test('PVCS renderer-stage integration remains opt-in and sky assets remain pinned', async () => {
   const fs = require('node:fs');
   const path = require('node:path');
@@ -100,4 +116,243 @@ test('PVCS renderer-stage integration remains opt-in and sky assets remain pinne
   assert.match(html, /pstudio_scene_environment\.js\?v=20261124-daylight-hq-r1/);
   assert.match(html, /pstudio_genesis_environment\.js\?v=20261127-genesis-snap-v2/);
   assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-foundation-v1/);
+});
+
+
+test('VCG keeps CPU frame, render submission, GPU frame, GPU stage and async domains independent', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph();
+  graph.registerNode({ id: 'frame' });
+  graph.registerNode({ id: 'mirror-reflection' });
+  graph.recordMeasurement('frame', {
+    cpuFrameMs: 18, cpuSubmitMs: 7, gpuRenderMs: 9, frameIntervalMs: 20, memoryBytes: 1024,
+    context: { backend: 'webgl2', scene: 'genesis-shrine', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1.5, effects: { volumetricClouds: true } }
+  });
+  graph.recordMeasurement('mirror-reflection', { gpuStageMs: 3.5 });
+  graph.recordMeasurement('mirror-reflection', { asyncElapsedMs: 11 });
+  const frame = graph.snapshot().nodes.find((node) => node.id === 'frame').metrics;
+  const mirror = graph.snapshot().nodes.find((node) => node.id === 'mirror-reflection').metrics;
+  assert.equal(frame.cpuFrameP95Ms, 18);
+  assert.equal(frame.cpuSubmitP95Ms, 7);
+  assert.equal(frame.gpuRenderP95Ms, 9);
+  assert.equal(frame.gpuStageP95Ms, null);
+  assert.equal(frame.context.backend, 'webgl2');
+  assert.equal(frame.context.renderWidth, 1280);
+  assert.equal(frame.context.effects.volumetricClouds, true);
+  assert.equal(mirror.gpuStageP95Ms, 3.5);
+  assert.equal(mirror.asyncElapsedP95Ms, 11);
+  const rankings = graph.analyzeResourceDomains();
+  assert.equal(rankings.cpuFrame[0].id, 'frame');
+  assert.equal(rankings.gpuStages[0].id, 'mirror-reflection');
+  assert.equal(rankings.asynchronous[0].id, 'mirror-reflection');
+});
+
+test('VCG keeps context histories separate and reports per-metric sample counts', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph({ historyLimit: 8 });
+  graph.registerNode({ id: 'frame-loop' });
+  graph.registerNode({ id: 'mirror-reflection' });
+  const high = { backend: 'webgl2', scene: 'shrine', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const mobile = { backend: 'webgl2', scene: 'shrine', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  graph.recordMeasurement('frame-loop', { cpuFrameMs: 24, cpuSubmitMs: 7, context: high });
+  graph.recordMeasurement('mirror-reflection', { cpuSubmitMs: 11, context: high });
+  graph.recordMeasurement('frame-loop', { cpuFrameMs: 6, cpuSubmitMs: 2, context: mobile });
+  const frame = graph.snapshot().nodes.find((node) => node.id === 'frame-loop');
+  assert.equal(frame.metrics.cpuFrameP95Ms, 6);
+  assert.equal(frame.metrics.cpuFrameSampleCount, 1);
+  assert.equal(frame.metrics.cpuSubmitSampleCount, 1);
+  assert.equal(frame.metrics.totalSampleCount, 2);
+  assert.equal(frame.metrics.contextCount, 2);
+  assert.equal(frame.contextMetrics.length, 2);
+  assert.equal(frame.metrics.context.quality, 'mobile');
+  const cpuFrameRanking = graph.analyzeResourceDomains().cpuFrame;
+  assert.equal(cpuFrameRanking.length, 1);
+  assert.equal(cpuFrameRanking[0].id, 'frame-loop');
+  assert.equal(cpuFrameRanking[0].context.quality, 'mobile');
+  assert.equal(cpuFrameRanking[0].sampleCount, 1);
+  const cpuStageRanking = graph.analyzeResourceDomains().cpuStages;
+  assert.equal(cpuStageRanking.length, 1);
+  assert.equal(cpuStageRanking[0].context.quality, 'mobile');
+});
+
+test('VCG bounds the total retained history across multiple contexts', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph({ historyLimit: 3 });
+  graph.registerNode({ id: 'frame-loop' });
+  for (let index = 0; index < 10; index += 1) {
+    graph.recordMeasurement('frame-loop', {
+      cpuFrameMs: index + 1,
+      context: { backend: 'webgl2', scene: 'scene-' + index, quality: 'high' }
+    });
+  }
+  const metrics = graph.snapshot().nodes[0].metrics;
+  assert.equal(metrics.totalSampleCount, 3);
+  assert.ok(metrics.contextCount <= 3);
+  assert.ok(graph.snapshot().nodes[0].contextMetrics.length <= 3);
+});
+
+test('VCG treats explicit null metrics as unavailable instead of zero', async () => {
+  const { createVisualCompensationGraph } = await loadModules();
+  const graph = createVisualCompensationGraph();
+  graph.registerNode({ id: 'frame' });
+  graph.recordMeasurement('frame', { cpuFrameMs: 10, gpuRenderMs: null, gpuStageMs: null });
+  const metrics = graph.snapshot().nodes[0].metrics;
+  assert.equal(metrics.cpuFrameP95Ms, 10);
+  assert.equal(metrics.gpuRenderP95Ms, null);
+  assert.equal(metrics.gpuStageP95Ms, null);
+});
+
+test('PVCS records the full drawFrame CPU duration separately from render submission', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const renderer = {
+    getPerformanceStats: () => ({
+      cpuRenderSubmitMs: 6, gpuTimingFresh: true, gpuRenderMs: 8, frameIntervalMs: 16.7, estimatedGpuBytes: 2048,
+      backend: 'webgl2', scene: 'genesis-shrine', quality: 'high', renderWidth: 1440, renderHeight: 900, renderPixelRatio: 1.5,
+      renderEffects: { ao: true, ssr: false, volumetricClouds: true, volumetricFog: true, contactShadows: false }
+    })
+  };
+  const pvcs = createPStudioPVCS({ getRenderer: () => renderer, now: () => 100 });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.recordFrameMetrics(22.5), true);
+  const frame = pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').metrics;
+  assert.equal(frame.cpuFrameP95Ms, 22.5);
+  assert.equal(frame.cpuSubmitP95Ms, 6);
+  assert.equal(frame.gpuRenderP95Ms, null);
+  assert.equal(frame.context.scene, 'genesis-shrine');
+  assert.equal(frame.context.renderHeight, 900);
+  assert.equal(pvcs.analyze().rankings.cpuFrame[0].id, 'frame-loop');
+});
+
+test('PVCS captures fresh context for CPU stages outside drawFrame', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 350;
+  let stats = { backend: 'webgl2', scene: 'scene-before', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const pvcs = createPStudioPVCS({ getRenderer: () => ({ getPerformanceStats: () => stats }), now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  pvcs.captureContext();
+  now += 1;
+  stats = { backend: 'webgpu', scene: 'scene-after', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  const currentContext = pvcs.captureContext();
+  pvcs.measure('world-visibility', () => { now += 2; }, currentContext);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'world-visibility').metrics;
+  assert.equal(metrics.context.backend, 'webgpu');
+  assert.equal(metrics.context.scene, 'scene-after');
+  assert.equal(metrics.context.quality, 'mobile');
+});
+
+test('PVCS binds stage and frame measurements to one frame-start context', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 400;
+  let stats = { backend: 'webgl2', scene: 'shrine-day', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const pvcs = createPStudioPVCS({ getRenderer: () => ({ getPerformanceStats: () => stats }), now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.beginFrame().scene, 'shrine-day');
+  pvcs.measure('mirror-reflection', () => { now += 2; });
+  stats = { backend: 'webgpu', scene: 'editor', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  assert.equal(pvcs.recordFrameMetrics(16), true);
+  const snapshot = pvcs.graph.snapshot();
+  const frame = snapshot.nodes.find((node) => node.id === 'frame-loop');
+  const mirror = snapshot.nodes.find((node) => node.id === 'mirror-reflection');
+  assert.equal(frame.metrics.context.backend, 'webgl2');
+  assert.equal(frame.metrics.context.scene, 'shrine-day');
+  assert.equal(mirror.metrics.context.backend, 'webgl2');
+  assert.equal(mirror.metrics.context.scene, 'shrine-day');
+});
+
+test('PVCS records asynchronous GPU results once with query-start context', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  let now = 500;
+  let stats = { backend: 'webgl2', scene: 'shrine-day', quality: 'high', renderWidth: 1280, renderHeight: 720, renderPixelRatio: 1 };
+  const pvcs = createPStudioPVCS({ getRenderer: () => ({ getPerformanceStats: () => stats }), now: () => now });
+  pvcs.setMonitoringEnabled(true);
+  const dayContext = pvcs.beginFrame();
+  const dayGeneration = pvcs.getMonitoringGeneration();
+  assert.equal(pvcs.recordFrameMetrics(18), true);
+  stats = { backend: 'webgl2', scene: 'shrine-night', quality: 'mobile', renderWidth: 720, renderHeight: 405, renderPixelRatio: 1 };
+  pvcs.beginFrame();
+  assert.equal(pvcs.recordFrameMetrics(24), true);
+  assert.equal(pvcs.recordGpuFrameMetrics(7.5, dayContext, dayGeneration), true);
+  const contexts = pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').contextMetrics;
+  const day = contexts.find((item) => item.context.scene === 'shrine-day');
+  const night = contexts.find((item) => item.context.scene === 'shrine-night');
+  assert.equal(day.gpuRenderP95Ms, 7.5);
+  assert.equal(day.gpuRenderSampleCount, 1);
+  assert.equal(night.gpuRenderP95Ms, null);
+  assert.equal(night.gpuRenderSampleCount, 0);
+});
+
+test('PVCS rejects GPU results from a previous monitoring session', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({
+    getRenderer: () => ({ getPerformanceStats: () => ({ backend: 'webgl2', scene: 'old-session' }) }),
+    now: () => 600
+  });
+  pvcs.setMonitoringEnabled(true);
+  const context = pvcs.beginFrame();
+  const oldGeneration = pvcs.getMonitoringGeneration();
+  pvcs.setMonitoringEnabled(false);
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.recordGpuFrameMetrics(5, context, oldGeneration), false);
+  assert.equal(pvcs.recordGpuStageMetrics('post-processing', 2, context, oldGeneration), false);
+  assert.equal(pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').metrics.gpuRenderP95Ms, null);
+});
+
+test('PVCS does not attribute a stale WebGL timer to a WebGPU frame', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({
+    getRenderer: () => ({ getPerformanceStats: () => ({
+      cpuRenderSubmitMs: 6, gpuTimingFresh: true, gpuRenderMs: 8, backend: 'webgpu'
+    }) }),
+    now: () => 100
+  });
+  pvcs.setMonitoringEnabled(true);
+  pvcs.recordFrameMetrics(20);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'frame-loop').metrics;
+  assert.equal(metrics.gpuRenderP95Ms, null);
+});
+
+test('PVCS can record a WebGL2 GPU stage result without relabelling it as frame GPU time', async () => {
+  const { createPStudioPVCS } = await loadModules();
+  const pvcs = createPStudioPVCS({ now: () => 200 });
+  pvcs.setMonitoringEnabled(true);
+  assert.equal(pvcs.recordGpuStageMetrics('mirror-reflection', 4.25), true);
+  const metrics = pvcs.graph.snapshot().nodes.find((node) => node.id === 'mirror-reflection').metrics;
+  assert.equal(metrics.gpuStageP95Ms, 4.25);
+  assert.equal(metrics.gpuRenderP95Ms, null);
+});
+
+
+test('PVCS instruments individual composer passes without changing quality state', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.resolve(__dirname, '..');
+  const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  const pvcs = fs.readFileSync(path.join(root, 'static/pstudio_pvcs.mjs'), 'utf8');
+  assert.match(renderer, /function instrumentPVCSComposerPasses\(\)/);
+  assert.match(renderer, /originalRender\.apply\(this,args\)/);
+  assert.match(renderer, /pvcsPostProcessingPathActive/);
+  assert.match(renderer, /pvcsGpuStageSampleTarget=stageGpuSampleTurn\?\(pvcsPostProcessingPathActive\?'post-processing':'scene-render'\):null/);
+  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration\)/);
+  assert.match(renderer, /recordGpuFrameMetrics\?\.\(durationMs,entry\.context,entry\.monitoringGeneration\)/);
+  assert.match(renderer, /recordGpuStageMetrics\?\.\(entry\.stageId,durationMs,entry\.context,entry\.monitoringGeneration\)/);
+  assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
+  assert.match(renderer, /else discardGpuTimerQuery\(query\)/);
+  assert.match(renderer, /if\(window\.PStudioPVCS\?\.isMonitoringEnabled\?\.\(\)!==true\)return originalRender\.apply\(this,args\)/);
+  for (const stageCall of [
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-reflection-scene-render'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-cloud-composite'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('occlusion-visibility'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('world-visibility'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('instance-batch-rebuild'"
+  ]) assert.ok(renderer.includes(stageCall), 'missing monitoring-off fast path: ' + stageCall);
+  assert.match(pvcs, /recordAsyncStage\(id, Math\.max\(0, clock\(\) - startedAt\), contextAtStart, generationAtStart\)/);
+  assert.match(pvcs, /function recordGpuFrameMetrics\(gpuRenderMs, context = null, generation = null\)/);
+  assert.match(renderer, /pvcsActiveFrameContext=pvcsMonitoringEnabled\?\(pvcsProfiler\.beginFrame\?\.\(\)\|\|null\):null/);
+  assert.match(renderer, /pvcsActiveFrameGeneration=pvcsMonitoringEnabled\?\(pvcsProfiler\.getMonitoringGeneration\?\.\(\)\?\?null\):null/);
+  assert.match(renderer, /sampleContext=pvcsFrameContextActive\?pvcsActiveFrameContext:profiler\.captureContext\?\.\(\)/);
+  assert.doesNotMatch(renderer, /const stageGpuSampleSlots=\[/);
+  for (const id of ['post-aa-taar','post-volumetric-fog','post-gtao','post-ssr','post-bloom','post-volumetric-clouds','post-god-rays','post-output']) {
+    assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
+  }
+  assert.match(renderer, /if\(disjoint\)[\s\S]{0,220}lastGpuRenderDurationMs=0/);
 });
