@@ -115,7 +115,8 @@ export function createVisualCompensationGraph(options = {}) {
       qualityLevel: finiteNonNegative(descriptor.qualityLevel),
       updateFrequencyHz: finiteNonNegative(descriptor.updateFrequencyHz),
       dependencies: [],
-      contextHistories: new Map()
+      contextHistories: new Map(),
+      totalSampleCount: 0
     };
     nodes.set(id, node);
     return Object.freeze({ id });
@@ -159,6 +160,8 @@ export function createVisualCompensationGraph(options = {}) {
     if (!bucket) {
       if (node.contextHistories.size >= 8) {
         const oldestKey = node.contextHistories.keys().next().value;
+        const oldestBucket = node.contextHistories.get(oldestKey);
+        node.totalSampleCount -= oldestBucket.history.length;
         node.contextHistories.delete(oldestKey);
       }
       bucket = { key: contextKey, context: sample.context, history: [] };
@@ -166,8 +169,15 @@ export function createVisualCompensationGraph(options = {}) {
       node.contextHistories.delete(contextKey);
     }
     bucket.history.push(sample);
-    if (bucket.history.length > historyLimit) bucket.history.splice(0, bucket.history.length - historyLimit);
+    node.totalSampleCount += 1;
     node.contextHistories.set(contextKey, bucket);
+    while (node.totalSampleCount > historyLimit && node.contextHistories.size) {
+      const oldestKey = node.contextHistories.keys().next().value;
+      const oldestBucket = node.contextHistories.get(oldestKey);
+      oldestBucket.history.shift();
+      node.totalSampleCount -= 1;
+      if (!oldestBucket.history.length) node.contextHistories.delete(oldestKey);
+    }
     return summarizeNodeHistory(node);
   }
 
@@ -175,7 +185,7 @@ export function createVisualCompensationGraph(options = {}) {
     const buckets = [...node.contextHistories.values()];
     const latest = buckets[buckets.length - 1];
     const metrics = summarizeHistory(latest?.history || []);
-    const totalSampleCount = buckets.reduce((total, bucket) => total + bucket.history.length, 0);
+    const totalSampleCount = node.totalSampleCount;
     return {
       ...metrics,
       totalSampleCount,
