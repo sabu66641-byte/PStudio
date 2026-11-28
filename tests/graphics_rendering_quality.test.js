@@ -42,7 +42,7 @@ test('ACES tone mapping preserves bounded output and monotonic response', () => 
   assert.ok(low.every(value => value >= 0 && value <= 1));
   assert.ok(high.every(value => value >= 0 && value <= 1));
   assert.ok(high[0] > low[0] && high[1] > low[1] && high[2] > low[2]);
-  assert.equal(quality.packPStudioQualityMaterial({ metallic: 0.8, roughness: 0.2 }).length, 11);
+  assert.equal(quality.packPStudioQualityMaterial({ metallic: 0.8, roughness: 0.2 }).length, 12);
 });
 
 test('atmosphere state normalizes celestial and wind directions and bounds weather inputs', () => {
