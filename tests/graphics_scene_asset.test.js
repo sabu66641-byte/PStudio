@@ -112,3 +112,41 @@ test('scene conversion and WebGPU scene renderer contain no Three.js imports', (
     assert.doesNotMatch(source, /import\s*\(\s*['"]three(?:\/[^'"]*)?['"]\s*\)/);
   }
 });
+
+
+test('duck-typed importer expands Three.js InstancedMesh into shared PStudio geometry entities', async () => {
+  const { importPStudioThreeScene } = await load();
+  const matrix = (x = 0, y = 0, z = 0) => [
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1
+  ];
+  const parent = matrix(10, 0, 0);
+  const localMatrices = [matrix(1), matrix(3), matrix(5)].flat();
+  const source = fakeScene({
+    object: {
+      isInstancedMesh: true,
+      count: 3,
+      matrixWorld: { elements: parent },
+      instanceMatrix: { itemSize: 16, array: new Float32Array(localMatrices) }
+    }
+  });
+  const { asset, report } = importPStudioThreeScene(source);
+  assert.equal(report.supported, true);
+  assert.equal(report.convertedMeshCount, 3);
+  assert.equal(asset.geometries.length, 1, 'instanced objects must share one PStudio geometry');
+  assert.equal(asset.materials.length, 1, 'instanced objects must share one PStudio material');
+  assert.deepEqual(asset.entities.map(entity => entity.matrixWorld[12]), [11, 13, 15]);
+  assert.equal(new Set(asset.entities.map(entity => entity.geometryId)).size, 1);
+  assert.equal(new Set(asset.entities.map(entity => entity.materialIds[0])).size, 1);
+});
+
+test('duck-typed importer rejects malformed InstancedMesh matrix data without dropping instances silently', async () => {
+  const { importPStudioThreeScene } = await load();
+  const source = fakeScene({
+    object: { isInstancedMesh: true, count: 2, instanceMatrix: { itemSize: 16, array: new Float32Array(16) } }
+  });
+  assert.throws(() => importPStudioThreeScene(source), error => {
+    assert.equal(error.code, 'PSTUDIO_SCENE_IMPORT_UNSUPPORTED_FEATURES');
+    assert.ok(error.report.unsupported.some(item => item.feature === 'instancing-matrix-data'));
+    return true;
+  });
+});

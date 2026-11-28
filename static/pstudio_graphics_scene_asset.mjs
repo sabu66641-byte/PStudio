@@ -9,6 +9,19 @@ function vector(value, length, label) {
   if (!result.every(Number.isFinite)) throw new TypeError(label + ' must contain only finite values.');
   return result;
 }
+function multiplyMatrix4(left, right) {
+  const a = vector(left, 16, 'Parent world matrix');
+  const b = vector(right, 16, 'Instance local matrix');
+  const output = new Array(16).fill(0);
+  for (let column = 0; column < 4; column += 1) {
+    for (let row = 0; row < 4; row += 1) {
+      let value = 0;
+      for (let index = 0; index < 4; index += 1) value += a[index * 4 + row] * b[column * 4 + index];
+      output[column * 4 + row] = value;
+    }
+  }
+  return output;
+}
 function normalizedComponent(value, array) {
   if (array instanceof Int8Array) return Math.max(-1, value / 127);
   if (array instanceof Uint8Array || array instanceof Uint8ClampedArray) return value / 255;
@@ -241,9 +254,12 @@ export function importPStudioThreeScene(scene, options = {}) {
     }
     const name = String(object.name || object.uuid || 'mesh-' + meshIndex);
     const objectId = String(object.uuid || object.id || name);
-    if (object.isSkinnedMesh || object.isInstancedMesh || object.isBatchedMesh) {
-      unsupported.push({ objectId, feature: object.isSkinnedMesh ? 'skinning' : object.isInstancedMesh ? 'instancing' : 'batching' });
+    if (object.isSkinnedMesh || object.isBatchedMesh) {
+      unsupported.push({ objectId, feature: object.isSkinnedMesh ? 'skinning' : 'batching' });
       continue;
+    }
+    if (object.isInstancedMesh && object.instanceColor != null) {
+      unsupported.push({ objectId, feature: 'instanced-per-instance-color' });
     }
     const sourceGeometry = object.geometry;
     const sourceAttributes = sourceGeometry?.attributes || {};
@@ -313,12 +329,35 @@ export function importPStudioThreeScene(scene, options = {}) {
     }
     if (!materialIds.length) { unsupported.push({ objectId, feature: 'missing-material' }); continue; }
     if (object.castShadow || object.receiveShadow) unsupported.push({ objectId, feature: 'shadow-casting-or-receiving' });
-    const matrix = object.matrixWorld?.elements || object.matrix?.elements || IDENTITY;
-    entities.push(entityDescriptor({
-      id: objectId, sourceObjectId: objectId, geometryId, materialIds, matrixWorld: matrix,
-      visible: object.visible !== false, castShadow: object.castShadow === true,
-      receiveShadow: object.receiveShadow === true, layers: object.layers?.mask || 0
-    }));
+    const parentMatrix = object.matrixWorld?.elements || object.matrix?.elements || IDENTITY;
+    const instanceCount = object.isInstancedMesh ? Number(object.count) : 1;
+    const instanceArray = object.isInstancedMesh ? object.instanceMatrix?.array : null;
+    if (!Number.isSafeInteger(instanceCount) || instanceCount < 0) {
+      unsupported.push({ objectId, feature: 'invalid-instanced-mesh-count' });
+      continue;
+    }
+    if (object.isInstancedMesh && (
+      !ArrayBuffer.isView(instanceArray) || instanceArray instanceof DataView ||
+      (object.instanceMatrix?.itemSize != null && Number(object.instanceMatrix.itemSize) !== 16) ||
+      instanceArray.length < instanceCount * 16
+    )) {
+      unsupported.push({ objectId, feature: 'instancing-matrix-data' });
+      continue;
+    }
+    for (let instanceIndex = 0; instanceIndex < instanceCount; instanceIndex += 1) {
+      const instanceMatrix = object.isInstancedMesh
+        ? Array.from(instanceArray.subarray(instanceIndex * 16, instanceIndex * 16 + 16), Number)
+        : IDENTITY;
+      const matrix = object.isInstancedMesh
+        ? multiplyMatrix4(parentMatrix, instanceMatrix)
+        : parentMatrix;
+      const entityId = object.isInstancedMesh ? objectId + '.instance.' + instanceIndex : objectId;
+      entities.push(entityDescriptor({
+        id: entityId, sourceObjectId: objectId, geometryId, materialIds, matrixWorld: matrix,
+        visible: object.visible !== false, castShadow: object.castShadow === true,
+        receiveShadow: object.receiveShadow === true, layers: object.layers?.mask || 0
+      }));
+    }
     meshIndex += 1;
   }
   const report = Object.freeze({
