@@ -142,6 +142,7 @@ struct NativeSwapchainInfo {
  */
 class NativeGpuBackend : public Backend {
 public:
+    virtual void notifyDeviceLost(const std::string& reason) noexcept { (void)reason; }
     virtual bool configureSurface(const NativeSurfaceDescriptor& surface, std::string& error) = 0;
     virtual NativeGpuCapabilities capabilities() const = 0;
     virtual NativeSwapchainInfo swapchainInfo() const = 0;
