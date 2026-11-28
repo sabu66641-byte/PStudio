@@ -1542,7 +1542,7 @@ test('GENESIS river capital builds a dense Japanese city around a true river, mo
   assert.ok(renderer.includes('skyLanternCount=constrainedMobile?160:320'));
   assert.ok(renderer.includes('mesh.castShadow=batch.material!==materials.roofTile&&!tinyBox&&!thinCylinder'));
   assert.ok(renderer.includes('mesh.castShadow=geometry===trunkGeometry'));
-  assert.ok(html.includes('20261127-genesis-progressive-v5'));
+  assert.ok(html.includes('20261128-pvcs-foundation-v1'));
 });
 
 test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silently dropping custom shading',()=>{
@@ -1555,7 +1555,7 @@ test('TSL PBR conversion preserves legacy GLSL-hook materials instead of silentl
 });
 
 test('quality-selector and rendering script updates use fresh cache-busting versions',()=>{
-  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261127-genesis-progressive-v5'));
+  assert.ok(html.includes('/static/pstudio_3d_engine.js?v=20261128-pvcs-foundation-v1'));
   assert.ok(html.includes('/static/pstudio_genesis_environment.js?v=20261127-genesis-snap-v2'));
   assert.ok(html.includes('/static/pstudio_engine.js?v=20261125-daylight-mirror-hq-r2'));
   assert.ok(html.includes('/static/pstudio_environment_fx.js?v=20261126-natural-clouds-v2'));
@@ -1760,7 +1760,7 @@ test('post-processing failures fail open to direct scene rendering and can be re
   const end=renderer.indexOf('  function createGpuParticleSystem(',start);
   assert.ok(start>=0&&end>start,'drawFrame boundaries');
   const frame=renderer.slice(start,end);
-  const catchStart=frame.indexOf('try{composer.render();}catch(initialPostError){');
+  const catchStart=frame.indexOf("try{measurePVCSStage('post-processing',()=>composer.render());}catch(initialPostError){");
   const catchEnd=frame.indexOf('\n      }else{',catchStart);
   assert.ok(catchStart>=0&&catchEnd>catchStart,'composer failure handler');
   const recovery=frame.slice(catchStart,catchEnd);
@@ -1768,7 +1768,7 @@ test('post-processing failures fail open to direct scene rendering and can be re
   assert.ok(recovery.includes('postProcessingFailureReason='));
   assert.ok(recovery.includes('renderer.setRenderTarget(null)'));
   assert.ok(recovery.includes('renderer.render(scene,camera)'));
-  assert.ok(recovery.includes('composer.render();recovered=true;'));
+  assert.ok(recovery.includes("measurePVCSStage('post-processing',()=>composer.render());recovered=true;"));
   assert.ok(renderer.includes('postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null}'));
   const qualityStart=renderer.indexOf('function applyQualityPreset');
   assert.ok(renderer.slice(qualityStart,qualityStart+180).includes('resetPostProcessingFailure()'));

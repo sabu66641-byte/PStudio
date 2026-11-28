@@ -1703,6 +1703,15 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     return renderingFrameBudget;
   }
 
+  function measurePVCSStage(stageId,callback){
+    const profiler=window.PStudioPVCS;
+    return typeof profiler?.measure==='function'?profiler.measure(stageId,callback):callback();
+  }
+  function measurePVCSAsyncStage(stageId,callback){
+    const profiler=window.PStudioPVCS;
+    return typeof profiler?.measureAsync==='function'?profiler.measureAsync(stageId,callback):callback();
+  }
+
   function drawFrame(){
     if(!renderer||!scene||!camera)return;
     // Keep the last valid WebGL frame on screen while legacy PBR materials are
@@ -1718,7 +1727,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
     }
     lastDrawFrameStartedAt=frameStarted;
-    if(genesisEnvironmentController)updateGenesisEnvironment(genesisDelta,frameStarted);
+    if(genesisEnvironmentController)measurePVCSStage('environment-state-update',()=>updateGenesisEnvironment(genesisDelta,frameStarted));
     // Update the camera's world matrix before positioning camera-relative celestial meshes.
     camera.updateMatrixWorld(true);
     if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
@@ -1728,7 +1737,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     updateNightTwinkleStars();
     applyEditorOverlayVisibility();
     updateEditorGridPresentation();
-    updateClusteredLighting();
+    measurePVCSStage('clustered-lighting',()=>updateClusteredLighting());
     updateRenderingFrameBudget();
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       const liveBlockers=getProductionWebGPUFeatureBlockers();
@@ -1751,7 +1760,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false)
         ];
         if(controlsApplied.some(result=>result!==true))throw new Error('The WebGPU RenderPipeline did not accept every post-processing state update.');
-        if(!productionRendererBridge.render())throw new Error('The WebGPU scene session did not submit a frame.');
+        if(!measurePVCSStage('webgpu-render-submit',()=>productionRendererBridge.render()))throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
         productionRendererBridge.useFallback(error).catch(fallbackError=>{
@@ -1763,8 +1772,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
         const completedAt=window.performance?.now?.()??Date.now();
         updatePerformanceMonitor(completedAt);
+        window.PStudioPVCS?.recordFrameMetrics?.();
         // Dynamic SH captures run after the submitted WebGPU frame, using its active backend.
-        void serviceDynamicRadianceCache(completedAt).catch(error=>{
+        void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(completedAt)).catch(error=>{
           dynamicGIStatus='error';
           console.warn('[PStudio] Dynamic WebGPU SH capture failed safely:',error);
         });
@@ -1775,8 +1785,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
     const hiddenStaticSky=[];
     try{
-      renderWaterDepthPrepass();
-      renderMirrorWaterReflections();
+      measurePVCSStage('water-depth-prepass',()=>renderWaterDepthPrepass());
+      measurePVCSStage('mirror-reflection',()=>renderMirrorWaterReflections());
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
       const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
       const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
@@ -1826,13 +1836,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             u.uIntensity.value=godRaysIntensity;
           });
         }
-        try{composer.render();}catch(initialPostError){
+        try{measurePVCSStage('post-processing',()=>composer.render());}catch(initialPostError){
           let postError=initialPostError,recovered=false;
           if(godRaysEnabled&&godRaysPass?.enabled){
             godRaysEnabled=false;godRaysPass.enabled=false;
             godRaysFallbackEnabled=!!bloomPass;
             if(bloomPass){bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive||godRaysFallbackEnabled;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,Math.max(sunGlareStrength,moonGlareStrength*.72)*.72,godRaysFallbackEnabled?0.14+0.18*godRaysIntensity:0);}
-            try{composer.render();recovered=true;}
+            try{measurePVCSStage('post-processing',()=>composer.render());recovered=true;}
             catch(retryError){postError=retryError;}
             if(recovered)console.warn('[PStudio] God Rays shader is unsupported; switching to bloom fallback.',initialPostError);
           }
@@ -1841,7 +1851,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             postProcessingFailureReason=String(postError?.message||postError||'Unknown post-processing error').slice(0,240);
             try{
               renderer.setRenderTarget(null);
-              renderer.render(scene,camera);
+              measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
               console.warn('[PStudio] Post-processing failed; direct scene rendering is active until quality settings are reapplied.',postError);
             }catch(fallbackError){
               console.error('[PStudio] Post-processing and direct scene rendering both failed.',postError,fallbackError);
@@ -1852,7 +1862,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
         if(ssrPass)ssrPass.enabled=false;if(contactShadowPass)contactShadowPass.enabled=false;
-        renderer.render(scene,camera);
+        measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
       }
     }finally{
       camera.position.copy(cameraPositionBefore);camera.quaternion.copy(cameraQuaternionBefore);camera.updateMatrixWorld(true);
@@ -1868,8 +1878,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
+      window.PStudioPVCS?.recordFrameMetrics?.();
       // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
-      void serviceDynamicRadianceCache(now).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
+      void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(now)).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
     }
   }
 
