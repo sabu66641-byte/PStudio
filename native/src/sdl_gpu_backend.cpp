@@ -297,6 +297,10 @@ bool SdlGpuBackend::initialize(std::string& error) {
     return true;
 }
 
+void SdlGpuBackend::notifyDeviceLost(const std::string& reason) noexcept {
+    if (impl_) impl_->markDeviceLost(reason);
+}
+
 bool SdlGpuBackend::configureSurface(const NativeSurfaceDescriptor& surface, std::string& error) {
     auto& s = *impl_;
     if (!s.ready || s.deviceLost) { error = "GPU backend is not ready"; return false; }
