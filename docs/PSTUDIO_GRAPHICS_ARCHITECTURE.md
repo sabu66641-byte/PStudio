@@ -1,6 +1,6 @@
 # PStudio Independent Graphics Engine — Architecture Foundation
 
-**Status (2026-11-29):** Phases 2–10 = 100%; Phase 11 PVCS Integration = 70%; Phase 12 Three.js Independence = 25% at repository/API-boundary scope. Phase 5 includes native SDL3 graphics backends for Vulkan/D3D12/Metal with Linux/Windows/macOS compile CI. The production UI still uses the existing PStudio3D / Three.js renderer. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
+**Status (2026-11-29):** Phases 2–10 = 100%; Phase 11 PVCS Integration = 70%; Phase 12 Three.js Independence = 25% at repository/API-boundary scope. Phase 5 includes native SDL3 graphics backends for Vulkan/D3D12/Metal with Linux/Windows/macOS compile CI. The production UI still uses the existing PStudio3D / Three.js renderer. The independent WebGPU backend and native runtime are opt-in; neither is silently wired into the live production path.
 
 ## 1. Target dependency direction
 
@@ -193,7 +193,7 @@ The PVCS governor composes with the existing PVCS and Visual Compensation Graph 
 
 Phase 11 is 70% for the defined decision/governor/transaction foundation and the new real-callback A/B calibration runner. The calibration runner captures repeated baseline/alternative domain metrics plus bounded RGBA and temporal samples through injected live callbacks, and emits governor-compatible evidence only when context is stable. It does not yet connect to the production renderer capture path, register calibrated production candidates or automatically change quality. Candidate evidence must be collected under repeatable workload/context conditions. Remaining tasks include a curated per-scene candidate catalogue, longer temporal/edge-weighted visual evaluation, and candidate-specific adapters only where repeatable evidence warrants them.
 
-## 12. Phase 12 — Three.js Independence (15%)
+## 12. Phase 12 — Three.js Independence (25%)
 
 The current migration begins with a hard boundary rather than an unsafe package removal:
 
@@ -206,7 +206,7 @@ The current migration begins with a hard boundary rather than an unsafe package 
 
 This is 25% boundary and data-ownership migration, not full Three.js independence. The production 3D engine still relies on window.THREE, and the TSL modules for material conversion, environment, GI, shadows, water, clustered lighting, toon and post-processing continue to import Three.js r187 modules/addons. GLTF loaders, BVH, scene graph object types and existing editor integration also remain legacy-dependent. The pinned packages remain installed.
 
-Next migration slices are: (1) formal PStudio-owned Scene/Entity/Material/Asset descriptors and lossless conversion tests; (2) asset-loader and BVH adapters; (3) material/shader migration for built-in and user/plugin materials; (4) environment, water, lighting, shadows and post-processing passes on the PStudio Render Graph; (5) one compatibility-gated production vertical slice at a time. Keep the current production renderer as the fallback until each slice passes API/lifecycle, visual, temporal, resource and rollback gates. No global import rewrite, legacy package removal or default renderer switch is part of this release.
+Next migration slices are: (1) broaden lossless conversion coverage for supported geometry/material/texture semantics; (2) format-specific asset-loader adapters and a PStudio-owned BVH/collision boundary; (3) material/shader migration for built-in, user and plugin materials; (4) environment, authored sky/IBL, water, GI, shadows, volumetrics and post-processing passes on the PStudio Render Graph; (5) animation/skin/morph and editor/gameplay lifecycle adapters; (6) one compatibility-gated production vertical slice at a time. Keep the current production renderer as the fallback until each slice passes API/lifecycle, visual, temporal, resource and rollback gates. No global import rewrite, legacy package removal or default renderer switch is part of this release.
 
 ## 13. Invariants that remain protected
 
