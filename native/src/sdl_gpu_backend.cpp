@@ -92,6 +92,9 @@ struct SdlGpuBackend::Impl {
         SDL_GPUShader* shader{nullptr};
         SDL_GPUGraphicsPipeline* pipeline{nullptr};
         std::uint64_t sizeBytes{0};
+        std::uint32_t width{0};
+        std::uint32_t height{0};
+        GpuPixelFormat pixelFormat{GpuPixelFormat::Rgba8Unorm};
         std::string id;
     };
 
@@ -120,6 +123,7 @@ struct SdlGpuBackend::Impl {
     std::uint64_t nextFence{1};
     std::uint64_t completedFence{0};
     std::uint64_t lastFrameId{0};
+    std::uint64_t swapchainGeneration{0};
     std::unordered_map<std::uint64_t, Object> objects;
     std::map<std::uint64_t, SDL_GPUFence*> fences;
 
@@ -169,7 +173,7 @@ struct SdlGpuBackend::Impl {
         releaseTargetTextures();
         SDL_GPUTextureCreateInfo colorInfo{};
         colorInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        colorInfo.format = present ? SDL_GetGPUSwapchainTextureFormat(device, window) : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        colorInfo.format = present ? SDL_GetGPUSwapchainTextureFormat(device, window) : SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
         colorInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
         colorInfo.width = requestedWidth;
         colorInfo.height = requestedHeight;
@@ -200,7 +204,7 @@ struct SdlGpuBackend::Impl {
         targetWidth = requestedWidth;
         targetHeight = requestedHeight;
         if (present) targetFormat = SDL_GetGPUSwapchainTextureFormat(device, window);
-        else targetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        else targetFormat = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
         return true;
     }
 
@@ -302,6 +306,7 @@ bool SdlGpuBackend::configureSurface(const NativeSurfaceDescriptor& surface, std
         s.window = nullptr;
         s.present = false;
         s.surfaceConfigured = true;
+        ++s.swapchainGeneration;
         s.releaseTargetTextures();
         return SDL_SetGPUAllowedFramesInFlight(s.device, s.framesInFlight);
     }
@@ -346,6 +351,7 @@ bool SdlGpuBackend::configureSurface(const NativeSurfaceDescriptor& surface, std
     s.presentMode = mode;
     s.targetFormat = SDL_GetGPUSwapchainTextureFormat(s.device, window);
     s.surfaceConfigured = true;
+    ++s.swapchainGeneration;
     s.releaseTargetTextures();
     return true;
 }
@@ -354,8 +360,11 @@ NativeGpuCapabilities SdlGpuBackend::capabilities() const {
     const auto& s = *impl_;
     NativeGpuCapabilities result;
     const char* driver = s.device ? SDL_GetGPUDeviceDriver(s.device) : nullptr;
-    result.deviceName = driver ? driver : "uninitialized";
-    result.driverName = result.deviceName;
+    const SDL_PropertiesID properties = s.device ? SDL_GetGPUDeviceProperties(s.device) : 0;
+    const char* gpuName = properties ? SDL_GetStringProperty(properties, SDL_PROP_GPU_DEVICE_NAME_STRING, "") : "";
+    const char* driverName = properties ? SDL_GetStringProperty(properties, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, driver ? driver : "") : (driver ? driver : "");
+    result.deviceName = gpuName && *gpuName ? gpuName : "uninitialized";
+    result.driverName = driverName && *driverName ? driverName : (driver ? driver : "uninitialized");
     result.apiVersion = "SDL3 GPU";
     result.maxFramesInFlight = 3;
     result.presentation = s.present;
@@ -376,7 +385,7 @@ NativeSwapchainInfo SdlGpuBackend::swapchainInfo() const {
         : GpuPixelFormat::Rgba8Unorm;
     result.presentMode = s.presentMode == SDL_GPU_PRESENTMODE_IMMEDIATE ? GpuPresentMode::Immediate :
         (s.presentMode == SDL_GPU_PRESENTMODE_MAILBOX ? GpuPresentMode::Mailbox : GpuPresentMode::Fifo);
-    result.generation = s.surfaceConfigured ? 1 : 0;
+    result.generation = s.swapchainGeneration;
     return result;
 }
 
@@ -434,6 +443,9 @@ ResourceHandle SdlGpuBackend::createTexture(const GpuTextureDescriptor& descript
     Impl::Object object;
     object.type = Impl::ObjectType::Texture;
     object.texture = texture;
+    object.width = descriptor.width;
+    object.height = descriptor.height;
+    object.pixelFormat = descriptor.format;
     object.id = descriptor.id;
     return s.insert(std::move(object));
 }
@@ -532,7 +544,8 @@ ResourceHandle SdlGpuBackend::createGraphicsPipeline(const GpuPipelineDescriptor
         error = "Graphics pipeline references unknown shader handles";
         return {};
     }
-    const SDL_GPUTextureFormat color = textureFormat(descriptor.colorFormat);
+    const SDL_GPUTextureFormat color = s.present && s.device && s.window
+        ? SDL_GetGPUSwapchainTextureFormat(s.device, s.window) : textureFormat(descriptor.colorFormat);
     const SDL_GPUTextureFormat depth = textureFormat(descriptor.depthFormat);
     if (color == SDL_GPU_TEXTUREFORMAT_INVALID || depth != SDL_GPU_TEXTUREFORMAT_D32_FLOAT) {
         error = "Unsupported graphics pipeline target format";
@@ -760,7 +773,6 @@ bool SdlGpuBackend::waitIdle() {
         return false;
     }
     for (auto& entry : s.fences) {
-        completedFence:
         SDL_ReleaseGPUFence(s.device, entry.second);
         s.completedFence = std::max(s.completedFence, entry.first);
     }
@@ -775,6 +787,7 @@ bool SdlGpuBackend::resizeSurface(std::uint32_t width, std::uint32_t height, std
     if (!waitIdle()) { error = sdlError("GPU must be idle before resizing resources"); return false; }
     s.width = width;
     s.height = height;
+    ++s.swapchainGeneration;
     s.releaseTargetTextures(); // SDL recreates its OS swapchain as the host window changes size.
     return true;
 }
