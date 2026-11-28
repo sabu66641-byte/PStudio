@@ -186,3 +186,19 @@ test('PVCS can record a WebGL2 GPU stage result without relabelling it as frame 
   assert.equal(metrics.gpuStageP95Ms, 4.25);
   assert.equal(metrics.gpuRenderP95Ms, null);
 });
+
+
+test('PVCS instruments individual composer passes without changing quality state', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.resolve(__dirname, '..');
+  const renderer = fs.readFileSync(path.join(root, 'static/pstudio_3d_engine.js'), 'utf8');
+  const pvcs = fs.readFileSync(path.join(root, 'static/pstudio_pvcs.mjs'), 'utf8');
+  assert.match(renderer, /function instrumentPVCSComposerPasses\(\)/);
+  assert.match(renderer, /originalRender\.apply\(this,args\)/);
+  assert.match(renderer, /stageGpuSampleSlots=\[/);
+  for (const id of ['post-aa-taar','post-volumetric-fog','post-gtao','post-ssr','post-bloom','post-volumetric-clouds','post-god-rays','post-output']) {
+    assert.ok(pvcs.includes("'" + id + "'"), 'missing PVCS pass stage ' + id);
+  }
+  assert.match(renderer, /if\(disjoint\)[\s\S]{0,220}lastGpuRenderDurationMs=0/);
+});
