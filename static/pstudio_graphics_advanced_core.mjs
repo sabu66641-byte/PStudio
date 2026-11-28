@@ -222,10 +222,16 @@ export function buildPStudioGraphicsClusterAssignments(input = {}) {
     const depth = -position[2], depthMin = depth - radius, depthMax = depth + radius;
     if (depthMax < near || depthMin > far) continue;
     const minDepth = Math.max(near, depthMin);
-    const x0 = clamp(0.5 + (position[0] - radius) / (2 * minDepth * tanX), 0, 1);
-    const x1 = clamp(0.5 + (position[0] + radius) / (2 * minDepth * tanX), 0, 1);
-    const y0 = clamp(0.5 - (position[1] + radius) / (2 * minDepth * tanY), 0, 1);
-    const y1 = clamp(0.5 - (position[1] - radius) / (2 * minDepth * tanY), 0, 1);
+    const projectedX0 = 0.5 + (position[0] - radius) / (2 * minDepth * tanX);
+    const projectedX1 = 0.5 + (position[0] + radius) / (2 * minDepth * tanX);
+    const projectedY0 = 0.5 - (position[1] + radius) / (2 * minDepth * tanY);
+    const projectedY1 = 0.5 - (position[1] - radius) / (2 * minDepth * tanY);
+    if (Math.max(projectedX0, projectedX1) < 0 || Math.min(projectedX0, projectedX1) > 1 ||
+        Math.max(projectedY0, projectedY1) < 0 || Math.min(projectedY0, projectedY1) > 1) continue;
+    const x0 = clamp(projectedX0, 0, 1);
+    const x1 = clamp(projectedX1, 0, 1);
+    const y0 = clamp(projectedY0, 0, 1);
+    const y1 = clamp(projectedY1, 0, 1);
     const minX = clamp(Math.floor(x0 * tilesX), 0, tilesX - 1);
     const maxX = clamp(Math.floor(Math.max(x0, x1 - EPSILON) * tilesX), 0, tilesX - 1);
     const minY = clamp(Math.floor(y0 * tilesY), 0, tilesY - 1);
