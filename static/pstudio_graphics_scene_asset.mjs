@@ -545,6 +545,72 @@ export function importPStudioThreeScene(scene, options = {}) {
       unsupported.push({ objectId, feature: 'multi-materials-require-matching-geometry-groups' });
     }
     const materialIds = [];
+    const importTextureSlot = (texture, slot, uv0, uv1) => {
+      if (!texture) return null;
+      const textureId = String(texture.uuid || texture.name || objectId + '.texture.' + slot);
+      const channel = Math.max(0, Math.floor(Number(texture.channel) || 0));
+      const uvAttribute = channel === 1 ? uv1 : uv0;
+      if (channel > 1 || !uvAttribute) {
+        unsupported.push({ objectId, materialId: String(texture.uuid || objectId), feature: 'texture-' + slot + '-uv-channel-' + channel });
+        return null;
+      }
+      const image = texture.image || texture.source?.data || null;
+      let pixels = null;
+      try {
+        pixels = typeof options.readTexture === 'function'
+          ? options.readTexture(texture, Object.freeze({ objectId, materialId, textureId, slot }))
+          : image?.data && ArrayBuffer.isView(image.data)
+            ? { width: image.width || image.videoWidth || image.naturalWidth, height: image.height || image.videoHeight || image.naturalHeight, data: image.data }
+            : null;
+      } catch (error) {
+        unsupported.push({ objectId, materialId, feature: 'texture-' + slot + '-read-failed', message: String(error?.message || error) });
+        return null;
+      }
+      if (pixels && typeof pixels.then === 'function') {
+        unsupported.push({ objectId, materialId, feature: 'async-texture-reader-not-supported' });
+        return null;
+      }
+      const width = Number(pixels?.width), height = Number(pixels?.height), data = pixels?.data;
+      if (!pixels || !Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1 ||
+          !ArrayBuffer.isView(data) || data instanceof DataView || data.length !== width * height * 4) {
+        unsupported.push({ objectId, materialId, feature: 'texture-' + slot + '-requires-rgba8-pixels' });
+        return null;
+      }
+      const srgbSlot = slot === 'baseColor' || slot === 'emissive';
+      if (texture.colorSpace && srgbSlot !== String(texture.colorSpace).toLowerCase().includes('srgb')) {
+        unsupported.push({ objectId, materialId, feature: 'texture-' + slot + '-color-space-mismatch' });
+        return null;
+      }
+      const textureInput = {
+        id: textureId, revision: Math.max(1, Math.floor(Number(texture.version) || 1)), width, height,
+        data: data instanceof Uint8Array || data instanceof Uint8ClampedArray ? data : Uint8Array.from(data),
+        format: pixels.format || (srgbSlot ? 'rgba8unorm-srgb' : 'rgba8unorm'),
+        addressModeU: texture.wrapS === 1001 ? 'clamp-to-edge' : texture.wrapS === 1002 ? 'mirror-repeat' : 'repeat',
+        addressModeV: texture.wrapT === 1001 ? 'clamp-to-edge' : texture.wrapT === 1002 ? 'mirror-repeat' : 'repeat',
+        magFilter: texture.magFilter === 1003 ? 'nearest' : 'linear',
+        minFilter: texture.minFilter === 1003 || texture.minFilter === 1004 ? 'nearest' : 'linear'
+      };
+      const existing = textures.get(textureId);
+      if (existing && (existing.width !== width || existing.height !== height ||
+          existing.data.length !== textureInput.data.length)) {
+        unsupported.push({ objectId, materialId, feature: 'texture-id-collision-' + slot });
+        return null;
+      }
+      if (!existing) textures.set(textureId, textureInput);
+      const offset = texture.offset || { x: 0, y: 0 };
+      const repeat = texture.repeat || { x: 1, y: 1 };
+      const transform = {
+        offset: [Number(offset.x || 0), Number(offset.y || 0)],
+        scale: [Number(repeat.x ?? 1), Number(repeat.y ?? 1)],
+        rotation: Number(texture.rotation || 0),
+        texCoord: channel
+      };
+      if (![...transform.offset, ...transform.scale, transform.rotation].every(Number.isFinite)) {
+        unsupported.push({ objectId, materialId, feature: 'texture-' + slot + '-invalid-transform' });
+        return null;
+      }
+      return Object.freeze({ id: textureId, transform: Object.freeze(transform) });
+    };
     for (let index = 0; index < sourceMaterials.length; index += 1) {
       const source = sourceMaterials[index];
       if (!source) continue;
@@ -552,57 +618,18 @@ export function importPStudioThreeScene(scene, options = {}) {
       if (!knownMaterial) unsupported.push({ objectId, feature: 'material-model-' + String(source.type || 'unknown') });
       const materialId = String(source.uuid || source.id || objectId + '.material.' + index);
       materialIds.push(materialId);
-      const baseColorMap = source.map || null;
-      let baseColorTextureId = null;
-      if (baseColorMap) {
-        const textureId = String(baseColorMap.uuid || baseColorMap.name || materialId + '.base-color');
-        const image = baseColorMap.image || baseColorMap.source?.data || null;
-        let pixels = null;
-        try {
-          pixels = typeof options.readTexture === 'function'
-            ? options.readTexture(baseColorMap, Object.freeze({ objectId, materialId, textureId }))
-            : image?.data && ArrayBuffer.isView(image.data)
-              ? { width: image.width || image.videoWidth || image.naturalWidth, height: image.height || image.videoHeight || image.naturalHeight, data: image.data }
-              : null;
-        } catch (error) {
-          unsupported.push({ objectId, materialId, feature: 'texture-map-read-failed', message: String(error?.message || error) });
-        }
-        if (pixels && typeof pixels.then === 'function') {
-          unsupported.push({ objectId, materialId, feature: 'async-texture-reader-not-supported' });
-        } else if (!pixels || !ArrayBuffer.isView(pixels.data) || !Number.isFinite(Number(pixels.width)) || !Number.isFinite(Number(pixels.height))) {
-          unsupported.push({ objectId, materialId, feature: 'texture-map' });
-        } else {
-          const width = Number(pixels.width), height = Number(pixels.height);
-          const data = pixels.data instanceof Uint8Array || pixels.data instanceof Uint8ClampedArray ? pixels.data : null;
-          if (!data || data.length !== width * height * 4) {
-            unsupported.push({ objectId, materialId, feature: 'texture-map-not-rgba8' });
-          } else if (!uvAttribute) {
-            unsupported.push({ objectId, materialId, feature: 'texture-map-requires-uv0' });
-          } else {
-            const textureInput = {
-              id: textureId, revision: baseColorMap.version || 1, width, height, data,
-              format: pixels.format || 'rgba8unorm-srgb',
-              addressModeU: baseColorMap.wrapS === 1001 ? 'clamp-to-edge' : baseColorMap.wrapS === 1002 ? 'mirror-repeat' : 'repeat',
-              addressModeV: baseColorMap.wrapT === 1001 ? 'clamp-to-edge' : baseColorMap.wrapT === 1002 ? 'mirror-repeat' : 'repeat',
-              magFilter: baseColorMap.magFilter === 1003 ? 'nearest' : 'linear',
-              minFilter: baseColorMap.minFilter === 1003 || baseColorMap.minFilter === 1004 ? 'nearest' : 'linear'
-            };
-            if (!textures.has(textureId)) textures.set(textureId, textureInput);
-            baseColorTextureId = textureId;
-            const offset = baseColorMap.offset || { x: 0, y: 0 };
-            const repeat = baseColorMap.repeat || { x: 1, y: 1 };
-            if (Math.abs(Number(offset.x || 0)) > 1e-8 || Math.abs(Number(offset.y || 0)) > 1e-8 ||
-                Math.abs(Number(repeat.x ?? 1) - 1) > 1e-8 || Math.abs(Number(repeat.y ?? 1) - 1) > 1e-8 ||
-                Math.abs(Number(baseColorMap.rotation || 0)) > 1e-8) {
-              unsupported.push({ objectId, materialId, feature: 'texture-map-transform' });
-            }
-            if (baseColorMap.colorSpace && !String(baseColorMap.colorSpace).toLowerCase().includes('srgb')) {
-              unsupported.push({ objectId, materialId, feature: 'texture-map-color-space-' + String(baseColorMap.colorSpace) });
-            }
-          }
-        }
-      }
-      for (const key of ['normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap']) {
+      const textureSlots = {
+        baseColor: importTextureSlot(source.map, 'baseColor', uvAttribute, getAttribute('uv2')),
+        normal: importTextureSlot(source.normalMap, 'normal', uvAttribute, getAttribute('uv2')),
+        metalness: importTextureSlot(source.metalnessMap, 'metalness', uvAttribute, getAttribute('uv2')),
+        roughness: importTextureSlot(source.roughnessMap, 'roughness', uvAttribute, getAttribute('uv2')),
+        occlusion: importTextureSlot(source.aoMap, 'occlusion', uvAttribute, getAttribute('uv2')),
+        emissive: importTextureSlot(source.emissiveMap, 'emissive', uvAttribute, getAttribute('uv2')),
+        alpha: importTextureSlot(source.alphaMap, 'alpha', uvAttribute, getAttribute('uv2'))
+      };
+      const textureIds = Object.fromEntries(Object.entries(textureSlots).map(([slot, record]) => [slot, record?.id || null]));
+      const textureTransforms = Object.fromEntries(Object.entries(textureSlots).filter(([, record]) => record).map(([slot, record]) => [slot, record.transform]));
+      for (const key of ['bumpMap', 'displacementMap', 'lightMap', 'gradientMap']) {
         if (source[key]) unsupported.push({ objectId, materialId, feature: 'texture-' + key });
       }
       if (!materials.has(materialId)) {
@@ -613,18 +640,28 @@ export function importPStudioThreeScene(scene, options = {}) {
         const emissiveValue = [Number(emissive.r ?? 0) * emissiveIntensity, Number(emissive.g ?? 0) * emissiveIntensity, Number(emissive.b ?? 0) * emissiveIntensity];
         const alpha = source.transparent === true || Number(source.opacity ?? 1) < 1 ? 'blend' : source.alphaTest > 0 ? 'mask' : 'opaque';
         let model = source.isMeshBasicMaterial ? 'unlit' : source.isMeshToonMaterial ? 'toon' : source.isMeshLambertMaterial ? 'lambert' : 'pbr';
-        if (alpha !== 'opaque') unsupported.push({ objectId, materialId, feature: 'alpha-mode-' + alpha });
-        if (source.side === 2) unsupported.push({ objectId, materialId, feature: 'double-sided-material' });
         if (model !== 'pbr') unsupported.push({ objectId, materialId, feature: 'independent-pbr-renderer-material-model-' + model });
         if (source.vertexColors === true || source.flatShading === true || source.wireframe === true) unsupported.push({ objectId, materialId, feature: 'material-vertex-colors-flat-shading-or-wireframe' });
-        for (const feature of ['clearcoat', 'sheen', 'iridescence', 'transmission', 'thickness', 'anisotropy', 'dispersion']) {
-          if (Number(source[feature] || 0) > 0) unsupported.push({ objectId, materialId, feature: 'physical-material-' + feature });
-        }
+        if (Number(source.anisotropy || 0) > 0 || Number(source.dispersion || 0) > 0) unsupported.push({ objectId, materialId, feature: 'physical-material-anisotropy-or-dispersion' });
         materials.set(materialId, materialDescriptor({
           id: materialId, model, baseColor: colorValue, emissive: emissiveValue,
           metallic: source.metalness ?? 0, roughness: source.roughness ?? 0.7,
-          opacity: source.opacity ?? 1, alphaMode: alpha,
-          doubleSided: source.side === 2, textures: [], baseColorTextureId,
+          opacity: source.opacity ?? 1, alphaMode: alpha, alphaCutoff: source.alphaTest ?? 0.5,
+          doubleSided: source.side === 2,
+          textureIds, textureTransforms,
+          normalScale: source.normalScale?.x ?? 1,
+          occlusionStrength: source.aoMapIntensity ?? 1,
+          ior: source.ior ?? 1.5,
+          transmission: source.transmission ?? 0,
+          thickness: source.thickness ?? 0,
+          clearcoat: source.clearcoat ?? 0,
+          clearcoatRoughness: source.clearcoatRoughness ?? 0,
+          sheen: source.sheen ?? 0,
+          specularIntensity: source.specularIntensity ?? 1,
+          emissiveStrength: emissiveIntensity,
+          unlit: model === 'unlit',
+          textures: [],
+          baseColorTextureId: textureIds.baseColor,
           metadata: { sourceMaterialType: source.type || 'unknown', sourceMaterialId: materialId }
         }));
       }
