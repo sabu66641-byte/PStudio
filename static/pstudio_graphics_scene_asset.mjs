@@ -93,11 +93,15 @@ function geometryDescriptor(input) {
     indices = maximumIndex > 65535 ? Uint32Array.from(values) : Uint16Array.from(values);
     if (indices.length % 3) throw new RangeError('Triangle geometry index count must be divisible by three.');
   } else if ((positions.length / 3) % 3) throw new RangeError('Non-indexed triangle geometry vertex count must be divisible by three.');
+  const vertexCount = positions.length / 3;
   const normals = input.normals == null ? computeNormals(positions, indices) : Float32Array.from(input.normals, Number);
-  const uvs = input.uvs == null ? new Float32Array((positions.length / 3) * 2) : Float32Array.from(input.uvs, Number);
-  if (normals.length !== positions.length || uvs.length !== (positions.length / 3) * 2 ||
-      !Array.from(normals).every(Number.isFinite) || !Array.from(uvs).every(Number.isFinite)) {
-    throw new TypeError('Geometry normals and UVs must match the position vertex count.');
+  const uvs = input.uvs == null ? new Float32Array(vertexCount * 2) : Float32Array.from(input.uvs, Number);
+  const uv2s = input.uv2s == null ? null : Float32Array.from(input.uv2s, Number);
+  if (normals.length !== positions.length || uvs.length !== vertexCount * 2 ||
+      (uv2s && uv2s.length !== vertexCount * 2) ||
+      !Array.from(normals).every(Number.isFinite) || !Array.from(uvs).every(Number.isFinite) ||
+      (uv2s && !Array.from(uv2s).every(Number.isFinite))) {
+    throw new TypeError('Geometry normals and UV sets must match the position vertex count.');
   }
   const vertexCount = positions.length / 3;
   const tangents = input.tangents == null ? null : Float32Array.from(input.tangents, Number);
@@ -161,7 +165,7 @@ function geometryDescriptor(input) {
   }
   return Object.freeze({
     id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
-    positions, normals, uvs, tangents, indices, jointIndices, jointWeights, morphTargets,
+    positions, normals, uvs, uv2s, tangents, indices, jointIndices, jointWeights, morphTargets,
     vertexCount, indexCount: indices?.length || 0,
     bounds: Object.freeze({ min: Object.freeze(min), max: Object.freeze(max) }),
     groups: Object.freeze(groups)
@@ -370,8 +374,11 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     textureIds.add(texture.id);
   }
   for (const material of materials) {
-    if (material.baseColorTextureId && !textureIds.has(material.baseColorTextureId)) {
-      throw new Error('Material references an unknown base-color texture: ' + material.baseColorTextureId);
+    const slots = material.textureIds || { baseColor: material.baseColorTextureId };
+    for (const [slot, textureId] of Object.entries(slots)) {
+      if (textureId && !textureIds.has(textureId)) {
+        throw new Error('Material references an unknown ' + slot + ' texture: ' + textureId);
+      }
     }
   }
   const nodeIds = new Set(nodes.map(node => node.id));
