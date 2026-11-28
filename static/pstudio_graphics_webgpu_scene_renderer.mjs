@@ -1,5 +1,5 @@
 import { createPStudioWebGPUCoreAdapter } from './pstudio_graphics_webgpu_backend.mjs';
-import { evaluatePStudioSceneAnimation } from './pstudio_graphics_animation_core.mjs';
+import { evaluatePStudioSceneAnimation, evaluatePStudioSceneBindPose } from './pstudio_graphics_animation_core.mjs';
 
 const BUFFER_USAGE = Object.freeze({ COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64 });
 const TEXTURE_USAGE = Object.freeze({ COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 });
@@ -819,6 +819,16 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
     );
   }
   state = state && typeof state === 'object' ? state : {};
+  const hasUnresolvedSkin = scene.entities?.some(entity => entity.visible && entity.skinId);
+  if (hasUnresolvedSkin && !animation?.clipId) {
+    const cacheKey = String(scene.id) + "@" + String(scene.revision);
+    state.bindPoseCache ||= new Map();
+    if (!state.bindPoseCache.has(cacheKey)) {
+      state.bindPoseCache.clear();
+      state.bindPoseCache.set(cacheKey, evaluatePStudioSceneBindPose(scene));
+    }
+    scene = state.bindPoseCache.get(cacheKey);
+  }
   state.geometries ||= new Map();
   state.materials ||= new Map();
   state.instances ||= new Map();
