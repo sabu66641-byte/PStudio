@@ -332,7 +332,7 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(renderer, /originalRender\.apply\(this,args\)/);
   assert.match(renderer, /pvcsPostProcessingPathActive/);
   assert.match(renderer, /pvcsGpuStageSampleTarget=stageGpuSampleTurn\?\(pvcsPostProcessingPathActive\?'post-processing':'scene-render'\):null/);
-  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration\)/);
+  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,gpuFrameMeasurementContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration,renderFrameSequence\+1\)/);
   assert.match(renderer, /recordGpuFrameMetrics\?\.\(durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /recordGpuStageMetrics\?\.\(entry\.stageId,durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
@@ -379,4 +379,14 @@ test('PVCS exposes an evidence-gated governor while preserving analysis-only def
   assert.match(html, /window\.rollbackPStudioPVCSCompensation/);
   assert.match(engine, /applyPVCSFrameBudgetOverride:profile=>/);
   assert.match(engine, /rollbackPVCSFrameBudgetOverride:rollbackToken=>/);
+});
+
+
+
+test('production PVCS frame capture and browser calibration runner are exposed additively',async()=>{
+ const fs=require('node:fs'),path=require('node:path'),root=path.resolve(__dirname,'..');
+ const renderer=fs.readFileSync(path.join(root,'static/pstudio_3d_engine.js'),'utf8');
+ const html=fs.readFileSync(path.join(root,'templates/index.html'),'utf8');
+ assert.match(renderer,/capturePVCSFrame/);assert.match(renderer,/gpuRenderSampleSequence/);assert.match(renderer,/gpuStageMetrics/);assert.match(renderer,/cpuStageMetrics/);
+ assert.match(html,/pstudio_pvcs_browser_runner\.mjs/);assert.match(html,/createPStudioPVCSBrowserRunner/);
 });
