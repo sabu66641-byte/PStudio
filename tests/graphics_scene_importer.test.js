@@ -188,3 +188,59 @@ test('Three.js importer accepts Base Color maps through a CPU pixel reader witho
   assert.equal(asset.materials[0].baseColorTextureId, 'texture.owned');
   assert.deepEqual(Array.from(asset.textures[0].data), Array.from(imageData));
 });
+
+
+test('Three.js importer converts supported directional, point and spot lights into PStudio light data', async () => {
+  const { importPStudioThreeScene } = await load();
+  const translation = (x, y, z) => [1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1];
+  const directional = {
+    uuid: 'light.sun', isLight: true, isDirectionalLight: true, type: 'DirectionalLight',
+    matrixWorld: { elements: translation(0, 10, 0) },
+    target: { matrixWorld: { elements: translation(0, 0, 0) } },
+    color: { r: 1, g: 0.9, b: 0.8 }, intensity: 2
+  };
+  const point = {
+    uuid: 'light.lantern', isLight: true, isPointLight: true, type: 'PointLight',
+    matrixWorld: { elements: translation(2, 3, 4) },
+    color: { r: 0.6, g: 0.8, b: 1 }, intensity: 12, distance: 20
+  };
+  const spot = {
+    uuid: 'light.spot', isLight: true, isSpotLight: true, type: 'SpotLight',
+    matrixWorld: { elements: translation(1, 5, 1) },
+    target: { matrixWorld: { elements: translation(1, 0, 1) } },
+    color: { r: 1, g: 1, b: 1 }, intensity: 4, distance: 30, angle: Math.PI / 6, penumbra: 0.25
+  };
+  const { asset, report } = importPStudioThreeScene(fakeScene({ extras: [directional, point, spot] }));
+  assert.equal(report.supported, true);
+  assert.equal(asset.lighting.lights.length, 3);
+  assert.deepEqual(asset.lighting.lights.map(light => light.type), ['directional', 'point', 'spot']);
+  assert.deepEqual(asset.lighting.lights[1].position, [2, 3, 4]);
+  assert.equal(asset.lighting.lights[1].range, 20);
+  assert.ok(asset.lighting.lights[2].innerConeCos > asset.lighting.lights[2].outerConeCos);
+});
+
+test('Three.js importer preserves material group slots and fails closed on mismatches', async () => {
+  const { importPStudioThreeScene } = await load();
+  const source = fakeScene();
+  let mesh;
+  source.traverse(object => { if (object.isMesh) mesh = object; });
+  mesh.geometry = {
+    uuid: 'geometry.multi',
+    attributes: { position: { array: new Float32Array([0,0,0,1,0,0,0,1,0,1,0,0,1,1,0,0,1,0]), itemSize: 3, count: 6 } },
+    index: { array: new Uint16Array([0,1,2,3,4,5]) },
+    groups: [{ start: 0, count: 3, materialIndex: 0 }, { start: 3, count: 3, materialIndex: 1 }],
+    morphAttributes: {}
+  };
+  mesh.material = [
+    { uuid: 'material.first', type: 'MeshStandardMaterial', isMeshStandardMaterial: true, roughness: 0.7 },
+    { uuid: 'material.second', type: 'MeshStandardMaterial', isMeshStandardMaterial: true, roughness: 0.3 }
+  ];
+  const { asset, report } = importPStudioThreeScene(source);
+  assert.equal(report.supported, true);
+  assert.deepEqual(asset.entities[0].materialIds, ['material.first', 'material.second']);
+  assert.equal(asset.geometries[0].groups.length, 2);
+  mesh.material = mesh.material.slice(0, 1);
+  assert.throws(() => importPStudioThreeScene(source), error =>
+    error.code === 'PSTUDIO_SCENE_IMPORT_UNSUPPORTED_FEATURES' &&
+    error.report.unsupported.some(item => item.feature === 'geometry-group-material-slot-out-of-range'));
+});

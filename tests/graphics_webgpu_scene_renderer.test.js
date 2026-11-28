@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 function fakeDevice() {
-  const stats = { buffers: 0, textures: 0, submits: 0, indexedDraws: 0, drawCalls: 0, instanceCounts: [], bufferWrites: 0, textureWrites: 0, writeSizes: [] };
+  const stats = { buffers: 0, textures: 0, submits: 0, indexedDraws: 0, drawCalls: 0, instanceCounts: [], drawRanges: [], bufferWrites: 0, textureWrites: 0, writeSizes: [] };
   const device = {
     queue: {
       writeBuffer(buffer, offset, data, dataOffset, size) { stats.bufferWrites++; stats.writeSizes.push(size ?? data.byteLength); },
@@ -29,7 +29,7 @@ function fakeDevice() {
         beginRenderPass() {
           return {
             setPipeline() {}, setBindGroup() {}, setVertexBuffer() {}, setIndexBuffer() {},
-            draw(vertexCount, instanceCount = 1) { stats.drawCalls++; stats.instanceCounts.push(instanceCount); }, drawIndexed(indexCount, instanceCount = 1) { stats.indexedDraws++; stats.drawCalls++; stats.instanceCounts.push(instanceCount); }, end() {}
+            draw(vertexCount, instanceCount = 1, firstVertex = 0) { stats.drawCalls++; stats.instanceCounts.push(instanceCount); stats.drawRanges.push({ first:firstVertex,count:vertexCount,indexed:false }); }, drawIndexed(indexCount, instanceCount = 1, firstIndex = 0) { stats.indexedDraws++; stats.drawCalls++; stats.instanceCounts.push(instanceCount); stats.drawRanges.push({ first:firstIndex,count:indexCount,indexed:true }); }, end() {}
           };
         },
         finish() { return {}; }
@@ -159,4 +159,56 @@ test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures
   assert.equal(stats.textures, 2, 'only depth plus Base Color GPU textures are allocated');
   assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler, input\.uv\)/);
   assert.equal(scene.textures[0].format, 'rgba8unorm-srgb', 'the owned Base Color texture retains its sRGB encoding');
+});
+
+
+test('independent WebGPU renderer draws each geometry material group with correct element ranges', async () => {
+  const { createPStudioGraphicsSceneAsset } = await import('../static/pstudio_graphics_scene_asset.mjs');
+  const { renderPStudioGraphicsSceneFrame } = await import('../static/pstudio_graphics_webgpu_scene_renderer.mjs');
+  const scene = createPStudioGraphicsSceneAsset({
+    id: 'scene.material-groups',
+    geometries: [{
+      id: 'geo.grouped',
+      positions: [0,0,0,1,0,0,0,1,0, 1,0,0,1,1,0,0,1,0],
+      indices: [0,1,2,3,4,5],
+      groups: [{ start:0,count:3,materialIndex:0 },{ start:3,count:3,materialIndex:1 }]
+    }],
+    materials: [
+      { id:'mat.red',model:'pbr',baseColor:[1,0,0,1] },
+      { id:'mat.blue',model:'pbr',baseColor:[0,0,1,1] }
+    ],
+    entities: [{ id:'mesh',geometryId:'geo.grouped',materialIds:['mat.red','mat.blue'] }]
+  });
+  const {device,stats}=fakeDevice();
+  const api={device,canvas:{width:640,height:360},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
+  assert.equal(renderPStudioGraphicsSceneFrame({scene,view:{viewProjectionMatrix:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),cameraPosition:[0,0,3]}},api,{}),true);
+  assert.equal(stats.drawCalls,2);
+  assert.deepEqual(stats.drawRanges,[{first:0,count:3,indexed:true},{first:3,count:3,indexed:true}]);
+});
+
+test('independent WebGPU PBR frame uniforms include additional directional, point and spot lights', async () => {
+  const { createPStudioGraphicsSceneAsset } = await import('../static/pstudio_graphics_scene_asset.mjs');
+  const { renderPStudioGraphicsSceneFrame, PSTUDIO_WEBGPU_SCENE_WGSL } = await import('../static/pstudio_graphics_webgpu_scene_renderer.mjs');
+  const scene=createPStudioGraphicsSceneAsset({
+    id:'scene.lights',
+    geometries:[{id:'geo',positions:[0,0,0,1,0,0,0,1,0]}],
+    materials:[{id:'mat',model:'pbr'}],
+    entities:[{id:'entity',geometryId:'geo',materialId:'mat'}],
+    lighting:{lights:[
+      {type:'directional',direction:[0,-1,0],color:[1,.9,.8],intensity:2},
+      {type:'point',position:[1,2,3],color:[.8,.7,.6],intensity:4,range:15},
+      {type:'spot',position:[0,4,0],direction:[0,-1,0],intensity:8,range:20,innerConeCos:.95,outerConeCos:.8}
+    ]}
+  });
+  const {device,stats}=fakeDevice();
+  const api={device,canvas:{width:640,height:360},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
+  renderPStudioGraphicsSceneFrame({scene,view:{viewProjectionMatrix:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),cameraPosition:[0,0,3]}},api,{});
+  assert.ok(stats.writeSizes.includes(656),'frame uniform buffer must pack the fixed eight-light frame block');
+  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL,/frame\.lights\[index\]/);
+  assert.match(PSTUDIO_WEBGPU_SCENE_WGSL,/smoothstep\(light\.cone\.y, light\.cone\.x/);
+  assert.throws(()=>createPStudioGraphicsSceneAsset({
+    id:'scene.too-many-lights',geometries:[{id:'g',positions:[0,0,0,1,0,0,0,1,0]}],
+    materials:[{id:'m'}],entities:[{id:'e',geometryId:'g',materialId:'m'}],
+    lighting:{lights:Array.from({length:9},()=>({type:'point'}))}
+  }),/up to eight/);
 });
