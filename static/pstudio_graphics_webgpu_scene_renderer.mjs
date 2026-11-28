@@ -55,7 +55,7 @@ const WGSL = [
 '  let cosine = rotation.x;',
 '  let sine = rotation.y;',
 '  return vec2<f32>(cosine * scaled.x - sine * scaled.y, sine * scaled.x + cosine * scaled.y) + transform.xy;',
-'};',
+'}',
 'struct VertexInput {',
 '  @location(0) position: vec3<f32>,',
 '  @location(1) normal: vec3<f32>,',
