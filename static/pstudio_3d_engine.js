@@ -1721,11 +1721,12 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function measurePVCSStage(stageId,callback){
     const profiler=window.PStudioPVCS;
+    if(profiler?.isMonitoringEnabled?.()!==true)return callback();
     const shouldSampleGpu=!!stageId&&pvcsGpuStageSampleTarget===stageId&&!pvcsGpuStageSampleConsumed
-      &&profiler?.isMonitoringEnabled?.()===true&&!!gpuTimerGl&&!!gpuTimerExtension;
+      &&!!gpuTimerGl&&!!gpuTimerExtension;
     const query=shouldSampleGpu?beginGpuTimerQuery():null;
     if(query)pvcsGpuStageSampleConsumed=true;
-    try{return typeof profiler?.measure==='function'?profiler.measure(stageId,callback):callback();}
+    try{return profiler.measure(stageId,callback);}
     finally{if(query)endGpuTimerQuery(query,stageId);}
   }
   function measurePVCSAsyncStage(stageId,callback){
@@ -1756,6 +1757,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       const originalRender=pass.render;
       try{
         pass.render=function(...args){
+          if(window.PStudioPVCS?.isMonitoringEnabled?.()!==true)return originalRender.apply(this,args);
           return measurePVCSStage(stageId,()=>originalRender.apply(this,args));
         };
         Object.defineProperty(pass,'__pstudioPVCSInstrumented',{value:true,configurable:true});
@@ -1773,13 +1775,26 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     // converted and the WebGPU pipeline is compiled; never render mixed material backends.
     if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')return;
     if(productionRendererFallbackRequested&&productionRendererBridge?.getState?.().backend==='webgpu')return;
-    const pvcsFrameStartedAt=window.performance?.now?.()??Date.now();
-    let pvcsFrameUsesStageGpuQuery=false;
+    const pvcsProfiler=window.PStudioPVCS;
+    const pvcsMonitoringEnabled=pvcsProfiler?.isMonitoringEnabled?.()===true;
+    const pvcsFrameStartedAt=pvcsMonitoringEnabled?(window.performance?.now?.()??Date.now()):0;
+    let pvcsAggregateGpuTimerStarted=false;
+    if(pvcsMonitoringEnabled)pvcsProfiler.beginFrame?.();
     try{
       const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
       let frameStarted=window.performance?.now?.()??Date.now();
       let genesisDelta=1/60;
-      measurePVCSStage('camera-state-update',()=>{
+      if(pvcsMonitoringEnabled){
+        measurePVCSStage('camera-state-update',()=>{
+          applyCameraShake();camera.updateMatrixWorld(true);
+          frameStarted=window.performance?.now?.()??Date.now();
+          if(lastDrawFrameStartedAt){
+            const interval=frameStarted-lastDrawFrameStartedAt;
+            if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
+          }
+          lastDrawFrameStartedAt=frameStarted;
+        });
+      }else{
         applyCameraShake();camera.updateMatrixWorld(true);
         frameStarted=window.performance?.now?.()??Date.now();
         if(lastDrawFrameStartedAt){
@@ -1787,9 +1802,24 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
         }
         lastDrawFrameStartedAt=frameStarted;
-      });
-      if(genesisEnvironmentController)measurePVCSStage('environment-state-update',()=>updateGenesisEnvironment(genesisDelta,frameStarted));
-      measurePVCSStage('camera-state-update',()=>{
+      }
+      if(genesisEnvironmentController){
+        if(pvcsMonitoringEnabled)measurePVCSStage('environment-state-update',()=>updateGenesisEnvironment(genesisDelta,frameStarted));
+        else updateGenesisEnvironment(genesisDelta,frameStarted);
+      }
+      if(pvcsMonitoringEnabled){
+        measurePVCSStage('camera-state-update',()=>{
+          camera.updateMatrixWorld(true);
+          if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
+          updateMoonSkyMesh();
+          updateSunSkyMesh();
+          if(activeEnvironmentPreset==='night')ensureNightTwinkleStars(window.THREE);
+          updateNightTwinkleStars();
+          applyEditorOverlayVisibility();
+          updateEditorGridPresentation();
+        });
+        measurePVCSStage('clustered-lighting',()=>updateClusteredLighting());
+      }else{
         camera.updateMatrixWorld(true);
         if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
         updateMoonSkyMesh();
@@ -1798,8 +1828,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         updateNightTwinkleStars();
         applyEditorOverlayVisibility();
         updateEditorGridPresentation();
-      });
-      measurePVCSStage('clustered-lighting',()=>updateClusteredLighting());
+        updateClusteredLighting();
+      }
     updateRenderingFrameBudget();
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       const liveBlockers=getProductionWebGPUFeatureBlockers();
@@ -1822,7 +1852,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           productionRendererBridge.setVolumetricClouds?.(volumetricCloudsEnabled?getPStudioVolumetricCloudSettings():false)
         ];
         if(controlsApplied.some(result=>result!==true))throw new Error('The WebGPU RenderPipeline did not accept every post-processing state update.');
-        if(!measurePVCSStage('webgpu-render-submit',()=>productionRendererBridge.render()))throw new Error('The WebGPU scene session did not submit a frame.');
+        const submitted=pvcsMonitoringEnabled
+          ?measurePVCSStage('webgpu-render-submit',()=>productionRendererBridge.render())
+          :productionRendererBridge.render();
+        if(!submitted)throw new Error('The WebGPU scene session did not submit a frame.');
       }catch(error){
         productionRendererFallbackRequested=true;
         productionRendererBridge.useFallback(error).catch(fallbackError=>{
@@ -1835,35 +1868,38 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         const completedAt=window.performance?.now?.()??Date.now();
         updatePerformanceMonitor(completedAt);
         // Dynamic SH captures run after the submitted WebGPU frame, using its active backend.
-        void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(completedAt)).catch(error=>{
+        const capture=pvcsMonitoringEnabled
+          ?measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(completedAt))
+          :serviceDynamicRadianceCache(completedAt);
+        void capture.catch(error=>{
           dynamicGIStatus='error';
           console.warn('[PStudio] Dynamic WebGPU SH capture failed safely:',error);
         });
       }
       return;
     }
+    const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
+    const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
+    const pvcsPostProcessingPathActive=!postProcessingFailed&&composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled);
     renderer.info?.reset?.();pollGpuTimerQueries();
-    // One sampled GPU pass per four analysis frames; the aggregate GPU timer is omitted on that frame.
-    const stageGpuSampleSlots=[
-      'water-depth-prepass','mirror-reflection','post-processing','post-render-source',
-      'post-aa-taar','post-volumetric-fog','post-aa-smaa','post-gtao','post-ssao',
-      'post-ssr','post-contact-shadows','post-bloom','post-volumetric-clouds',
-      'post-god-rays','post-output','scene-render'
-    ];
-    const stageGpuSampleTurn=window.PStudioPVCS?.isMonitoringEnabled?.()===true&&!!gpuTimerGl&&!!gpuTimerExtension&&(pvcsGpuStageSampleCursor%4===0);
-    pvcsGpuStageSampleTarget=stageGpuSampleTurn?stageGpuSampleSlots[Math.floor(pvcsGpuStageSampleCursor/4)%stageGpuSampleSlots.length]:null;
-    pvcsGpuStageSampleCursor++;
+    // GPU timer samples only a render path that this frame will execute; individual composer passes remain CPU-only.
+    const stageGpuSampleTurn=pvcsMonitoringEnabled&&!!gpuTimerGl&&!!gpuTimerExtension&&(pvcsGpuStageSampleCursor%4===0);
+    pvcsGpuStageSampleTarget=stageGpuSampleTurn?(pvcsPostProcessingPathActive?'post-processing':'scene-render'):null;
+    if(pvcsMonitoringEnabled&&gpuTimerGl&&gpuTimerExtension)pvcsGpuStageSampleCursor++;
     pvcsGpuStageSampleConsumed=false;
-    pvcsFrameUsesStageGpuQuery=!!pvcsGpuStageSampleTarget;
-    const started=window.performance?.now?.()??Date.now(),gpuQuery=pvcsFrameUsesStageGpuQuery?null:beginGpuTimerQuery();
+    const started=window.performance?.now?.()??Date.now(),gpuQuery=pvcsGpuStageSampleTarget?null:beginGpuTimerQuery();
+    pvcsAggregateGpuTimerStarted=!!gpuQuery;
     const hiddenStaticSky=[];
     try{
-      measurePVCSStage('water-depth-prepass',()=>renderWaterDepthPrepass());
-      measurePVCSStage('mirror-reflection',()=>renderMirrorWaterReflections());
+      if(pvcsMonitoringEnabled){
+        measurePVCSStage('water-depth-prepass',()=>renderWaterDepthPrepass());
+        measurePVCSStage('mirror-reflection',()=>renderMirrorWaterReflections());
+      }else{
+        renderWaterDepthPrepass();
+        renderMirrorWaterReflections();
+      }
       if(volumetricCloudsEnabled)hiddenStaticSky.push(...hideStaticSkyForVolumetrics());
-      const solarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&sunGlareStrength>0.01;
-      const lunarBloomActive=(qualityPreset==='high'||qualityPreset==='maximum'||qualityPreset==='ultra')&&moonGlareStrength>0.01;
-      if(!postProcessingFailed&&composer&&(bloomEnabled||solarBloomActive||lunarBloomActive||ssaoEnabled||ssrEnabled||volumetricFogEnabled||volumetricCloudsEnabled||contactShadowsEnabled||godRaysEnabled||godRaysFallbackEnabled||!!taaPass?.enabled||!!smaaPass?.enabled)){
+      if(pvcsPostProcessingPathActive){
         if(bloomPass){const celestialGlare=Math.max(sunGlareStrength,moonGlareStrength*.72);bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive||godRaysFallbackEnabled;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,celestialGlare*.72,godRaysFallbackEnabled?0.14+0.18*godRaysIntensity:0);bloomPass.threshold=Math.max(.62,.84-celestialGlare*.18);}
         if(ssaoPass)ssaoPass.enabled=ssaoEnabled;
         if(ssrPass)ssrPass.enabled=ssrEnabled;
@@ -1909,13 +1945,20 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             u.uIntensity.value=godRaysIntensity;
           });
         }
-        try{measurePVCSStage('post-processing',()=>composer.render());}catch(initialPostError){
+        try{
+          if(pvcsMonitoringEnabled)measurePVCSStage('post-processing',()=>composer.render());
+          else composer.render();
+        }catch(initialPostError){
           let postError=initialPostError,recovered=false;
           if(godRaysEnabled&&godRaysPass?.enabled){
             godRaysEnabled=false;godRaysPass.enabled=false;
             godRaysFallbackEnabled=!!bloomPass;
             if(bloomPass){bloomPass.enabled=bloomEnabled||solarBloomActive||lunarBloomActive||godRaysFallbackEnabled;bloomPass.strength=Math.max(bloomEnabled?bloomStrength:0.08,Math.max(sunGlareStrength,moonGlareStrength*.72)*.72,godRaysFallbackEnabled?0.14+0.18*godRaysIntensity:0);}
-            try{measurePVCSStage('post-processing',()=>composer.render());recovered=true;}
+            try{
+              if(pvcsMonitoringEnabled)measurePVCSStage('post-processing',()=>composer.render());
+              else composer.render();
+              recovered=true;
+            }
             catch(retryError){postError=retryError;}
             if(recovered)console.warn('[PStudio] God Rays shader is unsupported; switching to bloom fallback.',initialPostError);
           }
@@ -1924,7 +1967,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             postProcessingFailureReason=String(postError?.message||postError||'Unknown post-processing error').slice(0,240);
             try{
               renderer.setRenderTarget(null);
-              measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
+              if(pvcsMonitoringEnabled)measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
+              else renderer.render(scene,camera);
               console.warn('[PStudio] Post-processing failed; direct scene rendering is active until quality settings are reapplied.',postError);
             }catch(fallbackError){
               console.error('[PStudio] Post-processing and direct scene rendering both failed.',postError,fallbackError);
@@ -1935,7 +1979,8 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       }else{
         if(ssaoPass)ssaoPass.enabled=false;
         if(ssrPass)ssrPass.enabled=false;if(contactShadowPass)contactShadowPass.enabled=false;
-        measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
+        if(pvcsMonitoringEnabled)measurePVCSStage('scene-render',()=>renderer.render(scene,camera));
+        else renderer.render(scene,camera);
       }
     }finally{
       camera.position.copy(cameraPositionBefore);camera.quaternion.copy(cameraQuaternionBefore);camera.updateMatrixWorld(true);
@@ -1954,11 +1999,14 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
       // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
-      void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(now)).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
+      const capture=pvcsMonitoringEnabled
+        ?measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(now))
+        :serviceDynamicRadianceCache(now);
+      void capture.catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
     }
     }finally{
       const pvcsFrameEndedAt=window.performance?.now?.()??Date.now();
-      window.PStudioPVCS?.recordFrameMetrics?.(Math.max(0,pvcsFrameEndedAt-pvcsFrameStartedAt),{includeAggregateGpu:!pvcsFrameUsesStageGpuQuery});
+      if(pvcsMonitoringEnabled)pvcsProfiler.recordFrameMetrics(Math.max(0,pvcsFrameEndedAt-pvcsFrameStartedAt),{includeAggregateGpu:pvcsAggregateGpuTimerStarted});
       pvcsGpuStageSampleTarget=null;
       pvcsGpuStageSampleConsumed=false;
     }
