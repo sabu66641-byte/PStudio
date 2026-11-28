@@ -94,6 +94,6 @@ test('the Scene API help and technical docs describe all four cinematic calls', 
     assert.ok(architecture.includes(name), name + ' in architecture guide');
   }
   assert.match(html, /pstudio_engine\.js\?v=20261125-daylight-mirror-hq-r2/);
-  assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-foundation-v1/);
+  assert.match(html, /pstudio_3d_engine\.js\?v=20261128-pvcs-governor-v1/);
   assert.match(html, /pstudio_environment_fx\.js\?v=20261126-natural-clouds-v2/);
 });

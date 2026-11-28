@@ -8631,6 +8631,17 @@ void main(){
     setQualityPreset:applyQualityPreset,setAdaptiveQuality:enabled=>{adaptiveQualityEnabled=!!enabled&&(qualityPreset==='auto'||qualityPreset==='ultra'||adaptiveMaximumTouchMode);adaptiveSlowFrames=0;adaptiveFastFrames=0;return adaptiveQualityEnabled;},
     togglePerformanceMonitor,
     getPerformanceStats:performanceStatsSnapshot,
+    applyPVCSFrameBudgetOverride:profile=>{
+      if(!renderingFrameBudgetController?.applyCompensation)return{applied:false,reason:'The shared frame-budget controller is unavailable.'};
+      try{
+        const rollbackToken=renderingFrameBudgetController.applyCompensation(profile);
+        return Object.freeze({applied:true,rollbackToken,state:Object.freeze({...renderingFrameBudget})});
+      }catch(error){return{applied:false,reason:String(error?.message||error)};}
+    },
+    rollbackPVCSFrameBudgetOverride:rollbackToken=>{
+      if(!renderingFrameBudgetController?.restoreCompensation)return false;
+      return renderingFrameBudgetController.restoreCompensation(rollbackToken)===true;
+    },
     setDynamicGI:enabled=>{
       const next=!!enabled;
       if(next&&!bakedLightProbeVolume?.length)return{enabled:false,available:false,reason:'Bake an SH probe volume with bakeEnvironmentGI() before enabling the dynamic radiance cache.'};
