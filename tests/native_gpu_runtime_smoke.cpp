@@ -170,7 +170,7 @@ int main() {
     auto rejected = std::make_shared<MockNativeGpuBackend>(BackendKind::Vulkan, true);
     assert(!runtime.recover(rejected, &error));
     assert(runtime.state() == NativeGpuRuntimeState::Lost);
-    assert(!rejected->disposed() == false || rejected->disposed());
+    assert(rejected->disposed());
     assert(!first->disposed());
 
     // Successful replacement rebuilds buffer + texture + shaders + pipeline.
