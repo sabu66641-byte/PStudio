@@ -321,6 +321,15 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
   assert.match(renderer, /else discardGpuTimerQuery\(query\)/);
   assert.match(renderer, /if\(window\.PStudioPVCS\?\.isMonitoringEnabled\?\.\(\)!==true\)return originalRender\.apply\(this,args\)/);
+  for (const stageCall of [
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-reflection-scene-render'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('mirror-cloud-composite'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('occlusion-visibility'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('world-visibility'",
+    "if(window.PStudioPVCS?.isMonitoringEnabled?.()===true)measurePVCSStage('instance-batch-rebuild'"
+  ]) assert.ok(renderer.includes(stageCall), 'missing monitoring-off fast path: ' + stageCall);
+  assert.match(pvcs, /recordAsyncStage\(id, Math\.max\(0, clock\(\) - startedAt\), contextAtStart, generationAtStart\)/);
+  assert.match(pvcs, /function recordGpuFrameMetrics\(gpuRenderMs, context = null, generation = null\)/);
   assert.match(renderer, /pvcsActiveFrameContext=pvcsMonitoringEnabled\?\(pvcsProfiler\.beginFrame\?\.\(\)\|\|null\):null/);
   assert.match(renderer, /pvcsActiveFrameGeneration=pvcsMonitoringEnabled\?\(pvcsProfiler\.getMonitoringGeneration\?\.\(\)\?\?null\):null/);
   assert.doesNotMatch(renderer, /const stageGpuSampleSlots=\[/);
