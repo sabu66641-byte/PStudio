@@ -209,3 +209,40 @@ test('world system discards a completed load when the chunk generation changes',
   assert.equal(system.stats().residentCount, 0);
   await system.dispose();
 });
+
+
+test('world residency eviction respects visibility, grace period and byte/count budgets', async () => {
+  const released = [];
+  const system = createPStudioWorldRenderingSystem({
+    executor: {
+      async loadChunkData(chunk) { return chunk.id; },
+      async uploadChunk({ descriptor }) { return 'gpu:' + descriptor.id; },
+      async releaseChunk(handle) { released.push(handle); }
+    }
+  });
+  system.registerChunk({ id: 'near', boundsMin: [0, 0, -11], boundsMax: [1, 1, -10], estimatedBytes: 40, geometricError: 1 });
+  system.registerChunk({ id: 'far', boundsMin: [0, 0, -31], boundsMax: [1, 1, -30], estimatedBytes: 30, geometricError: 1 });
+  const broadFrustum = [
+    [1, 0, 0, 100], [-1, 0, 0, 100],
+    [0, 1, 0, 100], [0, -1, 0, 100],
+    [0, 0, 1, 100], [0, 0, -1, 100]
+  ];
+  system.updateView({ cameraPosition: [0, 0, 0], frustumPlanes: broadFrustum, viewportHeight: 720 });
+  const loaded = await system.streamTick({ maxConcurrent: 2, maxBytes: 100 });
+  assert.equal(loaded.outcomes.filter(item => item.status === 'resident').length, 2);
+  assert.equal(system.stats().residentBytes, 70);
+
+  const nearOnlyFrustum = [
+    [1, 0, 0, 100], [-1, 0, 0, 100],
+    [0, 1, 0, 100], [0, -1, 0, 100],
+    [0, 0, 1, 20], [0, 0, -1, 100]
+  ];
+  system.updateView({ cameraPosition: [0, 0, 0], frustumPlanes: nearOnlyFrustum, viewportHeight: 720 });
+  const eviction = await system.evictInvisible({ maxResidentChunks: 1, maxResidentBytes: 45, graceFrames: 0 });
+  assert.deepEqual(eviction.evicted, ['far']);
+  assert.equal(eviction.residentCount, 1);
+  assert.equal(eviction.residentBytes, 40);
+  assert.equal(eviction.overBudget, false);
+  assert.deepEqual(released, ['gpu:far']);
+  await system.dispose();
+});
