@@ -58,10 +58,10 @@ test('Compute Core validates dispatch dimensions and delegates to an injected ex
 
 test('Lighting Core normalizes direction and emits stable packed snapshots',()=>{
   const core=createPStudioGraphicsLightingCore();
-  core.set({id:'sun',type:'directional',intensity:2,direction:[0,-2,0],castsShadow:true});
+  core.set({id:'sun',type:'directional',intensity:2,direction:[0,-2,0],castsShadow:true,layerMask:0xffffffff});
   core.set({id:'lamp',type:'point',position:[1,2,3],range:8,color:[1,.8,.6]});
   const snapshot=core.snapshot();assert.equal(snapshot.lightCount,2);assert.equal(snapshot.records[0].id,'lamp');
-  assert.equal(snapshot.packed.length,32);assert.ok(Math.abs(snapshot.records[1].direction[1]+1)<1e-6);
+  assert.equal(snapshot.packed.length,32);assert.equal(snapshot.layerMasks[1],0xffffffff);assert.ok(Math.abs(snapshot.records[1].direction[1]+1)<1e-6);
   assert.throws(()=>core.set({id:'bad',type:'spot',innerConeRadians:1,outerConeRadians:.5}),/cone/);core.dispose();
 });
 

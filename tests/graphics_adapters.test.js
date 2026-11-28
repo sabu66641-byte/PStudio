@@ -44,3 +44,15 @@ test('existing renderer HAL factory keeps WebGL2 as the default and only registe
   assert.deepEqual(hal.listBackends().map(x=>x.backend),['webgl2']);
   assert.equal((await hal.initialize()).backend,'webgl2');hal.dispose();
 });
+
+test('WebGPU adapter prefers its configured backend canvas and rejects mismatched scene frames',async()=>{
+  const configuredCanvas={},contextCanvas={},scene={},camera={};let usedCanvas=null,renders=0;
+  const adapter=createPStudioThreeWebGPUAdapter({canvas:configuredCanvas,createSession:async({canvas})=>{usedCanvas=canvas;return {capabilities:{},render(){renders++;return true;},resize(){return true;},dispose(){return true;}};}});
+  const hal=createPStudioGraphicsHAL({preferredBackend:'webgpu'});hal.register(adapter);
+  await hal.initialize({canvas:contextCanvas,scene,camera});
+  assert.equal(usedCanvas,configuredCanvas);
+  assert.equal(hal.render({scene:{},view:{camera}}),false);
+  assert.equal(hal.render({scene,view:{camera:{}}}),false);
+  assert.equal(hal.render({scene,view:{camera}}),true);
+  assert.equal(renders,1);hal.dispose();
+});

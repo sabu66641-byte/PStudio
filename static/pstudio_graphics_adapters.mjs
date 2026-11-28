@@ -43,13 +43,13 @@ export function createPStudioThreeWebGPUAdapter(options={}){
     descriptor:Object.freeze({id:String(options.id||'pstudio.three-r187.webgpu'),backend:'webgpu',priority:Number.isFinite(Number(options.priority))?Number(options.priority):100,features:Object.freeze([...(options.features||['scene-session','pbr-material-conversion','tsl-pipeline'])].map(String)),metadata:Object.freeze({implementation:'Three.js r187 WebGPURenderer + PStudio TSL scene session',vendorNeutral:false})}),
     supports(context={}){const nav=context.navigatorRef||options.navigatorRef||globalThis.navigator;return !!(context.canvas||options.canvas)&&(!!(context.scene||options.scene))&&(!!(context.camera||options.camera))&&(options.createSession?true:isPStudioWebGPUAvailable(nav));},
     async initialize(context={}){
-      const canvas=context.canvas||options.canvas,scene=context.scene||options.scene,camera=context.camera||options.camera;if(!canvas||!scene||!camera)throw new TypeError('WebGPU adapter requires canvas, scene and camera.');
+      const canvas=options.getCanvas?.(context)||options.canvas||context.canvas,scene=options.getScene?.(context)||options.scene||context.scene,camera=options.getCamera?.(context)||options.camera||context.camera;if(!canvas||!scene||!camera)throw new TypeError('WebGPU adapter requires canvas, scene and camera.');
       let disposed=false;
       const session=await createSession({...options.sessionOptions,canvas,scene,camera,navigatorRef:context.navigatorRef||options.navigatorRef,signal:context.signal,antialias:options.antialias===true,alpha:options.alpha===true,powerPreference:options.powerPreference||'high-performance',environmentProfile:options.environmentProfile,environmentResolution:options.environmentResolution,pipelineOptions:options.pipelineOptions,csm:options.csm,clusteredLightingOptions:options.clusteredLightingOptions,clusteredLightingSnapshot:options.clusteredLightingSnapshot,getClusteredLightingSnapshot:options.getClusteredLightingSnapshot,configureRenderer:options.configureRenderer,onStageChange:options.onStageChange,onDeviceLost:info=>{try{context.onDeviceLost?.(info);}catch(_){}try{options.onDeviceLost?.(info);}catch(_){}}});
       const device=session.renderer?.backend?.device;
       return Object.freeze({
         backend:'webgpu',renderer:session.renderer,capabilities:session.capabilities,deviceLost:session.deviceLost,
-        render(frame){if(disposed)return false;if(options.beforeFrame?.(frame,{scene,camera,session})===false)return false;return session.render()!==false;},
+        render(frame){if(disposed)return false;if(frame?.scene&&frame.scene!==scene)return false;if(frame?.view?.camera&&frame.view.camera!==camera)return false;if(options.beforeFrame?.(frame,{scene,camera,session})===false)return false;return session.render()!==false;},
         resize:(w,h,r)=>!disposed&&session.resize(w,h,r)!==false,
         waitIdle:()=>device?.queue?.onSubmittedWorkDone?device.queue.onSubmittedWorkDone():Promise.resolve(false),
         getCapabilities:()=>session.capabilities||null,
