@@ -174,7 +174,7 @@ const WGSL = [
 '    let ao = textureSample(occlusionTexture, occlusionSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[11].z > 0.5), 10u)).r;',
 '    ambientOcclusion = mix(1.0, ao, material.materialFlags.z);',
 '  }',
-'  let ambient = albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic) * ambientOcclusion;',
+'  var ambient = albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic) * ambientOcclusion;',
 '  var emissive = material.emissiveColor.rgb;',
 '  if (material.textureFlags2.x > 0.5) { emissive *= textureSample(emissiveTexture, emissiveSampler, materialUv(select(input.uv, input.uv2, material.textureTransforms[13].z > 0.5), 12u)).rgb; }',
 '  let clearcoat = clamp(material.physical.x, 0.0, 1.0);',
@@ -305,9 +305,11 @@ function validateScene(scene) {
       if (!materials.has(materialId)) throw new Error('Missing PStudio material: ' + materialId);
       const material = materials.get(materialId);
       if (!['pbr', 'unlit'].includes(material.model) || material.textures?.length) {
-        throw new Error('Independent WebGPU renderer requires PStudio PBR or unlit material records without legacy opaque texture feature flags: ' + material.id);
+        throw new Error('Independent WebGPU renderer requires PStudio PBR or unlit material records without legacy texture feature flags: ' + material.id);
       }
+      const supportedTextureSlots = new Set(['baseColor','normal','metallicRoughness','metalness','roughness','occlusion','emissive','alpha']);
       for (const [slot, textureId] of Object.entries(material.textureIds || { baseColor: material.baseColorTextureId })) {
+        if (textureId && !supportedTextureSlots.has(slot)) throw new Error('Independent WebGPU renderer does not yet sample the PBR texture slot ' + slot + ': ' + material.id);
         if (textureId && !textures.has(textureId)) throw new Error('PStudio material references a missing ' + slot + ' texture: ' + textureId);
       }
     }
@@ -693,6 +695,10 @@ function disposeSceneRuntime(state) {
   state.instances.clear();
   state.textures.clear();
   state.pipeline = null;
+  state.pipelineTransparent = null;
+  state.frameLayout = null;
+  state.materialLayout = null;
+  state.pipelineLayout = null;
   state.frameBuffer = null;
   state.frameBindGroup = null;
   state.depthTexture = null;
@@ -709,6 +715,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   state.materials ||= new Map();
   state.instances ||= new Map();
   state.textures ||= new Map();
+  state.pipelineTransparent ||= null;
   const { geometries, materials, textures } = validateScene(scene);
   const device = api?.device;
   if (!device?.createCommandEncoder || !api.getCurrentSurfaceView) throw new Error('PStudio WebGPU scene rendering requires a configured WebGPU surface.');
@@ -730,7 +737,6 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
       depthStoreOp: 'store'
     }
   });
-  pass.setPipeline(state.pipeline);
   pass.setBindGroup(0, state.frameBindGroup);
 
   // One draw per unique geometry/material pair, with transforms supplied as
@@ -741,34 +747,50 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   const activeMaterialIds = new Set();
   const activeBatchKeys = new Set();
   const activeTextureIds = new Set();
+  const textureSlots = ['baseColor','normal','metallicRoughness','metalness','roughness','occlusion','emissive','alpha'];
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
     const geometry = geometries.get(entity.geometryId);
     const drawGroups = geometry.groups?.length ? geometry.groups : [{ start: 0, count: geometry.indices?.length || geometry.vertexCount, materialIndex: 0 }];
     for (const group of drawGroups) {
       const materialId = entity.materialIds[group.materialIndex];
-      const key = JSON.stringify([entity.geometryId, materialId, group.start, group.count]);
+      const material = materials.get(materialId);
+      const transparent = material.alphaMode === 'blend' || Number(material.opacity ?? 1) < 1 || Number(material.baseColor?.[3] ?? 1) < 1;
+      const key = JSON.stringify([entity.geometryId, materialId, group.start, group.count, transparent ? entity.id : null]);
       let batch = batches.get(key);
       if (!batch) {
-        batch = { key, geometryId: entity.geometryId, materialId, start: group.start, count: group.count, entities: [] };
+        batch = { key, geometryId: entity.geometryId, materialId, start: group.start, count: group.count, entities: [], transparent };
         batches.set(key, batch);
       }
       batch.entities.push(entity);
       activeGeometryIds.add(entity.geometryId);
       activeMaterialIds.add(materialId);
-      const material = materials.get(materialId);
-      if (material.baseColorTextureId) activeTextureIds.add(material.baseColorTextureId);
-      else activeTextureIds.add('__pstudio-white-base-color');
+      const ids = material.textureIds || { baseColor: material.baseColorTextureId };
+      for (const slot of textureSlots) {
+        if (ids[slot]) activeTextureIds.add(ids[slot]);
+        else activeTextureIds.add(defaultTextureId(slot));
+      }
       activeBatchKeys.add(key);
     }
   }
   pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys, activeTextureIds);
-  for (const batch of batches.values()) {
+  const camera = vector3(frame.view?.cameraPosition || frame.view?.camera?.position, [0, 0, 3]);
+  const batchDistance = batch => {
+    const entity = batch.entities[0], matrix = entity.matrixWorld;
+    const dx = Number(matrix[12]) - camera[0], dy = Number(matrix[13]) - camera[1], dz = Number(matrix[14]) - camera[2];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  const orderedBatches = [...batches.values()].sort((a, b) =>
+    Number(a.transparent) - Number(b.transparent) ||
+    (a.transparent ? batchDistance(b) - batchDistance(a) : 0)
+  );
+  for (const batch of orderedBatches) {
     const geometry = geometries.get(batch.geometryId);
     const material = materials.get(batch.materialId);
     const gpuGeometry = ensureGeometry(state, device, geometry);
-    const gpuMaterial = ensureMaterial(state, device, material, state.pipeline, textures);
+    const gpuMaterial = ensureMaterial(state, device, material, textures);
     const gpuInstances = ensureInstanceBatch(state, device, batch.key, batch.entities);
+    pass.setPipeline(batch.transparent ? state.pipelineTransparent : state.pipeline);
     pass.setBindGroup(1, gpuMaterial.bindGroup);
     pass.setVertexBuffer(0, gpuGeometry.vertexBuffer);
     pass.setVertexBuffer(1, gpuInstances.buffer);
