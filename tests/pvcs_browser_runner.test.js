@@ -52,7 +52,7 @@ test('browser runner measures a fresh CPU stage and restores PVCS monitoring sta
  const pvcsState={enabled:false,isMonitoringEnabled(){return this.enabled;},setMonitoringEnabled(value){this.enabled=value;return value;}};
  const runner=createPStudioPVCSBrowserRunner({getEngine:()=>engine,getPVCS:()=>pvcsState,stageId:'scene-render',settleFrames:0});
  const result=await runner.runVariant({variant:'baseline',domain:'cpu-stage',context:CONTEXT});
- assert.equal(result.metrics.cpuStageMs,2.75);assert.equal(result.metrics.cpuStageSourceFrameSequence,11);assert.equal(pvcsState.enabled,false);
+ assert.equal(result.metrics.cpuSubmitMs,2.75);assert.equal(result.metrics.cpuStageSourceFrameSequence,11);assert.equal(pvcsState.enabled,false);
 });
 test('browser runner rejects CPU-stage samples from another render context',async()=>{
  const {createPStudioPVCSBrowserRunner}=await import('../static/pstudio_pvcs_browser_runner.mjs');
