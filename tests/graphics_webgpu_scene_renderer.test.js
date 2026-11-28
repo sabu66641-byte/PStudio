@@ -73,12 +73,12 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.equal(stats.submits, 1);
   assert.equal(stats.indexedDraws, 1);
   assert.equal(stats.buffers, 5);
-  assert.equal(stats.textures, 9, 'depth plus eight material texture slots are cached');
+  assert.equal(stats.textures, 11, 'depth, IBL, shadow and eight material texture slots are cached');
   assert.ok(stats.writeSizes.every(size => size % 4 === 0), 'WebGPU queue writes must be four-byte aligned');
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
   assert.equal(stats.buffers, 5, 'geometry, frame, material and instance GPU buffers should be reused');
-  assert.equal(stats.textures, 9, 'depth plus the eight cached PBR texture slots should be reused');
+  assert.equal(stats.textures, 11, 'depth, IBL, shadow and eight cached PBR texture slots should be reused');
   assert.equal(handle.dispose(), true);
 });
 
@@ -136,7 +136,7 @@ test('independent WebGPU scene renderer batches repeated geometry and materials 
   renderPStudioGraphicsSceneFrame(frame, api, state);
   assert.equal(stats.drawCalls, 2);
   assert.equal(stats.buffers, 5, 'steady-state instanced frames must reuse their GPU buffers');
-  assert.equal(stats.textures, 9, 'depth plus the eight cached PBR texture slots must be reused');
+  assert.equal(stats.textures, 11, 'depth, IBL, shadow and eight cached PBR texture slots must be reused');
 });
 
 test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures', async () => {
@@ -157,8 +157,8 @@ test('independent WebGPU PBR path samples PStudio-owned sRGB base-color textures
     scene,
     view: { viewProjectionMatrix: new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]), cameraPosition: [0,0,3] }
   }, api, {}), true);
-  assert.equal(stats.textureWrites, 8, 'the owned Base Color plus seven typed fallback textures upload once');
-  assert.equal(stats.textures, 9, 'depth plus Base Color and seven typed fallback textures are allocated');
+  assert.equal(stats.textureWrites, 9, 'the owned Base Color, IBL and seven typed fallback textures upload once');
+  assert.equal(stats.textures, 11, 'depth, IBL, shadow, Base Color and seven typed fallback textures are allocated');
   assert.match(PSTUDIO_WEBGPU_SCENE_WGSL, /textureSample\(baseColorTexture, baseColorSampler/);
   assert.equal(scene.textures[0].format, 'rgba8unorm-srgb', 'the owned Base Color texture retains its sRGB encoding');
 });
@@ -205,7 +205,7 @@ test('independent WebGPU PBR frame uniforms include additional directional, poin
   const {device,stats}=fakeDevice();
   const api={device,canvas:{width:640,height:360},getCapabilities:()=>({format:'rgba8unorm'}),getCurrentSurfaceView:()=>({})};
   renderPStudioGraphicsSceneFrame({scene,view:{viewProjectionMatrix:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),cameraPosition:[0,0,3]}},api,{});
-  assert.ok(stats.writeSizes.includes(656),'frame uniform buffer must pack the fixed eight-light frame block');
+  assert.ok(stats.writeSizes.includes(720),'frame uniform buffer must pack the fixed eight-light frame block');
   assert.match(PSTUDIO_WEBGPU_SCENE_WGSL,/frame\.lights\[index\]/);
   assert.match(PSTUDIO_WEBGPU_SCENE_WGSL,/smoothstep\(light\.cone\.y, light\.cone\.x/);
   assert.throws(()=>createPStudioGraphicsSceneAsset({
