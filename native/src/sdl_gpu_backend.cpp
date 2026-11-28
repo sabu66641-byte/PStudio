@@ -370,11 +370,10 @@ NativeGpuCapabilities SdlGpuBackend::capabilities() const {
     const auto& s = *impl_;
     NativeGpuCapabilities result;
     const char* driver = s.device ? SDL_GetGPUDeviceDriver(s.device) : nullptr;
-    const SDL_PropertiesID properties = s.device ? SDL_GetGPUDeviceProperties(s.device) : 0;
-    const char* gpuName = properties ? SDL_GetStringProperty(properties, SDL_PROP_GPU_DEVICE_NAME_STRING, "") : "";
-    const char* driverName = properties ? SDL_GetStringProperty(properties, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, driver ? driver : "") : (driver ? driver : "");
-    result.deviceName = gpuName && *gpuName ? gpuName : "uninitialized";
-    result.driverName = driverName && *driverName ? driverName : (driver ? driver : "uninitialized");
+    result.deviceName = s.device
+        ? "SDL3 GPU device (device model not exposed by the pinned SDL3 GPU API)"
+        : "uninitialized";
+    result.driverName = driver && *driver ? driver : "uninitialized";
     result.apiVersion = "SDL3 GPU";
     result.maxFramesInFlight = 3;
     result.presentation = s.present;
