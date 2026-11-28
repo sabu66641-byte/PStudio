@@ -98,3 +98,102 @@ test('GLB loader owns skin palettes, four-weight geometry, morph targets and ani
  assert.deepEqual(frame.tracks[0].value,[0.5,0,0]);
  assert.equal(asset.nodes.find(node=>node.id==='glb.node.1').name,'root-joint');
 });
+
+function makeCubicAnimatedGlb(){
+ const bin=new ArrayBuffer(116);
+ new Float32Array(bin,0,9).set([0,0,0,1,0,0,0,1,0]);
+ new Float32Array(bin,36,2).set([0,1]);
+ new Float32Array(bin,44,18).set([
+  0,0,0, 0,0,0, 2,0,0,
+  0,0,0, 1,0,0, 0,0,0
+ ]);
+ const json={
+  asset:{version:'2.0'},buffers:[{byteLength:116}],
+  bufferViews:[
+   {buffer:0,byteOffset:0,byteLength:36},
+   {buffer:0,byteOffset:36,byteLength:8},
+   {buffer:0,byteOffset:44,byteLength:72}
+  ],
+  accessors:[
+   {bufferView:0,componentType:5126,count:3,type:'VEC3'},
+   {bufferView:1,componentType:5126,count:2,type:'SCALAR'},
+   {bufferView:2,componentType:5126,count:6,type:'VEC3'}
+  ],
+  meshes:[{primitives:[{attributes:{POSITION:0},mode:4}]}],
+  nodes:[{mesh:0}],scenes:[{nodes:[0]}],scene:0,
+  animations:[{name:'cubic-move',samplers:[{input:1,output:2,interpolation:'CUBICSPLINE'}],channels:[{sampler:0,target:{node:0,path:'translation'}}]}]
+ };
+ const encoded=new TextEncoder().encode(JSON.stringify(json)),jsonLength=(encoded.length+3)&~3,total=12+8+jsonLength+8+bin.byteLength;
+ const glb=new ArrayBuffer(total),view=new DataView(glb);
+ view.setUint32(0,0x46546c67,true);view.setUint32(4,2,true);view.setUint32(8,total,true);
+ view.setUint32(12,jsonLength,true);view.setUint32(16,0x4e4f534a,true);new Uint8Array(glb,20,encoded.length).set(encoded);
+ view.setUint32(20+jsonLength,bin.byteLength,true);view.setUint32(24+jsonLength,0x004e4942,true);
+ new Uint8Array(glb,28+jsonLength,bin.byteLength).set(new Uint8Array(bin));
+ return glb;
+}
+function makePbrTextureGlb(){
+ const bin=new ArrayBuffer(40);
+ new Float32Array(bin,0,9).set([0,0,0,1,0,0,0,1,0]);
+ new Uint8Array(bin,36,4).set([255,128,64,255]);
+ const info={index:0,extensions:{KHR_texture_transform:{offset:[.25,.5],scale:[2,3],rotation:.2,texCoord:0}}};
+ const json={
+  asset:{version:'2.0'},buffers:[{byteLength:40}],
+  bufferViews:[{buffer:0,byteOffset:0,byteLength:36},{buffer:0,byteOffset:36,byteLength:4}],
+  accessors:[{bufferView:0,componentType:5126,count:3,type:'VEC3'}],
+  images:[{bufferView:1,mimeType:'image/png'}],textures:[{source:0}],
+  materials:[{
+   pbrMetallicRoughness:{baseColorFactor:[.8,.7,.6,1],metallicFactor:.65,roughnessFactor:.35,baseColorTexture:info,metallicRoughnessTexture:{index:0}},
+   normalTexture:{index:0,scale:.7},occlusionTexture:{index:0,strength:.6},emissiveTexture:{index:0},
+   emissiveFactor:[.1,.2,.3],alphaMode:'MASK',alphaCutoff:.4,doubleSided:true,
+   extensions:{
+    KHR_materials_ior:{ior:1.7},
+    KHR_materials_emissive_strength:{emissiveStrength:2.5},
+    KHR_materials_transmission:{transmissionFactor:.2},
+    KHR_materials_clearcoat:{clearcoatFactor:.4,clearcoatRoughnessFactor:.25},
+    KHR_materials_sheen:{sheenColorFactor:[.2,.3,.4],sheenRoughnessFactor:.5},
+    KHR_materials_specular:{specularFactor:.8,specularColorFactor:[.9,.8,.7]}
+   }
+  }],
+  meshes:[{primitives:[{attributes:{POSITION:0},material:0,mode:4}]}],
+  nodes:[{mesh:0}],scenes:[{nodes:[0]}],scene:0,
+  extensionsUsed:['KHR_texture_transform','KHR_materials_ior','KHR_materials_emissive_strength','KHR_materials_transmission','KHR_materials_clearcoat','KHR_materials_sheen','KHR_materials_specular'],
+  extensionsRequired:['KHR_texture_transform','KHR_materials_ior']
+ };
+ const encoded=new TextEncoder().encode(JSON.stringify(json)),jsonLength=(encoded.length+3)&~3,total=12+8+jsonLength+8+bin.byteLength;
+ const glb=new ArrayBuffer(total),view=new DataView(glb);
+ view.setUint32(0,0x46546c67,true);view.setUint32(4,2,true);view.setUint32(8,total,true);
+ view.setUint32(12,jsonLength,true);view.setUint32(16,0x4e4f534a,true);new Uint8Array(glb,20,encoded.length).set(encoded);
+ view.setUint32(20+jsonLength,bin.byteLength,true);view.setUint32(24+jsonLength,0x004e4942,true);
+ new Uint8Array(glb,28+jsonLength,bin.byteLength).set(new Uint8Array(bin));
+ return glb;
+}
+test('GLB loader imports CUBICSPLINE Hermite animation channels into native clips',async()=>{
+ const {asset,report}=await loadPStudioGLB(makeCubicAnimatedGlb());
+ assert.equal(report.supported,true);
+ assert.equal(asset.animations[0].tracks[0].interpolation,'CUBICSPLINE');
+ assert.deepEqual(samplePStudioAnimationClip(asset.animations[0],.5).tracks[0].value,[.75,0,0]);
+});
+test('GLB loader imports PBR texture slots, UV transforms and common KHR material extensions',async()=>{
+ const {asset,report}=await loadPStudioGLB(makePbrTextureGlb(),{
+  decodeImage:async()=>({width:1,height:1,data:new Uint8Array([255,128,64,255])})
+ });
+ assert.equal(report.supported,true);
+ const material=asset.materials[0];
+ assert.equal(asset.textures.length,2,'same image is retained with separate sRGB and linear interpretations');
+ assert.ok(material.textureIds.baseColor);
+ assert.ok(material.textureIds.metallicRoughness);
+ assert.ok(material.textureIds.normal);
+ assert.ok(material.textureIds.occlusion);
+ assert.ok(material.textureIds.emissive);
+ assert.equal(material.alphaMode,'mask');
+ assert.equal(material.doubleSided,true);
+ assert.equal(material.normalScale,.7);
+ assert.equal(material.occlusionStrength,.6);
+ assert.equal(material.ior,1.7);
+ assert.equal(material.emissiveStrength,2.5);
+ assert.equal(material.clearcoat,.4);
+ assert.equal(material.transmission,.2);
+ assert.deepEqual(material.textureTransforms.baseColor.offset,[.25,.5]);
+ assert.deepEqual(material.textureTransforms.baseColor.scale,[2,3]);
+ assert.ok(Math.abs(material.textureTransforms.baseColor.rotation-.2)<1e-9);
+});
