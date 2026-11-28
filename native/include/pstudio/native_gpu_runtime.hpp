@@ -128,8 +128,13 @@ public:
         Entry* entry = find(handle);
         if (!entry || entry->kind != EntryKind::Texture || !data) return fail(errorOut, "Native GPU texture handle or upload data is invalid");
         const std::size_t bytesPerPixel = entry->texture.format == GpuPixelFormat::Rgba16Float ? 8u : 4u;
-        if (entry->texture.format == GpuPixelFormat::Depth32Float ||
-            size != static_cast<std::size_t>(entry->texture.width) * entry->texture.height * bytesPerPixel) {
+        const std::size_t width = entry->texture.width;
+        const std::size_t height = entry->texture.height;
+        const bool sizeOverflow = width == 0 || height == 0 ||
+            width > std::numeric_limits<std::size_t>::max() / bytesPerPixel ||
+            height > std::numeric_limits<std::size_t>::max() / (width * bytesPerPixel);
+        if (entry->texture.format == GpuPixelFormat::Depth32Float || sizeOverflow ||
+            size != width * height * bytesPerPixel) {
             return fail(errorOut, "Native GPU texture upload size or format is invalid");
         }
         entry->shadow.resize(size);
