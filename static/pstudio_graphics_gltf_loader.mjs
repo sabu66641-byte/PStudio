@@ -447,10 +447,40 @@ export async function loadPStudioGLB(input, options = {}) {
       id:"glb.animation."+animationIndex,tracks,metadata:{source:"gltf-2.0",name:animation.name||""}
     }));
   }
-  if(document.extensionsUsed?.includes("KHR_lights_punctual"))unsupported.push({feature:"KHR_lights_punctual-node-import"});
+  const punctualLightDefinitions=document.extensions?.KHR_lights_punctual?.lights||[];
+  const importedLights=[];
+  for(let nodeIndex=0;nodeIndex<nodes.length;nodeIndex++){
+    const lightIndex=nodes[nodeIndex]?.extensions?.KHR_lights_punctual?.light;
+    if(lightIndex==null)continue;
+    const definition=punctualLightDefinitions[lightIndex];
+    if(!definition){throw new RangeError("glTF node references an invalid KHR_lights_punctual light index: "+lightIndex);}
+    const world=worlds.get(nodeIndex);
+    if(!world)continue;
+    const position=[world[12],world[13],world[14]];
+    const rawDirection=[-world[8],-world[9],-world[10]];
+    const length=Math.hypot(...rawDirection);
+    const direction=length>1e-8?rawDirection.map(value=>value/length):[0,-1,0];
+    const color=definition.color||[1,1,1];
+    if(!["directional","point","spot"].includes(definition.type)){
+      unsupported.push({feature:"KHR_lights_punctual-type",nodeIndex,lightIndex,type:definition.type});
+      continue;
+    }
+    const spot=definition.spot||{};
+    importedLights.push({
+      type:definition.type,position,direction,color,
+      intensity:definition.intensity??1,range:definition.range??0,
+      innerConeCos:Math.cos(spot.innerConeAngle??0),
+      outerConeCos:Math.cos(spot.outerConeAngle??Math.PI/4)
+    });
+  }
+  if(importedLights.length>8){
+    unsupported.push({feature:"KHR_lights_punctual-light-limit",count:importedLights.length,maximum:8});
+    importedLights.length=8;
+  }
   const asset=createPStudioGraphicsSceneAsset({
     id:options.id||"glb.scene",geometries:[...geometries.values()],materials,textures,entities,
     nodes:sceneNodes,skins:skinAssets,animations:animationClips,
+    lighting:{lights:importedLights},
     metadata:{source:"pstudio-glb-loader",glbByteLength:byteLength,gltfVersion:"2.0"}
   });
   const report=Object.freeze({supported:unsupported.length===0,geometryCount:asset.geometries.length,materialCount:asset.materials.length,textureCount:asset.textures.length,entityCount:asset.entities.length,unsupported:Object.freeze(unsupported.map(item=>Object.freeze({...item})))});
