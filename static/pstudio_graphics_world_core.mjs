@@ -24,6 +24,12 @@ function vector3(value, label) {
   if (!result.every(Number.isFinite)) throw new TypeError(label + ' must contain finite components.');
   return result;
 }
+function vector4(value, label) {
+  if ((!Array.isArray(value) && !ArrayBuffer.isView(value)) || value.length !== 4) throw new TypeError(label + ' must be a 4-component vector.');
+  const result = Array.from(value, Number);
+  if (!result.every(Number.isFinite)) throw new TypeError(label + ' must contain finite components.');
+  return result;
+}
 function stableHash(seed, x, z) {
   let h = (Number(seed) | 0) ^ Math.imul(x | 0, 0x45d9f3b) ^ Math.imul(z | 0, 0x119de1f3);
   h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15;
@@ -63,7 +69,7 @@ export function createPStudioTerrainHeightfield(input = {}) {
     const tx = gx - x0, tz = gz - z0;
     const a = samples[z0 * width + x0], b = samples[z0 * width + x0 + 1];
     const c = samples[(z0 + 1) * width + x0], d = samples[(z0 + 1) * width + x0 + 1];
-    return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
+    return origin[1] + (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
   }
   function sampleNormal(worldX, worldZ) {
     const h = sampleHeight(worldX, worldZ);
@@ -144,7 +150,7 @@ export function isPStudioAABBVisible(bounds, planes) {
   if (!Array.isArray(planes) || planes.length !== 6) throw new TypeError('Six frustum planes are required.');
   const min = vector3(bounds?.min, 'AABB min'), max = vector3(bounds?.max, 'AABB max');
   for (const plane of planes) {
-    const p = vector3(plane, 'frustum plane');
+    const p = vector4(plane, 'frustum plane');
     const x = p[0] >= 0 ? max[0] : min[0];
     const y = p[1] >= 0 ? max[1] : min[1];
     const z = p[2] >= 0 ? max[2] : min[2];
