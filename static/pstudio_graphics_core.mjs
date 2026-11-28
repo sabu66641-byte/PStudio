@@ -6,6 +6,8 @@ import {createPStudioGraphicsLightingCore} from './pstudio_graphics_lighting_cor
 import {createPStudioGraphicsClusteredLightingCore} from './pstudio_graphics_clustered_lighting_core.mjs';
 import {createPStudioRenderGraph} from './pstudio_render_graph.mjs';
 import {PStudioGraphicsError} from './pstudio_graphics_contract.mjs';
+import {createPStudioGraphicsSceneCore} from './pstudio_graphics_scene_core.mjs';
+import {createPStudioGraphicsAssetCore} from './pstudio_graphics_asset_core.mjs';
 /** Composition root for PStudio-owned graphics subsystems; GPU runtime attachment is opt-in. */
 export function createPStudioGraphicsCore(options={}){
   if(!options.hal)throw new TypeError('Graphics Core requires a PStudio Graphics HAL.');
@@ -31,9 +33,11 @@ export function createPStudioGraphicsCore(options={}){
     return gpuRuntime.uploadClusteredLightingSnapshot(value);
   })});
   const renderGraph=options.renderGraph||createPStudioRenderGraph(options.renderGraphOptions);
+  const scene=options.scene||createPStudioGraphicsSceneCore(options.sceneOptions);
+  const assets=options.assets||createPStudioGraphicsAssetCore(options.assetOptions);
   const computePipelineRecipes=new Map(),renderPipelineRecipes=new Map();
   let disposed=false,recoveryInProgress=false;
-  function stats(){return Object.freeze({renderer:renderer.getState(),resources:resources.stats(),shaders:shaders.stats(),compute:compute.stats(),lighting:lighting.stats(),clusteredLighting:clusteredLighting.stats(),renderGraph:renderGraph.stats(),gpuRuntime:gpuRuntime?.stats?.()||null,pipelines:Object.freeze({compute:computePipelineRecipes.size,render:renderPipelineRecipes.size}),recoveryInProgress});}
+  function stats(){return Object.freeze({renderer:renderer.getState(),resources:resources.stats(),assets:assets.stats(),scene:scene.stats(),shaders:shaders.stats(),compute:compute.stats(),lighting:lighting.stats(),clusteredLighting:clusteredLighting.stats(),renderGraph:renderGraph.stats(),gpuRuntime:gpuRuntime?.stats?.()||null,pipelines:Object.freeze({compute:computePipelineRecipes.size,render:renderPipelineRecipes.size}),recoveryInProgress});}
   async function compileShader(id,variant={},context={}){if(disposed)throw new PStudioGraphicsError('Graphics Core is disposed.',{code:'PSTUDIO_GRAPHICS_CORE_DISPOSED'});return shaders.compile(id,variant,context);}
   async function createComputePipeline(id,descriptor={}){if(disposed)throw new PStudioGraphicsError('Graphics Core is disposed.',{code:'PSTUDIO_GRAPHICS_CORE_DISPOSED'});if(!shaders.get(id))throw new TypeError('Compute pipelines require a registered PStudio shader.');if(!shaders.isCompiled(id))await shaders.compile(id,descriptor.variant||{},descriptor.context||{backend:gpuRuntime?.backend||'webgpu'});if(typeof gpuRuntime?.createComputePipeline!=='function')throw new PStudioGraphicsError('No GPU compute-pipeline compiler is attached.',{code:'PSTUDIO_GRAPHICS_PIPELINE_BACKEND_UNAVAILABLE'});const pipeline=await gpuRuntime.createComputePipeline(id,descriptor);computePipelineRecipes.set(String(id),{...descriptor});return pipeline;}
   async function createRenderPipeline(id,descriptor={}){if(disposed)throw new PStudioGraphicsError('Graphics Core is disposed.',{code:'PSTUDIO_GRAPHICS_CORE_DISPOSED'});if(!descriptor.vertex?.shaderId||(descriptor.fragment&&!descriptor.fragment.shaderId))throw new TypeError('PStudio Graphics Core render pipelines require registered vertex and fragment shader ids for device recovery.');if(!shaders.get(descriptor.vertex.shaderId)|| (descriptor.fragment&&!shaders.get(descriptor.fragment.shaderId)))throw new TypeError('Render pipeline shader ids must be registered in PStudio Shader Core.');if(!shaders.isCompiled(descriptor.vertex.shaderId))await shaders.compile(descriptor.vertex.shaderId,{}, {backend:gpuRuntime?.backend||'webgpu'});if(descriptor.fragment&&!shaders.isCompiled(descriptor.fragment.shaderId))await shaders.compile(descriptor.fragment.shaderId,{}, {backend:gpuRuntime?.backend||'webgpu'});if(typeof gpuRuntime?.createRenderPipeline!=='function')throw new PStudioGraphicsError('No GPU render-pipeline compiler is attached.',{code:'PSTUDIO_GRAPHICS_PIPELINE_BACKEND_UNAVAILABLE'});const pipeline=await gpuRuntime.createRenderPipeline(id,descriptor);renderPipelineRecipes.set(String(id),{...descriptor,vertex:{...(descriptor.vertex||{})},fragment:{...(descriptor.fragment||{})}});return pipeline;}
@@ -65,8 +69,9 @@ export function createPStudioGraphicsCore(options={}){
   function dispose({forceResources=false}={}){
     if(disposed)return false;
     if(resources.stats().retainedCount>0&&!forceResources)throw new PStudioGraphicsError('Graphics Core has retained resources; release them or request forceResources.',{code:'PSTUDIO_GRAPHICS_CORE_RESOURCE_LEASES'});
+    if(assets.stats().retainedCount>0&&!forceResources)throw new PStudioGraphicsError('Graphics Core has retained assets; release them or request forceResources.',{code:'PSTUDIO_GRAPHICS_CORE_ASSET_LEASES'});
     if(compute.stats().inFlight>0)throw new PStudioGraphicsError('Graphics Core has active compute dispatches.',{code:'PSTUDIO_GRAPHICS_COMPUTE_IN_FLIGHT'});
-    renderGraph.dispose();compute.dispose();shaders.dispose();lighting.dispose();clusteredLighting.dispose();resources.dispose({force:forceResources});renderer.dispose();disposed=true;return true;
+    assets.dispose({force:forceResources});scene.dispose();renderGraph.dispose();compute.dispose();shaders.dispose();lighting.dispose();clusteredLighting.dispose();resources.dispose({force:forceResources});renderer.dispose();disposed=true;return true;
   }
-  return Object.freeze({kind:'pstudio-graphics-core',renderer,resources,shaders,compute,lighting,clusteredLighting,renderGraph,get gpuRuntime(){return gpuRuntime;},stats,compileShader,createComputePipeline,createRenderPipeline,rehydrateGPUResources,recoverGPUBackend,dispose});
+  return Object.freeze({kind:'pstudio-graphics-core',renderer,resources,assets,scene,shaders,compute,lighting,clusteredLighting,renderGraph,get gpuRuntime(){return gpuRuntime;},stats,compileShader,createComputePipeline,createRenderPipeline,rehydrateGPUResources,recoverGPUBackend,dispose});
 }

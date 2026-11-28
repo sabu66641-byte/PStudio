@@ -1,8 +1,8 @@
 # PStudio Independent Graphics Engine — Development Roadmap
 
-**Roadmap version:** 1.5  
-**Last updated:** 2026-11-28  
-**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 100%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%, Phase 9 = 100%, Phase 10 = 100%.  
+**Roadmap version:** 1.6  
+**Last updated:** 2026-11-29  
+**Current target:** Phase 0 = 100%, Phase 1 = 100%, Phase 2 = 100%, Phase 3 = 100%, Phase 4 = 100%, Phase 5 = 100%, Phase 6 = 100%, Phase 7 = 100%, Phase 8 = 100%, Phase 9 = 100%, Phase 10 = 100%, Phase 11 = 100%, Phase 12 = 100% (goal, not current completion).  
 **Progress policy:** Physical-device verification is not a completion axis. Use repository tests, static/module checks, API contracts, dependency audits and reversible integration. Never label an unrun hardware test as passed.
 
 ## Mission
@@ -35,10 +35,10 @@ Build a PStudio-owned, browser-first graphics engine with independent contracts 
 | 8 | Advanced Water — 高度な水面 | **100%** | Fresnel, Beer–Lambert absorption, wind-driven multi-scale waves, rain ripples, foam composition and ordered Render Graph pass declarations |
 | 9 | World Rendering — ワールド描画 | **100%** | Heightfield terrain, world chunks, projected-error LOD/hysteresis, AABB visibility, bounded streaming, deterministic foliage, material packing and executor-backed render system |
 | 10 | Advanced Graphics — 高度な描画技術 | **100%** | GPU VFX compute contract, SH probe GI/dirty scheduling, clustered-light assignments, bounded froxel volumes, Beer–Lambert/HG integration, temporal history and volumetric executor |
-| 11 | PVCS Integration — 視覚補償・性能配分 | **55%** | Domain-isolated evidence governor, calibrated A/B + visual/temporal gates, reversible frame-budget overlay and explicit manual transactions; no default automatic actuation |
-| 12 | Three.js Independence — Three.js独立 | **15%** | PStudio-owned Core import boundary enforced by tests; lazy r187 legacy WebGPU adapter boundary; broad legacy runtime/TSL dependency replacement remains |
+| 11 | PVCS Integration — 視覚補償・性能配分 | **70%** | Domain-isolated governor, reversible transactions and real-callback A/B calibration runner with paired P95, RGBA and temporal evidence capture; production candidate calibration/registry remains |
+| 12 | Three.js Independence — Three.js独立 | **25%** | PStudio-owned Scene/Entity hierarchy and Asset Core integrated into Graphics Core; legacy conversion, mesh/material migration and production renderer replacement remain |
 
-Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 and 12 percentages describe repository/API milestones only: Phase 11 has not registered a default calibrated candidate or enabled automatic actuation; Phase 12 has not removed legacy Three.js dependencies or migrated the production 3D renderer. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
+Phase 9 and 10 are complete for their defined PStudio-owned subsystem APIs, bounded resource/dispatch contracts, integration executors and deterministic repository tests. Their executors remain caller-supplied and the new systems are not automatically wired into the production renderer. Phase 11 and 12 percentages describe repository/API milestones only: Phase 11 now has a real-callback calibration runner but has not collected repeatable production-scene evidence, registered calibrated candidates or enabled automatic actuation; Phase 12 now owns scene/entity transforms and asset lifecycles but has not migrated legacy materials, geometry, loaders, render passes or the production 3D renderer. The overall percentage is not a simple arithmetic mean because phases differ in scope and effort. Existing rendering assets do not substitute for independent-engine implementation.
 
 ## Phase 0 — Foundation (100%)
 
@@ -166,7 +166,7 @@ Phase 9 is complete for the declared world data, LOD/visibility, bounded streami
 
 Phase 10 is complete for these independent advanced-GI, clustered-lighting, VFX and volumetric subsystem APIs and the GPU-executor integration contract. A concrete executor is supplied by the consuming backend. Native SDL3 compute is not implemented by the current Phase 5 adapter. No ray tracing/path tracing, production-scene migration, physical-GPU image parity or hardware performance is claimed.
 
-## Phase 11 — PVCS Integration (55%)
+## Phase 11 — PVCS Integration (70%)
 
 The PVCS foundation and Visual Compensation Graph remain the source of performance evidence. The new governor is an opt-in decision and transaction layer:
 
@@ -180,9 +180,9 @@ The PVCS foundation and Visual Compensation Graph remain the source of performan
 - Automatic actuation is disabled by default. Even when explicitly enabled at construction, it requires an explicitly registered automaticEligible candidate, repeated confirmations and a cooldown.
 - The browser exposes manual evaluate/apply/rollback entry points for an operator/developer. It does not pre-register guessed candidate thresholds.
 
-Phase 11 is **55%** at repository/API scope. The governor, evidence gates, frame-budget bridge, reversible overlay and deterministic tests are implemented. No live compensation candidate is registered by default, and no automatic quality adjustment is active. Remaining work includes collecting repeatable per-scene/per-backend calibration evidence, adding candidate-specific executors only where the measured evidence justifies them, expanding spatial/edge/perceptual visual evaluation, and validating long-run temporal behavior. Until that evidence exists, the governor correctly returns no proposal rather than guessing.
+Phase 11 is **70%** at repository/API scope. In addition to the governor, evidence gates, frame-budget bridge and reversible overlay, the new calibration runner drives caller-supplied baseline/alternative variants, samples a selected metric domain without CPU/GPU substitution, enforces stable context, captures bounded RGBA frames and emits P95/visual/temporal evidence accepted by the governor schema. It always calls the supplied restore callback. Remaining work is to connect this runner to the live production scene capture path, gather repeatable per-scene/per-backend evidence, register only calibrated candidates, add candidate-specific executors where evidence justifies them, and validate longer-term temporal stability. No calibrated candidate or automatic production adjustment is enabled by default.
 
-## Phase 12 — Three.js Independence (15%)
+## Phase 12 — Three.js Independence (25%)
 
 The migration starts by making the PStudio-owned core boundary enforceable without pretending the entire application has already been ported:
 
