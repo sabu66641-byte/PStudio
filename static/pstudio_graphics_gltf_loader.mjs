@@ -362,7 +362,7 @@ export async function loadPStudioGLB(input, options = {}) {
     sceneNodes.push({
       id:nodeId,name:node.name||"",parentId:parents.has(nodeIndex)?"glb.node."+parents.get(nodeIndex):null,
       translation:node.translation||[0,0,0],rotation:node.rotation||[0,0,0,1],scale:node.scale||[1,1,1],
-      matrix:local,worldMatrix:world,weights:node.weights||[]
+      matrix:local,worldMatrix:world,matrixAuthored:node.matrix!=null,weights:node.weights||[]
     });
     if(node.mesh!=null){
       const matching=meshPrimitives.filter(item=>item.meshIndex===node.mesh);
