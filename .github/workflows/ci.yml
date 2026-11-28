@@ -78,3 +78,31 @@ jobs:
 
       - name: Run JavaScript regression tests
         run: node --test tests/*.test.js
+  native-gpu-platform-compile:
+    name: Native GPU adapter compile (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows / Direct3D 12 host integration
+          - os: macos-latest
+            platform: macOS / Metal host integration
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure optional SDL3 native GPU adapter (compile-only)
+        run: >-
+          cmake -S . -B build/native-gpu
+          -DPSTUDIO_BUILD_NATIVE_GPU_BACKEND=ON
+          -DSDL_SHARED=OFF
+          -DSDL_STATIC=ON
+          -DSDL_TESTS=OFF
+          -DSDL_EXAMPLES=OFF
+          -DSDL_INSTALL=OFF
+
+      - name: Compile native GPU adapter without creating a GPU device
+        run: cmake --build build/native-gpu --config Release --target pstudio_native_gpu_backend --parallel 2
