@@ -3,7 +3,8 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {
  createPStudioAnimationClip,samplePStudioAnimationClip,applyPStudioAnimationFrame,
- createPStudioSkinDescriptor,deformPStudioSkinnedGeometry,selectPStudioLOD,createPStudioInstancePool
+ createPStudioSkinDescriptor,deformPStudioSkinnedGeometry,evaluatePStudioSceneAnimation,
+ createPStudioSceneAnimationPlayer,selectPStudioLOD,createPStudioInstancePool
 }=require('../static/pstudio_graphics_animation_core.mjs');
 const {createPStudioGraphicsSceneCore}=require('../static/pstudio_graphics_scene_core.mjs');
 
@@ -73,4 +74,58 @@ test('PStudio CUBICSPLINE tracks use glTF Hermite tangents scaled by keyframe du
   targetId:'root',path:'translation',interpolation:'CUBICSPLINE',times:[0,1],values:[0,0,0,1,0,0],
   inTangents:[0,0,0],outTangents:[0,0,0,0,0,0]
  }]}),/one in- and out-tangent/);
+});
+
+test('PStudio scene animation evaluates node hierarchy and morphs before skeletal skinning without mutating source assets',()=>{
+ const {createPStudioGraphicsSceneAsset}=require('../static/pstudio_graphics_scene_asset.mjs');
+ const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+ const geometry={
+  id:'hero.geometry',
+  positions:[0,0,0, 1,0,0, 0,1,0],
+  normals:[0,0,1, 0,0,1, 0,0,1],
+  jointIndices:[0,0,0,0, 0,0,0,0, 0,0,0,0],
+  jointWeights:[1,0,0,0, 1,0,0,0, 1,0,0,0],
+  morphTargets:[{positions:[0,1,0, 0,1,0, 0,1,0]}]
+ };
+ const skin=createPStudioSkinDescriptor({id:'hero.skin',joints:['node.joint'],inverseBindMatrices:[identity]});
+ const clip=createPStudioAnimationClip({id:'hero.walk',tracks:[
+  {targetId:'node.joint',path:'translation',times:[0,1],values:[0,0,0,2,0,0]},
+  {targetId:'node.mesh',path:'weights',components:1,times:[0,1],values:[0,1]}
+ ]});
+ const source=createPStudioGraphicsSceneAsset({
+  id:'hero.scene',
+  geometries:[geometry],
+  materials:[{id:'hero.material',model:'pbr'}],
+  nodes:[
+   {id:'node.mesh',translation:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1],matrix:identity,worldMatrix:identity},
+   {id:'node.joint',translation:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1],matrix:identity,worldMatrix:identity}
+  ],
+  skins:[skin],animations:[clip],
+  entities:[{id:'hero.mesh',nodeId:'node.mesh',geometryId:'hero.geometry',materialId:'hero.material',skinId:'hero.skin',morphWeights:[0]}]
+ });
+ const frame=evaluatePStudioSceneAnimation(source,'hero.walk',.5);
+ const output=frame.geometries.find(item=>item.id===frame.entities[0].geometryId);
+ assert.notEqual(frame.entities[0].geometryId,'hero.geometry');
+ assert.equal(frame.entities[0].skinId,null);
+ assert.deepEqual(frame.entities[0].morphWeights,[]);
+ assert.deepEqual(Array.from(output.positions.slice(0,3)),[1,.5,0]);
+ assert.deepEqual(source.geometries[0].positions.slice(0,3),[0,0,0]);
+ assert.deepEqual(frame.nodes.find(node=>node.id==='node.joint').worldMatrix.slice(12,15),[1,0,0]);
+ const player=createPStudioSceneAnimationPlayer(source,{clipId:'hero.walk',autoPlay:true,loop:false});
+ const played=player.update(.5);
+ assert.equal(player.getState().playing,true);
+ assert.deepEqual(Array.from(played.scene.geometries.find(item=>item.id===played.scene.entities[0].geometryId).positions.slice(0,3)),[1,.5,0]);
+ player.pause();
+ assert.equal(player.getState().playing,false);
+ player.dispose();
+});
+
+test('PStudio skinning transforms normals with the inverse-transpose joint matrix',()=>{
+ const output=deformPStudioSkinnedGeometry({
+  positions:[0,0,0],normals:[1,1,0],jointIndices:[0,0,0,0],jointWeights:[1,0,0,0],
+  jointMatrices:[[2,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]]
+ });
+ const normal=Array.from(output.normals);
+ assert.ok(Math.abs(normal[0] - 1/Math.sqrt(5)) < 1e-6);
+ assert.ok(Math.abs(normal[1] - 2/Math.sqrt(5)) < 1e-6);
 });
