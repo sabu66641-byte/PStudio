@@ -1755,12 +1755,13 @@ test('GENESIS wind, rain and wave state reaches both WebGL2 and WebGPU water pat
 test('post-processing failures fail open to direct scene rendering and can be retried explicitly',()=>{
   assert.ok(renderer.includes("let postProcessingFailed=false,postProcessingFailureReason=''"));
   assert.ok(renderer.includes('function resetPostProcessingFailure(){'));
-  assert.ok(renderer.includes('if(!postProcessingFailed&&composer&&('));
+  assert.ok(renderer.includes('const pvcsPostProcessingPathActive=!postProcessingFailed&&composer&&('));
+  assert.ok(renderer.includes('if(pvcsPostProcessingPathActive){'));
   const start=renderer.indexOf('  function drawFrame(){');
   const end=renderer.indexOf('  function createGpuParticleSystem(',start);
   assert.ok(start>=0&&end>start,'drawFrame boundaries');
   const frame=renderer.slice(start,end);
-  const catchStart=frame.indexOf("try{measurePVCSStage('post-processing',()=>composer.render());}catch(initialPostError){");
+  const catchStart=frame.indexOf("}catch(initialPostError){");
   const catchEnd=frame.indexOf('\n      }else{',catchStart);
   assert.ok(catchStart>=0&&catchEnd>catchStart,'composer failure handler');
   const recovery=frame.slice(catchStart,catchEnd);
@@ -1768,7 +1769,8 @@ test('post-processing failures fail open to direct scene rendering and can be re
   assert.ok(recovery.includes('postProcessingFailureReason='));
   assert.ok(recovery.includes('renderer.setRenderTarget(null)'));
   assert.ok(recovery.includes('renderer.render(scene,camera)'));
-  assert.ok(recovery.includes("measurePVCSStage('post-processing',()=>composer.render());recovered=true;"));
+  assert.ok(recovery.includes("if(pvcsMonitoringEnabled)measurePVCSStage('post-processing',()=>composer.render());"));
+  assert.ok(recovery.includes("else composer.render();"));
   assert.ok(renderer.includes('postProcessing:{available:!!composer,failed:postProcessingFailed,reason:postProcessingFailureReason||null}'));
   const qualityStart=renderer.indexOf('function applyQualityPreset');
   assert.ok(renderer.slice(qualityStart,qualityStart+180).includes('resetPostProcessingFailure()'));
@@ -1782,7 +1784,7 @@ test('dynamic GI probe captures are excluded from main render timings and per-fr
   const end=renderer.indexOf('  function createGpuParticleSystem(',start);
   assert.ok(start>=0&&end>start,'drawFrame boundaries');
   const frame=renderer.slice(start,end);
-  const renderTimingEnd=frame.indexOf('endGpuTimerQuery(gpuQuery)');
+  const renderTimingEnd=frame.indexOf('endGpuTimerQuery(gpuQuery,null,pvcsActiveFrameContext');
   const renderStatsCapture=frame.indexOf('captureFrameRenderStats()');
   const submitTimeCapture=frame.indexOf('lastRenderDurationMs=Math.max');
   const performanceUpdate=frame.indexOf('updatePerformanceMonitor(now)');
