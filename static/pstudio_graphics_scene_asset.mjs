@@ -253,6 +253,7 @@ function nodeDescriptor(input) {
     scale: Object.freeze(scale),
     matrix: Object.freeze(matrix),
     worldMatrix: Object.freeze(worldMatrix),
+    matrixAuthored: input.matrixAuthored === true,
     weights: Object.freeze(Array.from(input.weights || [], (value, index) => {
       const number = Number(value);
       if (!Number.isFinite(number)) throw new TypeError('Scene node weight ' + index + ' must be finite.');
