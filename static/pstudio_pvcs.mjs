@@ -23,8 +23,15 @@ function makeGraph() {
   const graph = createVisualCompensationGraph({ historyLimit: 120, maxNodes: 32, maxEdges: 64 });
   for (const [id, label, kind, backend, description] of STAGES) graph.registerNode({ id, label, kind, backend, description });
   for (const [from, to] of [
+    ['frame-loop', 'camera-state-update'],
     ['frame-loop', 'environment-state-update'],
     ['frame-loop', 'clustered-lighting'],
+    ['frame-loop', 'world-visibility'],
+    ['world-visibility', 'occlusion-visibility'],
+    ['world-visibility', 'instance-batch-rebuild'],
+    ['frame-loop', 'mirror-reflection-scene-render'],
+    ['mirror-reflection', 'mirror-reflection-scene-render'],
+    ['mirror-reflection', 'mirror-cloud-composite'],
     ['frame-loop', 'water-depth-prepass'],
     ['frame-loop', 'mirror-reflection'],
     ['frame-loop', 'post-processing'],
