@@ -77,6 +77,7 @@ export function createPStudioPVCS(options = {}) {
   let lastError = null;
   let cachedContext = null;
   let cachedContextAt = -Infinity;
+  let frameContext = null;
 
   function contextFromStats(stats) {
     if (!stats || typeof stats !== 'object') return null;
@@ -92,12 +93,21 @@ export function createPStudioPVCS(options = {}) {
   }
 
   function measurementContext() {
+    if (frameContext) return frameContext;
     const now = clock();
     if (!cachedContext || now - cachedContextAt >= 250) {
       cachedContext = contextFromStats(performanceSnapshot());
       cachedContextAt = now;
     }
     return cachedContext;
+  }
+
+  function beginFrame() {
+    if (!monitoringEnabled) return false;
+    frameContext = contextFromStats(performanceSnapshot());
+    cachedContext = frameContext;
+    cachedContextAt = clock();
+    return true;
   }
 
   function recordStage(id, cpuSubmitMs, extra = {}) {
@@ -141,7 +151,11 @@ export function createPStudioPVCS(options = {}) {
   function recordAsyncStage(id, asyncElapsedMs) {
     const value = Number(asyncElapsedMs);
     if (!Number.isFinite(value) || value < 0) return false;
-    graph.recordMeasurement(id, { sampledAt: clock(), asyncElapsedMs: value });
+    graph.recordMeasurement(id, {
+      sampledAt: clock(),
+      asyncElapsedMs: value,
+      context: measurementContext()
+    });
     totalMeasurements += 1;
     return true;
   }
@@ -194,7 +208,10 @@ export function createPStudioPVCS(options = {}) {
   function recordFrameMetrics(cpuFrameMs = null, options = {}) {
     if (!monitoringEnabled) return false;
     const stats = performanceSnapshot();
-    if (!stats) return false;
+    if (!stats) {
+      frameContext = null;
+      return false;
+    }
     const frameValue = cpuFrameMs === null || cpuFrameMs === undefined ? null : Number(cpuFrameMs);
     const aggregateGpuAllowed = options.includeAggregateGpu !== false && stats.backend === 'webgl2';
     graph.recordMeasurement('frame-loop', {
@@ -204,8 +221,9 @@ export function createPStudioPVCS(options = {}) {
       gpuRenderMs: aggregateGpuAllowed && stats.gpuTimingFresh === true ? stats.gpuRenderMs : null,
       frameIntervalMs: stats.frameIntervalMs,
       memoryBytes: stats.estimatedGpuBytes,
-      context: contextFromStats(stats)
+      context: frameContext || contextFromStats(stats)
     });
+    frameContext = null;
     totalMeasurements += 1;
     return true;
   }
@@ -222,6 +240,9 @@ export function createPStudioPVCS(options = {}) {
 
   function setMonitoringEnabled(enabled) {
     monitoringEnabled = enabled === true;
+    frameContext = null;
+    cachedContext = null;
+    cachedContextAt = -Infinity;
     return monitoringEnabled;
   }
 
@@ -233,6 +254,7 @@ export function createPStudioPVCS(options = {}) {
     recordAsyncStage,
     recordGpuStageMetrics,
     recordFrameMetrics,
+    beginFrame,
     compareRgbaFrames,
     compareTemporalSequences,
     snapshot,
