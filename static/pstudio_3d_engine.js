@@ -5293,7 +5293,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       window.requestAnimationFrame(()=>{
         if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
         try{
-          if(lastCommands)render(lastCommands);else{measurePVCSStage('world-visibility',()=>updateWorldVisibility());drawFrame();}
+          if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}
           const diagnostics=getModelVisibilityDiagnostics(instance);
           try{window.dispatchEvent(new CustomEvent('pstudio-model-visibility',{detail:{name:instance.name,...diagnostics}}));}catch(_){}
         }catch(error){
@@ -5312,7 +5312,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(!window.PStudioEngine?.isRunning?.()){
           window.requestAnimationFrame(()=>{
             if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
-            try{if(lastCommands)render(lastCommands);else{measurePVCSStage('world-visibility',()=>updateWorldVisibility());drawFrame();}}
+            try{if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}}
             catch(renderError){
               console.error('[PStudio] Model fallback render failed:',instance.name,renderError);
               dispatchModelLoadError({name:instance.name,stage:'gpu-preparation-fallback-render',error:renderError?.message||String(renderError),retryable:true});
