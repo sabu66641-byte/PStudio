@@ -511,7 +511,7 @@ export function importPStudioThreeScene(scene, options = {}) {
     }
     const sourceGeometry = object.geometry;
     const sourceAttributes = sourceGeometry?.attributes || {};
-    for (const key of ['color', 'tangent', 'uv1', 'uv2', 'uv3', 'skinIndex', 'skinWeight']) {
+    for (const key of ['color', 'uv1', 'uv3', 'skinIndex', 'skinWeight']) {
       if (sourceAttributes[key]) unsupported.push({ objectId, feature: 'geometry-attribute-' + key });
     }
     const getAttribute = key => sourceGeometry?.getAttribute?.(key) || sourceAttributes[key] || null;
@@ -520,8 +520,12 @@ export function importPStudioThreeScene(scene, options = {}) {
     const positions = readAttribute(positionAttribute, 3, name + '.position');
     const normalAttribute = getAttribute('normal');
     const uvAttribute = getAttribute('uv');
+    const uv2Attribute = getAttribute('uv2');
+    const tangentAttribute = getAttribute('tangent');
     const normals = normalAttribute ? readAttribute(normalAttribute, 3, name + '.normal') : null;
     const uvs = uvAttribute ? readAttribute(uvAttribute, 2, name + '.uv') : null;
+    const uv2s = uv2Attribute ? readAttribute(uv2Attribute, 2, name + '.uv2') : null;
+    const tangents = tangentAttribute ? readAttribute(tangentAttribute, 4, name + '.tangent') : null;
     const indexSource = sourceGeometry.index?.array || sourceGeometry.index || null;
     const indices = indexSource ? Array.from(indexSource, Number) : null;
     const geometryId = String(sourceGeometry.uuid || sourceGeometry.id || objectId + '.geometry');
@@ -537,7 +541,7 @@ export function importPStudioThreeScene(scene, options = {}) {
     if (sourceGeometry.morphAttributes && Object.values(sourceGeometry.morphAttributes).some(value => value?.length)) unsupported.push({ objectId, feature: 'morph-targets' });
     if (!geometries.has(geometryId)) {
       geometries.set(geometryId, geometryDescriptor({
-        id: geometryId, revision: sourceGeometry.version || 1, positions, normals, uvs, indices, groups
+        id: geometryId, revision: sourceGeometry.version || 1, positions, normals, uvs, uv2s, tangents, indices, groups
       }));
     }
     const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
