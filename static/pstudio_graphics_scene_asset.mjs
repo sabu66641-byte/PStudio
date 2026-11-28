@@ -107,11 +107,18 @@ function geometryDescriptor(input) {
   const groups = (input.groups || []).map(group => {
     const start = Number(group.start ?? 0), count = Number(group.count ?? 0), materialIndex = Number(group.materialIndex ?? 0);
     if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(count) || count < 1 ||
+        start % 3 !== 0 || count % 3 !== 0 ||
         !Number.isSafeInteger(materialIndex) || materialIndex < 0 || start + count > drawElementCount) {
-      throw new RangeError('Geometry group range or material index is invalid.');
+      throw new RangeError('Geometry group range or material index is invalid; triangle groups must align to complete triangles.');
     }
     return Object.freeze({ start, count, materialIndex });
   });
+  const orderedGroups = groups.slice().sort((a, b) => a.start - b.start);
+  for (let index = 1; index < orderedGroups.length; index += 1) {
+    if (orderedGroups[index - 1].start + orderedGroups[index - 1].count > orderedGroups[index].start) {
+      throw new RangeError('Geometry material groups cannot overlap.');
+    }
+  }
   return Object.freeze({
     id, revision: Math.max(1, Math.floor(Number(input.revision) || 1)),
     positions, normals, uvs, indices,
@@ -166,7 +173,7 @@ function entityDescriptor(input) {
   const geometryId = String(input.geometryId || '').trim();
   if (!id || !geometryId) throw new TypeError('Entity id and geometryId are required.');
   const matrix = vector(input.matrixWorld || input.matrix || IDENTITY, 16, 'Entity matrix');
-  const materialIds = [...new Set((input.materialIds || (input.materialId ? [input.materialId] : [])).map(String))];
+  const materialIds = (input.materialIds || (input.materialId ? [input.materialId] : [])).map(String);
   if (!materialIds.length) throw new TypeError('Entity must reference at least one PStudio material.');
   return Object.freeze({
     id, geometryId, materialIds: Object.freeze(materialIds),
@@ -204,12 +211,40 @@ function sceneColor4(value, label) {
 function sceneLightingDescriptor(input) {
   if (input == null) return null;
   if (typeof input !== 'object' || Array.isArray(input)) throw new TypeError('Scene lighting must be an object.');
+  const lights = (input.lights || []).map((light, index) => {
+    const type = String(light.type || '').toLowerCase();
+    if (!['directional', 'point', 'spot'].includes(type)) throw new TypeError('Unsupported PStudio scene light type at index ' + index + ': ' + type);
+    const color = sceneVector3Like(light.color, [1, 1, 1], 'Scene light color');
+    if (color.some(value => value < 0)) throw new RangeError('Scene light color must be non-negative.');
+    const intensity = sceneScalar(light.intensity, 1, 'Scene light intensity');
+    const position = sceneVector3Like(light.position, [0, 0, 0], 'Scene light position');
+    const direction = sceneVector3Like(light.direction, [0, -1, 0], 'Scene light direction');
+    const directionLength = Math.hypot(...direction);
+    if (type !== 'point' && directionLength < 1e-8) throw new RangeError('Directional and spot light directions must be non-zero.');
+    const range = sceneScalar(light.range, 0, 'Scene light range');
+    const innerConeCos = Number(light.innerConeCos ?? 0.9);
+    const outerConeCos = Number(light.outerConeCos ?? 0.8);
+    if (!Number.isFinite(innerConeCos) || !Number.isFinite(outerConeCos) ||
+        innerConeCos < -1 || innerConeCos > 1 || outerConeCos < -1 || outerConeCos > 1 ||
+        (type === 'spot' && innerConeCos < outerConeCos)) {
+      throw new RangeError('Spotlight cone cosines must be within [-1, 1] and innerConeCos must not be below outerConeCos.');
+    }
+    return Object.freeze({
+      type,
+      position: Object.freeze(position),
+      direction: Object.freeze(directionLength > 1e-8 ? direction.map(value => value / directionLength) : [0, -1, 0]),
+      color: Object.freeze(color),
+      intensity, range, innerConeCos, outerConeCos
+    });
+  });
+  if (lights.length > 8) throw new RangeError('PStudio direct PBR scene renderer currently supports up to eight additional lights per scene.');
   return Object.freeze({
     sunDirection: Object.freeze(sceneVector3Like(input.sunDirection, [0.35, -0.85, -0.38], 'Scene sun direction')),
     sunColor: Object.freeze(sceneVector3Like(input.sunColor, [1, 0.96, 0.9], 'Scene sun color')),
     sunIntensity: sceneScalar(input.sunIntensity, 3, 'Scene sun intensity'),
     ambientColor: Object.freeze(sceneVector3Like(input.ambientColor, [0.12, 0.15, 0.2], 'Scene ambient color')),
-    ambientIntensity: sceneScalar(input.ambientIntensity, 1, 'Scene ambient intensity')
+    ambientIntensity: sceneScalar(input.ambientIntensity, 1, 'Scene ambient intensity'),
+    lights: Object.freeze(lights)
   });
 }
 
@@ -247,6 +282,11 @@ export function createPStudioGraphicsSceneAsset(input = {}) {
     entityIds.add(entity.id);
     if (!geometryIds.has(entity.geometryId)) throw new Error('Entity references an unknown geometry: ' + entity.geometryId);
     for (const materialId of entity.materialIds) if (!materialIds.has(materialId)) throw new Error('Entity references an unknown material: ' + materialId);
+    const geometry = geometries.find(item => item.id === entity.geometryId);
+    const requiredSlots = geometry.groups.length ? Math.max(...geometry.groups.map(group => group.materialIndex)) + 1 : 1;
+    if (entity.materialIds.length < requiredSlots || (!geometry.groups.length && entity.materialIds.length !== 1)) {
+      throw new Error('Entity material slots do not match its geometry material groups: ' + entity.id);
+    }
   }
   return Object.freeze({
     kind: 'pstudio-graphics-scene-asset',
@@ -270,7 +310,7 @@ export function importPStudioThreeScene(scene, options = {}) {
   if (!scene || typeof scene !== 'object') throw new TypeError('A source scene object is required.');
   const strict = options.strict !== false;
   const unsupported = [];
-  const geometries = new Map(), materials = new Map(), textures = new Map(), entities = [];
+  const geometries = new Map(), materials = new Map(), textures = new Map(), entities = [], importedLights = [];
   const objects = [];
   let clearColor = null;
   if (scene.background != null) {
@@ -293,7 +333,31 @@ export function importPStudioThreeScene(scene, options = {}) {
     let visible = true;
     for (let parent = object; parent; parent = parent.parent) if (parent.visible === false) { visible = false; break; }
     if (!visible) continue;
-    if (object.isLight) { unsupported.push({ objectId: String(object.uuid || object.id || object.name || 'light'), feature: 'scene-lighting' }); continue; }
+    if (object.isLight) {
+      const lightId = String(object.uuid || object.id || object.name || 'light');
+      const type = object.isDirectionalLight ? 'directional' : object.isPointLight ? 'point' : object.isSpotLight ? 'spot' : null;
+      if (!type) { unsupported.push({ objectId: lightId, feature: 'scene-light-type-' + String(object.type || 'unknown') }); continue; }
+      const matrix = object.matrixWorld?.elements || object.matrix?.elements || IDENTITY;
+      const position = [Number(matrix[12] || 0), Number(matrix[13] || 0), Number(matrix[14] || 0)];
+      let direction = [0, -1, 0];
+      if (type !== 'point') {
+        const targetMatrix = object.target?.matrixWorld?.elements || null;
+        if (targetMatrix) direction = [targetMatrix[12] - position[0], targetMatrix[13] - position[1], targetMatrix[14] - position[2]];
+        else if (object.userData?.pstudioDirection) direction = sceneVector3Like(object.userData.pstudioDirection, direction, 'Light direction');
+      }
+      const color = object.color || {};
+      const angle = Number(object.angle ?? Math.PI / 4);
+      const penumbra = Math.max(0, Math.min(1, Number(object.penumbra) || 0));
+      importedLights.push({
+        type, position, direction,
+        color: [Number(color.r ?? 1), Number(color.g ?? 1), Number(color.b ?? 1)],
+        intensity: Number(object.intensity ?? 1),
+        range: Number(object.distance ?? 0),
+        innerConeCos: Math.cos(angle * (1 - penumbra)),
+        outerConeCos: Math.cos(angle)
+      });
+      continue;
+    }
     if (object.isLine || object.isLineSegments || object.isPoints || object.isSprite) { unsupported.push({ objectId: String(object.uuid || object.id || object.name || 'object'), feature: 'non-triangle-primitive' }); continue; }
     if (!object.isMesh) {
       if (object.geometry) unsupported.push({ objectId: String(object.uuid || object.id || object.name || 'object'), feature: 'unsupported-geometry-object' });
@@ -326,8 +390,12 @@ export function importPStudioThreeScene(scene, options = {}) {
     const geometryId = String(sourceGeometry.uuid || sourceGeometry.id || objectId + '.geometry');
     const groups = (sourceGeometry.groups || []).map(group => ({ start: group.start, count: group.count, materialIndex: group.materialIndex }));
     const drawCount = indices ? indices.length : positions.length / 3;
-    if (groups.length > 1 || groups.some(group => group.materialIndex > 0)) unsupported.push({ objectId, feature: 'multi-material-geometry-groups' });
-    if (groups.length === 1 && (Number(groups[0].start) !== 0 || Number(groups[0].count) !== drawCount)) unsupported.push({ objectId, feature: 'partial-geometry-group' });
+    if (groups.some(group => group.materialIndex < 0 || group.materialIndex >= (Array.isArray(object.material) ? object.material.length : 1))) {
+      unsupported.push({ objectId, feature: 'geometry-group-material-slot-out-of-range' });
+    }
+    if (groups.length && !Array.isArray(object.material) && groups.some(group => group.materialIndex !== 0)) {
+      unsupported.push({ objectId, feature: 'geometry-group-requires-material-array' });
+    }
     if (sourceGeometry.drawRange && (Number(sourceGeometry.drawRange.start || 0) !== 0 || Number.isFinite(Number(sourceGeometry.drawRange.count)))) unsupported.push({ objectId, feature: 'geometry-draw-range' });
     if (sourceGeometry.morphAttributes && Object.values(sourceGeometry.morphAttributes).some(value => value?.length)) unsupported.push({ objectId, feature: 'morph-targets' });
     if (!geometries.has(geometryId)) {
@@ -336,7 +404,9 @@ export function importPStudioThreeScene(scene, options = {}) {
       }));
     }
     const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
-    if (sourceMaterials.length > 1) unsupported.push({ objectId, feature: 'multiple-materials' });
+    if (sourceMaterials.length > 1 && (!groups.length || groups.some(group => group.materialIndex >= sourceMaterials.length))) {
+      unsupported.push({ objectId, feature: 'multi-materials-require-matching-geometry-groups' });
+    }
     const materialIds = [];
     for (let index = 0; index < sourceMaterials.length; index += 1) {
       const source = sourceMaterials[index];
@@ -471,7 +541,7 @@ export function importPStudioThreeScene(scene, options = {}) {
     textures: [...textures.values()],
     entities,
     clearColor,
-    lighting: options.lighting || null,
+    lighting: { ...(options.lighting || {}), lights: [...(options.lighting?.lights || []), ...importedLights] },
     metadata: { source: 'duck-typed-three-scene-import', sourceSceneId: scene.uuid || null }
   });
   if (strict && !report.supported) {

@@ -3,12 +3,20 @@ import { createPStudioWebGPUCoreAdapter } from './pstudio_graphics_webgpu_backen
 const BUFFER_USAGE = Object.freeze({ COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64 });
 const TEXTURE_USAGE = Object.freeze({ COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 });
 const WGSL = [
+'struct LightData {',
+'  positionType: vec4<f32>,',
+'  directionRange: vec4<f32>,',
+'  colorIntensity: vec4<f32>,',
+'  cone: vec4<f32>,',
+'};',
 'struct FrameData {',
 '  viewProjection: mat4x4<f32>,',
 '  cameraPosition: vec4<f32>,',
 '  sunDirection: vec4<f32>,',
 '  sunColor: vec4<f32>,',
 '  ambientColor: vec4<f32>,',
+'  lightCount: vec4<f32>,',
+'  lights: array<LightData, 8>,',
 '};',
 'struct MaterialData {',
 '  baseColor: vec4<f32>,',
@@ -62,6 +70,24 @@ const WGSL = [
 'fn fresnelSchlick(cosine: f32, f0: vec3<f32>) -> vec3<f32> {',
 '  return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cosine, 0.0, 1.0), 5.0);',
 '}',
+'fn evaluateDirectBRDF(baseColor: vec3<f32>, metallic: f32, roughness: f32, normal: vec3<f32>, viewDirection: vec3<f32>, lightDirection: vec3<f32>, radiance: vec3<f32>) -> vec3<f32> {',
+'  let n = normalize(normal);',
+'  let v = normalize(viewDirection);',
+'  let l = normalize(lightDirection);',
+'  let h = normalize(v + l);',
+'  let nDotV = max(dot(n, v), 0.0001);',
+'  let nDotL = max(dot(n, l), 0.0);',
+'  if (nDotL <= 0.0) { return vec3<f32>(0.0); }',
+'  let nDotH = max(dot(n, h), 0.0);',
+'  let vDotH = max(dot(v, h), 0.0);',
+'  let f0 = mix(vec3<f32>(0.04), baseColor, metallic);',
+'  let fresnel = fresnelSchlick(vDotH, f0);',
+'  let distribution = distributionGGX(nDotH, roughness);',
+'  let geometry = geometrySchlick(nDotV, roughness) * geometrySchlick(nDotL, roughness);',
+'  let specular = distribution * geometry * fresnel / max(4.0 * nDotV * nDotL, 0.001);',
+'  let diffuse = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic) * baseColor / 3.14159265;',
+'  return (diffuse + specular) * radiance * nDotL;',
+'}',
 '@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {',
 '  var texel = vec4<f32>(1.0);',
 '  if (material.surface.z > 0.5) { texel = textureSample(baseColorTexture, baseColorSampler, input.uv); }',
@@ -70,19 +96,26 @@ const WGSL = [
 '  let roughness = clamp(material.surface.y, 0.045, 1.0);',
 '  let n = normalize(input.worldNormal);',
 '  let v = normalize(frame.cameraPosition.xyz - input.worldPosition);',
-'  let l = normalize(-frame.sunDirection.xyz);',
-'  let h = normalize(v + l);',
-'  let nDotV = max(dot(n, v), 0.0001);',
-'  let nDotL = max(dot(n, l), 0.0);',
-'  let nDotH = max(dot(n, h), 0.0);',
-'  let vDotH = max(dot(v, h), 0.0);',
-'  let f0 = mix(vec3<f32>(0.04), albedo, metallic);',
-'  let fresnel = fresnelSchlick(vDotH, f0);',
-'  let distribution = distributionGGX(nDotH, roughness);',
-'  let geometry = geometrySchlick(nDotV, roughness) * geometrySchlick(nDotL, roughness);',
-'  let specular = distribution * geometry * fresnel / max(4.0 * nDotV * nDotL, 0.001);',
-'  let diffuse = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic) * albedo / 3.14159265;',
-'  let direct = (diffuse + specular) * frame.sunColor.rgb * frame.sunColor.w * nDotL;',
+'  var direct = evaluateDirectBRDF(albedo, metallic, roughness, n, v, -frame.sunDirection.xyz, frame.sunColor.rgb * frame.sunColor.w);',
+'  for (var index: u32 = 0u; index < 8u; index += 1u) {',
+'    if (f32(index) < frame.lightCount.x) {',
+'      let light = frame.lights[index];',
+'      var lightDirection = -light.directionRange.xyz;',
+'      var attenuation = 1.0;',
+'      if (light.positionType.w > 0.5) {',
+'        let toLight = light.positionType.xyz - input.worldPosition;',
+'        let distance = length(toLight);',
+'        lightDirection = toLight / max(distance, 0.0001);',
+'        attenuation = 1.0 / max(distance * distance, 1.0);',
+'        if (light.directionRange.w > 0.0) { attenuation *= 1.0 - smoothstep(light.directionRange.w * 0.8, light.directionRange.w, distance); }',
+'        if (light.positionType.w > 1.5) {',
+'          let fromLight = normalize(input.worldPosition - light.positionType.xyz);',
+'          attenuation *= smoothstep(light.cone.y, light.cone.x, dot(fromLight, normalize(light.directionRange.xyz)));',
+'        }',
+'      }',
+'      direct += evaluateDirectBRDF(albedo, metallic, roughness, n, v, lightDirection, light.colorIntensity.rgb * light.colorIntensity.w * attenuation);',
+'    }',
+'  }',
 '  let ambient = albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic);',
 '  let linearColor = max(direct + ambient + material.emissiveColor.rgb, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
@@ -187,22 +220,26 @@ function validateScene(scene) {
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
     if (!geometries.has(entity.geometryId)) throw new Error('Missing PStudio geometry: ' + entity.geometryId);
-    if (!Array.isArray(entity.materialIds) || entity.materialIds.length !== 1) throw new Error('Independent WebGPU scene renderer currently requires exactly one material per entity: ' + entity.id);
-    if (!materials.has(entity.materialIds[0])) throw new Error('Missing PStudio material: ' + entity.materialIds[0]);
-    const material = materials.get(entity.materialIds[0]);
-    if (material.model !== 'pbr' || material.alphaMode !== 'opaque' || Number(material.opacity ?? 1) < 1 || material.doubleSided || material.textures?.length) {
-      throw new Error('Independent WebGPU renderer currently requires opaque, single-sided PBR materials with only an optional base-color texture: ' + material.id);
-    }
-    if (material.baseColorTextureId && !textures.has(material.baseColorTextureId)) {
-      throw new Error('PStudio material references a missing base-color texture: ' + material.baseColorTextureId);
+    if (!Array.isArray(entity.materialIds) || !entity.materialIds.length) throw new Error('Independent WebGPU scene renderer requires at least one material slot per entity: ' + entity.id);
+    const geometry = geometries.get(entity.geometryId);
+    const groups = geometry.groups?.length ? geometry.groups : [{ start: 0, count: geometry.indices?.length || geometry.vertexCount, materialIndex: 0 }];
+    if (!geometry.groups?.length && entity.materialIds.length !== 1) throw new Error('Multiple entity materials require explicit geometry material groups: ' + entity.id);
+    for (const group of groups) {
+      if (group.materialIndex >= entity.materialIds.length) throw new Error('Geometry material group references a missing entity material slot: ' + entity.id);
+      const materialId = entity.materialIds[group.materialIndex];
+      if (!materials.has(materialId)) throw new Error('Missing PStudio material: ' + materialId);
+      const material = materials.get(materialId);
+      if (material.model !== 'pbr' || material.alphaMode !== 'opaque' || Number(material.opacity ?? 1) < 1 || material.doubleSided || material.textures?.length) {
+        throw new Error('Independent WebGPU renderer currently requires opaque, single-sided PBR materials with only an optional base-color texture: ' + material.id);
+      }
+      if (material.baseColorTextureId && !textures.has(material.baseColorTextureId)) {
+        throw new Error('PStudio material references a missing base-color texture: ' + material.baseColorTextureId);
+      }
     }
     if (entity.castShadow || entity.receiveShadow) throw new Error('Independent WebGPU renderer does not yet implement shadow casting/receiving: ' + entity.id);
-    const geometry = geometries.get(entity.geometryId);
-    if (geometry.groups?.length > 1 || geometry.groups?.some(group => group.materialIndex > 0)) throw new Error('Independent WebGPU scene renderer does not yet support multi-material geometry groups: ' + entity.id);
-    const drawCount = geometry.indices?.length || geometry.vertexCount;
-    if (geometry.groups?.length === 1 && (geometry.groups[0].start !== 0 || geometry.groups[0].count !== drawCount)) throw new Error('Independent WebGPU scene renderer does not yet support partial geometry groups: ' + entity.id);
     if (geometry.indices && !(geometry.indices instanceof Uint16Array) && !(geometry.indices instanceof Uint32Array)) throw new TypeError('Geometry indices must be Uint16Array or Uint32Array.');
   }
+  if ((scene.lighting?.lights || []).length > 8) throw new RangeError('Independent WebGPU renderer supports up to eight additional scene lights.');
   return { geometries, materials, textures };
 }
 function ensurePipeline(state, api) {
@@ -242,10 +279,10 @@ function ensurePipeline(state, api) {
     primitive: { topology: 'triangle-list', frontFace: 'ccw', cullMode: 'back' },
     depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' }
   });
-  state.frameBuffer = device.createBuffer({ label: 'PStudio Frame Uniforms', size: 128, usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST') });
+  state.frameBuffer = device.createBuffer({ label: 'PStudio Frame Uniforms', size: 656, usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST') });
   state.frameBindGroup = device.createBindGroup({
     layout: state.pipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 128 } }]
+    entries: [{ binding: 0, resource: { buffer: state.frameBuffer, offset: 0, size: 656 } }]
   });
 }
 function ensureGeometry(state, device, geometry) {
@@ -422,12 +459,23 @@ function updateFrameUniforms(state, device, frame, scene) {
   const sun = normalized3(lighting.sunDirection || scene.sunDirection, [0.35, -0.85, -0.38]);
   const sunColor = vector3(lighting.sunColor, [1, 0.96, 0.9]);
   const ambient = vector3(lighting.ambientColor, [0.12, 0.15, 0.2]);
-  const data = new Float32Array(32);
+  const lights = lighting.lights || [];
+  if (lights.length > 8) throw new RangeError('PStudio direct renderer supports up to eight additional scene lights.');
+  const data = new Float32Array(164);
   data.set(vp, 0);
   data.set([camera[0], camera[1], camera[2], 1], 16);
   data.set([sun[0], sun[1], sun[2], Number(lighting.sunIntensity ?? 3)], 20);
-  data.set([sunColor[0], sunColor[1], sunColor[2], 1], 24);
+  data.set([sunColor[0], sunColor[1], sunColor[2], Number(lighting.sunIntensity ?? 3)], 24);
   data.set([ambient[0], ambient[1], ambient[2], Number(lighting.ambientIntensity ?? 1)], 28);
+  data.set([lights.length, 0, 0, 0], 32);
+  lights.forEach((light, index) => {
+    const offset = 36 + index * 16;
+    const type = light.type === 'point' ? 1 : light.type === 'spot' ? 2 : 0;
+    data.set([...(light.position || [0, 0, 0]), type], offset);
+    data.set([...(light.direction || [0, -1, 0]), Number(light.range || 0)], offset + 4);
+    data.set([...(light.color || [1, 1, 1]), Number(light.intensity ?? 1)], offset + 8);
+    data.set([Number(light.innerConeCos ?? 0.9), Number(light.outerConeCos ?? 0.8), 0, 0], offset + 12);
+  });
   device.queue.writeBuffer(state.frameBuffer, 0, data);
 }
 function ensureDepthTarget(state, api) {
@@ -503,20 +551,24 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   const activeTextureIds = new Set();
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
-    const materialId = entity.materialIds[0];
-    const key = JSON.stringify([entity.geometryId, materialId]);
-    let batch = batches.get(key);
-    if (!batch) {
-      batch = { key, geometryId: entity.geometryId, materialId, entities: [] };
-      batches.set(key, batch);
+    const geometry = geometries.get(entity.geometryId);
+    const drawGroups = geometry.groups?.length ? geometry.groups : [{ start: 0, count: geometry.indices?.length || geometry.vertexCount, materialIndex: 0 }];
+    for (const group of drawGroups) {
+      const materialId = entity.materialIds[group.materialIndex];
+      const key = JSON.stringify([entity.geometryId, materialId, group.start, group.count]);
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { key, geometryId: entity.geometryId, materialId, start: group.start, count: group.count, entities: [] };
+        batches.set(key, batch);
+      }
+      batch.entities.push(entity);
+      activeGeometryIds.add(entity.geometryId);
+      activeMaterialIds.add(materialId);
+      const material = materials.get(materialId);
+      if (material.baseColorTextureId) activeTextureIds.add(material.baseColorTextureId);
+      else activeTextureIds.add('__pstudio-white-base-color');
+      activeBatchKeys.add(key);
     }
-    batch.entities.push(entity);
-    activeGeometryIds.add(entity.geometryId);
-    activeMaterialIds.add(materialId);
-    const material = materials.get(materialId);
-    if (material.baseColorTextureId) activeTextureIds.add(material.baseColorTextureId);
-    else activeTextureIds.add('__pstudio-white-base-color');
-    activeBatchKeys.add(key);
   }
   pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys, activeTextureIds);
   for (const batch of batches.values()) {
@@ -530,8 +582,8 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
     pass.setVertexBuffer(1, gpuInstances.buffer);
     if (gpuGeometry.indexBuffer) {
       pass.setIndexBuffer(gpuGeometry.indexBuffer, gpuGeometry.indexFormat);
-      pass.drawIndexed(gpuGeometry.indexCount, gpuInstances.instanceCount, 0, 0, 0);
-    } else pass.draw(gpuGeometry.vertexCount, gpuInstances.instanceCount, 0, 0);
+      pass.drawIndexed(batch.count, gpuInstances.instanceCount, batch.start, 0, 0);
+    } else pass.draw(batch.count, gpuInstances.instanceCount, batch.start, 0);
   }
   pass.end();
   device.queue.submit([encoder.finish()]);
