@@ -267,7 +267,7 @@ function inverse4(value) {
   return out;
 }
 function composeNodeMatrix(node) {
-  if (node.matrix && node.matrix.length === 16 && node.metadata?.matrixAuthored === true) return vec(node.matrix, 16, "node matrix");
+  if (node.matrix && node.matrix.length === 16 && node.matrixAuthored === true) return vec(node.matrix, 16, "node matrix");
   const [x,y,z,w] = vec(node.rotation || [0,0,0,1],4,"node rotation");
   const [sx,sy,sz] = vec(node.scale || [1,1,1],3,"node scale");
   const [tx,ty,tz] = vec(node.translation || [0,0,0],3,"node translation");
