@@ -48,6 +48,9 @@ jobs:
           -DSDL_TESTS=OFF
           -DSDL_EXAMPLES=OFF
           -DSDL_INSTALL=OFF
+          -DSDL_UNIX_CONSOLE_BUILD=ON
+          -DSDL_X11=OFF
+          -DSDL_WAYLAND=OFF
 
       - name: Compile Vulkan, Direct3D 12 and Metal SDL3 adapter (no device access)
         run: cmake --build build/native-gpu --target pstudio_native_gpu_backend --parallel 2
