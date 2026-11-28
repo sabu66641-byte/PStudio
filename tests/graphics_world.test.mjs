@@ -35,8 +35,8 @@ test("screen-space LOD refines nearby tiles, stabilizes hysteresis and culls out
   assert.deepEqual(result.visibleTiles.map(item => item.id), ["left", "right"]);
   const culled = core.selectLod({ roots: [{ ...root, bounds: { min: [100, 100, 100], max: [110, 110, 110] } }], cameraPosition: [0, 0, 0], frustumPlanes: [[-1, 0, 0, 50]] });
   assert.deepEqual(culled.culledTileIds, ["root"]);
-  const duplicate = { id: "dup", bounds: { min: [0, 0, 0], max: [1, 1, 1] }, children: [{ id: "dup", bounds: { min: [0, 0, 0], max: [1, 1, 1] } }] };
-  assert.throws(() => core.selectLod({ roots: [duplicate], cameraPosition: [0, 0, 0] }), /duplicate or cyclic/);
+  const duplicate = { id: "dup", bounds: { min: [0, 0, 0], max: [1, 1, 1] }, geometricError: 100, children: [{ id: "dup", bounds: { min: [0, 0, 0], max: [1, 1, 1] } }] };
+  assert.throws(() => core.selectLod({ roots: [duplicate], cameraPosition: [0, 0, 0], projectionScale: 100 }), /duplicate or cyclic/);
   core.dispose();
 });
 
