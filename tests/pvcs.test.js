@@ -332,7 +332,7 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(renderer, /originalRender\.apply\(this,args\)/);
   assert.match(renderer, /pvcsPostProcessingPathActive/);
   assert.match(renderer, /pvcsGpuStageSampleTarget=stageGpuSampleTurn\?\(pvcsPostProcessingPathActive\?'post-processing':'scene-render'\):null/);
-  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration\)/);
+  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,gpuFrameMeasurementContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration,renderFrameSequence\+1\)/);
   assert.match(renderer, /recordGpuFrameMetrics\?\.\(durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /recordGpuStageMetrics\?\.\(entry\.stageId,durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
