@@ -48,3 +48,24 @@ test('PStudio editor bridge releases newly acquired asset leases if conversion f
  assert.equal(assets.stats().retainedCount,0);
  bridge.dispose();assets.dispose({force:true});scene.dispose();
 });
+
+test('PStudio editor bridge routes BVH world-space ray hits into editor selection',()=>{
+ const scene=createPStudioGraphicsSceneCore();scene.createScene({id:'world'});
+ const assets=createPStudioGraphicsAssetCore();
+ assets.register({id:'geo',type:'geometry',estimatedBytes:128},{positions:[-1,-1,0,1,-1,0,0,1,0],indices:[0,1,2]});
+ assets.register({id:'mat',type:'material',estimatedBytes:32},{model:'pbr'});
+ scene.createEntity({id:'mesh',sceneId:'world',geometryId:'geo',materialIds:['mat'],transform:{position:[2,0,-1]}});
+ const events=[];
+ const bridge=createPStudioGraphicsEditorBridge({sceneCore:scene,assetCore:assets,sceneId:'world',onPick:value=>events.push(value)});
+ const picked=bridge.selectFromRay({origin:[2,0,3],direction:[0,0,-1]});
+ assert.equal(picked.hit.entityId,'mesh');
+ assert.equal(picked.hit.distance,4);
+ assert.equal(picked.selection.entityId,'mesh');
+ assert.equal(bridge.getState().selectedEntityId,'mesh');
+ assert.equal(bridge.getCollisionStats().entityCount,1);
+ const missed=bridge.selectFromRay({origin:[8,0,3],direction:[0,0,-1]});
+ assert.equal(missed.hit,null);
+ assert.equal(missed.selection.entityId,null);
+ assert.equal(events.length,2);
+ bridge.dispose();assets.dispose();scene.dispose();
+});
