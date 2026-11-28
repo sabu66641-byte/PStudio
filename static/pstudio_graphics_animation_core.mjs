@@ -359,7 +359,7 @@ export function evaluatePStudioSceneAnimation(sceneAsset, clipId, timeSeconds, o
     const source = geometryMap.get(entity.geometryId);
     if (!source) throw new Error("Renderable entity geometry is missing: " + entity.geometryId);
     const nodeWeights = node?.weights || [];
-    const requestedMorphWeights = entity.morphWeights?.length ? Array.from(entity.morphWeights) : nodeWeights;
+    const requestedMorphWeights = nodeWeights.length ? nodeWeights : Array.from(entity.morphWeights || []);
     const morphWeights = source.morphTargets?.length && requestedMorphWeights.length === 0
       ? new Array(source.morphTargets.length).fill(0) : requestedMorphWeights;
     let geometryId = entity.geometryId, skinId = entity.skinId, finalMorphWeights = morphWeights;
