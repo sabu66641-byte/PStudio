@@ -3,11 +3,12 @@ import { getPStudioRenderingShaderLibraries } from "./pstudio_graphics_rendering
 
 const PASS_DEFINITIONS = Object.freeze([
   { id:"shadow-map", reads:[], writes:[["shadowDepth","depth-attachment"]], feature:"shadows", stageId:"shadow-map" },
-  { id:"sky-atmosphere-ibl", reads:[], writes:[["skyRadiance","color-attachment"],["iblSpecular","color-attachment"]], feature:"atmosphere", stageId:"sky-ibl" },
+  { id:"sky-atmosphere", reads:[], writes:[["skyRadiance","color-attachment"]], feature:"atmosphere", stageId:"sky-atmosphere" },
+  { id:"ibl-prefilter", reads:[["skyRadiance","sampled"]], writes:[["iblSpecular","color-attachment"]], feature:"atmosphere", stageId:"ibl-prefilter" },
   { id:"depth-prepass", reads:[], writes:[["sceneDepth","depth-attachment"]], feature:"depth", stageId:"depth-prepass" },
   { id:"opaque-forward", reads:[["sceneDepth","sampled"],["shadowDepth","sampled"],["skyRadiance","sampled"],["iblSpecular","sampled"]], writes:[["opaqueHdr","color-attachment"]], feature:"opaque", stageId:"opaque-forward" },
   { id:"water-depth", reads:[["sceneDepth","sampled"]], writes:[["waterLinearDepth","color-attachment"]], feature:"water", stageId:"water-depth" },
-  { id:"mirror-reflection", reads:[["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["mirrorReflection","color-attachment"]], feature:"water", stageId:"mirror-reflection" },
+  { id:"mirror-reflection", reads:[["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["mirrorReflection","color-attachment"],["mirrorDepth","depth-attachment"]], feature:"water", stageId:"mirror-reflection" },
   { id:"water-surface", reads:[["opaqueHdr","sampled"],["waterLinearDepth","sampled"],["mirrorReflection","sampled"],["skyRadiance","sampled"]], writes:[["waterHdr","color-attachment"]], feature:"water", stageId:"water-surface" },
   { id:"gi-probes", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["skyRadiance","sampled"]], writes:[["giIrradiance","storage-write"]], feature:"gi", stageId:"gi-probes" },
   { id:"volumetric-lighting", reads:[["waterHdr","sampled"],["sceneDepth","sampled"],["shadowDepth","sampled"],["skyRadiance","sampled"]], writes:[["volumeHdr","color-attachment"]], feature:"volumetrics", stageId:"volumetric-lighting" },
@@ -37,6 +38,8 @@ function readsForPass(definition, features) {
       );
     case "water-depth":
       return sourceList(features.depth ? "sceneDepth" : null);
+    case "ibl-prefilter":
+      return sourceList("skyRadiance");
     case "mirror-reflection":
       return sourceList(
         features.depth ? "sceneDepth" : null,
@@ -109,6 +112,7 @@ export function createPStudioGraphicsRenderingSuite(options = {}) {
     opaqueHdr: prefix + ".opaque-hdr",
     waterLinearDepth: prefix + ".water-linear-depth",
     mirrorReflection: prefix + ".mirror-reflection",
+    mirrorDepth: prefix + ".mirror-depth",
     waterHdr: prefix + ".water-hdr",
     giIrradiance: prefix + ".gi-irradiance",
     volumeHdr: prefix + ".volume-hdr",
@@ -123,6 +127,7 @@ export function createPStudioGraphicsRenderingSuite(options = {}) {
     resourceDescriptor(ids.opaqueHdr,width,height,"rgba16float"),
     resourceDescriptor(ids.waterLinearDepth,width,height,"r32float"),
     resourceDescriptor(ids.mirrorReflection,Math.max(16,Math.floor(width/2)),Math.max(16,Math.floor(height/2)),"rgba16float"),
+    resourceDescriptor(ids.mirrorDepth,Math.max(16,Math.floor(width/2)),Math.max(16,Math.floor(height/2)),"depth32float"),
     resourceDescriptor(ids.waterHdr,width,height,"rgba16float"),
     resourceDescriptor(ids.giIrradiance,64,64,"rgba16float"),
     resourceDescriptor(ids.volumeHdr,Math.max(16,Math.floor(width/2)),Math.max(16,Math.floor(height/2)),"rgba16float"),
@@ -169,7 +174,17 @@ export function createPStudioGraphicsRenderingSuite(options = {}) {
       async execute(executionOptions={}) {
         const external={...(executionOptions.resources||{}),[ids.outputSurface]:executionOptions.outputSurface??executionOptions.resources?.[ids.outputSurface]};
         if(external[ids.outputSurface]==null)throw new Error("A PStudio rendering suite requires an explicit outputSurface resource.");
-        return graph.execute({...executionOptions,plan,resources:external});
+        let materialized=executionOptions.materialized||null;
+        let ownedMaterialization=false;
+        try {
+          if(!materialized&&executionOptions.backend) {
+            materialized=await graph.materialize({plan,backend:executionOptions.backend,resources:external});
+            ownedMaterialization=true;
+          }
+          return await graph.execute({...executionOptions,plan,resources:external,materialized});
+        } finally {
+          if(ownedMaterialization)await materialized.release();
+        }
       },
       dispose() {
         if(!ownsGraph)throw new Error("This rendering suite does not own its injected Render Graph; remove its passes/resources through the owning graph controller.");
