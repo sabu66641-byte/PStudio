@@ -189,6 +189,7 @@ export function createVisualCompensationGraph(options = {}) {
         label: node.label,
         backend: node.backend,
         metrics,
+        gpuEvidence: metrics.gpuStageP95Ms === null ? 'not-available-per-stage' : 'measured',
         evidenceByDomain: {
           cpuFrame: metrics.cpuFrameP95Ms === null ? 'unmeasured' : 'measured',
           cpuStages: metrics.cpuSubmitP95Ms === null ? 'unmeasured' : 'measured',
