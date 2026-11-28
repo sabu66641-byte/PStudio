@@ -1,4 +1,5 @@
 import { renderPStudioGraphicsSceneFrame } from "./pstudio_graphics_webgpu_scene_renderer.mjs";
+import { createPStudioGraphicsRenderingSuite } from "./pstudio_graphics_rendering_suite.mjs";
 import { PSTUDIO_GRAPHICS_ATMOSPHERE_WGSL, normalizePStudioAtmosphereState } from "./pstudio_graphics_atmosphere.mjs";
 
 const TEXTURE_USAGE = Object.freeze({ COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 });
@@ -521,5 +522,9 @@ export function createPStudioWebGPURenderGraphExecutor(options = {}) {
     try { sceneRendererState?.dispose?.(); } catch (_) {}
     return true;
   }
-  return Object.freeze({ kind: "pstudio-webgpu-render-graph-executor", backend, handlers, execute, dispose });
+  const createSuite = suiteOptions => createPStudioGraphicsRenderingSuite({
+    ...(suiteOptions || {}),
+    handlers: { ...(suiteOptions?.handlers || {}), ...handlers }
+  });
+  return Object.freeze({ kind: "pstudio-webgpu-render-graph-executor", backend, handlers, createSuite, execute, dispose });
 }
