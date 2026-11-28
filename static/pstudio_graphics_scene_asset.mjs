@@ -398,7 +398,6 @@ export function importPStudioThreeScene(scene, options = {}) {
       for (const key of ['normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap']) {
         if (source[key]) unsupported.push({ objectId, materialId, feature: 'texture-' + key });
       }
-      const textures = [];
       if (!materials.has(materialId)) {
         const color = source.color || {};
         const emissive = source.emissive || {};
@@ -418,7 +417,7 @@ export function importPStudioThreeScene(scene, options = {}) {
           id: materialId, model, baseColor: colorValue, emissive: emissiveValue,
           metallic: source.metalness ?? 0, roughness: source.roughness ?? 0.7,
           opacity: source.opacity ?? 1, alphaMode: alpha,
-          doubleSided: source.side === 2, textures, baseColorTextureId,
+          doubleSided: source.side === 2, textures: [], baseColorTextureId,
           metadata: { sourceMaterialType: source.type || 'unknown', sourceMaterialId: materialId }
         }));
       }
