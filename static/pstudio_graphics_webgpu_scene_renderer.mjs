@@ -10,21 +10,24 @@ const WGSL = [
 '  sunColor: vec4<f32>,',
 '  ambientColor: vec4<f32>,',
 '};',
-'struct ObjectData {',
-'  model: mat4x4<f32>,',
-'  normal0: vec4<f32>,',
-'  normal1: vec4<f32>,',
-'  normal2: vec4<f32>,',
+'struct MaterialData {',
 '  baseColor: vec4<f32>,',
 '  surface: vec4<f32>,',
 '  emissiveColor: vec4<f32>,',
 '};',
 '@group(0) @binding(0) var<uniform> frame: FrameData;',
-'@group(1) @binding(0) var<uniform> object: ObjectData;',
+'@group(1) @binding(0) var<uniform> material: MaterialData;',
 'struct VertexInput {',
 '  @location(0) position: vec3<f32>,',
 '  @location(1) normal: vec3<f32>,',
 '  @location(2) uv: vec2<f32>,',
+'  @location(3) model0: vec4<f32>,',
+'  @location(4) model1: vec4<f32>,',
+'  @location(5) model2: vec4<f32>,',
+'  @location(6) model3: vec4<f32>,',
+'  @location(7) normal0: vec4<f32>,',
+'  @location(8) normal1: vec4<f32>,',
+'  @location(9) normal2: vec4<f32>,',,
 '};',
 'struct VertexOutput {',
 '  @builtin(position) clipPosition: vec4<f32>,',
@@ -34,8 +37,9 @@ const WGSL = [
 '};',
 '@vertex fn vs_main(input: VertexInput) -> VertexOutput {',
 '  var output: VertexOutput;',
-'  let world = object.model * vec4<f32>(input.position, 1.0);',
-'  let normalMatrix = mat3x3<f32>(object.normal0.xyz, object.normal1.xyz, object.normal2.xyz);',
+'  let model = mat4x4<f32>(input.model0, input.model1, input.model2, input.model3);',
+'  let normalMatrix = mat3x3<f32>(input.normal0.xyz, input.normal1.xyz, input.normal2.xyz);',
+'  let world = model * vec4<f32>(input.position, 1.0);',
 '  output.clipPosition = frame.viewProjection * world;',
 '  output.worldPosition = world.xyz;',
 '  output.worldNormal = normalize(normalMatrix * input.normal);',
@@ -57,9 +61,9 @@ const WGSL = [
 '  return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cosine, 0.0, 1.0), 5.0);',
 '}',
 '@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {',
-'  let albedo = max(object.baseColor.rgb, vec3<f32>(0.0));',
-'  let metallic = clamp(object.surface.x, 0.0, 1.0);',
-'  let roughness = clamp(object.surface.y, 0.045, 1.0);',
+'  let albedo = max(material.baseColor.rgb, vec3<f32>(0.0));',
+'  let metallic = clamp(material.surface.x, 0.0, 1.0);',
+'  let roughness = clamp(material.surface.y, 0.045, 1.0);',
 '  let n = normalize(input.worldNormal);',
 '  let v = normalize(frame.cameraPosition.xyz - input.worldPosition);',
 '  let l = normalize(-frame.sunDirection.xyz);',
@@ -76,10 +80,10 @@ const WGSL = [
 '  let diffuse = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic) * albedo / 3.14159265;',
 '  let direct = (diffuse + specular) * frame.sunColor.rgb * frame.sunColor.w * nDotL;',
 '  let ambient = albedo * frame.ambientColor.rgb * frame.ambientColor.w * (1.0 - metallic);',
-'  let linearColor = max(direct + ambient + object.emissiveColor.rgb, vec3<f32>(0.0));',
+'  let linearColor = max(direct + ambient + material.emissiveColor.rgb, vec3<f32>(0.0));',
 '  let mapped = linearColor / (linearColor + vec3<f32>(1.0));',
 '  let srgb = select(1.055 * pow(mapped, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), mapped * 12.92, mapped <= vec3<f32>(0.0031308));',
-'  return vec4<f32>(srgb, object.baseColor.a);',
+'  return vec4<f32>(srgb, material.baseColor.a);',
 '}'
 ].join('\n');
 
@@ -199,10 +203,23 @@ function ensurePipeline(state, api) {
       module, entryPoint: 'vs_main',
       buffers: [{
         arrayStride: 32,
+        stepMode: 'vertex',
         attributes: [
           { shaderLocation: 0, offset: 0, format: 'float32x3' },
           { shaderLocation: 1, offset: 12, format: 'float32x3' },
           { shaderLocation: 2, offset: 24, format: 'float32x2' }
+        ]
+      }, {
+        arrayStride: 112,
+        stepMode: 'instance',
+        attributes: [
+          { shaderLocation: 3, offset: 0, format: 'float32x4' },
+          { shaderLocation: 4, offset: 16, format: 'float32x4' },
+          { shaderLocation: 5, offset: 32, format: 'float32x4' },
+          { shaderLocation: 6, offset: 48, format: 'float32x4' },
+          { shaderLocation: 7, offset: 64, format: 'float32x4' },
+          { shaderLocation: 8, offset: 80, format: 'float32x4' },
+          { shaderLocation: 9, offset: 96, format: 'float32x4' }
         ]
       }]
     },
@@ -236,32 +253,79 @@ function ensureGeometry(state, device, geometry) {
   state.geometries.set(geometry.id, record);
   return record;
 }
-function ensureObject(state, device, entity, material, pipeline) {
-  const key = entity.id;
-  let record = state.objects.get(key);
-  if (!record || record.materialId !== material.id) {
-    if (record) { try { record.buffer.destroy(); } catch (_) {} }
-    const buffer = device.createBuffer({ label: 'PStudio Object Uniform ' + key, size: 160, usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST') });
+function ensureMaterial(state, device, material, pipeline) {
+  let record = state.materials.get(material.id);
+  if (!record) {
+    const buffer = device.createBuffer({
+      label: 'PStudio Material Uniform ' + material.id,
+      size: 48,
+      usage: bufferUsage('UNIFORM') | bufferUsage('COPY_DST')
+    });
     const bindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(1),
-      entries: [{ binding: 0, resource: { buffer, offset: 0, size: 160 } }]
+      entries: [{ binding: 0, resource: { buffer, offset: 0, size: 48 } }]
     });
-    record = { buffer, bindGroup, materialId: material.id };
-    state.objects.set(key, record);
+    record = { buffer, bindGroup };
+    state.materials.set(material.id, record);
   }
-  const matrix = matrix4(entity.matrixWorld, 'entity matrixWorld');
-  const normal = normalMatrix(matrix);
-  const data = new Float32Array(40);
-  data.set(matrix, 0);
-  data.set([normal[0], normal[1], normal[2], 0], 16);
-  data.set([normal[3], normal[4], normal[5], 0], 20);
-  data.set([normal[6], normal[7], normal[8], 0], 24);
-  data.set(material.baseColor || [1, 1, 1, 1], 28);
-  data.set([material.metallic || 0, material.roughness ?? 0.7, 0, material.opacity ?? 1], 32);
-  data.set([...(material.emissive || [0, 0, 0]).slice(0, 3).map(value => Number(value)), 0], 36);
+  const data = new Float32Array(12);
+  data.set(material.baseColor || [1, 1, 1, 1], 0);
+  data.set([material.metallic || 0, material.roughness ?? 0.7, 0, material.opacity ?? 1], 4);
+  data.set([...(material.emissive || [0, 0, 0]).slice(0, 3).map(Number), 0], 8);
   device.queue.writeBuffer(record.buffer, 0, data);
   return record;
 }
+
+function ensureInstanceBatch(state, device, key, entities) {
+  const instanceCount = entities.length;
+  const floatsPerInstance = 28;
+  const bytesPerInstance = floatsPerInstance * Float32Array.BYTES_PER_ELEMENT;
+  let record = state.instances.get(key);
+  if (!record || record.capacity < instanceCount) {
+    try { record?.buffer?.destroy?.(); } catch (_) {}
+    let capacity = 1;
+    while (capacity < instanceCount) capacity *= 2;
+    const buffer = device.createBuffer({
+      label: 'PStudio Instance Batch ' + key,
+      size: capacity * bytesPerInstance,
+      usage: bufferUsage('VERTEX') | bufferUsage('COPY_DST')
+    });
+    record = { buffer, capacity };
+    state.instances.set(key, record);
+  }
+  const data = new Float32Array(instanceCount * floatsPerInstance);
+  for (let index = 0; index < instanceCount; index += 1) {
+    const entity = entities[index];
+    const offset = index * floatsPerInstance;
+    const matrix = matrix4(entity.matrixWorld, 'entity matrixWorld');
+    const normal = normalMatrix(matrix);
+    data.set(matrix, offset);
+    data.set([normal[0], normal[1], normal[2], 0], offset + 16);
+    data.set([normal[3], normal[4], normal[5], 0], offset + 20);
+    data.set([normal[6], normal[7], normal[8], 0], offset + 24);
+  }
+  device.queue.writeBuffer(record.buffer, 0, data);
+  return Object.freeze({ buffer: record.buffer, instanceCount });
+}
+
+function pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys) {
+  for (const [id, record] of state.geometries) {
+    if (activeGeometryIds.has(id)) continue;
+    try { record.vertexBuffer.destroy(); record.indexBuffer?.destroy(); } catch (_) {}
+    state.geometries.delete(id);
+  }
+  for (const [id, record] of state.materials) {
+    if (activeMaterialIds.has(id)) continue;
+    try { record.buffer.destroy(); } catch (_) {}
+    state.materials.delete(id);
+  }
+  for (const [key, record] of state.instances) {
+    if (activeBatchKeys.has(key)) continue;
+    try { record.buffer.destroy(); } catch (_) {}
+    state.instances.delete(key);
+  }
+}
+
 function updateFrameUniforms(state, device, frame, scene) {
   const vp = viewProjection(frame.view);
   const camera = vector3(frame.view?.cameraPosition || frame.view?.camera?.position, [0, 0, 3]);
@@ -291,10 +355,12 @@ function disposeSceneRuntime(state) {
   for (const record of state.geometries.values()) {
     try { record.vertexBuffer.destroy(); record.indexBuffer?.destroy(); } catch (_) {}
   }
-  for (const record of state.objects.values()) try { record.buffer.destroy(); } catch (_) {}
+  for (const record of state.materials.values()) try { record.buffer.destroy(); } catch (_) {}
+  for (const record of state.instances.values()) try { record.buffer.destroy(); } catch (_) {}
   try { state.frameBuffer?.destroy?.(); state.depthTexture?.destroy?.(); } catch (_) {}
   state.geometries.clear();
-  state.objects.clear();
+  state.materials.clear();
+  state.instances.clear();
   state.pipeline = null;
   state.frameBuffer = null;
   state.frameBindGroup = null;
@@ -307,6 +373,10 @@ function disposeSceneRuntime(state) {
 export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   const scene = frame?.scene;
   if (!scene || scene.kind !== 'pstudio-graphics-scene-asset') return false;
+  state = state && typeof state === 'object' ? state : {};
+  state.geometries ||= new Map();
+  state.materials ||= new Map();
+  state.instances ||= new Map();
   const { geometries, materials } = validateScene(scene);
   const device = api?.device;
   if (!device?.createCommandEncoder || !api.getCurrentSurfaceView) throw new Error('PStudio WebGPU scene rendering requires a configured WebGPU surface.');
@@ -330,18 +400,42 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
   });
   pass.setPipeline(state.pipeline);
   pass.setBindGroup(0, state.frameBindGroup);
+
+  // One draw per unique geometry/material pair, with transforms supplied as
+  // instance-rate vertex data. This reduces CPU submission and bind-group churn
+  // for repeated assets such as foliage, props and modular scene pieces.
+  const batches = new Map();
+  const activeGeometryIds = new Set();
+  const activeMaterialIds = new Set();
+  const activeBatchKeys = new Set();
   for (const entity of scene.entities) {
     if (!entity.visible) continue;
-    const geometry = geometries.get(entity.geometryId);
-    const material = materials.get(entity.materialIds[0]);
+    const materialId = entity.materialIds[0];
+    const key = JSON.stringify([entity.geometryId, materialId]);
+    let batch = batches.get(key);
+    if (!batch) {
+      batch = { key, geometryId: entity.geometryId, materialId, entities: [] };
+      batches.set(key, batch);
+    }
+    batch.entities.push(entity);
+    activeGeometryIds.add(entity.geometryId);
+    activeMaterialIds.add(materialId);
+    activeBatchKeys.add(key);
+  }
+  pruneSceneCaches(state, activeGeometryIds, activeMaterialIds, activeBatchKeys);
+  for (const batch of batches.values()) {
+    const geometry = geometries.get(batch.geometryId);
+    const material = materials.get(batch.materialId);
     const gpuGeometry = ensureGeometry(state, device, geometry);
-    const gpuObject = ensureObject(state, device, entity, material, state.pipeline);
-    pass.setBindGroup(1, gpuObject.bindGroup);
+    const gpuMaterial = ensureMaterial(state, device, material, state.pipeline);
+    const gpuInstances = ensureInstanceBatch(state, device, batch.key, batch.entities);
+    pass.setBindGroup(1, gpuMaterial.bindGroup);
     pass.setVertexBuffer(0, gpuGeometry.vertexBuffer);
+    pass.setVertexBuffer(1, gpuInstances.buffer);
     if (gpuGeometry.indexBuffer) {
       pass.setIndexBuffer(gpuGeometry.indexBuffer, gpuGeometry.indexFormat);
-      pass.drawIndexed(gpuGeometry.indexCount, 1, 0, 0, 0);
-    } else pass.draw(gpuGeometry.vertexCount, 1, 0, 0);
+      pass.drawIndexed(gpuGeometry.indexCount, gpuInstances.instanceCount, 0, 0, 0);
+    } else pass.draw(gpuGeometry.vertexCount, gpuInstances.instanceCount, 0, 0);
   }
   pass.end();
   device.queue.submit([encoder.finish()]);
@@ -353,7 +447,7 @@ export function renderPStudioGraphicsSceneFrame(frame, api, state = {}) {
  * but no Three.js object or runtime is retained by this renderer.
  */
 export function createPStudioWebGPUSceneAdapter(options = {}) {
-  const state = { pipeline: null, frameBuffer: null, frameBindGroup: null, depthTexture: null, depthWidth: 0, depthHeight: 0, geometries: new Map(), objects: new Map() };
+  const state = { pipeline: null, frameBuffer: null, frameBindGroup: null, depthTexture: null, depthWidth: 0, depthHeight: 0, geometries: new Map(), materials: new Map(), instances: new Map() };
   const core = createPStudioWebGPUCoreAdapter({
     ...options,
     renderFrame: (frame, backend) => renderPStudioGraphicsSceneFrame(frame, backend, state)
