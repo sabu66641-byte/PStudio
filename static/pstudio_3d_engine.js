@@ -34,6 +34,7 @@
   let lastFrameRenderStats={calls:0,triangles:0,points:0,geometries:0,textures:0};
   let lastDrawFrameStartedAt=0,lastFrameIntervalMs=0,lastFrameIntervalSampleAt=0,lastPerformanceEmitAt=0,performanceMonitorEnabled=false;
   let gpuTimerGl=null,gpuTimerExtension=null,gpuTimerQueries=[],lastGpuRenderDurationMs=0,lastGpuTimerTimestamp=0,adaptiveMetricSource='cpu-render-submission';
+  let pvcsGpuStageSampleTarget=null,pvcsGpuStageSampleCursor=0,pvcsGpuStageSampleConsumed=false;
   let parallelShaderCompileSupported=false,modelPreparationPending=0,stagedTextureUploads=0;
   let shaderCompileQueue=Promise.resolve();
   let worldFrustum=null,worldFrustumMatrix=null,worldFrustumSphere=null;
@@ -1025,7 +1026,11 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         const entry=gpuTimerQueries[i],available=gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT_AVAILABLE);
         if(available){
           const nanoseconds=Number(gpuTimerGl.getQueryParameter(entry.query,gpuTimerGl.QUERY_RESULT));
-          if(Number.isFinite(nanoseconds)&&nanoseconds>0){lastGpuRenderDurationMs=nanoseconds/1e6;lastGpuTimerTimestamp=now;pushMetricSample(gpuRenderSamples,lastGpuRenderDurationMs);}
+          if(Number.isFinite(nanoseconds)&&nanoseconds>0){
+            const durationMs=nanoseconds/1e6;
+            if(entry.stageId)window.PStudioPVCS?.recordGpuStageMetrics?.(entry.stageId,durationMs);
+            else{lastGpuRenderDurationMs=durationMs;lastGpuTimerTimestamp=now;pushMetricSample(gpuRenderSamples,durationMs);}
+          }
           gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);
         }else if(now-entry.submittedAt>2000){gpuTimerGl.deleteQuery(entry.query);gpuTimerQueries.splice(i,1);}
       }
@@ -1041,11 +1046,11 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     try{query=gpuTimerGl.createQuery();if(!query)return null;gpuTimerGl.beginQuery(gpuTimerExtension.TIME_ELAPSED_EXT,query);return query;}
     catch(error){if(query){try{gpuTimerGl.deleteQuery(query);}catch(_){}}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query start failed; CPU timing fallback will be used.',error);return null;}
   }
-  function endGpuTimerQuery(query){
+  function endGpuTimerQuery(query,stageId=null){
     if(!query||!gpuTimerGl||!gpuTimerExtension)return;
     try{
       gpuTimerGl.endQuery(gpuTimerExtension.TIME_ELAPSED_EXT);
-      gpuTimerQueries.push({query,submittedAt:window.performance?.now?.()??Date.now()});
+      gpuTimerQueries.push({query,stageId:stageId||null,submittedAt:window.performance?.now?.()??Date.now()});
       while(gpuTimerQueries.length>8){const oldest=gpuTimerQueries.shift();gpuTimerGl.deleteQuery(oldest.query);}
     }catch(error){try{gpuTimerGl.deleteQuery(query);}catch(_){}gpuTimerGl=null;gpuTimerExtension=null;console.warn('[PStudio] GPU timer query end failed; CPU timing fallback will be used.',error);}
   }
@@ -1303,7 +1308,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
           const cameraAnchoredSky=[physicalSky,moonMesh,sunMesh,nightTwinkleStars].filter(object=>object?.position);
           const originalSkyPositions=cameraAnchoredSky.map(object=>object.position.clone());
           for(const object of cameraAnchoredSky){object.position.add(skyOffset);object.updateMatrixWorld?.(true);}
-          try{renderer.render(scene,reflectionCamera);}
+          try{measurePVCSStage('mirror-reflection-scene-render',()=>renderer.render(scene,reflectionCamera));}
           finally{for(let index=0;index<cameraAnchoredSky.length;index++){cameraAnchoredSky[index].position.copy(originalSkyPositions[index]);cameraAnchoredSky[index].updateMatrixWorld?.(true);}}
           let reflectionTexture=state.target.texture;
           if(volumetricCloudsEnabled&&volumetricCloudPass?.enabled&&state.cloudTarget){
@@ -1315,7 +1320,7 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
             const oldRenderToScreen=volumetricCloudPass.renderToScreen;
             volumetricCloudPass.renderToScreen=false;
             try{
-              volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false);
+              measurePVCSStage('mirror-cloud-composite',()=>volumetricCloudPass.render(renderer,state.cloudTarget,state.target,1/60,false));
               reflectionTexture=state.cloudTarget.texture;
             }finally{volumetricCloudPass.renderToScreen=oldRenderToScreen;}
           }
@@ -1528,6 +1533,10 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       estimatedGpuBytes:memory.estimatedGpuBytes,gpuBudgetBytes:memory.gpuBudgetBytes,
       gpuPressure:memory.gpuPressure,jsHeapUsedBytes:memory.usedJSHeapBytes,
       jsHeapLimitBytes:memory.jsHeapLimitBytes,
+      backend:productionRendererBridge?.getState?.().backend||(renderer?.capabilities?.isWebGL2?'webgl2':'unknown'),
+      scene:genesisShrineDemoRequested?'genesis-shrine':'editor-scene',
+      renderWidth:Number(renderer?.domElement?.width)||null,
+      renderHeight:Number(renderer?.domElement?.height)||null,
       quality:resolveQualityPreset(qualityPreset),adaptiveEnabled:adaptiveQualityEnabled,
       adaptiveLevel:adaptiveQualityLevel,mobileResolutionBudget:adaptiveTouchResolutionBudget,
       effectSuppressionReason:memorySafetyApplied?'memory-safety-guard':null,
@@ -1705,7 +1714,12 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
 
   function measurePVCSStage(stageId,callback){
     const profiler=window.PStudioPVCS;
-    return typeof profiler?.measure==='function'?profiler.measure(stageId,callback):callback();
+    const shouldSampleGpu=!!stageId&&pvcsGpuStageSampleTarget===stageId&&!pvcsGpuStageSampleConsumed
+      &&profiler?.isMonitoringEnabled?.()===true&&!!gpuTimerGl&&!!gpuTimerExtension;
+    const query=shouldSampleGpu?beginGpuTimerQuery():null;
+    if(query)pvcsGpuStageSampleConsumed=true;
+    try{return typeof profiler?.measure==='function'?profiler.measure(stageId,callback):callback();}
+    finally{if(query)endGpuTimerQuery(query,stageId);}
   }
   function measurePVCSAsyncStage(stageId,callback){
     const profiler=window.PStudioPVCS;
@@ -1718,26 +1732,33 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
     // converted and the WebGPU pipeline is compiled; never render mixed material backends.
     if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')return;
     if(productionRendererFallbackRequested&&productionRendererBridge?.getState?.().backend==='webgpu')return;
-    const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
-    applyCameraShake();camera.updateMatrixWorld(true);
-    const frameStarted=window.performance?.now?.()??Date.now();
-    let genesisDelta=1/60;
-    if(lastDrawFrameStartedAt){
-      const interval=frameStarted-lastDrawFrameStartedAt;
-      if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
-    }
-    lastDrawFrameStartedAt=frameStarted;
-    if(genesisEnvironmentController)measurePVCSStage('environment-state-update',()=>updateGenesisEnvironment(genesisDelta,frameStarted));
-    // Update the camera's world matrix before positioning camera-relative celestial meshes.
-    camera.updateMatrixWorld(true);
-    if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
-    updateMoonSkyMesh();
-    updateSunSkyMesh();
-    if(activeEnvironmentPreset==='night')ensureNightTwinkleStars(window.THREE);
-    updateNightTwinkleStars();
-    applyEditorOverlayVisibility();
-    updateEditorGridPresentation();
-    measurePVCSStage('clustered-lighting',()=>updateClusteredLighting());
+    const pvcsFrameStartedAt=window.performance?.now?.()??Date.now();
+    let pvcsFrameUsesStageGpuQuery=false;
+    try{
+      const cameraPositionBefore=camera.position.clone(),cameraQuaternionBefore=camera.quaternion.clone();
+      let frameStarted=window.performance?.now?.()??Date.now();
+      let genesisDelta=1/60;
+      measurePVCSStage('camera-state-update',()=>{
+        applyCameraShake();camera.updateMatrixWorld(true);
+        frameStarted=window.performance?.now?.()??Date.now();
+        if(lastDrawFrameStartedAt){
+          const interval=frameStarted-lastDrawFrameStartedAt;
+          if(interval>0&&interval<2000){lastFrameIntervalMs=interval;lastFrameIntervalSampleAt=frameStarted;pushMetricSample(frameIntervalSamples,interval);genesisDelta=Math.max(0,Math.min(.1,interval/1000));}
+        }
+        lastDrawFrameStartedAt=frameStarted;
+      });
+      if(genesisEnvironmentController)measurePVCSStage('environment-state-update',()=>updateGenesisEnvironment(genesisDelta,frameStarted));
+      measurePVCSStage('camera-state-update',()=>{
+        camera.updateMatrixWorld(true);
+        if(physicalSky?.visible){physicalSky.position.copy(camera.position);physicalSky.updateMatrixWorld(true);}
+        updateMoonSkyMesh();
+        updateSunSkyMesh();
+        if(activeEnvironmentPreset==='night')ensureNightTwinkleStars(window.THREE);
+        updateNightTwinkleStars();
+        applyEditorOverlayVisibility();
+        updateEditorGridPresentation();
+      });
+      measurePVCSStage('clustered-lighting',()=>updateClusteredLighting());
     updateRenderingFrameBudget();
     if(productionRendererBridge?.getState?.().backend==='webgpu'){
       const liveBlockers=getProductionWebGPUFeatureBlockers();
@@ -1772,7 +1793,6 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
         pushMetricSample(cpuRenderSamples,lastRenderDurationMs);
         const completedAt=window.performance?.now?.()??Date.now();
         updatePerformanceMonitor(completedAt);
-        window.PStudioPVCS?.recordFrameMetrics?.();
         // Dynamic SH captures run after the submitted WebGPU frame, using its active backend.
         void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(completedAt)).catch(error=>{
           dynamicGIStatus='error';
@@ -1782,7 +1802,13 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       return;
     }
     renderer.info?.reset?.();pollGpuTimerQueries();
-    const started=window.performance?.now?.()??Date.now(),gpuQuery=beginGpuTimerQuery();
+    const stageGpuSampleSlots=['water-depth-prepass','mirror-reflection','post-processing','scene-render'];
+    const stageGpuSampleTurn=window.PStudioPVCS?.isMonitoringEnabled?.()===true&&!!gpuTimerGl&&!!gpuTimerExtension&&(pvcsGpuStageSampleCursor%4===0);
+    pvcsGpuStageSampleTarget=stageGpuSampleTurn?stageGpuSampleSlots[Math.floor(pvcsGpuStageSampleCursor/4)%stageGpuSampleSlots.length]:null;
+    pvcsGpuStageSampleCursor++;
+    pvcsGpuStageSampleConsumed=false;
+    pvcsFrameUsesStageGpuQuery=!!pvcsGpuStageSampleTarget;
+    const started=window.performance?.now?.()??Date.now(),gpuQuery=pvcsFrameUsesStageGpuQuery?null:beginGpuTimerQuery();
     const hiddenStaticSky=[];
     try{
       measurePVCSStage('water-depth-prepass',()=>renderWaterDepthPrepass());
@@ -1872,15 +1898,22 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
       captureFrameRenderStats();
       // Close the main-scene timer before the off-screen CubeCamera GI capture.
       endGpuTimerQuery(gpuQuery);
+      pvcsGpuStageSampleTarget=null;
+      pvcsGpuStageSampleConsumed=false;
       const now=window.performance?.now?.()??Date.now();
       sampleMemoryPressure();
       const hasRecentGpuSample=!!gpuTimerGl&&lastGpuRenderDurationMs>0&&now-lastGpuTimerTimestamp<1500;
       adaptiveMetricSource=hasRecentGpuSample?'gpu-timer-query':'cpu-render-submission';
       applyAdaptiveQuality();
       updatePerformanceMonitor(now);
-      window.PStudioPVCS?.recordFrameMetrics?.();
       // Probe captures remain visible in frame pacing, but must not contaminate render-submit/GPU timings or per-frame render counters.
       void measurePVCSAsyncStage('dynamic-gi-capture',()=>serviceDynamicRadianceCache(now)).catch(error=>{dynamicGIStatus='error';console.warn('[PStudio] Dynamic GI capture failed safely:',error);});
+    }
+    }finally{
+      const pvcsFrameEndedAt=window.performance?.now?.()??Date.now();
+      window.PStudioPVCS?.recordFrameMetrics?.(Math.max(0,pvcsFrameEndedAt-pvcsFrameStartedAt),{includeAggregateGpu:!pvcsFrameUsesStageGpuQuery});
+      pvcsGpuStageSampleTarget=null;
+      pvcsGpuStageSampleConsumed=false;
     }
   }
 
@@ -3139,7 +3172,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
       updateModelLOD(instance);
       requestVisibleVirtualTextureTiles(instance);
     }
-    updateOcclusionVisibility();
+    measurePVCSStage('occlusion-visibility',()=>updateOcclusionVisibility());
     for(const batch of instancedBatches.values()){
       const sources=batch.userData.instanceSources||[],dummy=new T.Object3D(),owners=[],keys=[];let count=0;
       for(const source of sources){
@@ -3320,7 +3353,7 @@ transformed.y+=uPStudioWaveAmplitude*pstudioWaveA+uPStudioWaveAmplitude*0.34*pst
     camera.position.copy(collisionSafePosition);camera.lookAt(smoothedTarget);if(csm){csm.maxFar=worldRenderConfig.shadowDistance;csm.update();}
     for(const instance of modelInstances.values())updateModelLOD(instance);
     applyPendingLightmaps();
-    updateWorldVisibility();
+    measurePVCSStage('world-visibility',()=>updateWorldVisibility());
     resize();
     drawFrame();
   }
@@ -5260,7 +5293,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
       window.requestAnimationFrame(()=>{
         if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
         try{
-          if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}
+          if(lastCommands)render(lastCommands);else{measurePVCSStage('world-visibility',()=>updateWorldVisibility());drawFrame();}
           const diagnostics=getModelVisibilityDiagnostics(instance);
           try{window.dispatchEvent(new CustomEvent('pstudio-model-visibility',{detail:{name:instance.name,...diagnostics}}));}catch(_){}
         }catch(error){
@@ -5279,7 +5312,7 @@ reflectedLight.indirectDiffuse += pstudioEvaluateSH(normalize(transpose(mat3(vie
         if(!window.PStudioEngine?.isRunning?.()){
           window.requestAnimationFrame(()=>{
             if(instance.preparationCancelled||modelInstances.get(instance.key)!==instance)return;
-            try{if(lastCommands)render(lastCommands);else{updateWorldVisibility();drawFrame();}}
+            try{if(lastCommands)render(lastCommands);else{measurePVCSStage('world-visibility',()=>updateWorldVisibility());drawFrame();}}
             catch(renderError){
               console.error('[PStudio] Model fallback render failed:',instance.name,renderError);
               dispatchModelLoadError({name:instance.name,stage:'gpu-preparation-fallback-render',error:renderError?.message||String(renderError),retryable:true});
@@ -8256,7 +8289,7 @@ void main(){
       }
     }
     for(const [key,mesh] of meshCache){if(!usedMeshes.has(key)&&!preservedOwners.has(mesh.userData.ownerId)){disposeMesh(mesh);meshCache.delete(key);}else if(preservedOwners.has(mesh.userData.ownerId))mesh.visible=false;}
-    updateInstancedBatches();
+    measurePVCSStage('instance-batch-rebuild',()=>updateInstancedBatches());
     for(const [key,emitter] of particleEmitters){
       if(stoppedEmitters.has(key)||(!usedEmitters.has(key)&&![...preservedOwners].some(owner=>key.startsWith(String(owner)+':')))){disposeGpuParticleSystem(emitter.system);particleEmitters.delete(key);}
     }
