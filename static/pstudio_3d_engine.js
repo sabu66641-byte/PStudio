@@ -1591,6 +1591,9 @@ godRaysPass=window.PStudioEnvironmentFX?.createGodRaysPass?.(FX,T)||null;if(godR
   async function capturePVCSFrame(options={}){
     if(!renderer||!scene||!camera)throw new Error('PStudio renderer, scene and camera must be ready before capturing a PVCS frame.');
     if(productionWebGPUCompileStage==='converting-materials'||productionWebGPUCompileStage==='compiling')throw new Error('PVCS capture is unavailable while the production renderer is compiling.');
+    if(productionRendererFallbackRequested)throw new Error('PVCS capture is unavailable while the production renderer is recovering from a failed WebGPU frame.');
+    const backendState=productionRendererBridge?.getState?.();
+    if(backendState?.state&&backendState.state!=='ready')throw new Error('PVCS capture requires the active renderer backend to be ready.');
     const beforeSequence=renderFrameSequence;drawFrame();
     if(renderFrameSequence<=beforeSequence)throw new Error('PStudio did not submit a new render frame for PVCS capture.');
     const activeRenderer=productionRendererBridge?.getRenderer?.()||renderer;

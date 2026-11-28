@@ -3,7 +3,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const CONTEXT=Object.freeze({backend:'webgl2',scene:'pvcs-browser-runner',quality:'high',renderWidth:640,renderHeight:360,renderPixelRatio:1,effects:{ao:true,ssr:false,volumetricClouds:true}});
 function frame(){return{width:4,height:4,channels:4,data:new Uint8Array(64)};}
-function stats(sequence=10){return{renderFrameSequence:sequence,cpuFrameMs:12.5,cpuRenderSubmitMs:5.5,estimatedGpuBytes:4096,gpuTimingFresh:false,gpuRenderMs:null,gpuRenderSampleSequence:0,gpuRenderSourceFrameSequence:0,gpuRenderSampleContext:null,gpuStageMetrics:{}};}
+function stats(sequence=10){return{renderFrameSequence:sequence,cpuFrameMs:12.5,cpuRenderSubmitMs:5.5,estimatedGpuBytes:4096,memoryBytes:4096,gpuTimingFresh:false,gpuRenderMs:null,gpuRenderSampleSequence:0,gpuRenderSourceFrameSequence:0,gpuRenderSampleContext:null,gpuStageMetrics:{}};}
 function fakeEngine(options={}){
  const state={profile:null,applied:0,rolledBack:0,sequence:10};
  return{state,getPerformanceStats(){return stats(state.sequence);},async capturePVCSFrame(){state.sequence++;const current=stats(state.sequence);Object.assign(current,options.metrics?.(state,current)||{});return{frame:frame(),context:CONTEXT,metrics:current};},

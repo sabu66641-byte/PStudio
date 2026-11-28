@@ -332,7 +332,7 @@ test('PVCS instruments individual composer passes without changing quality state
   assert.match(renderer, /originalRender\.apply\(this,args\)/);
   assert.match(renderer, /pvcsPostProcessingPathActive/);
   assert.match(renderer, /pvcsGpuStageSampleTarget=stageGpuSampleTurn\?\(pvcsPostProcessingPathActive\?'post-processing':'scene-render'\):null/);
-  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration\)/);
+  assert.match(renderer, /endGpuTimerQuery\(gpuQuery,null,pvcsActiveFrameContext,pvcsMonitoringEnabled,pvcsActiveFrameGeneration,renderFrameSequence\+1\)/);
   assert.match(renderer, /recordGpuFrameMetrics\?\.\(durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /recordGpuStageMetrics\?\.\(entry\.stageId,durationMs,entry\.context,entry\.monitoringGeneration\)/);
   assert.match(renderer, /function discardGpuTimerQuery\(query\)/);
@@ -388,5 +388,5 @@ test('production PVCS frame capture and browser calibration runner are exposed a
  const renderer=fs.readFileSync(path.join(root,'static/pstudio_3d_engine.js'),'utf8');
  const html=fs.readFileSync(path.join(root,'templates/index.html'),'utf8');
  assert.match(renderer,/capturePVCSFrame/);assert.match(renderer,/gpuRenderSampleSequence/);assert.match(renderer,/gpuStageMetrics/);
- assert.match(html,/pstudio_pvcs_browser_runner\\.mjs/);assert.match(html,/createPStudioPVCSBrowserRunner/);
+ assert.match(html,/pstudio_pvcs_browser_runner\.mjs/);assert.match(html,/createPStudioPVCSBrowserRunner/);
 });
