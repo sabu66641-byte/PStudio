@@ -38,6 +38,7 @@ public:
     bool waitIdle() override;
     void dispose() noexcept override;
 
+    void notifyDeviceLost(const std::string& reason) noexcept override;
     bool configureSurface(const NativeSurfaceDescriptor& surface, std::string& error) override;
     NativeGpuCapabilities capabilities() const override;
     NativeSwapchainInfo swapchainInfo() const override;
