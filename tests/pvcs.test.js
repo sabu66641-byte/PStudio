@@ -380,3 +380,13 @@ test('PVCS exposes an evidence-gated governor while preserving analysis-only def
   assert.match(engine, /applyPVCSFrameBudgetOverride:profile=>/);
   assert.match(engine, /rollbackPVCSFrameBudgetOverride:rollbackToken=>/);
 });
+
+
+
+test('production PVCS frame capture and browser calibration runner are exposed additively',async()=>{
+ const fs=require('node:fs'),path=require('node:path'),root=path.resolve(__dirname,'..');
+ const renderer=fs.readFileSync(path.join(root,'static/pstudio_3d_engine.js'),'utf8');
+ const html=fs.readFileSync(path.join(root,'templates/index.html'),'utf8');
+ assert.match(renderer,/capturePVCSFrame/);assert.match(renderer,/gpuRenderSampleSequence/);assert.match(renderer,/gpuStageMetrics/);
+ assert.match(html,/pstudio_pvcs_browser_runner\\.mjs/);assert.match(html,/createPStudioPVCSBrowserRunner/);
+});
