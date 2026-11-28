@@ -238,28 +238,40 @@ export function createPStudioGraphicsSceneCore(options = {}) {
     const record = entityRecord(id);
     const allowed = ["name", "visible", "layerMask", "castShadow", "receiveShadow", "geometryId", "materialIds", "assetIds", "components"];
     for (const key of Object.keys(patch)) if (key !== "transform" && !allowed.includes(key)) throw new TypeError("Unsupported PStudio entity field: " + key);
-    if (patch.transform != null) {
-      const current = record.transform;
-      record.transform = transform({
-        position: patch.transform.position ?? current.position,
-        rotation: patch.transform.rotation ?? current.rotation,
-        scale: patch.transform.scale ?? current.scale
-      });
-      markSubtreeDirty(record.id);
-    }
-    if (patch.name != null) record.name = String(patch.name);
-    if (patch.visible != null) record.visible = patch.visible === true;
-    if (patch.castShadow != null) record.castShadow = patch.castShadow === true;
-    if (patch.receiveShadow != null) record.receiveShadow = patch.receiveShadow === true;
+    // Validate and clone the entire patch before mutating the live entity.
+    const nextTransform = patch.transform == null ? record.transform : transform({
+      position: patch.transform.position ?? record.transform.position,
+      rotation: patch.transform.rotation ?? record.transform.rotation,
+      scale: patch.transform.scale ?? record.transform.scale
+    });
+    let nextLayerMask = record.layerMask;
     if (patch.layerMask != null) {
-      const mask = Number(patch.layerMask);
-      if (!Number.isSafeInteger(mask) || mask < 0 || mask > 0xffffffff) throw new RangeError("entity layerMask must be a uint32.");
-      record.layerMask = mask >>> 0;
+      nextLayerMask = Number(patch.layerMask);
+      if (!Number.isSafeInteger(nextLayerMask) || nextLayerMask < 0 || nextLayerMask > 0xffffffff) throw new RangeError("entity layerMask must be a uint32.");
+      nextLayerMask = nextLayerMask >>> 0;
     }
-    if (Object.prototype.hasOwnProperty.call(patch, "geometryId")) record.geometryId = patch.geometryId == null ? null : assertId(patch.geometryId, "geometry id");
-    if (patch.materialIds != null) record.materialIds = Object.freeze(patch.materialIds.map(value => assertId(value, "material id")));
-    if (patch.assetIds != null) record.assetIds = Object.freeze(patch.assetIds.map(value => assertId(value, "asset id")));
-    if (patch.components != null) record.components = cloneData(patch.components);
+    const nextGeometryId = Object.prototype.hasOwnProperty.call(patch, "geometryId")
+      ? (patch.geometryId == null ? null : assertId(patch.geometryId, "geometry id"))
+      : record.geometryId;
+    const nextMaterialIds = patch.materialIds == null ? record.materialIds : Object.freeze(patch.materialIds.map(value => assertId(value, "material id")));
+    const nextAssetIds = patch.assetIds == null ? record.assetIds : Object.freeze(patch.assetIds.map(value => assertId(value, "asset id")));
+    const nextComponents = patch.components == null ? record.components : cloneData(patch.components);
+    const nextName = patch.name == null ? record.name : String(patch.name);
+    const nextVisible = patch.visible == null ? record.visible : patch.visible === true;
+    const nextCastShadow = patch.castShadow == null ? record.castShadow : patch.castShadow === true;
+    const nextReceiveShadow = patch.receiveShadow == null ? record.receiveShadow : patch.receiveShadow === true;
+
+    record.transform = nextTransform;
+    record.layerMask = nextLayerMask;
+    record.geometryId = nextGeometryId;
+    record.materialIds = nextMaterialIds;
+    record.assetIds = nextAssetIds;
+    record.components = nextComponents;
+    record.name = nextName;
+    record.visible = nextVisible;
+    record.castShadow = nextCastShadow;
+    record.receiveShadow = nextReceiveShadow;
+    if (patch.transform != null) markSubtreeDirty(record.id);
     touch(record.sceneId);
     return getEntity(record.id);
   }

@@ -107,8 +107,16 @@ export function createPStudioGraphicsAssetCore(options = {}) {
     }
     const limit = budgets[descriptor.domain];
     if (descriptor.estimatedBytes > limit) throw new RangeError("Asset exceeds its " + descriptor.domain + " memory budget.");
-    trim(descriptor.domain, limit - descriptor.estimatedBytes);
-    if (total(descriptor.domain) + descriptor.estimatedBytes > limit) throw new RangeError("Asset budget cannot admit the new asset without evicting retained resources.");
+    // Lock dependencies before trimming so a referenced asset cannot be evicted
+    // in the small window before the new dependent record is committed.
+    for (const dependencyId of descriptor.dependencies) records.get(dependencyId).dependents += 1;
+    try {
+      trim(descriptor.domain, limit - descriptor.estimatedBytes);
+      if (total(descriptor.domain) + descriptor.estimatedBytes > limit) throw new RangeError("Asset budget cannot admit the new asset without evicting retained resources.");
+    } catch (error) {
+      for (const dependencyId of descriptor.dependencies) records.get(dependencyId).dependents = Math.max(0, records.get(dependencyId).dependents - 1);
+      throw error;
+    }
     const record = {
       descriptor, value,
       dispose: typeof config.dispose === "function" ? config.dispose : null,
@@ -116,7 +124,6 @@ export function createPStudioGraphicsAssetCore(options = {}) {
       disposed: false, disposeErrors: 0
     };
     records.set(descriptor.id, record);
-    for (const dependencyId of descriptor.dependencies) records.get(dependencyId).dependents += 1;
     return Object.freeze({ descriptor, value });
   }
   function get(id) {
@@ -154,7 +161,7 @@ export function createPStudioGraphicsAssetCore(options = {}) {
     const record = records.get(String(id || ""));
     if (!record) return false;
     if (record.refs > 0 && config.force !== true) throw new Error("Cannot remove a retained asset: " + id);
-    if (record.dependents > 0 && config.force !== true) throw new Error("Cannot remove an asset while dependent assets reference it: " + id);
+    if (record.dependents > 0) throw new Error("Cannot remove an asset while dependent assets reference it: " + id);
     records.delete(record.descriptor.id);
     releaseRecord(record, config.reason || "removed");
     return true;

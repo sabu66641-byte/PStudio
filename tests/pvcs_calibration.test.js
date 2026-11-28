@@ -22,7 +22,7 @@ test("PVCS calibration produces A/B P95, visual and temporal evidence from injec
       const index = captures++;
       return {
         metrics: { cpuFrameMs: variant === "baseline" ? 20 + index % 3 : 15 + index % 3 },
-        frame: { width: 2, height: 2, channels: 4, data: rgba(variant === "baseline" ? index : index) }
+        frame: { width: 2, height: 2, channels: 4, data: rgba(42) }
       };
     },
     restore: () => { restored++; }

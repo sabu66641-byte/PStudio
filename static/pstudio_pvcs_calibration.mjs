@@ -72,7 +72,7 @@ export function createPStudioPVCSCalibrationRunner(options = {}) {
   const domain = String(options.domain || "cpu-frame");
   if (!Object.prototype.hasOwnProperty.call(DOMAIN_METRICS, domain)) throw new TypeError("Unsupported PVCS calibration domain: " + domain);
   const sampleCount = Math.max(2, Math.min(512, Math.floor(Number(options.sampleCount) || 40)));
-  const warmupCount = Math.max(0, Math.min(120, Math.floor(Number(options.warmupCount) || 4)));
+  const warmupCount = Math.max(0, Math.min(120, Math.floor(Number(options.warmupCount ?? 4))));
   const visualSampleCount = Math.max(2, Math.min(sampleCount, Math.floor(Number(options.visualSampleCount) || Math.min(8, sampleCount))));
   const minSamples = Math.max(2, Math.floor(Number(options.minSamples) || 30));
   const maxPixels = Math.max(1, Math.min(4194304, Math.floor(Number(options.maxPixels) || 1048576)));
@@ -86,7 +86,6 @@ export function createPStudioPVCSCalibrationRunner(options = {}) {
     const samples = { baseline: [], alternative: [] };
     const visualFrames = { baseline: [], alternative: [] };
     let originalContextKey = null;
-    let restoreAttempted = false;
     function abortCheck() {
       if (signal?.aborted) {
         const error = new Error("PVCS calibration was cancelled.");
@@ -101,6 +100,8 @@ export function createPStudioPVCSCalibrationRunner(options = {}) {
       const currentKey = contextKey(await readContext());
       if (currentKey !== originalContextKey) throw new Error("PVCS calibration context changed during A/B capture; samples were discarded.");
       const result = await capture(Object.freeze({ variant, index, warmup, signal }));
+      const afterCaptureKey = contextKey(await readContext());
+      if (afterCaptureKey !== originalContextKey) throw new Error("PVCS calibration context changed during capture; samples were discarded.");
       if (warmup) return;
       const metricName = DOMAIN_METRICS[domain];
       const metrics = result?.metrics || result || {};
@@ -154,7 +155,6 @@ export function createPStudioPVCSCalibrationRunner(options = {}) {
         improvementRatio: evidence.baseline.p95 > 0 ? (evidence.baseline.p95 - evidence.alternative.p95) / evidence.baseline.p95 : null
       });
     } finally {
-      restoreAttempted = true;
       try { await restore(); }
       finally { running = false; }
     }
