@@ -73,7 +73,7 @@ test('PStudio independent WebGPU scene adapter renders PStudio data without Thre
   assert.equal(stats.submits, 1);
   assert.equal(stats.indexedDraws, 1);
   assert.equal(stats.buffers, 5);
-  assert.equal(stats.textures, 2);
+  assert.equal(stats.textures, 9, 'depth plus eight material texture slots are cached');
   assert.ok(stats.writeSizes.every(size => size % 4 === 0), 'WebGPU queue writes must be four-byte aligned');
   assert.equal(handle.render(frame), true);
   assert.equal(stats.submits, 2);
