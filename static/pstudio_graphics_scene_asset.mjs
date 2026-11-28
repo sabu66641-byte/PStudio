@@ -639,7 +639,7 @@ export function importPStudioThreeScene(scene, options = {}) {
       if (!materials.has(materialId)) {
         const color = source.color || {};
         const emissive = source.emissive || {};
-        const colorValue = [Number(color.r ?? 1), Number(color.g ?? 1), Number(color.b ?? 1), Number(source.opacity ?? 1)];
+        const colorValue = [Number(color.r ?? 1), Number(color.g ?? 1), Number(color.b ?? 1), 1];
         const emissiveIntensity = Number(source.emissiveIntensity ?? 1);
         const emissiveValue = [Number(emissive.r ?? 0) * emissiveIntensity, Number(emissive.g ?? 0) * emissiveIntensity, Number(emissive.b ?? 0) * emissiveIntensity];
         const alpha = source.transparent === true || Number(source.opacity ?? 1) < 1 ? 'blend' : source.alphaTest > 0 ? 'mask' : 'opaque';
