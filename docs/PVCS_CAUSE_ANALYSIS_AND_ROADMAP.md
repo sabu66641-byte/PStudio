@@ -8,7 +8,7 @@
 
 Do not begin automatic quality reduction or visual compensation yet.
 
-The Phase 0 implementation on this branch adds full `drawFrame` CPU timing, separate CPU render-submission measurements, CPU timings for world/occlusion/instance work and individual composer passes, sparse non-nested WebGL2 GPU render-path sampling, frame-start context metadata and independent CPU/GPU/async/memory-domain rankings that do not compare unlike contexts. The WebGPU path continues to report GPU timing as unavailable. See [PVCS Foundation](PVCS_FOUNDATION.md) for the precise limits and measurement boundaries.
+The Phase 0 implementation on this branch adds full `drawFrame` CPU timing, separate CPU render-submission measurements, CPU timings for world/occlusion/instance work and individual composer passes, sparse non-nested WebGL2 GPU render-path sampling, frame-start context metadata and independent CPU/GPU/async/memory-domain rankings that do not compare unlike contexts. GPU timer results are recorded once at resolution using the originating frame context and monitoring-session generation; late results from an older monitoring session are ignored. The WebGPU path continues to report GPU timing as unavailable. See [PVCS Foundation](PVCS_FOUNDATION.md) for the precise limits and measurement boundaries.
 
 The source audit identifies several high-priority cost candidates. These are code-backed reasons to measure them, **not proof that any one candidate is the dominant bottleneck on a real device**.
 
@@ -185,7 +185,7 @@ The branch implementation adds:
 1. Full `drawFrame` callback CPU duration, separate from render-section CPU submission and frame interval.
 2. CPU stages for camera/environment preparation, clustered lighting, world visibility, occlusion, instance-batch rebuild, water depth, planar reflection, per-mirror scene rendering and cloud composition.
 3. CPU instrumentation around individual EffectComposer passes when the pass exposes a render method: source, TAA/SMAA, GTAO/SSAO, SSR, contact shadows, bloom, volumetric fog/clouds, God Rays and output.
-4. Sparse WebGL2 GPU render-path sampling. One analysis frame in four samples the active full EffectComposer path or the direct scene-render path; the aggregate timer is omitted on that frame, so elapsed queries do not nest. Individual composer sub-passes remain CPU-only. Query results are polled without blocking.
+4. Sparse WebGL2 GPU render-path sampling. One analysis frame in four samples the active full EffectComposer path or the direct scene-render path; the aggregate timer is omitted on that frame, so elapsed queries do not nest. Individual composer sub-passes remain CPU-only. Query results carry their originating context/session and are not copied into later frame samples. Query results are polled without blocking.
 5. Disjoint query results are discarded and invalidate the previous aggregate GPU sample. Stale query results are discarded.
 6. Frame-start context metadata for backend, scene label, quality preset, render dimensions, pixel ratio and selected effect flags. History is partitioned by context (up to eight recent contexts per node), with a shared context per frame.
 7. Separate graph metrics and rankings for CPU frame, CPU stages, GPU frame, GPU stages, async elapsed and estimated memory. Each metric exposes its sample count; rankings compare only samples from the same context.
@@ -193,7 +193,7 @@ The branch implementation adds:
 
 Known boundaries:
 - WebGPU per-stage GPU timing remains unavailable; there is no CPU-to-GPU relabelling.
-- WebGL2 GPU render-path sampling is intentionally sparse; the target is the active composer or direct-render path. The per-effect composer sub-passes are not yet individually GPU-timed.
+- WebGL2 GPU render-path sampling is intentionally sparse; the target is the active composer or direct-render path. Query-start context and monitoring-session generation are retained until completion. The per-effect composer sub-passes are not yet individually GPU-timed.
 - Composer CPU stage measurements are nested within the overall composer timing; they are diagnostic and must not be added to the parent duration. The overall composer GPU query is a single non-nested measurement.
 - Mirror count/target size and shadow-map dimensions are not yet in every sample context.
 - Physical-device measurements and visual review have not been performed by CI.
