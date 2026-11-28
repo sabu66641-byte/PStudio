@@ -1,6 +1,6 @@
 # PVCS Cause Analysis and Implementation Roadmap
 
-**Status:** Static source audit complete; physical-device bottleneck ranking is still pending.  
+**Status:** Static source audit complete. Phase 0 instrumentation is implemented on this PR branch and passed CI run 1506; physical-device bottleneck ranking and visual review remain pending.  
 **Main baseline:** `48599f90db4c5ea3cf6996317e0966d6b7c91ddf` (PVCS foundation merged from PR #126).  
 **Sky constraint:** Preserve the Nov 24 authored sky state at `6b973a50c781f7fb2ea24fdffeb24d0d482556a9`. Do not use PVCS work as a reason to modify sky assets, sky composition, or sky cache keys.
 
@@ -8,7 +8,7 @@
 
 Do not begin automatic quality reduction or visual compensation yet.
 
-The next implementation step is to improve the *diagnostic resolution*: the current foundation can report frame-wide WebGL2 GPU time and selected CPU stage timings, but it cannot yet attribute GPU time to individual passes. The graph also needs a true whole-frame CPU metric and a ranking model that distinguishes CPU, GPU, asynchronous and memory pressure.
+The Phase 0 implementation on this branch adds full `drawFrame` CPU timing, separate CPU render-submission measurements, CPU timings for world/occlusion/instance work and individual composer passes, sparse non-nested WebGL2 GPU pass sampling, context metadata and independent CPU/GPU/async/memory-domain rankings. The WebGPU path continues to report GPU timing as unavailable. See [PVCS Foundation](PVCS_FOUNDATION.md) for the precise limits and measurement boundaries.
 
 The source audit identifies several high-priority cost candidates. These are code-backed reasons to measure them, **not proof that any one candidate is the dominant bottleneck on a real device**.
 
@@ -24,7 +24,7 @@ The source audit identifies several high-priority cost candidates. These are cod
 | Dynamic GI async elapsed | Promise wall-clock duration around the capture service | Useful for finding intermittent stalls, but it is not GPU time and may include asynchronous waiting. |
 | Resource memory | PStudio resource-registry estimates plus browser-visible heap data | Not driver-reported physical VRAM or total device memory pressure. |
 
-**Important graph correction:** the current `frame-loop` node records `cpuRenderSubmitMs`. That value is the render-section duration, not the entire `drawFrame` callback. The graph currently ranks primarily by CPU P95, so a large asynchronous GI duration or a GPU-heavy stage cannot be compared fairly with CPU-stage P95. Rename/separate these metrics before using the graph to choose quality changes.
+**Implementation correction on this branch:** the `frame-loop` node now records the full `drawFrame` CPU callback separately from `cpuRenderSubmitMs`. Graph ranking is partitioned by resource domain; a CPU P95 is never compared directly with a GPU duration, asynchronous elapsed duration or memory estimate.
 
 The WebGPU stage currently exposes CPU render-submit timing in PVCS. PVCS does not yet expose per-stage WebGPU timestamp-query results. Unsupported GPU timing must remain explicitly unavailable; CPU submission must never be relabelled as GPU time.
 
@@ -177,22 +177,28 @@ PStudio already stages model texture uploads across animation frames and uses as
 
 Measure cold-start and warmed runs separately. Do not redesign the existing preparation path without evidence of a remaining stall.
 
-## 4. Revised implementation plan
+## 4. PVCS implementation and validation sequence
 
-### Phase 0 — Make the measurements decision-grade
+### PVCS Step 0 — Decision-grade instrumentation (implemented on PR #127 branch)
 
-1. Add a true `drawFrame` callback CPU duration, separate from render-section CPU submission and start-to-start frame interval.
-2. Add missing CPU stages: pre-render state/update work, world visibility/streaming/occlusion, instance-batch rebuild, and other significant update paths found in profiling.
-3. Split combined stages into useful sub-stages: each mirror scene render/cloud composite and each active post-processing pass.
-4. Add WebGL2 per-stage GPU timing using non-blocking query polling and disjoint/stale rejection. Timer queries must not be nested; choose a clear sampling strategy so the aggregate frame query and pass-level query do not overlap.
-5. Add WebGPU timestamp-query instrumentation only when the device feature is actually supported and enabled. Otherwise report GPU timing as unavailable.
-6. Record stage context with each sample: backend, scene/test case, quality preset, effect flags, render dimensions/pixel ratio, mirror count/target dimensions, shadow dimensions, and sample count.
-7. Correct the graph schema so CPU frame time, CPU render submission, GPU time, asynchronous elapsed time and memory are independent metrics. Rank bottlenecks by resource domain, not CPU P95 alone.
-8. Add regression tests for query lifecycle, disjoint samples, unavailable timing, per-stage counters and frame-root semantics.
+The branch implementation adds:
+1. Full `drawFrame` callback CPU duration, separate from render-section CPU submission and frame interval.
+2. CPU stages for camera/environment preparation, clustered lighting, world visibility, occlusion, instance-batch rebuild, water depth, planar reflection, per-mirror scene rendering and cloud composition.
+3. CPU instrumentation around individual EffectComposer passes when the pass exposes a render method: source, TAA/SMAA, GTAO/SSAO, SSR, contact shadows, bloom, volumetric fog/clouds, God Rays and output.
+4. Sparse WebGL2 GPU-stage sampling. One analysis frame in four samples one selected pass; the aggregate timer is omitted on that frame, so elapsed queries do not nest. Query results are polled without blocking.
+5. Disjoint query results are discarded and invalidate the previous aggregate GPU sample. Stale query results are discarded.
+6. Context metadata for backend, scene label, quality preset, render dimensions, pixel ratio and selected effect flags.
+7. Separate graph metrics and rankings for CPU frame, CPU stages, GPU frame, GPU stages, async elapsed and estimated memory.
+8. Regression tests for domain separation, explicit unavailable values, renderer backend attribution and composer instrumentation.
 
-No quality settings or sky code should change in this phase.
+Known boundaries:
+- WebGPU per-stage GPU timing remains unavailable; there is no CPU-to-GPU relabelling.
+- WebGL2 GPU stage sampling is intentionally sparse and can have no result when a targeted pass is disabled or skipped.
+- Composer CPU stage measurements are nested within the overall composer timing; they are diagnostic and must not be added to the parent duration.
+- Mirror count/target size and shadow-map dimensions are not yet in every sample context.
+- Physical-device measurements and visual review have not been performed by CI.
 
-### Phase 1 — Controlled baseline on real hardware
+### PVCS Step 1 — Controlled baseline on real hardware
 
 Use a fixed camera path and repeatable scene state. Warm up first, then take at least three runs with enough samples for p50/p95/p99.
 
@@ -207,7 +213,7 @@ Required cases:
 
 Capture CPU frame time, CPU render submission, GPU frame time, pass timings, frame interval, draw calls, triangles, memory estimates and actual render dimensions. A source-code audit cannot replace this device run.
 
-### Phase 2 — Fix the measured bottlenecks one at a time
+### PVCS Step 2 — Fix the measured bottlenecks one at a time
 
 For each candidate:
 1. Record a baseline with the fixed test path.
@@ -218,7 +224,7 @@ For each candidate:
 
 Start with the subsystem that consumes the largest repeatable share of the real-device frame budget—not the subsystem that looks most complicated in source code.
 
-### Phase 3 — Strengthen Visual Difference Evaluation
+### PVCS Step 3 — Strengthen Visual Difference Evaluation
 
 Keep the current RGBA MAE/RMSE and aligned temporal-delta metrics as simple diagnostics. Add a more robust comparison path that accounts for:
 - Matching camera, resolution, color space, exposure and scene time.
@@ -228,7 +234,7 @@ Keep the current RGBA MAE/RMSE and aligned temporal-delta metrics as simple diag
 
 Treat this as a benchmark/capture tool. Do not add automatic framebuffer readbacks to the live render loop.
 
-### Phase 4 — Build the actual Visual Compensation Graph allocator
+### PVCS Step 4 — Build the actual Visual Compensation Graph allocator
 
 Only after Phases 0–3:
 - Attach measured CPU/GPU cost, memory cost, visual impact, temporal stability, update frequency and stage dependencies to each candidate.
@@ -237,7 +243,7 @@ Only after Phases 0–3:
 - Select actions by bottleneck domain: lower pixel cost for GPU-bound work; reduce traversal/rebuild frequency for CPU-bound work; stagger captures for intermittent work; manage target/cache sizes for memory pressure.
 - Keep automatic actuation opt-in, bounded, reversible and hysteretic. Never infer an unavailable GPU metric from CPU time.
 
-### Phase 5 — Integration and release gates
+### PVCS Step 5 — Integration and release gates
 
 - Run the existing Python/C++/JavaScript regression suites.
 - Validate WebGL2 and WebGPU separately; never assume one backend's timing represents the other.
@@ -257,6 +263,6 @@ A compensation candidate is accepted only when:
 
 ## 6. Immediate next task
 
-Implement **Phase 0 only**: whole-frame CPU timing, missing CPU-stage instrumentation, per-pass attribution, and domain-aware graph metrics. Then run the controlled baseline before changing reflection cadence, depth resolution, cloud samples, shadow maps or quality defaults.
+Review PR #127 and retain the instrumentation changes only while the full repository CI remains green. Then collect a controlled baseline on the target Android/browser device and any available desktop reference. The device run must capture p50/p95/p99 for frame interval and CPU/GPU domains, and compare the same shrine scene and camera path before changing reflection cadence, depth resolution, cloud samples, shadow maps or quality defaults.
 
-This is the shortest route from plausible causes to measured causes. It avoids spending time optimising the wrong subsystem or sacrificing visual quality unnecessarily.
+The Phase 1 visual-identity specification is maintained separately in [PSTUDIO_VISUAL_IDENTITY.md](PSTUDIO_VISUAL_IDENTITY.md).
