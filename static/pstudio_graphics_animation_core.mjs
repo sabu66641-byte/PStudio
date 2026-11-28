@@ -409,6 +409,38 @@ export function evaluatePStudioSceneAnimation(sceneAsset, clipId, timeSeconds, o
   });
 }
 
+/**
+ * Resolve the authored bind pose through the same morph-then-skin deformation path
+ * used by animated playback. This keeps static skinned GLTF assets renderable even
+ * when the file contains no animation clips.
+ */
+export function evaluatePStudioSceneBindPose(sceneAsset) {
+  if (sceneAsset?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required.");
+  const tracks = [];
+  for (const node of sceneAsset.nodes || []) {
+    if (node.matrixAuthored === true) continue;
+    tracks.push(
+      { targetId: node.id, path: "translation", components: 3, times: [0], values: Array.from(node.translation || [0,0,0]) },
+      { targetId: node.id, path: "rotation", components: 4, times: [0], values: Array.from(node.rotation || [0,0,0,1]) },
+      { targetId: node.id, path: "scale", components: 3, times: [0], values: Array.from(node.scale || [1,1,1]) }
+    );
+    if (node.weights?.length) tracks.push({
+      targetId: node.id, path: "weights", components: node.weights.length,
+      times: [0], values: Array.from(node.weights)
+    });
+  }
+  const temporary = createPStudioAnimationClip({ id: "pstudio.internal.bind-pose", tracks });
+  const working = { ...sceneAsset, animations: [...(sceneAsset.animations || []), temporary] };
+  const evaluated = evaluatePStudioSceneAnimation(working, temporary.id, 0);
+  return createPStudioGraphicsSceneAsset({
+    id: sceneAsset.id, revision: evaluated.revision,
+    geometries: evaluated.geometries, materials: evaluated.materials, textures: evaluated.textures,
+    entities: evaluated.entities, nodes: evaluated.nodes, skins: sceneAsset.skins,
+    animations: sceneAsset.animations, clearColor: sceneAsset.clearColor,
+    lighting: sceneAsset.lighting, metadata: { ...evaluated.metadata, bindPoseResolved: true }
+  });
+}
+
 export function createPStudioSceneAnimationPlayer(sceneAsset, options = {}) {
   if (sceneAsset?.kind !== "pstudio-graphics-scene-asset") throw new TypeError("A PStudio-owned scene asset is required.");
   const clipId = String(options.clipId || sceneAsset.animations?.[0]?.id || "");
